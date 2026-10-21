@@ -259,6 +259,14 @@ func _layout_tests() -> void:
 	panel.chat.set_working(true)
 	_check(panel.chat.stop_button.is_visible_in_tree(), "Running chat shows Stop")
 	panel.chat.set_working(false)
+	panel.speech.transcribing = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(panel.chat.stop_button.is_visible_in_tree(), "Voice transcription keeps Stop available")
+	panel.speech.transcribing = false
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(not panel.chat.stop_button.is_visible_in_tree(), "Completed voice work returns to the clean composer")
 	panel.open_settings("accounts")
 	await get_tree().process_frame
 	await get_tree().process_frame

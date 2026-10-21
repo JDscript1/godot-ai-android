@@ -1257,7 +1257,7 @@ func _delete_automation() -> void:
 
 func _process(_delta: float) -> void:
 	if chat != null:
-		chat.set_working(busy)
+		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
 		if busy: chat._follow()
 	if speech != null: speech.poll(config.get("preferences", {}))
 

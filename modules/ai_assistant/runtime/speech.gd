@@ -6,6 +6,7 @@ var owner: Node
 var vault: RefCounted
 var transport: RefCounted
 var listening = false
+var transcribing = false
 var recorder: AudioEffectRecord
 var player: AudioStreamPlayer
 var bus = -1
@@ -20,6 +21,10 @@ func _init(panel: Node = null, secrets: RefCounted = null) -> void:
 	transport = Transport.new(panel)
 
 func start(preferences: Dictionary) -> void:
+	if transcribing:
+		stop()
+		owner._status("Transcriere oprită.")
+		return
 	if listening:
 		await finish(preferences)
 		return
@@ -76,6 +81,7 @@ func poll(preferences: Dictionary) -> void:
 	if Time.get_ticks_msec() - started >= 60000: finish(preferences)
 
 func stop() -> void:
+	transcribing = false
 	cancel["cancelled"] = true
 	listening = false
 	if owner != null and owner.plugin.has_method("speech_request"): owner.plugin.speech_request("cancel", {})
@@ -94,6 +100,7 @@ func finish(preferences: Dictionary) -> void:
 	if audio == null or audio.get_data().is_empty():
 		owner._status("Microfonul nu a furnizat audio. Verifică permisiunea și dispozitivul de intrare.")
 		return
+	transcribing = true
 	var wav = wav_16k(audio.get_data(), audio.mix_rate, 2 if audio.stereo else 1)
 	var boundary = "GodotAI" + Common.uid()
 	var body = PackedByteArray()
@@ -106,7 +113,10 @@ func finish(preferences: Dictionary) -> void:
 	var key = vault.read("transcription")
 	if not key.is_empty(): headers.append("Authorization: Bearer " + key)
 	owner._status("Transcriu înregistrarea…")
-	var result = await transport.request(str(preferences["voice_url"]), HTTPClient.METHOD_POST, headers, body, {"allow_http": preferences.get("voice_allow_http", false), "cancel": cancel})
+	var transcription_cancel = cancel
+	var result = await transport.request(str(preferences["voice_url"]), HTTPClient.METHOD_POST, headers, body, {"allow_http": preferences.get("voice_allow_http", false), "cancel": transcription_cancel})
+	transcribing = false
+	if transcription_cancel.get("cancelled", false): return
 	if result.get("ok", false) and result.get("json") is Dictionary and result["json"].get("text") is String:
 		owner.composer.insert_text_at_caret(str(result["json"]["text"]))
 		owner._status("Transcriere gata. Verifică textul înainte de trimitere.")
