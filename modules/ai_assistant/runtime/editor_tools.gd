@@ -8,6 +8,8 @@ var handles: Dictionary = {}
 var retained: Array = []
 var file_changes: Array = []
 var backup_directory = ""
+var turn_id = ""
+var scene_changes = {}
 
 func _init(editor_plugin: EditorPlugin = null, owner_panel: Node = null) -> void:
 	plugin = editor_plugin
@@ -70,7 +72,7 @@ func validate(name: String, args: Dictionary) -> Dictionary:
 func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool = false) -> Dictionary:
 	var validation = validate(name, args)
 	if not validation.get("ok", false): return validation
-	if validation["result"] != "read" and (mode == 0 or not full_control): return Common.failure("Operația necesită control complet activat și un mod care permite modificări.", "permission_denied")
+	if validation["result"] != "read" and (mode in [0, 3] or not full_control): return Common.failure("Operația necesită control complet activat și un mod care permite modificări.", "permission_denied")
 	if not Engine.is_editor_hint(): return Common.failure("Aceste instrumente rulează numai în editor.")
 	var root = EditorInterface.get_edited_scene_root()
 	match name:
@@ -102,12 +104,14 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			if node == null: return Common.failure("Clasa nu este un Node instanțiabil.")
 			node.name = str(args["name"])
 			var undo = plugin.get_undo_redo()
+			_begin_scene_change()
 			undo.create_action("AI: create " + str(node.name))
 			undo.add_do_method(parent, "add_child", node, true)
 			undo.add_do_property(node, "owner", root)
 			undo.add_do_reference(node)
 			undo.add_undo_method(parent, "remove_child", node)
 			undo.commit_action()
+			_end_scene_change()
 			return Common.success(_encode(node))
 		"godot_remove_node":
 			if root == null: return Common.failure("Nu există scenă activă.")
@@ -116,6 +120,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var parent = node.get_parent()
 			var index = node.get_index()
 			var undo = plugin.get_undo_redo()
+			_begin_scene_change()
 			undo.create_action("AI: remove " + str(node.name))
 			undo.add_do_method(parent, "remove_child", node)
 			undo.add_undo_method(parent, "add_child", node)
@@ -123,6 +128,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			undo.add_undo_property(node, "owner", root)
 			undo.add_undo_reference(node)
 			undo.commit_action()
+			_end_scene_change()
 			return Common.success("Nod eliminat; disponibil în Undo.")
 		"godot_attach_script":
 			if root == null: return Common.failure("Nu există scenă activă.")
@@ -133,10 +139,12 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			if script == null or str(script.get_instance_base_type()).is_empty() or not node.is_class(script.get_instance_base_type()): return Common.failure("Scriptul nu poate fi atașat acestui tip de nod. Verifică baza scriptului și erorile de parsare.")
 			if script.reload(true) != OK: return Common.failure("Scriptul conține erori de parsare.")
 			var undo = plugin.get_undo_redo()
+			_begin_scene_change()
 			undo.create_action("AI: attach script")
 			undo.add_do_property(node, "script", script)
 			undo.add_undo_property(node, "script", node.get_script())
 			undo.commit_action()
+			_end_scene_change()
 			return Common.success(_encode(node))
 		"godot_connect_signal":
 			if root == null: return Common.failure("Nu există scenă activă.")
@@ -148,17 +156,21 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var callable = Callable(target, method)
 			if source.is_connected(signal_name, callable): return Common.success("Conexiunea există deja.")
 			var undo = plugin.get_undo_redo()
+			_begin_scene_change()
 			undo.create_action("AI: connect signal")
 			undo.add_do_method(source, "connect", signal_name, callable, CONNECT_PERSIST)
 			undo.add_undo_method(source, "disconnect", signal_name, callable)
 			undo.commit_action()
+			_end_scene_change()
 			return Common.success(true)
 		"godot_save_scene":
 			var path = Common.project_path(str(args["path"]))
 			if path.is_empty() or path.get_extension() not in ["tscn", "scn"]: return Common.failure("Destinație de scenă invalidă.")
 			if root == null: return Common.failure("Nu există scenă activă.")
-			if _snapshot(path) < 0: return Common.failure("Copia de recuperare nu a putut fi creată.")
+			var recovery = _snapshot(path)
+			if recovery < 0: return Common.failure("Copia de recuperare nu a putut fi creată.")
 			EditorInterface.save_scene_as(path)
+			_finalize_snapshot(recovery)
 			return Common.success({"path": path, "saved": FileAccess.file_exists(path) and root.scene_file_path == path})
 		"godot_open_scene":
 			var path = Common.project_path(str(args["path"]))
@@ -309,8 +321,10 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 		if not object is Resource: return Common.failure("Obiectul nu este Resource.")
 		var path = Common.project_path(str(args["path"]))
 		if path.is_empty(): return Common.failure("Destinație invalidă.")
-		if _snapshot(path) < 0: return Common.failure("Copia de recuperare nu a putut fi creată.")
+		var recovery = _snapshot(path)
+		if recovery < 0: return Common.failure("Copia de recuperare nu a putut fi creată.")
 		var error = ResourceSaver.save(object, path)
+		_finalize_snapshot(recovery)
 		return Common.success(path) if error == OK else Common.failure(error_string(error))
 	var property = str(args["property"])
 	var found = false
@@ -321,10 +335,12 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 	if property in ["script", "owner", "scene_file_path"] or property.begins_with("_"): return Common.failure("Proprietatea necesită o operație dedicată.")
 	var value: Variant = _decode(args.get("value"))
 	var undo = plugin.get_undo_redo()
+	_begin_scene_change()
 	undo.create_action("AI: set " + property)
 	undo.add_do_property(object, property, value)
 	undo.add_undo_property(object, property, object.get(property))
 	undo.commit_action()
+	_end_scene_change()
 	return Common.success(_encode(object.get(property)))
 
 func _scene_tree(node: Node, root: Node, depth: int) -> Variant:
@@ -360,7 +376,7 @@ func _files(args: Dictionary) -> Dictionary:
 	return Common.success(output)
 
 func _snapshot(path: String) -> int:
-	var entry = {"path": path, "existed": FileAccess.file_exists(path), "backup": "", "time": Time.get_datetime_string_from_system(true)}
+	var entry = {"turn_id": turn_id, "path": path, "existed": FileAccess.file_exists(path), "backup": "", "time": Time.get_datetime_string_from_system(true)}
 	if entry["existed"]:
 		var file = FileAccess.open(path, FileAccess.READ)
 		if file == null or file.get_length() > Common.MAX_ASSET_BYTES: return -1
@@ -385,6 +401,8 @@ func _file_change(operation: String, args: Dictionary) -> Dictionary:
 		if file == null: return Common.failure("Nu pot scrie fișierul.")
 		file.store_string(str(args["text"]))
 		file.close()
+	file_changes[index]["after_sha"] = FileAccess.get_sha256(path) if FileAccess.file_exists(path) else "missing"
+	Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)
 	EditorInterface.get_resource_filesystem().scan()
 	return Common.success({"path": path, "recovery_index": index})
 
@@ -393,6 +411,8 @@ func _restore(index: int) -> Dictionary:
 	var change: Dictionary = file_changes[index]
 	var path = Common.project_path(str(change["path"]))
 	if path.is_empty(): return Common.failure("Calea nu mai este validă.")
+	var current_sha = FileAccess.get_sha256(path) if FileAccess.file_exists(path) else "missing"
+	if change.has("after_sha") and current_sha != change["after_sha"]: return Common.failure("Fișierul a fost modificat ulterior. Compară diferențele înainte de restaurare.", "restore_conflict")
 	var error = OK
 	if change["existed"]: error = DirAccess.copy_absolute(str(change["backup"]), ProjectSettings.globalize_path(path))
 	elif FileAccess.file_exists(path): error = DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
@@ -469,3 +489,68 @@ func _collect_output(node: Node, output: Array) -> void:
 		var path = str(node.get_path()).to_lower()
 		if "output" in path or "debug" in path or "log" in path: output.append(node.get_parsed_text().right(16000))
 	for child in node.get_children(): _collect_output(child, output)
+
+func _scene_history() -> UndoRedo:
+	var root = EditorInterface.get_edited_scene_root()
+	if root == null: return null
+	var manager = plugin.get_undo_redo()
+	return manager.get_history_undo_redo(manager.get_object_history_id(root))
+
+func _begin_scene_change() -> void:
+	if turn_id.is_empty(): return
+	var history = _scene_history()
+	if history == null: return
+	if not scene_changes.has(turn_id): scene_changes[turn_id] = {"history": weakref(history), "before": history.get_version(), "after": history.get_version(), "count": 0, "conflict": false}
+	var change: Dictionary = scene_changes[turn_id]
+	if change["after"] != history.get_version(): change["conflict"] = true
+
+func _end_scene_change() -> void:
+	if not scene_changes.has(turn_id): return
+	var change: Dictionary = scene_changes[turn_id]
+	var history = _scene_history()
+	change["after"] = history.get_version()
+	change["count"] += 1
+
+func diff_turn(id: String) -> String:
+	var output = ""
+	for change in file_changes:
+		if change.get("turn_id") != id: continue
+		output += "--- " + str(change["path"]) + " (înainte)\n+++ " + str(change["path"]) + " (acum)\n"
+		var before = FileAccess.get_file_as_string(str(change["backup"])) if change.get("existed", false) else ""
+		var path = Common.project_path(str(change["path"]))
+		var after = FileAccess.get_file_as_string(path) if not path.is_empty() and FileAccess.file_exists(path) else ""
+		for line in before.left(12000).split("\n"): output += "- " + line + "\n"
+		for line in after.left(12000).split("\n"): output += "+ " + line + "\n"
+	return output + "\nOperațiile de scenă cu Undo sunt restaurate doar dacă istoricul nu a fost modificat manual. Apelurile generice și operațiile externe pot avea efecte fără Undo."
+
+func restore_turn(id: String) -> Dictionary:
+	var latest = {}
+	for change in file_changes:
+		if change.get("turn_id") == id and not change.get("restored", false): latest[change["path"]] = change
+	for path in latest:
+		var safe = Common.project_path(str(path))
+		if safe.is_empty(): return Common.failure("Cale de restaurare invalidă.")
+		var sha = FileAccess.get_sha256(safe) if FileAccess.file_exists(safe) else "missing"
+		if latest[path].get("after_sha", "") != sha: return Common.failure("Conflict: fișier modificat ulterior: " + str(path), "restore_conflict")
+	var scene: Dictionary = scene_changes.get(id, {})
+	if not scene.is_empty():
+		var history = scene["history"].get_ref()
+		if history == null or scene["conflict"] or history.get_version() != scene["after"]: return Common.failure("Istoricul scenei a fost modificat ulterior.", "restore_conflict")
+	for index in range(file_changes.size() - 1, -1, -1):
+		var change: Dictionary = file_changes[index]
+		if change.get("turn_id") != id or change.get("restored", false): continue
+		var restored = _restore(index)
+		if not restored.get("ok", false): return restored
+		change["restored"] = true
+	if not scene.is_empty():
+		var history = scene["history"].get_ref()
+		for step in range(scene["count"]): history.undo()
+		scene_changes.erase(id)
+	Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)
+	return Common.success("Modificările reversibile au fost restaurate. Verifică scena și fișierele.")
+
+func _finalize_snapshot(index: int) -> void:
+	if index < 0 or index >= file_changes.size(): return
+	var path = str(file_changes[index]["path"])
+	file_changes[index]["after_sha"] = FileAccess.get_sha256(path) if FileAccess.file_exists(path) else "missing"
+	Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)

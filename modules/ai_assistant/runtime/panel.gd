@@ -9,6 +9,10 @@ static var Tools: GDScript
 static var MCP: GDScript
 static var Assets: GDScript
 static var Accounts: GDScript
+static var Conversations: GDScript
+static var ChatView: GDScript
+static var AgentJobs: GDScript
+static var Speech: GDScript
 
 var plugin: EditorPlugin
 var vault: RefCounted
@@ -44,6 +48,26 @@ var forms: Dictionary = {}
 var lists: Dictionary = {}
 var approval_dialog: ConfirmationDialog
 var generation_preview: Control
+var chat: Control
+var conversations: RefCounted
+var agent_jobs: RefCounted
+var speech: RefCounted
+var settings_navigation: ItemList
+var settings_search: LineEdit
+var section_tabs = {}
+var current_turn = ""
+var current_origin = {}
+var queued: Array = []
+var queue_paused = false
+var pending_attachments: Array = []
+var active_attachments: Array = []
+var pending_references: Array = []
+var active_references: Array = []
+var memory_editor: TextEdit
+var turn_cancel: Dictionary = {}
+var tasks: Array = []
+var compact_summary = ""
+var compact_through = 0
 
 func configure(editor_plugin: EditorPlugin, secret_store: RefCounted) -> void:
 	plugin = editor_plugin
@@ -55,7 +79,13 @@ func _ready() -> void:
 	project_directory = data_directory.path_join("projects").path_join(ProjectSettings.globalize_path("res://").sha256_text().left(24))
 	var saved: Variant = Common.read_json(data_directory.path_join("config.json"), {})
 	if saved is Dictionary: config.merge(saved, true)
-	history = Common.read_json(project_directory.path_join("history.json"), [])
+	conversations = Conversations.new()
+	conversations.configure(project_directory)
+	history = conversations.load_active()
+	config["version"] = 2
+	if not config.has("preferences"): config["preferences"] = {}
+	agent_jobs = AgentJobs.new(self)
+	speech = Speech.new(self, vault)
 	journal = Common.read_json(project_directory.path_join("journal.json"), [])
 	providers = Providers.new(self, vault)
 	tools = Tools.new(plugin, self)
@@ -68,16 +98,19 @@ func _ready() -> void:
 	var editor_settings = EditorInterface.get_editor_settings()
 	var timeout = int(editor_settings.get_setting("ai_assistant/connection/request_timeout_seconds")) if editor_settings.has_setting("ai_assistant/connection/request_timeout_seconds") else 180
 	for service in [providers, mcp, assets, accounts]: service.transport.timeout_seconds = clampi(timeout, 10, 600)
-	custom_minimum_size = Vector2(0, 380) * EditorInterface.get_editor_scale()
+	custom_minimum_size = Vector2(0, 200) * EditorInterface.get_editor_scale()
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_build_chat()
-	if editor_settings.has_setting("ai_assistant/general/default_mode"): mode_picker.select(clampi(int(editor_settings.get_setting("ai_assistant/general/default_mode")), 0, 2))
+	if editor_settings.has_setting("ai_assistant/general/default_mode"): mode_picker.select(clampi(int(editor_settings.get_setting("ai_assistant/general/default_mode")), 0, 3))
 	_build_settings()
 	_refresh_secrets()
 	_refresh_profiles()
+	_choose(conversations.item(str(conversations.index["active"])).get("selection", {}))
+	_load_summary()
 	_refresh_lists()
-	for message in history:
-		if message.get("role") in ["user", "assistant"] and not str(message.get("content", "")).is_empty(): _display(str(message["role"]), str(message["content"]))
+	_render_history()
+	_refresh_conversations()
+	set_process(true)
 	_status("Configurează un furnizor din Setări pentru a începe.")
 
 func _exit_tree() -> void:
@@ -85,47 +118,20 @@ func _exit_tree() -> void:
 	if approval_pending: approval_decided.emit(false)
 
 func _build_chat() -> void:
-	var toolbar = HFlowContainer.new()
-	add_child(toolbar)
-	profile_picker = OptionButton.new()
-	profile_picker.custom_minimum_size.x = 170
+	chat = ChatView.new()
+	chat.action.connect(_chat_action)
+	add_child(chat)
+	profile_picker = chat.provider_picker
+	model_picker = chat.model_picker
+	mode_picker = chat.mode_picker
+	effort_picker = chat.effort_picker
+	full_control = chat.full_control
+	composer = chat.composer
+	status_label = chat.status
+	send_button = chat.send_button
 	profile_picker.item_selected.connect(func(_index: int) -> void: _refresh_models())
-	toolbar.add_child(profile_picker)
-	model_picker = OptionButton.new()
-	model_picker.custom_minimum_size.x = 180
 	model_picker.item_selected.connect(func(_index: int) -> void: _refresh_efforts())
-	toolbar.add_child(model_picker)
-	mode_picker = OptionButton.new()
-	for mode in Common.MODES: mode_picker.add_item(mode)
-	toolbar.add_child(mode_picker)
-	effort_picker = OptionButton.new()
-	effort_picker.add_item("Reasoning: Auto")
-	toolbar.add_child(effort_picker)
-	full_control = CheckBox.new()
-	full_control.text = "Control complet"
-	full_control.tooltip_text = "Permite modificări pentru această sesiune, în modul Cu confirmare sau Autonom."
-	toolbar.add_child(full_control)
-	_button(toolbar, "Setări", open_settings)
-	_button(toolbar, "Conversație nouă", _new_conversation)
-	transcript = RichTextLabel.new()
-	transcript.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	transcript.custom_minimum_size.y = 180
-	transcript.selection_enabled = true
-	transcript.scroll_following = true
-	add_child(transcript)
-	composer = TextEdit.new()
-	composer.placeholder_text = "Descrie ce vrei să construiești sau să modifici în proiect…"
-	composer.custom_minimum_size.y = 90
-	composer.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	add_child(composer)
-	var bottom = HFlowContainer.new()
-	add_child(bottom)
-	send_button = _button(bottom, "Trimite", func() -> void: _start_chat(composer.text))
-	_button(bottom, "Oprește", _stop)
-	status_label = Label.new()
-	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bottom.add_child(status_label)
+	composer.text_changed.connect(_composer_hints)
 	approval_dialog = ConfirmationDialog.new()
 	approval_dialog.title = "Confirmă operația AI"
 	approval_dialog.dialog_autowrap = true
@@ -143,12 +149,35 @@ func _build_settings() -> void:
 	settings_window.add_child(settings_content)
 	settings_tabs = TabContainer.new()
 	settings_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	settings_content.add_child(settings_tabs)
+	settings_search = LineEdit.new()
+	settings_search.placeholder_text = "Caută în setări…"
+	settings_content.add_child(settings_search)
+	var settings_body = HBoxContainer.new()
+	settings_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	settings_content.add_child(settings_body)
+	settings_navigation = ItemList.new()
+	settings_navigation.custom_minimum_size = Vector2(115, 220)
+	settings_body.add_child(settings_navigation)
+	settings_tabs.tabs_visible = false
+	settings_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_body.add_child(settings_tabs)
+	settings_window.theme = chat.theme
+	settings_navigation.item_selected.connect(func(index: int) -> void: settings_tabs.current_tab = int(settings_navigation.get_item_metadata(index)))
+	settings_search.text_changed.connect(_search_settings)
 	settings_status = Label.new()
 	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	settings_status.custom_minimum_size.x = 240 * EditorInterface.get_editor_scale()
 	settings_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_content.add_child(settings_status)
+	var general = _tab("General", "general")
+	_label(general, "Godot AI · Chat nativ · Tema Grafit / Violet / Albastru")
+	var preferences = config.get("preferences", {})
+	var general_form = _form(general, "general")
+	_field(general_form, "max_steps", "Pași maximi ai agentului")
+	general_form["max_steps"].text = str(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/max_agent_steps")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/max_agent_steps") else "30"
+	_check(general_form, "enabled", "Activează asistentul")
+	general_form["enabled"].button_pressed = bool(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/enabled")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/enabled") else true
+	_button(general, "Salvează preferințele", _save_preferences)
 	var provider_tab = _tab("Furnizori", "providers")
 	var p = _form(provider_tab, "provider")
 	_choice(p, "issuer", "Serviciu", Providers.CATALOG.map(func(item: Dictionary) -> String: return str(item["name"])))
@@ -261,6 +290,33 @@ func _build_settings() -> void:
 	var journal_tab = _tab("Jurnal", "journal")
 	_label(journal_tab, "Operațiile și rezultatele sunt păstrate local, separat pentru fiecare proiect. Copiile de recuperare sunt accesibile prin instrumentul godot_restore_file.")
 	_button(journal_tab, "Actualizează jurnalul", _refresh_journal)
+	var agent_tab = _tab("Agent", "agent")
+	_label(agent_tab, "Memorii pentru acest proiect. Instrucțiunile AGENTS.md și referințele selectate sunt incluse în context.")
+	memory_editor = TextEdit.new()
+	memory_editor.custom_minimum_size.y = 190
+	memory_editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	memory_editor.text = str(Common.read_json(project_directory.path_join("memories.json"), {}).get("text", ""))
+	agent_tab.add_child(memory_editor)
+	_button(agent_tab, "Salvează memoriile", _save_memories)
+	_label(agent_tab, "Subagenți: Explore, General, Playtest. API cloud: 2 copii; local / companion: 1. Modificările sunt aplicate de agentul principal.")
+	var voice_tab = _tab("Voce", "voice")
+	var voice_form = _form(voice_tab, "voice")
+	_choice(voice_form, "backend", "Transcriere", ["Serviciul Android", "Endpoint compatibil Whisper"])
+	voice_form["backend"].select(int(preferences.get("voice_backend", 0)))
+	for field in [["url", "Adresă completă /audio/transcriptions"], ["model", "Model de transcriere"], ["language", "Limba (ro, en…)"], ["key", "Cheie de transcriere"]]:
+		_field(voice_form, field[0], field[1], field[0] == "key")
+		if field[0] != "key": voice_form[field[0]].text = str(preferences.get("voice_" + field[0], "ro" if field[0] == "language" else ""))
+	_check(voice_form, "allow_http", "Permite HTTP pentru serverul local")
+	voice_form["allow_http"].button_pressed = bool(preferences.get("voice_allow_http", false))
+	_button(voice_tab, "Salvează vocea", _save_preferences)
+	var play_tab = _tab("Playtesting", "playtesting")
+	var play_form = _form(play_tab, "playtesting")
+	for field in [["profile", "ID profil vizual (gol = profilul curent)"], ["model", "Model vizual (gol = modelul curent)"], ["seconds", "Durată maximă, secunde"], ["steps", "Pași maximi"]]:
+		_field(play_form, field[0], field[1])
+		play_form[field[0]].text = str(preferences.get("play_" + field[0], "180" if field[0] == "seconds" else ("30" if field[0] == "steps" else "")))
+	_button(play_tab, "Salvează playtesting", _save_preferences)
+	_label(play_tab, "Capturile și inputul privesc jocul lansat din acest fork, prin debugger. Dovezile sunt păstrate local pentru proiect.")
+	_search_settings("")
 	for section in forms:
 		var fields: Dictionary = forms[section]
 		fields["editing"] = ""
@@ -270,6 +326,7 @@ func _tab(title: String, id: String) -> VBoxContainer:
 	scroll.name = title
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	settings_tabs.add_child(scroll)
+	section_tabs[id] = settings_tabs.get_tab_count() - 1
 	var column = VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(column)
@@ -331,19 +388,15 @@ func _button(parent: Node, title: String, callback: Callable) -> Button:
 
 func open_settings(section: String = "") -> void:
 	if settings_window == null: return
-	var sections = {"providers": 0, "accounts": 1, "companion": 1, "generation": 2, "mcp": 3, "automations": 4}
-	if sections.has(section): settings_tabs.current_tab = int(sections[section])
+	if section_tabs.has(section): settings_tabs.current_tab = int(section_tabs[section])
 	settings_window.popup_centered_clamped(Vector2i(780, 760) * EditorInterface.get_editor_scale(), 0.94)
 
 func _status(message: String) -> void:
 	if status_label != null: status_label.text = _redact(message).left(2000)
 	if settings_status != null: settings_status.text = _redact(message).left(2000)
 
-func _display(role: String, text: String) -> void:
-	transcript.push_bold()
-	transcript.add_text("\n" + ("Tu" if role == "user" else "AI") + "\n")
-	transcript.pop()
-	transcript.add_text(_redact(text) + "\n")
+func _display(role: String, text: String, metadata: Dictionary = {}) -> void:
+	transcript = chat.append_message(role, _redact(text), metadata if not metadata.is_empty() else current_origin, false)
 
 func _save_config() -> void:
 	if Common.atomic_json(data_directory.path_join("config.json"), config) != OK: _status("Setările nu au putut fi salvate.")
@@ -353,7 +406,7 @@ func _save_config() -> void:
 
 func _refresh_secrets() -> void:
 	secrets.clear()
-	var profiles = config["providers"] + config["generation"] + config["mcp"] + [config["companion"]]
+	var profiles = config["providers"] + config["generation"] + config["mcp"] + [config["companion"], {"id": "transcription"}]
 	for profile in profiles:
 		var secret = vault.read(str(profile["id"]))
 		if not secret.is_empty(): secrets.append(secret)
@@ -373,6 +426,7 @@ func _refresh_profiles() -> void:
 		profile_picker.add_item(str(profile["name"]))
 		profile_picker.set_item_metadata(profile_picker.item_count - 1, str(profile["id"]))
 		if profile["id"] == selected: profile_picker.select(profile_picker.item_count - 1)
+	chat.catalog = config["providers"] + account_profiles
 	_refresh_models()
 
 func _current_profile() -> Dictionary:
@@ -391,6 +445,8 @@ func _refresh_models() -> void:
 	_refresh_efforts()
 
 func _refresh_efforts() -> void:
+	if model_picker.selected >= 0:
+		chat.model_button.text = str(_current_profile().get("name", "")) + " · " + model_picker.get_item_text(model_picker.selected)
 	effort_picker.clear()
 	effort_picker.add_item("Reasoning: Auto")
 	effort_picker.set_item_metadata(0, "")
@@ -514,15 +570,29 @@ func _remove_profile(category: String, form_id: String) -> void:
 
 func _new_conversation() -> void:
 	if busy: return
-	history.clear()
-	transcript.clear()
 	_persist_history()
+	conversations.create()
+	history = []
+	pending_attachments.clear()
+	pending_references.clear()
+	compact_summary = ""
+	compact_through = 0
+	_render_history()
+	_refresh_conversations()
 
 func _persist_history() -> void:
-	Common.atomic_json(project_directory.path_join("history.json"), history)
+	for message in history:
+		if not message.has("id"): message["id"] = Common.uid()
+	var selection = _selection()
+	if conversations.save(history, selection) != OK: _status("Conversația nu a putut fi salvată.")
+	_refresh_conversations()
 
 func _stop() -> void:
 	cancel["cancelled"] = true
+	queue_paused = true
+	agent_jobs.stop()
+	speech.stop()
+	if plugin.has_method("runtime_request"): plugin.runtime_request("release", {})
 	if approval_pending: _decide(false)
 	_status("Oprire solicitată…")
 
@@ -534,7 +604,7 @@ func _decide(accepted: bool) -> void:
 
 func _authorize(definition: Dictionary, args: Dictionary) -> bool:
 	if definition.get("risk", "external") == "read": return true
-	if mode_picker.selected == 0 or not full_control.button_pressed: return false
+	if mode_picker.selected in [0, 3] or not full_control.button_pressed: return false
 	if mode_picker.selected == 2: return true
 	approval_pending = true
 	approval_dialog.dialog_text = str(definition["name"]) + "\n\n" + _redact(JSON.stringify(args, "  ")).left(5000)
@@ -542,30 +612,37 @@ func _authorize(definition: Dictionary, args: Dictionary) -> bool:
 	var accepted: bool = await approval_decided
 	return accepted and not cancel.get("cancelled", false)
 
-func _start_chat(text: String) -> void:
+func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	if busy or text.strip_edges().is_empty(): return
 	var editor_settings = EditorInterface.get_editor_settings()
 	if editor_settings.has_setting("ai_assistant/general/enabled") and not editor_settings.get_setting("ai_assistant/general/enabled"):
 		_status("Activează asistentul din Editor Settings → AI Assistant → General.")
 		return
-	var profile = _current_profile().duplicate(true)
+	var profile = _profile_by_id(str(selection.get("profile", _current_profile().get("id", "")))).duplicate(true)
 	if profile.is_empty() or model_picker.selected < 0:
 		_status("Configurează un profil și selectează un model.")
 		return
-	if mode_picker.selected != 0 and not full_control.button_pressed:
+	if mode_picker.selected in [1, 2] and not full_control.button_pressed:
 		_status("Activează Control complet pentru modul ales sau revino la Analiză.")
 		return
 	busy = true
-	send_button.disabled = true
+	queue_paused = false
 	cancel = {"cancelled": false}
+	current_turn = Common.uid()
+	tools.turn_id = current_turn
+	current_origin = {"origin_label": str(profile["name"]) + " · " + str(selection.get("model", model_picker.get_item_metadata(model_picker.selected))), "profile_id": profile["id"], "model_id": selection.get("model", model_picker.get_item_metadata(model_picker.selected)), "turn_id": current_turn, "plan": mode_picker.selected == 3}
+	active_attachments = selection.get("attachments", pending_attachments).duplicate(true)
+	active_references = selection.get("references", pending_references).duplicate(true)
+	pending_attachments.clear()
+	pending_references.clear()
 	_refresh_secrets()
-	var user_message = {"role": "user", "content": _redact(text.strip_edges())}
+	var user_message = {"id": Common.uid(), "role": "user", "content": _redact(text.strip_edges()), "attachments": active_attachments, "turn_id": current_turn}
 	history.append(user_message)
 	_persist_history()
 	_display("user", str(user_message["content"]))
 	composer.clear()
 	_status("Pregătesc contextul și instrumentele…")
-	active_definitions = tools.definitions() + assets.definitions()
+	active_definitions = tools.definitions() + assets.definitions() + _agent_definitions()
 	mcp.tool_index.clear()
 	for server in config["mcp"]:
 		if cancel.get("cancelled", false): break
@@ -578,9 +655,9 @@ func _start_chat(text: String) -> void:
 			_finish_chat(str(access["error"]))
 			return
 		_refresh_secrets()
-	var visible = active_definitions.filter(func(definition: Dictionary) -> bool: return definition["risk"] == "read" or (mode_picker.selected != 0 and full_control.button_pressed))
-	var model = str(model_picker.get_item_metadata(model_picker.selected))
-	var effort = str(effort_picker.get_item_metadata(effort_picker.selected))
+	var visible = active_definitions.filter(func(definition: Dictionary) -> bool: return definition["risk"] == "read" or (mode_picker.selected in [1, 2] and full_control.button_pressed))
+	var model = str(selection.get("model", model_picker.get_item_metadata(model_picker.selected)))
+	var effort = str(selection.get("effort", effort_picker.get_item_metadata(effort_picker.selected)))
 	if profile.get("kind") == "companion":
 		await _companion_chat(profile, model, visible, effort)
 		_finish_chat("Oprit." if cancel.get("cancelled", false) else "Sarcină încheiată.")
@@ -602,6 +679,10 @@ func _start_chat(text: String) -> void:
 			return
 		var message: Dictionary = response["message"]
 		message = Common.parse_json(_redact(JSON.stringify(message)))
+		message.merge(current_origin, true)
+		message["id"] = Common.uid()
+		message["wire_source"] = str(profile["id"]) + ":" + model
+		_set_usage(response.get("usage", {}), profile, model)
 		history.append(message)
 		if not live["started"] and not str(message.get("content", "")).is_empty(): _display("assistant", str(message["content"]))
 		if response["calls"].is_empty():
@@ -612,7 +693,7 @@ func _start_chat(text: String) -> void:
 			var result = await _execute_call(str(call["name"]), call["arguments"])
 			var serialized = _redact(JSON.stringify(result))
 			if serialized.length() > 24000: serialized = JSON.stringify({"truncated": true, "preview": serialized.left(22000), "next": "Request a narrower inspection or file range."})
-			history.append({"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": serialized})
+			history.append({"id": Common.uid(), "role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": serialized, "attachments": result.get("images", []), "turn_id": current_turn})
 		_persist_history()
 	_finish_chat("Oprit." if cancel.get("cancelled", false) else "Limita de pași a fost atinsă. Verifică rezultatele înainte de continuare.")
 
@@ -621,10 +702,14 @@ func _context_messages() -> Array:
 	var snapshot = tools.execute("godot_project", {}, 0, false)
 	instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
 	instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "kind": profile.get("asset_kind", "image")}))
+	instructions += "\nProject guidance and explicit references:\n" + _reference_context()
+	if not compact_summary.is_empty(): instructions += "\nEarlier conversation summary:\n" + compact_summary
+	if mode_picker.selected == 3: instructions += "\nPLAN MODE: inspect only, return a concrete implementation plan. Never modify the project."
 	var settings = EditorInterface.get_editor_settings()
 	var history_limit = clampi(int(settings.get_setting("ai_assistant/general/history_messages")) if settings.has_setting("ai_assistant/general/history_messages") else 24, 2, 200)
-	var start = maxi(0, history.size() - history_limit)
-	while start > 0 and history[start].get("role") != "user": start -= 1
+	var start = maxi(compact_through, history.size() - history_limit)
+	start = clampi(start, 0, history.size())
+	while start > compact_through and start < history.size() and history[start].get("role") != "user": start -= 1
 	return [{"role": "system", "content": instructions}] + history.slice(start)
 
 func _execute_call(name: String, args: Dictionary) -> Dictionary:
@@ -639,7 +724,9 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	if cancel.get("cancelled", false): return Common.failure("Oprit.", "cancelled")
 	_status("Execută · " + name)
 	var result: Dictionary
-	if name.begins_with("mcp_"):
+	if name.begins_with("agent_") or name.begins_with("playtest_") or name in ["task_update", "memory_write"]:
+		result = await _agent_call(name, args)
+	elif name.begins_with("mcp_"):
 		result = await mcp.call_tool(name, args, mode_picker.selected, full_control.button_pressed, cancel)
 	elif name == "asset_generate":
 		var profile = _generation_profile(str(args.get("profile", "")))
@@ -651,13 +738,14 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		elif name == "asset_wait": result = await assets.wait_for_job(str(args["job"]), profile, cancel, int(args.get("max_seconds", 300)))
 		else: result = await assets.refresh(str(args["job"]), profile, cancel)
 	elif name == "asset_import": result = assets.import_job(str(args.get("job", "")), str(args.get("directory", "res://ai_assets")))
-	else: result = tools.execute(name, args, mode_picker.selected, full_control.button_pressed)
+	else: result = tools.execute(name, args, 0 if mode_picker.selected == 3 else mode_picker.selected, full_control.button_pressed)
 	_audit(name, args, result)
 	_refresh_lists()
 	return result
 
 func _audit(name: String, args: Dictionary, result: Dictionary) -> void:
-	journal.append({"time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": Common.parse_json(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
+	chat.activity(name + (" · finalizat" if result.get("ok", false) else " · eșuat"), _redact(JSON.stringify(result)).left(12000))
+	journal.append({"turn_id": current_turn, "time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": Common.parse_json(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
 	if journal.size() > 1000: journal = journal.slice(-1000)
 	Common.atomic_json(project_directory.path_join("journal.json"), journal)
 
@@ -671,8 +759,10 @@ func _finish_chat(message: String) -> void:
 	busy = false
 	send_button.disabled = false
 	_persist_history()
+	_render_history()
 	_refresh_lists()
-	_status(message)
+	_status(message + (" · %s mesaje în coadă" % queued.size() if not queued.is_empty() else ""))
+	if not queued.is_empty() and not queue_paused: _run_next.call_deferred()
 
 func _close_unanswered_calls() -> void:
 	var repaired = []
@@ -767,7 +857,7 @@ func _refresh_accounts() -> void:
 		var models = await accounts.companion_request(config["companion"], "/v1/accounts/" + str(account["id"]) + "/models")
 		var choices = []
 		if models.get("ok", false):
-			for model in models.get("json", {}).get("result", []): choices.append({"id": model["id"], "name": model.get("displayName", model["id"]), "efforts": model.get("reasoningEfforts", []), "source": "live"})
+			for model in models.get("json", {}).get("result", []): choices.append({"id": model["id"], "name": model.get("displayName", model["id"]), "efforts": model.get("reasoningEfforts", []), "source": "live", "context": model.get("contextWindowTokens", 0), "capabilities": {"vision": "image" in model.get("inputModalities", [])}})
 		account_profiles.append({"id": "account_" + str(account["id"]), "name": str(account.get("displayName", account["id"])), "account": account["id"], "kind": "companion", "models": choices})
 	_refresh_profiles()
 	_status("Starea conturilor a fost actualizată.")
@@ -787,7 +877,7 @@ func _logout_account() -> void:
 	await _refresh_accounts()
 
 func _companion_chat(profile: Dictionary, model: String, definitions: Array, effort: String) -> void:
-	var request = {"account": profile["account"], "model": model, "text": history[-1]["content"], "history": history.slice(0, -1).filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": message.get("content", "")}), "instructions": _context_messages()[0]["content"], "tools": definitions, "mode": "plan" if mode_picker.selected == 0 else "agent", "effort": effort}
+	var request = {"account": profile["account"], "model": model, "text": history[-1]["content"], "history": history.slice(0, -1).filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": message.get("content", "")}), "instructions": _context_messages()[0]["content"], "tools": definitions, "mode": "plan" if mode_picker.selected in [0, 3] else "agent", "effort": effort, "attachments": active_attachments}
 	var start = await accounts.companion_request(config["companion"], "/v1/turns", HTTPClient.METHOD_POST, request, cancel)
 	if not start.get("ok", false):
 		_status(str(start.get("error", "Companion indisponibil.")))
@@ -805,6 +895,7 @@ func _companion_chat(profile: Dictionary, model: String, definitions: Array, eff
 		var state: Dictionary = poll.get("json", {}).get("result", {})
 		for event in state.get("events", []):
 			cursor = maxi(cursor, int(event.get("sequence", 0)))
+			if event.get("kind") == "usage": _set_usage(event.get("usage", event), profile, model)
 			if event.get("kind") == "delta":
 				if not started:
 					_display("assistant", "")
@@ -818,7 +909,9 @@ func _companion_chat(profile: Dictionary, model: String, definitions: Array, eff
 		if state.get("status") in ["completed", "failed", "cancelled"]:
 			if state.get("status") == "completed":
 				var text = _redact(str(state.get("text", live_text)))
-				history.append({"role": "assistant", "content": text})
+				var message = {"id": Common.uid(), "role": "assistant", "content": text}
+				message.merge(current_origin, true)
+				history.append(message)
 				if not started: _display("assistant", text)
 				elif text.begins_with(live_text): transcript.add_text(text.substr(live_text.length()))
 				elif text != live_text: _display("assistant", text)
@@ -1081,3 +1174,420 @@ func _delete_automation() -> void:
 	config["automations"] = config["automations"].filter(func(item: Dictionary) -> bool: return item["id"] != id)
 	_clear_form("automation")
 	_save_config()
+
+func _process(_delta: float) -> void:
+	if speech != null: speech.poll(config.get("preferences", {}))
+
+func _selection() -> Dictionary:
+	return {"profile": _current_profile().get("id", ""), "model": model_picker.get_item_metadata(model_picker.selected) if model_picker != null and model_picker.selected >= 0 else "", "effort": effort_picker.get_item_metadata(effort_picker.selected) if effort_picker != null and effort_picker.selected >= 0 else ""}
+
+func _profile_by_id(id: String) -> Dictionary:
+	for profile in config["providers"] + account_profiles:
+		if profile["id"] == id: return profile
+	return {}
+
+func _choose(selection: Dictionary) -> void:
+	for index in range(profile_picker.item_count):
+		if profile_picker.get_item_metadata(index) == selection.get("profile"):
+			profile_picker.select(index)
+			_refresh_models()
+			for model_index in range(model_picker.item_count):
+				if model_picker.get_item_metadata(model_index) == selection.get("model"): model_picker.select(model_index)
+			_refresh_efforts()
+			break
+
+func _refresh_conversations() -> void:
+	if chat == null or conversations == null: return
+	var active = str(conversations.index["active"])
+	chat.title.text = str(conversations.item(active).get("title", "Chat"))
+	chat.refresh_history(conversations.listing(chat.search.text, chat.archived.button_pressed), active)
+
+func _render_history() -> void:
+	chat.clear_messages()
+	if history.size() > chat.loaded:
+		chat.button(chat.thread, "Încarcă mesajele anterioare", func() -> void: chat.loaded += 50; _render_history())
+	if history.is_empty():
+		chat.append_message("assistant", "Cu ce te ajut în proiect?\n\nDescrie o funcție, atașează un fișier sau cere un playtest. Alege serviciul și modelul din zona de scriere.")
+	for message in history.slice(maxi(0, history.size() - chat.loaded)):
+		if message.get("role") in ["user", "assistant"] and (not str(message.get("content", "")).is_empty() or not message.get("attachments", []).is_empty()):
+			transcript = chat.append_message(str(message["role"]), _redact(str(message.get("content", ""))), message)
+		elif message.get("role") == "tool": chat.activity(str(message.get("tool_name", "Operație")), _redact(str(message.get("content", ""))))
+
+func _send_or_queue(text: String = "") -> void:
+	if text.is_empty(): text = composer.text
+	if _slash(text): return
+	if text.strip_edges().is_empty(): return
+	var selection = _selection()
+	selection["attachments"] = pending_attachments.duplicate(true)
+	selection["references"] = pending_references.duplicate(true)
+	if busy:
+		queued.append({"text": text, "selection": selection})
+		composer.clear()
+		pending_attachments.clear()
+		pending_references.clear()
+		_status("Mesaj în coadă · " + str(_profile_by_id(str(selection["profile"])).get("name", "")))
+	else: _start_chat(text, selection)
+
+func _run_next() -> void:
+	if busy or queued.is_empty(): return
+	queue_paused = false
+	var next: Dictionary = queued.pop_front()
+	_start_chat(str(next["text"]), next["selection"])
+
+func _chat_action(name: String, args: Dictionary) -> void:
+	match name:
+		"send": _send_or_queue()
+		"stop": _stop()
+		"settings": open_settings()
+		"new": _new_conversation()
+		"history": _refresh_conversations()
+		"model": _choose(args)
+		"voice": speech.start(config.get("preferences", {}))
+		"attach": _pick_attachment()
+		"open":
+			if busy:
+				_status("Oprește execuția înainte de schimbarea conversației.")
+				return
+			_persist_history()
+			if conversations.select(str(args["id"])):
+				history = conversations.load_active()
+				_load_summary()
+				pending_references.clear()
+				pending_attachments.clear()
+				_choose(conversations.item(str(args["id"])).get("selection", {}))
+				_render_history()
+				_refresh_conversations()
+		"favorite", "archive", "rename", "delete", "export": _history_action(name)
+		"copy":
+			for message in history:
+				if message.get("id") == args.get("message"): DisplayServer.clipboard_set(str(message.get("content", "")))
+		"fork":
+			if busy: return
+			_persist_history()
+			conversations.fork_at(str(args["message"]))
+			history = conversations.load_active()
+			_render_history()
+			_refresh_conversations()
+		"retry": _send_or_queue("Continuă folosind starea actuală a proiectului și rezultatele deja obținute. Verifică înainte de a repeta modificări.")
+		"apply_plan":
+			if busy: return
+			mode_picker.select(1)
+			_send_or_queue("Aplică planul propus anterior, verificând mai întâi starea actuală a proiectului.")
+		"changes": _show_changes(str(args.get("turn", "")))
+
+func _history_action(action: String) -> void:
+	if busy: return
+	var id = str(conversations.index["active"])
+	var entry = conversations.item(id)
+	match action:
+		"favorite": conversations.update(id, {"favorite": not entry.get("favorite", false)})
+		"archive": conversations.update(id, {"archived": not entry.get("archived", false)})
+		"export":
+			DisplayServer.clipboard_set(conversations.markdown())
+			_status("Conversația Markdown a fost copiată în clipboard.")
+		"rename":
+			var dialog = ConfirmationDialog.new()
+			dialog.title = "Redenumește conversația"
+			var input = LineEdit.new()
+			input.text = str(entry["title"])
+			input.custom_minimum_size.x = 260
+			dialog.add_child(input)
+			dialog.confirmed.connect(func() -> void: conversations.update(id, {"title": input.text.left(120)}); _refresh_conversations(); dialog.queue_free())
+			dialog.canceled.connect(dialog.queue_free)
+			add_child(dialog)
+			dialog.popup_centered()
+		"delete":
+			if not entry.get("archived", false):
+				_status("Arhivează conversația înainte de ștergere.")
+				return
+			var dialog = ConfirmationDialog.new()
+			dialog.dialog_text = "Ștergi definitiv conversația arhivată de pe acest dispozitiv?"
+			dialog.confirmed.connect(func() -> void: conversations.remove(id); history = conversations.load_active(); _render_history(); _refresh_conversations(); dialog.queue_free())
+			dialog.canceled.connect(dialog.queue_free)
+			add_child(dialog)
+			dialog.popup_centered()
+	_refresh_conversations()
+
+func _search_settings(query: String) -> void:
+	settings_navigation.clear()
+	for index in range(settings_tabs.get_tab_count()):
+		var page = settings_tabs.get_tab_control(index)
+		if query.is_empty() or query.to_lower() in _settings_labels(page).to_lower():
+			settings_navigation.add_item(str(page.name))
+			settings_navigation.set_item_metadata(settings_navigation.item_count - 1, index)
+	if not query.is_empty() and settings_navigation.item_count:
+		settings_navigation.select(0)
+		settings_tabs.current_tab = int(settings_navigation.get_item_metadata(0))
+
+func _settings_labels(node: Node) -> String:
+	var text = str(node.name) + " "
+	if node is Label or node is Button: text += str(node.text) + " "
+	for child in node.get_children(): text += _settings_labels(child)
+	return text
+
+func _save_preferences() -> void:
+	var prefs: Dictionary = config.get("preferences", {})
+	for group in ["voice", "playtesting"]:
+		for key in forms[group]:
+			var control: Variant = forms[group][key]
+			var prefix = "voice_" if group == "voice" else "play_"
+			if key == "key" and control is LineEdit:
+				if not control.text.is_empty() and not vault.store("transcription", control.text.strip_edges()):
+					_status("Cheia de transcriere nu a putut fi salvată.")
+					return
+				control.clear()
+			elif control is LineEdit: prefs[prefix + key] = control.text.strip_edges()
+			elif control is OptionButton: prefs[prefix + key] = control.selected
+			elif control is CheckBox: prefs[prefix + key] = control.button_pressed
+	config["preferences"] = prefs
+	var settings = EditorInterface.get_editor_settings()
+	settings.set_setting("ai_assistant/general/max_agent_steps", clampi(int(forms["general"]["max_steps"].text), 1, 100))
+	settings.set_setting("ai_assistant/general/enabled", forms["general"]["enabled"].button_pressed)
+	_save_config()
+	_status("Preferințe salvate.")
+
+func _save_memories() -> void:
+	if Common.atomic_json(project_directory.path_join("memories.json"), {"text": _redact(memory_editor.text).left(32000)}) == OK: _status("Memoriile proiectului au fost salvate.")
+
+func _reference_context() -> String:
+	var output = ""
+	var paths = ["res://AGENTS.md"]
+	for reference in active_references:
+		var path = str(reference)
+		if not Common.project_path(path).is_empty():
+			paths.append(path)
+			var parent = path.get_base_dir()
+			while parent.begins_with("res://") and parent != "res://":
+				var instructions = parent.path_join("AGENTS.md")
+				if not instructions in paths: paths.append(instructions)
+				var next = parent.get_base_dir()
+				if next == parent: break
+				parent = next
+	for path in paths:
+		if output.length() > 60000: break
+		var safe = Common.project_path(str(path))
+		if not safe.is_empty() and FileAccess.file_exists(safe):
+			var file = FileAccess.open(safe, FileAccess.READ)
+			if file != null and file.get_length() <= 1024 * 1024: output += "\n<reference path=" + str(path) + ">\n" + _redact(file.get_as_text().left(16000)) + "\n</reference>"
+	var memories = str(Common.read_json(project_directory.path_join("memories.json"), {}).get("text", ""))
+	return output + "\nProject memories:\n" + _redact(memories)
+
+func _composer_hints() -> void:
+	chat.reference_label.text = " · ".join(pending_references) + (" · %s imagini" % pending_attachments.size() if not pending_attachments.is_empty() else "")
+	var text = composer.text
+	if text.ends_with("@") or text.ends_with("$") or text == "/": _reference_picker("files" if text.ends_with("@") else ("nodes" if text.ends_with("$") else "commands"))
+
+func _reference_picker(kind: String) -> void:
+	var dialog = AcceptDialog.new()
+	dialog.title = {"files": "Fișiere și directoare", "nodes": "Noduri din scena curentă", "commands": "Comenzi"}[kind]
+	var body = VBoxContainer.new()
+	dialog.add_child(body)
+	var query = LineEdit.new()
+	query.placeholder_text = "Caută…"
+	body.add_child(query)
+	var list = ItemList.new()
+	list.custom_minimum_size = Vector2(260, 280)
+	body.add_child(list)
+	var entries: Array = []
+	if kind == "files": entries = tools.execute("godot_files", {}, 0, false).get("result", [])
+	elif kind == "nodes":
+		var root = EditorInterface.get_edited_scene_root()
+		if root != null: _node_references(root, root, entries)
+	else:
+		entries = ["/new", "/settings", "/plan", "/ask", "/agent", "/compact", "/memory", "/playtest", "/image", "/3d", "/resume", "/steer"]
+		for automation in config["automations"]: entries.append("/task " + str(automation["name"]))
+	var fill = func(filter: String) -> void:
+		list.clear()
+		for entry in entries:
+			if filter.is_empty() or filter.to_lower() in str(entry).to_lower(): list.add_item(str(entry))
+	fill.call("")
+	query.text_changed.connect(fill)
+	var accept = func(index: int) -> void:
+		var value = list.get_item_text(index)
+		if kind == "commands": composer.text = value + " "
+		elif kind == "files":
+			if not value in pending_references: pending_references.append(value)
+			composer.text = composer.text.trim_suffix("@")
+		else:
+			composer.text = composer.text.trim_suffix("$") + " [nod: " + value + "] "
+			var root = EditorInterface.get_edited_scene_root()
+			if root != null and not root.scene_file_path.is_empty() and not root.scene_file_path in pending_references: pending_references.append(root.scene_file_path)
+		_composer_hints()
+		dialog.queue_free()
+	list.item_activated.connect(accept)
+	dialog.confirmed.connect(func() -> void:
+		var selected = list.get_selected_items()
+		if not selected.is_empty(): accept.call(selected[0]))
+	dialog.canceled.connect(dialog.queue_free)
+	add_child(dialog)
+	dialog.popup_centered_clamped(Vector2i(620, 430), 0.9)
+	query.grab_focus()
+
+func _node_references(node: Node, root: Node, output: Array) -> void:
+	if output.size() >= 500: return
+	output.append(str(root.get_path_to(node)))
+	for child in node.get_children(): _node_references(child, root, output)
+
+func _pick_attachment() -> void:
+	var picker = EditorFileDialog.new()
+	picker.access = EditorFileDialog.ACCESS_FILESYSTEM
+	picker.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
+	picker.filters = PackedStringArray(["*.png,*.jpg,*.jpeg,*.webp ; Imagine", "*.gd,*.tscn,*.tres,*.txt,*.md,*.json ; Fișier de proiect"])
+	picker.file_selected.connect(func(path: String) -> void:
+		if path.get_extension().to_lower() in ["png", "jpg", "jpeg", "webp"]:
+			if pending_attachments.size() >= 4:
+				_status("Poți atașa maximum patru imagini pe mesaj.")
+			else:
+				var file = FileAccess.open(path, FileAccess.READ)
+				if file == null or file.get_length() > 32 * 1024 * 1024:
+					_status("Imaginea nu poate fi citită sau depășește 32 MB.")
+				else:
+					var image = Image.new()
+					if image.load(path) == OK:
+						while image.get_width() > 1536 or image.get_height() > 1536: image.resize(maxi(1, image.get_width() / 2), maxi(1, image.get_height() / 2))
+						var bytes = image.save_png_to_buffer()
+						while bytes.size() > 2 * 1024 * 1024 and image.get_width() > 256:
+							image.resize(maxi(1, image.get_width() / 2), maxi(1, image.get_height() / 2))
+							bytes = image.save_png_to_buffer()
+						if bytes.size() <= 2 * 1024 * 1024: pending_attachments.append({"name": path.get_file(), "mimeType": "image/png", "data": Marshalls.raw_to_base64(bytes)})
+		else:
+			var relative = ProjectSettings.localize_path(path)
+			if not Common.project_path(relative).is_empty(): pending_references.append(relative)
+			else: _status("Fișierele text se atașează din proiectul curent.")
+		_composer_hints()
+		picker.queue_free())
+	picker.canceled.connect(picker.queue_free)
+	add_child(picker)
+	picker.popup_centered_ratio(0.85)
+
+func _slash(text: String) -> bool:
+	if not text.begins_with("/"): return false
+	var command = text.get_slice(" ", 0)
+	var argument = text.substr(command.length()).strip_edges()
+	composer.clear()
+	match command:
+		"/new": _new_conversation()
+		"/settings": open_settings()
+		"/plan": mode_picker.select(3); composer.text = argument
+		"/ask": mode_picker.select(0); composer.text = argument
+		"/agent": mode_picker.select(1); composer.text = argument
+		"/memory": open_settings("agent")
+		"/image", "/3d": open_settings("generation")
+		"/resume": _run_next()
+		"/steer":
+			if busy:
+				_stop()
+				queued.push_front({"text": argument, "selection": _selection()})
+				_resume_after_stop.call_deferred()
+			else: _send_or_queue(argument)
+		"/task":
+			for automation in config["automations"]:
+				if automation["name"] == argument: _send_or_queue(str(automation["prompt"]))
+		"/compact": _compact()
+		"/playtest": _send_or_queue("Folosește subagentul Playtest pentru: " + (argument if not argument.is_empty() else "verifică scena curentă și raportează cu capturi și pași"))
+		_: _status("Comandă necunoscută. Tastează / pentru listă.")
+	return true
+
+func _resume_after_stop() -> void:
+	while busy: await get_tree().process_frame
+	_run_next()
+
+func _compact() -> void:
+	if busy or history.is_empty(): return
+	var profile = _current_profile()
+	if profile.is_empty() or model_picker.selected < 0: return
+	var cancel_compact = {"cancelled": false}
+	busy = true
+	cancel = cancel_compact
+	var messages = _context_messages()
+	messages.append({"role": "user", "content": "Summarize the work, actual changes, unresolved issues and user preferences for continuing this conversation. Do not use tools or claim new work."})
+	var model = str(model_picker.get_item_metadata(model_picker.selected))
+	var result: Dictionary
+	if profile.get("kind") == "companion":
+		var created = await accounts.companion_request(config["companion"], "/v1/turns", HTTPClient.METHOD_POST, {"account": profile["account"], "model": model, "text": "Summarize the earlier conversation for continuation. No tools.", "instructions": str(messages[0]["content"]), "history": history.filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": str(message.get("content", ""))}), "tools": [], "mode": "plan"})
+		if created.get("ok", false):
+			var id = str(created["json"]["result"]["id"])
+			while not cancel_compact.get("cancelled", false):
+				var response = await accounts.companion_request(config["companion"], "/v1/turns/" + id)
+				var state = response.get("json", {}).get("result", {})
+				if not response.get("ok", false) or state.get("status") in ["completed", "failed", "cancelled"]:
+					result = {"ok": state.get("status") == "completed", "message": {"content": state.get("text", "")}, "error": state.get("error", response.get("error", "Compactare nereușită."))}
+					break
+				await get_tree().create_timer(0.2).timeout
+			if cancel_compact.get("cancelled", false): await accounts.companion_request(config["companion"], "/v1/turns/" + id + "/cancel", HTTPClient.METHOD_POST, {})
+		else: result = created
+	else:
+		var access = await accounts.ensure_access(profile, cancel_compact) if profile.get("kind") == "siwc" else {"ok": true}
+		result = await providers.complete(profile, messages, [], model, "", cancel_compact) if access.get("ok", false) else access
+	if result.get("ok", false):
+		compact_summary = _redact(str(result["message"]["content"]))
+		compact_through = history.size()
+		Common.atomic_json(project_directory.path_join("summary_" + str(conversations.index["active"]) + ".json"), {"text": compact_summary, "through": history.size()})
+	_finish_chat("Context compactat; mesajele originale rămân în istoric." if result.get("ok", false) else str(result.get("error", "Compactare nereușită.")))
+
+func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
+	var input = int(usage.get("usedTokens", usage.get("input_tokens", usage.get("prompt_tokens", usage.get("inputTokens", 0)))))
+	var output = int(usage.get("output_tokens", usage.get("completion_tokens", usage.get("outputTokens", 0))))
+	var limit = int(usage.get("contextWindowTokens", 0))
+	for item in profile.get("models", []):
+		if item["id"] == model: limit = int(item.get("context", 0))
+	chat.context_label.text = "Context: %s%s · ieșire %s tokeni" % [str(input) if input else "—", (" / %s" % limit) if limit else "", str(output) if output else "—"]
+
+func _agent_definitions() -> Array:
+	return [Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Common.tool("task_update", "Publish the current task checklist.", {"tasks": {"type": "array", "items": {"type": "string"}}}, ["tasks"]), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
+
+func _agent_call(name: String, args: Dictionary) -> Dictionary:
+	match name:
+		"agent_spawn":
+			var kind = str(args.get("kind", "Explore"))
+			var profile = _profile_by_id(str(current_origin.get("profile_id", "")))
+			var model = str(current_origin.get("model_id", ""))
+			if kind == "Playtest":
+				var prefs = config.get("preferences", {})
+				if not str(prefs.get("play_profile", "")).is_empty(): profile = _profile_by_id(str(prefs["play_profile"]))
+				if not str(prefs.get("play_model", "")).is_empty(): model = str(prefs["play_model"])
+				var vision = not str(prefs.get("play_profile", "")).is_empty() and not str(prefs.get("play_model", "")).is_empty()
+				for choice in profile.get("models", []):
+					if choice["id"] == model: vision = vision or choice.get("capabilities", {}).get("vision", false)
+				if not vision: return Common.failure("Alege explicit profilul și modelul vizual în Setări → Playtesting.")
+			if profile.is_empty(): return Common.failure("Profil inexistent.")
+			return agent_jobs.spawn(str(args.get("task", "")), kind, profile, model, _reference_context(), current_turn)
+		"agent_wait": return await agent_jobs.wait_for(str(args.get("id", "")), cancel)
+		"agent_cancel": agent_jobs.stop(str(args.get("id", ""))); return Common.success("Oprire solicitată.")
+		"task_update":
+			tasks = args.get("tasks", [])
+			chat.tasks_label.text = _redact(" · ".join(tasks)).left(2000)
+			return Common.success(tasks)
+		"memory_write":
+			memory_editor.text = _redact(str(args.get("text", ""))).left(32000)
+			_save_memories()
+			return Common.success("Memorie actualizată.")
+	return Common.failure("Instrument necunoscut.")
+
+func _show_changes(turn: String) -> void:
+	var dialog = AcceptDialog.new()
+	dialog.title = "Modificările execuției"
+	var body = VBoxContainer.new()
+	dialog.add_child(body)
+	var text = TextEdit.new()
+	text.editable = false
+	text.custom_minimum_size = Vector2(260, 280)
+	text.text = _redact(tools.diff_turn(turn))
+	body.add_child(text)
+	_button(body, "Restaurează modificările acestei execuții", func() -> void:
+		if busy: return
+		var result = tools.restore_turn(turn)
+		_status(JSON.stringify(result))
+		dialog.hide())
+	dialog.confirmed.connect(dialog.queue_free)
+	dialog.canceled.connect(dialog.queue_free)
+	add_child(dialog)
+	dialog.popup_centered_clamped(Vector2i(740, 540), 0.92)
+
+func _load_summary() -> void:
+	var saved: Dictionary = Common.read_json(project_directory.path_join("summary_" + str(conversations.index["active"]) + ".json"), {})
+	compact_summary = str(saved.get("text", ""))
+	compact_through = clampi(int(saved.get("through", 0)), 0, history.size())
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED and speech != null: speech.stop()

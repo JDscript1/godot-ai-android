@@ -81,6 +81,7 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 		if item.has("supportedGenerationMethods") and not "generateContent" in item["supportedGenerationMethods"]: continue
 		if str(item.get("type", "")) in ["embedding", "embeddings"]: continue
 		var capabilities: Dictionary = item.get("capabilities", {}).duplicate(true) if item.get("capabilities", {}) is Dictionary else {}
+		if "image" in item.get("input_modalities", item.get("inputModalities", [])): capabilities["vision"] = true
 		var supported: Dictionary = item.get("supported_parameters", {}) if item.get("supported_parameters", {}) is Dictionary else {}
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
@@ -94,6 +95,7 @@ func ollama_capabilities(profile: Dictionary, model: String, cancel: Dictionary 
 func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable()) -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
+	messages = normalize_context(profile, model, messages)
 	var kind = str(profile.get("kind", "chat"))
 	var wire = build_request(kind, messages, tools, model, effort)
 	var path = str(wire["path"])
@@ -117,7 +119,7 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 		if arguments is String: arguments = Common.parse_json(arguments)
 		if not arguments is Dictionary: return Common.failure("Modelul a produs argumente JSON invalide.", "invalid_tool_arguments")
 		calls.append({"id": str(item.get("id", Common.uid())), "name": str(item.get("name", "")), "arguments": arguments})
-	var message = {"role": "assistant", "content": str(collected["text"]), "tool_calls": calls}
+	var message = {"role": "assistant", "content": str(collected["text"]), "tool_calls": calls, "wire_source": str(profile.get("id", "")) + ":" + model}
 	if not str(collected["reasoning"]).is_empty(): message["reasoning_content"] = collected["reasoning"]
 	if not collected["items"].is_empty(): message["provider_items"] = collected["items"]
 	if not collected["blocks"].is_empty(): message["provider_blocks"] = collected["blocks"].values()
@@ -130,6 +132,7 @@ func _credential_error(profile: Dictionary) -> String:
 	return ""
 
 static func build_request(kind: String, messages: Array, tools: Array, model: String, effort: String = "") -> Dictionary:
+	messages = expand_tool_images(messages)
 	var system = []
 	for message in messages:
 		if message.get("role") == "system": system.append(str(message.get("content", "")))
@@ -148,7 +151,7 @@ static func build_request(kind: String, messages: Array, tools: Array, model: St
 			elif role == "assistant" and message.has("provider_items"):
 				input.append_array(message["provider_items"])
 			else:
-				input.append({"role": role, "content": str(message.get("content", ""))})
+				input.append({"role": role, "content": parts(message, "responses") if not message.get("attachments", []).is_empty() and role == "user" else str(message.get("content", ""))})
 				for call in message.get("tool_calls", []): input.append({"type": "function_call", "call_id": call["id"], "name": call["name"], "arguments": JSON.stringify(call["arguments"])})
 		body["input"] = input
 		if not tools.is_empty():
@@ -172,7 +175,7 @@ static func build_request(kind: String, messages: Array, tools: Array, model: St
 			elif message.has("provider_blocks"):
 				content = message["provider_blocks"].duplicate(true)
 			else:
-				if not str(message.get("content", "")).is_empty(): content.append({"type": "text", "text": str(message["content"])})
+				content.append_array(parts(message, "anthropic"))
 				for call in message.get("tool_calls", []): content.append({"type": "tool_use", "id": call["id"], "name": call["name"], "input": call["arguments"]})
 			if not history.is_empty() and history[-1]["role"] == role: history[-1]["content"].append_array(content)
 			else: history.append({"role": role, "content": content})
@@ -190,6 +193,7 @@ static func build_request(kind: String, messages: Array, tools: Array, model: St
 			if role == "tool": parts.append({"functionResponse": {"name": message.get("tool_name", ""), "response": {"result": str(message["content"])}}})
 			elif message.has("provider_items"): parts = message["provider_items"].duplicate(true)
 			else:
+				parts.append_array(image_parts(message, "gemini"))
 				if not str(message.get("content", "")).is_empty(): parts.append({"text": str(message["content"])})
 				for call in message.get("tool_calls", []): parts.append({"functionCall": {"name": call["name"], "args": call["arguments"]}})
 			body["contents"].append({"role": "model" if role == "assistant" else "user", "parts": parts})
@@ -200,7 +204,7 @@ static func build_request(kind: String, messages: Array, tools: Array, model: St
 	else:
 		body["messages"] = []
 		for message in messages:
-			var wire = {"role": message["role"], "content": str(message.get("content", ""))}
+			var wire = {"role": message["role"], "content": parts(message, "chat") if not message.get("attachments", []).is_empty() else str(message.get("content", ""))}
 			if message.get("role") == "tool": wire["tool_call_id"] = message["tool_call_id"]
 			if message.has("reasoning_content"): wire["reasoning_content"] = message["reasoning_content"]
 			if not message.get("tool_calls", []).is_empty():
@@ -284,3 +288,46 @@ static func consume_event(kind: String, event: Dictionary, state: Dictionary) ->
 			if choice.get("finish_reason") != null:
 				state["terminal"] = true
 				state["finish"] = str(choice["finish_reason"])
+
+static func normalize_context(profile: Dictionary, model: String, messages: Array) -> Array:
+	var result = messages.duplicate(true)
+	var source = str(profile.get("id", "")) + ":" + model
+	for message in result:
+		if message.get("wire_source", "") != source:
+			for key in ["provider_items", "provider_blocks", "reasoning_content"]: message.erase(key)
+	return result
+
+static func expand_tool_images(messages: Array) -> Array:
+	var result = []
+	var pending = []
+	for original in messages:
+		var message = original.duplicate(true)
+		if message.get("role") != "tool" and not pending.is_empty():
+			result.append({"role": "user", "content": "Actual tool screenshots:", "attachments": pending})
+			pending = []
+		if message.get("role") == "tool":
+			pending.append_array(message.get("attachments", []))
+			message.erase("attachments")
+		result.append(message)
+	if not pending.is_empty(): result.append({"role": "user", "content": "Actual tool screenshots:", "attachments": pending})
+	return result
+
+static func image_parts(message: Dictionary, kind: String) -> Array:
+	var output = []
+	for image in message.get("attachments", []).slice(0, 4):
+		var data = str(image.get("data", ""))
+		var mime = str(image.get("mimeType", "image/png"))
+		if data.is_empty() or data.length() > 2800000 or mime not in ["image/png", "image/jpeg", "image/webp"]: continue
+		match kind:
+			"responses": output.append({"type": "input_image", "image_url": "data:" + mime + ";base64," + data})
+			"anthropic": output.append({"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}})
+			"gemini": output.append({"inlineData": {"mimeType": mime, "data": data}})
+			_: output.append({"type": "image_url", "image_url": {"url": "data:" + mime + ";base64," + data}})
+	return output
+
+static func parts(message: Dictionary, kind: String) -> Array:
+	var output = []
+	var text = str(message.get("content", ""))
+	if not text.is_empty(): output.append({"type": "input_text" if kind == "responses" else "text", "text": text})
+	output.append_array(image_parts(message, kind))
+	return output

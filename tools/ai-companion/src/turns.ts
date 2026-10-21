@@ -19,6 +19,8 @@ export const turnSchema = z.object({
   instructions: z.string().max(100000).default(""),
   tools: z.array(definitionSchema).max(500),
   mode: z.enum(["plan", "agent"]),
+  child: z.boolean().default(false),
+  attachments: z.array(z.object({ name: z.string().max(240), mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]), data: z.string().min(1).max(2800000).regex(/^[A-Za-z0-9+/]*={0,2}$/) })).max(4).default([]),
   effort: z.union([reasoningEffortSchema, z.literal("")]).optional(),
 });
 
@@ -27,6 +29,7 @@ type PendingTool = { resolve: (value: unknown) => void; reject: (error: Error) =
 type Turn = {
   id: string;
   account: string;
+  child: boolean;
   status: "running" | "completed" | "failed" | "cancelled";
   controller: AbortController;
   events: Event[];
@@ -40,18 +43,20 @@ type Turn = {
 export class TurnManager {
   readonly #turns = new Map<string, Turn>();
 
-  constructor(readonly accounts: Map<string, AccountRuntime>, readonly toolTimeoutMs = 300000) {}
+  constructor(readonly accounts: Map<string, AccountRuntime>, readonly toolTimeoutMs = 300000, readonly createRuntime?: (id: string) => AccountRuntime) {}
 
   start(raw: unknown): { id: string } {
     const input = turnSchema.parse(raw);
-    const account = this.accounts.get(input.account);
+    const parent = this.accounts.get(input.account);
+    if (input.child && !this.createRuntime) throw new Error("Independent child sessions unavailable");
+    const account = input.child ? this.createRuntime!(input.account) : parent;
     if (!account) throw new Error("Account runtime unavailable");
     this.prune();
-    if ([...this.#turns.values()].some(turn => turn.status === "running" && turn.account === input.account)) {
+    if ([...this.#turns.values()].some(turn => turn.status === "running" && turn.account === input.account && turn.child === input.child)) {
       throw new Error("This account already has an active turn");
     }
     if ([...this.#turns.values()].filter(turn => turn.status === "running").length >= 4) throw new Error("Too many active turns");
-    const turn: Turn = { id: randomUUID(), account: input.account, status: "running", controller: new AbortController(), events: [], text: "", error: "", createdAt: Date.now(), pending: new Map(), completedTools: new Set() };
+    const turn: Turn = { id: randomUUID(), account: input.account, child: input.child, status: "running", controller: new AbortController(), events: [], text: "", error: "", createdAt: Date.now(), pending: new Map(), completedTools: new Set() };
     const policy = new PolicyEngine({ allowProjectWrites: true, allowExecution: true, allowExternalReads: true, allowExternalWrites: true, allowDestructive: true });
     const broker = new ToolBroker(policy, input.mode === "plan" ? ["read"] : undefined);
     for (const definition of input.tools) {
@@ -71,6 +76,8 @@ export class TurnManager {
       mode: input.mode,
       text: input.text,
       history: input.history,
+      attachments: input.attachments,
+      onContext: usage => { this.#event(turn, { kind: "usage", ...usage }); },
       skillInstructions: input.instructions,
       broker,
       signal: turn.controller.signal,
@@ -89,6 +96,7 @@ export class TurnManager {
         pending.reject(new Error("Turn ended"));
       }
       turn.pending.clear();
+      if (input.child) void account.close();
     });
     return { id: turn.id };
   }

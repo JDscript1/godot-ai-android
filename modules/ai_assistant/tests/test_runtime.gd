@@ -32,7 +32,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "transport", "providers", "editor_tools", "mcp", "assets", "accounts", "panel"]:
+	for name in ["common", "transport", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "chat_view", "agent_jobs", "speech", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -41,7 +41,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "transport": "Transport", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts"}
+		var bindings = {"common": "Common", "transport": "Transport", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "chat_view": "ChatView", "agent_jobs": "AgentJobs", "speech": "Speech"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -99,6 +99,7 @@ func _run() -> void:
 	panel._close_unanswered_calls()
 	check(panel.history[-1].get("tool_call_id") == "interrupted" and "cancelled" in str(panel.history[-1].get("content", "")), "Interrupted tool loops can be resumed")
 	panel.free()
+	_new_feature_tests()
 	var node = Node.new()
 	root.add_child(node)
 	var transport = scripts["transport"].new(node)
@@ -193,3 +194,45 @@ func _network_tests(node: Node) -> void:
 	if bad_submit.get("ok", false):
 		var missing = await assets.refresh(str(bad_submit["result"]["id"]), bad_profile, {})
 		check(missing.get("code") == "missing_artifact", "Completed workflows with wrong output bindings fail explicitly")
+
+func _new_feature_tests() -> void:
+	var common = scripts["common"]
+	var directory = OS.get_user_data_dir().path_join("conversation_" + common.uid())
+	common.atomic_json(directory.path_join("history.json"), [{"id": "legacy", "role": "user", "content": "Original"}])
+	var store = scripts["conversations"].new()
+	store.configure(directory)
+	var original_id = str(store.index["active"])
+	check(store.load_active().size() == 1, "Migrate legacy conversation without losing messages")
+	store.configure(directory)
+	check(store.index["items"].size() == 1 and str(store.index["active"]) == original_id, "Conversation migration is idempotent")
+	check(FileAccess.file_exists(directory.path_join("history.json")), "Migration preserves original history file")
+	var image = Image.create(2, 2, false, Image.FORMAT_RGB8)
+	image.fill(Color.RED)
+	var data = Marshalls.raw_to_base64(image.save_png_to_buffer())
+	store.save([{"id": "image", "role": "user", "content": "Image", "attachments": [{"mimeType": "image/png", "data": data}]}], {"profile": "local", "model": "vision"})
+	check(store.load_active()[0]["attachments"][0]["data"] == data, "Attachment cache survives conversation reload")
+	check(not "data" in common.read_json(store._path(original_id), {})["messages"][0]["attachments"][0], "History JSON references image cache instead of duplicating base64")
+	var fork_id = store.fork_at("image")
+	check(fork_id != original_id and store.load_active().size() == 1 and store.index["items"].size() == 2, "Fork preserves the original conversation")
+	store.update(fork_id, {"title": "Local vision", "favorite": true})
+	check(store.listing("VISION").size() == 1, "Conversation search ignores case")
+	store.remove(fork_id)
+	check(not store.item(fork_id).is_empty(), "Only archived conversations can be deleted")
+	store.update(fork_id, {"archived": true})
+	check(store.listing("", true).size() == 1, "Archive and active history have separate lists")
+	var provider = scripts["providers"]
+	var internals = [{"role": "assistant", "content": "Public", "wire_source": "a:m", "reasoning_content": "private", "provider_items": [{"type": "reasoning"}], "provider_blocks": [{"type": "thinking"}]}]
+	var normalized = provider.normalize_context({"id": "b"}, "m", internals)
+	check(not normalized[0].has("reasoning_content") and not normalized[0].has("provider_blocks") and not normalized[0].has("provider_items"), "Provider switching strips foreign reasoning and signed blocks")
+	check(provider.normalize_context({"id": "a"}, "m", internals)[0].has("reasoning_content"), "Same-model tool loops retain required reasoning")
+	var multimodal = [{"role": "user", "content": "Describe", "attachments": [{"mimeType": "image/png", "data": data}]}]
+	check(provider.build_request("chat", multimodal, [], "v")["body"]["messages"][0]["content"][1]["type"] == "image_url", "Chat image request uses image_url")
+	check(provider.build_request("responses", multimodal, [], "v")["body"]["input"][0]["content"][1]["type"] == "input_image", "Responses image request uses input_image")
+	check(provider.build_request("anthropic", multimodal, [], "v")["body"]["messages"][0]["content"][1]["source"]["type"] == "base64", "Anthropic image request uses base64 source")
+	check(provider.build_request("gemini", multimodal, [], "v")["body"]["contents"][0]["parts"][0].has("inlineData"), "Gemini image request uses inlineData")
+	var pcm = PackedByteArray()
+	pcm.resize(192000)
+	var wav = scripts["speech"].wav_16k(pcm, 48000, 2)
+	check(wav.slice(0, 4).get_string_from_ascii() == "RIFF" and wav.decode_u32(24) == 16000 and wav.decode_u16(22) == 1 and wav.size() == 32044, "Voice resampling creates valid mono 16kHz one-second WAV")
+	var tools = scripts["editor_tools"].new()
+	check(tools.execute("godot_write_file", {"path": "res://blocked.txt", "text": "x"}, 3, true).get("code") == "permission_denied", "Plan mode independently denies mutations")

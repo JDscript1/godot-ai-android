@@ -118,3 +118,34 @@ it("relays stdio MCP messages without a shell and preserves caller request IDs",
     await session.request({ jsonrpc: "2.0", method: "notifications/initialized" });
   } finally { session.close(); }
 });
+
+it("runs isolated children while a parent awaits tools, relays attachments and context, and closes children", async () => {
+  const parent = new FakeAccount();
+  let childInput: AccountChatInput | undefined;
+  let closed = false;
+  const manager = new TurnManager(new Map([["claude", parent]]), 1000, () => ({
+    ...parent, id: parent.id, providerId: parent.providerId, displayName: parent.displayName, kind: parent.kind,
+    status: parent.status.bind(parent), startLogin: parent.startLogin.bind(parent), logout: parent.logout.bind(parent), listModels: parent.listModels.bind(parent),
+    async chat(value) { childInput = value; await value.onContext?.({ usedTokens: 321, contextWindowTokens: 8192 }); return "child findings"; },
+    close() { closed = true; },
+  }));
+  const main = manager.start(input);
+  await pause();
+  expect(manager.poll(main.id, 0)?.status).toBe("running");
+  const child = manager.start({ ...input, child: true, attachments: [{ name: "frame.png", mimeType: "image/png", data: "aW1hZ2U=" }] });
+  await pause();
+  expect(childInput?.sessionId).not.toBe(main.id);
+  expect(childInput?.attachments?.[0]?.data).toBe("aW1hZ2U=");
+  expect(manager.poll(child.id, 0)?.status).toBe("completed");
+  expect(manager.poll(child.id, 0)?.events).toEqual([expect.objectContaining({ kind: "usage", usedTokens: 321 })]);
+  expect(closed).toBe(true);
+  expect(manager.poll(main.id, 0)?.status).toBe("running");
+  manager.cancel(main.id);
+});
+
+it("rejects oversized images and child sessions without an isolation factory", () => {
+  const manager = new TurnManager(new Map([["claude", new FakeAccount()]]));
+  expect(() => manager.start({ ...input, child: true })).toThrow("Independent child");
+  expect(() => manager.start({ ...input, attachments: [{ name: "bad", mimeType: "text/plain", data: "AAAA" }] })).toThrow();
+  manager.close();
+});

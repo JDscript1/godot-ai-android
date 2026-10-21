@@ -5,6 +5,7 @@ on:
   push:
     branches: ["ai/android-assistant"]
     paths:
+      - "editor/editor_node.cpp"
       - "modules/ai_assistant/**"
       - "platform/android/java/editor/**"
       - "tools/ai-companion/**"
@@ -133,3 +134,41 @@ jobs:
             bin/android_editor_builds/android_editor-android-debug.apk.sha256
             bin/android_editor_builds/android_editor-android-debug.apk.badging.txt
           if-no-files-found: error
+
+  native-editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/.ai-linux-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ai-linux-cache
+          key: godot-ai-linux-4.7.2-${{ github.sha }}
+          restore-keys: godot-ai-linux-4.7.2-
+      - name: Install native editor build tools
+        run: |
+          python -m pip install 'scons==4.10.1'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential pkg-config libx11-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev libxi-dev libxrandr-dev xvfb
+      - name: Compile the fork's desktop editor
+        run: scons platform=linuxbsd target=editor arch=x86_64 optimize=size debug_symbols=no wayland=no speechd=no cache_path="$SCONS_CACHE" -j4
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .ai-linux-cache
+          key: godot-ai-linux-4.7.2-${{ github.sha }}
+      - name: Exercise and render the actual native plugin
+        run: python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --output .ai-qa/native-rendered
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AI-native-editor-verification
+          path: |
+            .ai-qa/native-rendered
+            bin/godot.linuxbsd.editor.x86_64
+          if-no-files-found: warn

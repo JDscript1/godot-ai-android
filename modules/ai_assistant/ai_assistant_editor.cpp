@@ -5,8 +5,11 @@
 #include "core/object/class_db.h"
 #include "core/object/callable_mp.h"
 #include "core/io/config_file.h"
+#include "core/io/json.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "editor/editor_main_screen.h"
+#include "editor/editor_node.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/file_system/editor_paths.h"
 #include "scene/gui/button.h"
@@ -130,14 +133,53 @@ bool AIAssistantSettingsInspector::parse_property(Object *p_object, const Varian
 }
 
 void AIAssistantEditorPlugin::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
+	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
+	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
 	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantEditorPlugin::open_settings, DEFVAL(String()));
 }
 
-void AIAssistantEditorPlugin::open_settings(const String &p_section) {
+int64_t AIAssistantEditorPlugin::runtime_request(const String &p_command, const Dictionary &p_arguments) {
+	return runtime_debugger.is_valid() ? runtime_debugger->request(p_command, p_arguments) : -1;
+}
+Dictionary AIAssistantEditorPlugin::runtime_poll(int64_t p_id) { return runtime_debugger->poll(p_id); }
+Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const Dictionary &p_args) {
+#ifdef ANDROID_ENABLED
+	JNIEnv *env = get_jni_env();
+	jclass cls = jni_find_class(env, "org/godotengine/editor/AIVoice");
+	if (!cls) return Dictionary();
+	jmethodID method = env->GetStaticMethodID(cls, "command", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+	if (!method) { env->ExceptionClear(); env->DeleteLocalRef(cls); return Dictionary(); }
+	jstring action = env->NewStringUTF(p_action.utf8().get_data());
+	jstring args = env->NewStringUTF(JSON::stringify(p_args).utf8().get_data());
+	jstring result = (jstring)env->CallStaticObjectMethod(cls, method, action, args);
+	String output;
+	if (env->ExceptionCheck()) env->ExceptionClear();
+	else if (result) output = jstring_to_string(result, env);
+	if (result) env->DeleteLocalRef(result);
+	env->DeleteLocalRef(action); env->DeleteLocalRef(args); env->DeleteLocalRef(cls);
+	Variant parsed = JSON::parse_string(output);
+	return parsed.get_type() == Variant::DICTIONARY ? Dictionary(parsed) : Dictionary();
+#else
+	Dictionary result; result["error"] = "Dictarea Android nu este disponibilă pe această platformă."; return result;
+#endif
+}
+
+void AIAssistantEditorPlugin::make_visible(bool p_visible) {
 	if (panel) {
-		make_bottom_panel_item_visible(panel);
-		panel->call("open_settings", p_section);
+		panel->set_visible(p_visible);
 	}
+}
+
+void AIAssistantEditorPlugin::open_settings(const String &p_section) {
+	if (!panel) {
+		return;
+	}
+	EditorMainScreen *main_screen = EditorNode::get_singleton()->get_editor_main_screen();
+	if (main_screen) {
+		main_screen->select_by_name(get_plugin_name());
+	}
+	panel->call("open_settings", p_section);
 }
 
 AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
@@ -149,7 +191,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	EDITOR_DEF("ai_assistant/mcp/configure", String());
 	EDITOR_DEF("ai_assistant/automations/configure", String());
 	EDITOR_DEF("ai_assistant/general/default_mode", 0);
-	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "ai_assistant/general/default_mode", PROPERTY_HINT_ENUM, "Analysis,Confirm changes,Autonomous"));
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "ai_assistant/general/default_mode", PROPERTY_HINT_ENUM, "Analysis,Confirm changes,Autonomous,Plan"));
 	EDITOR_DEF("ai_assistant/general/max_agent_steps", 30);
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "ai_assistant/general/max_agent_steps", PROPERTY_HINT_RANGE, "1,100,1"));
 	EDITOR_DEF("ai_assistant/general/history_messages", 24);
@@ -157,7 +199,9 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	EDITOR_DEF("ai_assistant/generation/import_directory", "res://ai_assets");
 	EDITOR_DEF("ai_assistant/connection/request_timeout_seconds", 180);
 	secrets.instantiate();
-	const char *bindings[] = { "Common", "Transport", "Providers", "Tools", "MCP", "Assets", "Accounts", "Panel" };
+	runtime_debugger.instantiate();
+	add_debugger_plugin(runtime_debugger);
+
 	for (const AIScriptSource &source : ai_script_sources) {
 		Ref<GDScript> script;
 		script.instantiate();
@@ -168,7 +212,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 			return;
 		}
 		for (int i = 0; i < scripts.size(); i++) {
-			script->set(bindings[i], scripts[i]);
+			script->set(ai_script_sources[i].binding, scripts[i]);
 		}
 		scripts.push_back(script);
 	}
@@ -176,16 +220,22 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	panel->set_name("AIAssistantPanel");
 	panel->set_script(scripts[scripts.size() - 1]);
 	panel->call("configure", this, secrets);
-	add_control_to_bottom_panel(panel, TTR("AI Assistant"));
+	panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(panel);
+	panel->hide();
 	settings_inspector.instantiate();
 	settings_inspector->set_plugin(this);
 	add_inspector_plugin(settings_inspector);
 }
 
 AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
+	if (runtime_debugger.is_valid()) remove_debugger_plugin(runtime_debugger);
 	if (settings_inspector.is_valid()) remove_inspector_plugin(settings_inspector);
 	if (panel) {
-		remove_control_from_bottom_panel(panel);
+		if (panel->get_parent()) {
+			panel->get_parent()->remove_child(panel);
+		}
 		memdelete(panel);
 	}
 }

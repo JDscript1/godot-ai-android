@@ -6,8 +6,9 @@ It installs alongside upstream Godot. Engine and third-party license notices are
 
 ## Configuration
 
-Open **Editor Settings → General → AI Assistant**. Each category opens the global
-configuration window, also reachable from the **AI Assistant** bottom panel.
+Open **Editor Settings → General → AI Assistant**, or select the **AI Assistant**
+tab at the top right of the editor, next to **Asset Store**. Its **Setări** button
+opens the same global configuration window.
 
 - **Furnizori:** select an issuer or paste a distinctive API key. Generic keys such
   as `sk-...` require an issuer selection. Save, then test/list models. Manual model

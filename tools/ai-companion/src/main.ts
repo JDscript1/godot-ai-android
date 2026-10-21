@@ -25,18 +25,25 @@ const masterKey = await loadOrCreateMasterKey(dataDir);
 const secrets = await AccountSecretStore.open(dataDir, masterKey);
 const accountDataDir = path.join(dataDir, "accounts");
 const bin = path.resolve("node_modules", ".bin");
-const accounts = [
-  new ClaudeAccountRuntime({ accountDataDir, executable: process.env.CLAUDE_BIN ?? path.join(bin, "claude") }),
-  new CopilotAccountRuntime({ accountDataDir, executable: process.env.COPILOT_BIN ?? path.join(bin, "copilot"), secrets, ...(process.env.GITHUB_OAUTH_CLIENT_ID ? { githubOAuthClientId: process.env.GITHUB_OAUTH_CLIENT_ID } : {}) }),
-  new KimiAccountRuntime({ accountDataDir, executable: process.env.KIMI_BIN ?? path.join(bin, "kimi") }),
-];
+// Separate SDK objects let a child run while the parent waits for its tool result.
+// Authentication files are shared, while every turn has its own session/workspace ID.
+function createRuntime(id: string) {
+  switch (id) {
+    case "claude": return new ClaudeAccountRuntime({ accountDataDir, executable: process.env.CLAUDE_BIN ?? path.join(bin, "claude") });
+    case "copilot": return new CopilotAccountRuntime({ accountDataDir, executable: process.env.COPILOT_BIN ?? path.join(bin, "copilot"), secrets, ...(process.env.GITHUB_OAUTH_CLIENT_ID ? { githubOAuthClientId: process.env.GITHUB_OAUTH_CLIENT_ID } : {}) });
+    case "kimi": return new KimiAccountRuntime({ accountDataDir, executable: process.env.KIMI_BIN ?? path.join(bin, "kimi") });
+    default: throw new Error("Unknown account runtime");
+  }
+}
+const accounts = ["claude", "copilot", "kimi"].map(createRuntime);
+
 let mcpServers: Record<string, StdioServerConfig> = {};
 try { mcpServers = JSON.parse(await readFile(path.join(dataDir, "mcp-servers.json"), "utf8")) as typeof mcpServers; }
 catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
 const host = process.env.AI_COMPANION_HOST ?? "127.0.0.1";
 const port = Number(process.env.AI_COMPANION_PORT ?? 7341);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid companion port");
-const { server } = createCompanion({ token, accounts, mcpServers });
+const { server } = createCompanion({ token, accounts, mcpServers, createRuntime });
 server.listen(port, host, () => {
   console.info(`Godot AI companion listening on ${host}:${port}`);
   console.info(`Pair in Editor Settings > AI Assistant > Accounts. Pairing token file: ${tokenPath}`);

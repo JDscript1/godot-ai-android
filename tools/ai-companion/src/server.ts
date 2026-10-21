@@ -4,12 +4,12 @@ import type { AccountRuntime } from "../apps/gateway/src/account-runtime.js";
 import { StdioMcpSession, type StdioServerConfig } from "./stdio-mcp.js";
 import { TurnManager, safeError } from "./turns.js";
 
-type Options = { token: string; accounts: AccountRuntime[]; mcpServers?: Record<string, StdioServerConfig>; toolTimeoutMs?: number };
+type Options = { token: string; accounts: AccountRuntime[]; mcpServers?: Record<string, StdioServerConfig>; toolTimeoutMs?: number; createRuntime?: (id: string) => AccountRuntime };
 
 export function createCompanion(options: Options) {
   if (options.token.length < 16) throw new Error("A pairing token of at least 16 characters is required");
   const accounts = new Map(options.accounts.map(account => [account.id, account]));
-  const turns = new TurnManager(accounts, options.toolTimeoutMs);
+  const turns = new TurnManager(accounts, options.toolTimeoutMs, options.createRuntime);
   const mcp = new Map<string, StdioMcpSession>();
   const server = createServer(async (request, response) => {
     response.setHeader("Cache-Control", "no-store");
@@ -19,7 +19,7 @@ export function createCompanion(options: Options) {
     const url = new URL(request.url ?? "/", "http://companion.invalid");
     const parts = url.pathname.split("/").filter(Boolean);
     try {
-      if (url.pathname === "/health") { reply(response, 200, { ok: true, version: "0.1.0" }); return; }
+      if (url.pathname === "/health") { reply(response, 200, { ok: true, version: "0.2.0", protocol: 2, features: { attachments: true, context_usage: true, child_sessions: Boolean(options.createRuntime) } }); return; }
       if (url.pathname === "/v1/accounts" && request.method === "GET") {
         reply(response, 200, { ok: true, result: await Promise.all([...accounts.values()].map(account => account.status())) }); return;
       }
@@ -99,7 +99,7 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     size += (chunk as Buffer).length;
-    if (size > 4 * 1024 * 1024) throw new Error("Request body too large");
+    if (size > 16 * 1024 * 1024) throw new Error("Request body too large");
     chunks.push(Buffer.from(chunk as Uint8Array));
   }
   const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");

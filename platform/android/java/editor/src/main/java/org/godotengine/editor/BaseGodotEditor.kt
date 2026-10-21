@@ -284,6 +284,11 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 		EditorUtils.toggleTitleBar(isLargeScreen || newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE)
 	}
 
+	override fun onStop() {
+		AIVoice.close()
+		super.onStop()
+	}
+
 	override fun onDestroy() {
 		gradleBuildProvider.buildEnvDisconnect()
 		super.onDestroy()
@@ -822,6 +827,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 		grantResults: IntArray
 	) {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+		if (AIVoice.permissionResult(requestCode, grantResults)) return
 		// Check if we got access to the necessary storage permissions
 		if (requestCode == PermissionsUtil.REQUEST_ALL_PERMISSION_REQ_CODE) {
 			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {

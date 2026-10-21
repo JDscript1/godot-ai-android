@@ -1,6 +1,7 @@
 #pragma once
 
 #include "editor/plugins/editor_plugin.h"
+#include "ai_runtime_bridge.h"
 #include "editor/inspector/editor_inspector.h"
 #include "modules/gdscript/gdscript.h"
 
@@ -33,11 +34,17 @@ class AIAssistantEditorPlugin : public EditorPlugin {
 	Control *panel = nullptr;
 	Ref<AIAssistantSettingsInspector> settings_inspector;
 	Ref<AIAssistantSecretStore> secrets;
+	Ref<AIAssistantDebugger> runtime_debugger;
 	Vector<Ref<GDScript>> scripts;
 protected:
 	static void _bind_methods();
 public:
+	bool has_main_screen() const override { return true; }
 	String get_plugin_name() const override { return "AI Assistant"; }
+	void make_visible(bool p_visible) override;
+	int64_t runtime_request(const String &p_command, const Dictionary &p_arguments);
+	Dictionary runtime_poll(int64_t p_id);
+	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
 	void open_settings(const String &p_section = String());
 	AIAssistantEditorPlugin();
 	~AIAssistantEditorPlugin();

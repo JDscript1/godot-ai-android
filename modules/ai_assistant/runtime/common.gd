@@ -4,7 +4,7 @@ extends RefCounted
 const VERSION = "0.1.0"
 const BUILTIN_PREFIX = "res://__godot_ai_builtin__/"
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
-const MODES = ["Analiză", "Cu confirmare", "Autonom"]
+const MODES = ["Analiză", "Cu confirmare", "Autonom", "Plan"]
 
 static func uid() -> String:
 	var bytes = Crypto.new().generate_random_bytes(16)

@@ -206,6 +206,9 @@
 #endif // ANDROID_ENABLED
 
 #include "modules/modules_enabled.gen.h" // For gdscript, mono.
+#ifdef MODULE_AI_ASSISTANT_ENABLED
+#include "modules/ai_assistant/ai_assistant_editor.h"
+#endif
 
 #include <cstdlib>
 
@@ -9404,7 +9407,10 @@ EditorNode::EditorNode() {
 
 	if (AssetLibraryEditorPlugin::is_available()) {
 		add_editor_plugin(memnew(AssetLibraryEditorPlugin));
-	} else {
+	}
+#ifdef MODULE_AI_ASSISTANT_ENABLED
+	add_editor_plugin(memnew(AIAssistantEditorPlugin));
+#endif else {
 		print_verbose("Asset Store not available (due to using Web editor, or SSL support disabled).");
 	}
 

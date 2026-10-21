@@ -1,7 +1,8 @@
 """Embed editor scripts; they never depend on, or get copied into, a game project."""
 from pathlib import Path
 
-SCRIPT_NAMES = ["common", "transport", "providers", "editor_tools", "mcp", "assets", "accounts", "panel"]
+SCRIPT_BINDINGS = {'common': 'Common', 'transport': 'Transport', 'providers': 'Providers', 'editor_tools': 'Tools', 'mcp': 'MCP', 'assets': 'Assets', 'accounts': 'Accounts', 'conversations': 'Conversations', 'chat_view': 'ChatView', 'agent_jobs': 'AgentJobs', 'speech': 'Speech', 'panel': 'Panel'}
+SCRIPT_NAMES = list(SCRIPT_BINDINGS)
 
 
 def embed(target, source, env):
@@ -12,8 +13,8 @@ def embed(target, source, env):
         for start in range(0, len(data), 32):
             lines.append(",".join(str(n) for n in data[start:start + 32]) + ",")
         lines.append("0};")
-    lines.append("struct AIScriptSource { const char *name; const unsigned char *data; };")
+    lines.append("struct AIScriptSource { const char *name; const char *binding; const unsigned char *data; };")
     lines.append("static const AIScriptSource ai_script_sources[] = {")
-    lines.extend(f'{{"{name}", ai_script_{name}}},' for name in SCRIPT_NAMES)
+    lines.extend(f'{{"{name}", "{SCRIPT_BINDINGS[name]}", ai_script_{name}}},' for name in SCRIPT_NAMES)
     lines.append("};")
     Path(str(target[0])).write_text("\n".join(lines) + "\n", encoding="utf-8")
