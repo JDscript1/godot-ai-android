@@ -1288,6 +1288,7 @@ func _chat_action(name: String, args: Dictionary) -> void:
 			_end_conversation_jobs()
 			conversations.fork_at(str(args["message"]))
 			history = conversations.load_active()
+			_load_summary()
 			_render_history()
 			_refresh_conversations()
 		"retry": _send_or_queue("Continuă folosind starea actuală a proiectului și rezultatele deja obținute. Verifică înainte de a repeta modificări.")
@@ -1324,7 +1325,7 @@ func _history_action(action: String) -> void:
 				return
 			var dialog = ConfirmationDialog.new()
 			dialog.dialog_text = "Ștergi definitiv conversația arhivată de pe acest dispozitiv?"
-			dialog.confirmed.connect(func() -> void: conversations.remove(id); history = conversations.load_active(); _render_history(); _refresh_conversations(); dialog.queue_free())
+			dialog.confirmed.connect(func() -> void: _end_conversation_jobs(); conversations.remove(id); history = conversations.load_active(); _load_summary(); _render_history(); _refresh_conversations(); dialog.queue_free())
 			dialog.canceled.connect(dialog.queue_free)
 			add_child(dialog)
 			dialog.popup_centered()
