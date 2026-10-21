@@ -53,6 +53,15 @@ var conversations: RefCounted
 var agent_jobs: RefCounted
 var speech: RefCounted
 var settings_navigation: ItemList
+var settings_category: OptionButton
+var list_headers = {}
+var account_service: OptionButton
+var chatgpt_section: VBoxContainer
+var companion_section: VBoxContainer
+var companion_connection: VBoxContainer
+var companion_code: VBoxContainer
+var companion_login: Button
+var account_logout: Button
 var settings_search: LineEdit
 var section_tabs = {}
 var current_turn = ""
@@ -144,8 +153,10 @@ func _build_chat() -> void:
 
 func _build_settings() -> void:
 	settings_window = AcceptDialog.new()
-	settings_window.title = "AI Assistant · Setări globale"
-	settings_window.min_size = Vector2i(340, 420)
+	settings_window.title = "AI Assistant · Setări"
+	settings_window.get_ok_button().text = "Închide"
+	settings_window.min_size = Vector2i(340, 380)
+	settings_window.size_changed.connect(_layout_settings)
 	settings_window.close_requested.connect(settings_window.hide)
 	add_child(settings_window)
 	var settings_content = VBoxContainer.new()
@@ -155,17 +166,23 @@ func _build_settings() -> void:
 	settings_search = LineEdit.new()
 	settings_search.placeholder_text = "Caută în setări…"
 	settings_content.add_child(settings_search)
+	settings_category = OptionButton.new()
+	settings_category.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_category.item_selected.connect(func(index: int) -> void: _select_settings(int(settings_category.get_item_metadata(index))))
+	settings_content.add_child(settings_category)
 	var settings_body = HBoxContainer.new()
 	settings_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	settings_content.add_child(settings_body)
 	settings_navigation = ItemList.new()
-	settings_navigation.custom_minimum_size = Vector2(115, 220)
+	settings_navigation.custom_minimum_size = Vector2(180, 220) * EditorInterface.get_editor_scale()
+	settings_navigation.theme_changed.connect(_layout_settings)
 	settings_body.add_child(settings_navigation)
 	settings_tabs.tabs_visible = false
 	settings_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_body.add_child(settings_tabs)
 	settings_window.theme = chat.theme
-	settings_navigation.item_selected.connect(func(index: int) -> void: settings_tabs.current_tab = int(settings_navigation.get_item_metadata(index)))
+	settings_tabs.add_theme_stylebox_override("panel", chat.style(Color("171b27"), 12))
+	settings_navigation.item_selected.connect(func(index: int) -> void: _select_settings(int(settings_navigation.get_item_metadata(index))))
 	settings_search.text_changed.connect(_search_settings)
 	settings_status = Label.new()
 	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -181,7 +198,7 @@ func _build_settings() -> void:
 	_check(general_form, "enabled", "Activează asistentul")
 	general_form["enabled"].button_pressed = bool(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/enabled")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/enabled") else true
 	_button(general, "Salvează preferințele", _save_preferences)
-	var provider_tab = _tab("Furnizori", "providers")
+	var provider_tab = _tab("Furnizori AI", "providers")
 	var p = _form(provider_tab, "provider")
 	_choice(p, "issuer", "Serviciu", Providers.CATALOG.map(func(item: Dictionary) -> String: return str(item["name"])))
 	_field(p, "name", "Nume profil")
@@ -210,23 +227,44 @@ func _build_settings() -> void:
 	_button(row, "Șterge profil", func() -> void: _remove_profile("providers", "provider"))
 	lists["providers"].item_selected.connect(_edit_provider)
 	var account_tab = _tab("Abonamente", "accounts")
-	_label(account_tab, "Conturile folosesc autentificarea oficială. ChatGPT se conectează direct; Claude, Copilot și Kimi folosesc companionul personal.")
-	_button(account_tab, "Continue with ChatGPT", _login_chatgpt)
-	var a = _form(account_tab, "companion")
-	_field(a, "url", "Adresă companion")
+	_label(account_tab, "Alege serviciul pe care vrei să îl conectezi.")
+	account_service = OptionButton.new()
+	for service in ["ChatGPT", "Claude", "GitHub Copilot", "Kimi"]: account_service.add_item(service)
+	account_tab.add_child(account_service)
+	account_service.item_selected.connect(func(_index: int) -> void: _select_account_service())
+	chatgpt_section = VBoxContainer.new()
+	account_tab.add_child(chatgpt_section)
+	_label(chatgpt_section, "ChatGPT se conectează direct în browser, cu contul tău.")
+	_button(chatgpt_section, "Conectează ChatGPT", _login_chatgpt)
+	companion_section = VBoxContainer.new()
+	account_tab.add_child(companion_section)
+	_label(companion_section, "Acest serviciu folosește companionul personal de pe calculatorul sau serverul tău.")
+	companion_login = _button(companion_section, "Conectează Claude", _connect_selected_account)
+	_button(companion_section, "Configurare conexiune companion…", func() -> void: companion_connection.visible = not companion_connection.visible)
+	companion_connection = VBoxContainer.new()
+	companion_section.add_child(companion_connection)
+	var a = _form(companion_connection, "companion")
+	_field(a, "url", "Adresa companionului")
 	a["url"].text = str(config["companion"]["url"])
 	_field(a, "key", "Token de asociere", true)
 	_check(a, "allow_http", "Permite HTTP în rețeaua locală")
 	a["allow_http"].button_pressed = bool(config["companion"].get("allow_http", false))
-	_button(account_tab, "Salvează / verifică companionul", _save_companion)
-	var account_row = _row(account_tab)
-	for family in ["claude", "copilot", "kimi"]:
-		_button(account_row, "Conectează " + family.capitalize(), _login_companion.bind(family))
-	_field(a, "account", "Cont pentru cod (claude/copilot/kimi)")
-	_field(a, "code", "Cod unic returnat de autentificare", true)
-	_button(account_tab, "Trimite codul unic", _submit_account_code)
-	_button(account_tab, "Actualizează conturile și modelele", _refresh_accounts)
-	_button(account_tab, "Deconectează contul selectat", _logout_account)
+	_button(companion_connection, "Salvează și verifică conexiunea", _save_companion)
+	companion_connection.hide()
+	a["account"] = LineEdit.new()
+	a["account"].hide()
+	companion_section.add_child(a["account"])
+	companion_code = VBoxContainer.new()
+	companion_section.add_child(companion_code)
+	var code_form = {"container": companion_code}
+	_field(code_form, "code", "Codul primit în browser", true)
+	a["code"] = code_form["code"]
+	_button(companion_code, "Confirmă codul", _submit_account_code)
+	companion_code.hide()
+	var account_actions = _row(account_tab)
+	_button(account_actions, "Actualizează conturile", _refresh_accounts)
+	account_logout = _button(account_actions, "Deconectează selecția", _logout_account)
+	_select_account_service()
 	var gen_tab = _tab("Generare", "generation")
 	var g = _form(gen_tab, "generation")
 	_choice(g, "kind", "Serviciu", ["Runware", "ComfyUI local"])
@@ -333,10 +371,17 @@ func _tab(title: String, id: String) -> VBoxContainer:
 	var column = VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(column)
-	_label(column, {"providers": "Profiluri AI salvate", "accounts": "Conturi conectate", "generation": "Profiluri de generare salvate", "mcp": "Servere MCP configurate", "automations": "Sarcini salvate", "journal": "Ultimele operații"}.get(id, ""))
+	column.add_theme_constant_override("separation", int(10 * EditorInterface.get_editor_scale()))
+	var heading = _label(column, title)
+	heading.add_theme_font_size_override("font_size", settings_tabs.get_theme_font_size("font_size") + 4)
+	var caption = {"providers": "Profiluri salvate", "accounts": "Conturi conectate", "generation": "Profiluri salvate", "mcp": "Servere configurate", "automations": "Sarcini salvate", "journal": "Ultimele operații"}.get(id, "")
+	var list_header = _label(column, caption)
+	list_header.hide()
+	list_headers[id] = list_header
 	var list = ItemList.new()
-	list.custom_minimum_size.y = 100
+	list.custom_minimum_size.y = 100 * EditorInterface.get_editor_scale()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.hide()
 	column.add_child(list)
 	lists[id] = list
 	return column
@@ -391,12 +436,17 @@ func _button(parent: Node, title: String, callback: Callable) -> Button:
 
 func open_settings(section: String = "") -> void:
 	if settings_window == null: return
-	if section_tabs.has(section): settings_tabs.current_tab = int(section_tabs[section])
-	settings_window.popup_centered_clamped(Vector2i(780, 760) * EditorInterface.get_editor_scale(), 0.94)
+	if section_tabs.has(section): _select_settings(int(section_tabs[section]))
+	settings_window.popup_centered_clamped(Vector2i(900, 760) * EditorInterface.get_editor_scale(), 0.94)
+	_layout_settings.call_deferred()
 
 func _status(message: String) -> void:
-	if status_label != null: status_label.text = _redact(message).left(2000)
-	if settings_status != null: settings_status.text = _redact(message).left(2000)
+	if status_label != null:
+		status_label.text = _redact(message).left(2000)
+		status_label.visible = not message.is_empty() and message != "Configurează un furnizor din Setări pentru a începe."
+	if settings_status != null:
+		settings_status.text = _redact(message).left(2000)
+		settings_status.visible = status_label.visible
 
 func _display(role: String, text: String, metadata: Dictionary = {}) -> void:
 	transcript = chat.append_message(role, _redact(text), metadata if not metadata.is_empty() else current_origin, false)
@@ -448,7 +498,7 @@ func _refresh_models() -> void:
 	_refresh_efforts()
 
 func _refresh_efforts() -> void:
-	chat.model_button.text = "Alege furnizor / model ▾"
+	chat.model_button.text = "Conectează un furnizor"
 	if model_picker.selected >= 0:
 		chat.model_button.text = str(_current_profile().get("name", "")) + " · " + model_picker.get_item_text(model_picker.selected)
 	effort_picker.clear()
@@ -472,6 +522,7 @@ func _refresh_lists() -> void:
 		lists["jobs"].clear()
 		for job in assets.jobs: lists["jobs"].add_item("%s · %s · %s" % [job["id"].left(8), job["kind"], job["status"]])
 	_refresh_journal()
+	_refresh_list_visibility()
 
 func _fill(form_id: String, profile: Dictionary) -> void:
 	var form: Dictionary = forms[form_id]
@@ -630,7 +681,8 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		_status("Configurează un profil și selectează un model.")
 		return
 	if mode_picker.selected in [1, 2] and not full_control.button_pressed:
-		_status("Activează Control complet pentru modul ales sau revino la Analiză.")
+		_status("Activează «Permite modificări» din meniul modului de lucru sau revino la Analiză.")
+		chat._open_options()
 		return
 	busy = true
 	queue_paused = false
@@ -644,6 +696,9 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	pending_references.clear()
 	_refresh_secrets()
 	var user_message = {"id": Common.uid(), "role": "user", "content": _redact(text.strip_edges()), "attachments": active_attachments, "turn_id": current_turn}
+	if history.is_empty():
+		chat.clear_messages()
+		chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
 	history.append(user_message)
 	_persist_history()
 	transcript = chat.append_message("user", str(user_message["content"]), user_message)
@@ -833,6 +888,7 @@ func _login_companion(family: String) -> void:
 		return
 	var login: Dictionary = result.get("json", {}).get("result", {})
 	forms["companion"]["account"].text = family
+	companion_code.visible = bool(login.get("requiresInput", false))
 	if not str(login.get("verificationUrl", "")).is_empty(): OS.shell_open(str(login["verificationUrl"]))
 	_status("Autentificare " + family + ": " + str(login.get("userCode", "Continuă în browser. Dacă primești un cod unic, introdu-l în câmpul de mai sus.")))
 
@@ -852,8 +908,14 @@ func _refresh_accounts() -> void:
 		if profile.get("kind") == "siwc":
 			lists["accounts"].add_item(str(profile["name"]))
 			lists["accounts"].set_item_metadata(lists["accounts"].item_count - 1, "siwc:" + str(profile["id"]))
+	if account_service.selected == 0 and vault.read("companion").is_empty():
+		_refresh_list_visibility()
+		_refresh_profiles()
+		_status("Conturile ChatGPT au fost actualizate.")
+		return
 	var result = await accounts.companion_request(config["companion"], "/v1/accounts")
 	if not result.get("ok", false):
+		_refresh_list_visibility()
 		_status("Companion: " + str(result.get("error", "indisponibil")))
 		return
 	account_profiles.clear()
@@ -867,6 +929,7 @@ func _refresh_accounts() -> void:
 			for model in models.get("json", {}).get("result", []): choices.append({"id": model["id"], "name": model.get("displayName", model["id"]), "efforts": model.get("reasoningEfforts", []), "source": "live", "context": model.get("contextWindowTokens", 0), "capabilities": {"vision": "image" in model.get("inputModalities", [])}})
 		account_profiles.append({"id": "account_" + str(account["id"]), "name": str(account.get("displayName", account["id"])), "account": account["id"], "kind": "companion", "models": choices})
 	_refresh_profiles()
+	_refresh_list_visibility()
 	_status("Starea conturilor a fost actualizată.")
 
 func _logout_account() -> void:
@@ -1193,7 +1256,9 @@ func _delete_automation() -> void:
 	_save_config()
 
 func _process(_delta: float) -> void:
-	if busy and chat != null: chat._follow()
+	if chat != null:
+		chat.set_working(busy)
+		if busy: chat._follow()
 	if speech != null: speech.poll(config.get("preferences", {}))
 
 func _selection() -> Dictionary:
@@ -1224,10 +1289,11 @@ func _refresh_conversations() -> void:
 
 func _render_history() -> void:
 	chat.clear_messages()
+	chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
 	if history.size() > chat.loaded:
 		chat.button(chat.thread, "Încarcă mesajele anterioare", func() -> void: chat.loaded += 50; _render_history())
 	if history.is_empty():
-		chat.append_message("assistant", "Cu ce te ajut în proiect?\n\nDescrie o funcție, atașează un fișier sau cere un playtest. Alege serviciul și modelul din zona de scriere.")
+		chat.show_welcome()
 	for message in history.slice(maxi(0, history.size() - chat.loaded)):
 		if message.get("role") in ["user", "assistant"] and (not str(message.get("content", "")).is_empty() or not message.get("attachments", []).is_empty()):
 			transcript = chat.append_message(str(message["role"]), _redact(str(message.get("content", ""))), message)
@@ -1258,7 +1324,7 @@ func _chat_action(name: String, args: Dictionary) -> void:
 	match name:
 		"send": _send_or_queue()
 		"stop": _stop()
-		"settings": open_settings()
+		"settings": open_settings(str(args.get("section", "")))
 		"new": _new_conversation()
 		"history": _refresh_conversations()
 		"model": _choose(args)
@@ -1334,14 +1400,64 @@ func _history_action(action: String) -> void:
 
 func _search_settings(query: String) -> void:
 	settings_navigation.clear()
+	settings_category.clear()
 	for index in range(settings_tabs.get_tab_count()):
 		var page = settings_tabs.get_tab_control(index)
 		if query.is_empty() or query.to_lower() in _settings_labels(page).to_lower():
 			settings_navigation.add_item(str(page.name))
 			settings_navigation.set_item_metadata(settings_navigation.item_count - 1, index)
+			settings_category.add_item(str(page.name))
+			settings_category.set_item_metadata(settings_category.item_count - 1, index)
 	if not query.is_empty() and settings_navigation.item_count:
-		settings_navigation.select(0)
-		settings_tabs.current_tab = int(settings_navigation.get_item_metadata(0))
+		_select_settings(int(settings_navigation.get_item_metadata(0)))
+	else: _select_settings(settings_tabs.current_tab)
+	_layout_settings.call_deferred()
+
+func _select_settings(tab: int) -> void:
+	settings_tabs.current_tab = tab
+	for index in range(settings_navigation.item_count):
+		if int(settings_navigation.get_item_metadata(index)) == tab:
+			settings_navigation.select(index)
+			settings_category.select(index)
+			break
+
+func _layout_settings() -> void:
+	if settings_navigation == null or settings_category == null or settings_tabs == null: return
+	var scale = EditorInterface.get_editor_scale()
+	var font = settings_navigation.get_theme_font("font")
+	var font_size = settings_navigation.get_theme_font_size("font_size")
+	var width = 0.0
+	for index in range(settings_navigation.item_count): width = maxf(width, font.get_string_size(settings_navigation.get_item_text(index), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
+	width += 40 * scale
+	settings_navigation.custom_minimum_size.x = width
+	var compact = settings_window.size.x < width + 460 * scale
+	settings_navigation.visible = not compact
+	settings_category.visible = compact
+
+func _refresh_list_visibility() -> void:
+	if account_logout != null: account_logout.visible = lists["accounts"].item_count > 0
+	for id in list_headers:
+		var visible = lists[id].item_count > 0 and not list_headers[id].text.is_empty()
+		lists[id].visible = visible
+		list_headers[id].visible = visible
+
+func _select_account_service() -> void:
+	if account_service == null: return
+	chatgpt_section.visible = account_service.selected == 0
+	companion_section.visible = account_service.selected != 0
+	companion_code.hide()
+	if companion_login != null:
+		companion_login.text = "Conectează " + account_service.get_item_text(account_service.selected)
+	if forms.has("companion"):
+		forms["companion"]["account"].text = ["", "claude", "copilot", "kimi"][account_service.selected]
+
+func _connect_selected_account() -> void:
+	var family = str(forms["companion"]["account"].text)
+	if vault.read("companion").is_empty():
+		companion_connection.show()
+		_status("Configurează adresa și tokenul companionului, apoi conectează " + account_service.get_item_text(account_service.selected) + ".")
+		return
+	await _login_companion(family)
 
 func _settings_labels(node: Node) -> String:
 	var text = str(node.name) + " "
@@ -1568,6 +1684,7 @@ func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
 	var limit = int(usage.get("contextWindowTokens", 0))
 	for item in profile.get("models", []):
 		if item["id"] == model: limit = int(item.get("context", 0))
+	chat.context_label.show()
 	chat.context_label.text = "Context: %s%s · ieșire %s tokeni" % [("≈" if usage.get("estimated", false) else "") + str(input) if input else "—", (" / %s" % limit) if limit else "", str(output) if output else "—"]
 
 func _agent_definitions() -> Array:

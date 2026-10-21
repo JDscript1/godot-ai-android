@@ -29,6 +29,9 @@ var follow_bottom = true
 var loaded = 50
 var selected_message = ""
 var backdrop: GradientTexture2D
+var runtime_options: PopupPanel
+var options_button: Button
+var stop_button: Button
 var root_column: VBoxContainer
 
 func _ready() -> void:
@@ -45,7 +48,7 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 	sidebar = VBoxContainer.new()
-	sidebar.custom_minimum_size.x = 220
+	sidebar.custom_minimum_size.x = 220 * EditorInterface.get_editor_scale()
 	add_child(sidebar)
 	button(sidebar, "＋ Conversație nouă", func() -> void: action.emit("new", {}))
 	search = LineEdit.new()
@@ -65,6 +68,7 @@ func _ready() -> void:
 	for pair in [["☆", "favorite"], ["✎", "rename"], ["Arhivează", "archive"], ["Export", "export"], ["Șterge", "delete"]]:
 		button(history_actions, pair[0], func() -> void: action.emit(pair[1], {}))
 	root_column = VBoxContainer.new()
+	root_column.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
 	root_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(root_column)
 	var header = HBoxContainer.new()
@@ -74,7 +78,14 @@ func _ready() -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	button(header, "＋", func() -> void: action.emit("new", {}))
-	button(header, "⚙ Setări", func() -> void: action.emit("settings", {}))
+	button(header, "Setări", func() -> void: action.emit("settings", {}))
+	var model_row = HBoxContainer.new()
+	root_column.add_child(model_row)
+	model_button = button(model_row, "Conectează un furnizor", _open_picker)
+	model_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	model_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	model_button.clip_text = true
+	model_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -99,8 +110,9 @@ func _ready() -> void:
 	var compose_column = VBoxContainer.new()
 	compose_panel.add_child(compose_column)
 	composer = TextEdit.new()
-	composer.placeholder_text = "Ce construim în Godot? @fișiere · $noduri · /comenzi"
-	composer.custom_minimum_size.y = 92
+	composer.placeholder_text = "Scrie un mesaj…"
+	composer.tooltip_text = "@ fișiere · $ noduri · / comenzi"
+	composer.custom_minimum_size.y = 72 * EditorInterface.get_editor_scale()
 	composer.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	composer.add_theme_stylebox_override("normal", style(Color.TRANSPARENT, 12))
 	compose_column.add_child(composer)
@@ -108,30 +120,49 @@ func _ready() -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ENTER and not event.shift_pressed and not OS.has_feature("android"):
 			composer.accept_event()
 			action.emit("send", {}))
-	var controls = HFlowContainer.new()
+	var controls = HBoxContainer.new()
 	compose_column.add_child(controls)
-	button(controls, "＋", func() -> void: action.emit("attach", {}))
-	model_button = button(controls, "Alege furnizor / model ▾", _open_picker)
-	model_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	model_button.custom_minimum_size.x = 170
+	icon_button(controls, "Add", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
+	options_button = button(controls, "Analiză ▾", _open_options)
+	options_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	options_button.clip_text = false
+	options_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	var spacer = Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	controls.add_child(spacer)
+	icon_button(controls, "AudioStreamMicrophone", "Dictare", func() -> void: action.emit("voice", {}))
+	send_button = icon_button(controls, "ArrowUp", "Trimite mesajul", func() -> void: action.emit("send", {}))
+	send_button.add_theme_stylebox_override("normal", style(Color("7650c5")))
+	stop_button = icon_button(controls, "Stop", "Oprește agentul", func() -> void: action.emit("stop", {}))
+	stop_button.hide()
 	provider_picker = OptionButton.new()
 	model_picker = OptionButton.new()
 	for hidden in [provider_picker, model_picker]:
 		hidden.hide()
 		add_child(hidden)
+	runtime_options = PopupPanel.new()
+	runtime_options.name = "OpțiuniAgent"
+	runtime_options.theme = theme
+	add_child(runtime_options)
+	var options = VBoxContainer.new()
+	options.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
+	runtime_options.add_child(options)
+	label(options, "Mod de lucru")
 	mode_picker = OptionButton.new()
 	for mode in Common.MODES: mode_picker.add_item(mode)
-	controls.add_child(mode_picker)
+	options.add_child(mode_picker)
+	label(options, "Nivel de raționament")
 	effort_picker = OptionButton.new()
-	controls.add_child(effort_picker)
+	options.add_child(effort_picker)
 	full_control = CheckBox.new()
-	full_control.text = "Control complet"
-	full_control.tooltip_text = "Permisiune pentru sesiunea curentă."
-	controls.add_child(full_control)
-	button(controls, "Voce", func() -> void: action.emit("voice", {}))
-	send_button = button(controls, "↑ Trimite", func() -> void: action.emit("send", {}))
-	button(controls, "■", func() -> void: action.emit("stop", {}))
-	context_label = label(root_column, "Context · —")
+	full_control.text = "Permite modificări în această sesiune"
+	full_control.tooltip_text = "Necesar pentru Confirmare și Autonom. Analiza și Planul rămân doar pentru citire."
+	options.add_child(full_control)
+	context_label = label(options, "Context: —")
+	context_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button(options, "Extinde / restrânge chatul", func() -> void:
+		EditorInterface.set_distraction_free_mode(not EditorInterface.is_distraction_free_mode_enabled())
+		runtime_options.hide())
 	status = label(root_column, "")
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	picker = AcceptDialog.new()
@@ -157,7 +188,6 @@ func _resize() -> void:
 	if sidebar == null: return
 	var scale = EditorInterface.get_editor_scale()
 	sidebar.visible = size.x / scale >= 900
-	if model_button != null: model_button.custom_minimum_size.x = minf(260, maxf(150, size.x / scale - 100))
 	_size_messages.call_deferred()
 
 func _size_messages() -> void:
@@ -168,11 +198,11 @@ func _size_messages() -> void:
 func style(color: Color, radius: int = 12) -> StyleBoxFlat:
 	var box = StyleBoxFlat.new()
 	box.bg_color = color
-	box.set_corner_radius_all(radius)
-	box.content_margin_left = 14
-	box.content_margin_right = 14
-	box.content_margin_top = 10
-	box.content_margin_bottom = 10
+	box.set_corner_radius_all(int(radius * EditorInterface.get_editor_scale()))
+	box.content_margin_left = 14 * EditorInterface.get_editor_scale()
+	box.content_margin_right = 14 * EditorInterface.get_editor_scale()
+	box.content_margin_top = 10 * EditorInterface.get_editor_scale()
+	box.content_margin_bottom = 10 * EditorInterface.get_editor_scale()
 	return box
 
 func _apply_theme() -> void:
@@ -187,15 +217,21 @@ func _apply_theme() -> void:
 		skin.set_stylebox("hover", type, style(Color("393456")))
 		skin.set_stylebox("pressed", type, style(Color("59458c")))
 	for type in ["LineEdit", "TextEdit", "ItemList"]:
-		skin.set_stylebox("normal", type, style(Color("191c26")))
+		var field = style(Color("0d1320"))
+		field.border_color = Color("30394e")
+		field.set_border_width_all(1)
+		skin.set_stylebox("normal", type, field)
 		skin.set_color("caret_color", type, Color("a78bfa"))
+	skin.set_stylebox("panel", "AcceptDialog", style(Color("131723"), 16))
+	skin.set_stylebox("panel", "PopupPanel", style(Color("191e2c"), 16))
+	skin.set_stylebox("selected", "ItemList", style(Color("393150"), 8))
 	skin.set_stylebox("normal", "RichTextLabel", style(Color.TRANSPARENT, 0))
 	theme = skin
 
 func button(parent: Node, text: String, callback: Callable) -> Button:
 	var control = Button.new()
 	control.text = text
-	control.custom_minimum_size.y = 44
+	control.custom_minimum_size.y = 44 * EditorInterface.get_editor_scale()
 	control.pressed.connect(callback)
 	parent.add_child(control)
 	return control
@@ -208,7 +244,7 @@ func label(parent: Node, text: String) -> Label:
 
 func _open_picker() -> void:
 	if catalog.is_empty():
-		action.emit("settings", {})
+		action.emit("settings", {"section": "providers"})
 		return
 	_filter_models()
 	picker.popup_centered_clamped(Vector2i(640, 470), 0.92)
@@ -343,3 +379,33 @@ func _follow() -> void:
 
 func _draw() -> void:
 	if backdrop != null: draw_texture_rect(backdrop, Rect2(Vector2.ZERO, size), false)
+
+func icon_button(parent: Node, icon_name: String, hint: String, callback: Callable) -> Button:
+	var control = button(parent, "", callback)
+	control.icon = EditorInterface.get_base_control().get_theme_icon(icon_name, "EditorIcons")
+	control.tooltip_text = hint
+	control.custom_minimum_size = Vector2(44, 44) * EditorInterface.get_editor_scale()
+	return control
+
+func _open_options() -> void:
+	var wanted = Vector2i(330, 270) * EditorInterface.get_editor_scale()
+	var window = get_window()
+	runtime_options.size = Vector2i(mini(wanted.x, window.size.x - 32), mini(wanted.y, window.size.y - 32))
+	var origin = Vector2i(options_button.get_global_rect().position) + window.position
+	runtime_options.position = Vector2i(clampi(origin.x, window.position.x + 12, window.position.x + window.size.x - runtime_options.size.x - 12), maxi(window.position.y + 12, origin.y - runtime_options.size.y - 8))
+	runtime_options.popup()
+
+func set_working(working: bool) -> void:
+	if stop_button != null: stop_button.visible = working
+	if options_button != null and mode_picker != null and mode_picker.selected >= 0:
+		options_button.text = ["Analiză", "Confirmă", "Autonom", "Plan"][mode_picker.selected] + " ▾"
+
+func show_welcome() -> void:
+	thread.alignment = BoxContainer.ALIGNMENT_CENTER
+	var heading = label(thread, "Ce construim astăzi?")
+	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.add_theme_font_size_override("font_size", int(24 * EditorInterface.get_editor_scale()))
+	var hint = label(thread, "Trimite un mesaj sau atașează un fișier din proiect.")
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_color_override("font_color", Color("abb5c9"))

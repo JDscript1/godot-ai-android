@@ -57,6 +57,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 10, "Build all settings forms")
 	await _chat_workflow_tests()
+	await _layout_tests()
 	await get_tree().process_frame
 	_check(panel.chat.thread.size.x >= minf(740 * EditorInterface.get_editor_scale(), panel.chat.scroll.size.x - 40 * EditorInterface.get_editor_scale()), "Chat column uses the available readable width")
 	_check(panel.chat.thread.size.x <= 760 * EditorInterface.get_editor_scale() + 1, "Chat column stays within 760 logical pixels")
@@ -113,7 +114,6 @@ func _run() -> void:
 	if native:
 		await _native_runtime_tests()
 		hide_bottom_panel()
-	panel._display("assistant", "Asistentul AI este integrat în editor. Configurează un serviciu cloud sau local din Setări pentru a începe.")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty():
 		DirAccess.make_dir_recursive_absolute(output)
@@ -128,11 +128,27 @@ func _run() -> void:
 		_check(panel.settings_window.size.x <= DisplayServer.screen_get_size().x, "Settings dialog fits the display width")
 		image = panel.settings_window.get_texture().get_image()
 		if image != null and not image.is_empty(): image.save_png(output.path_join("settings.png"))
+		panel.open_settings("accounts")
+		await get_tree().create_timer(0.2).timeout
+		image = panel.settings_window.get_texture().get_image()
+		if image != null and not image.is_empty(): image.save_png(output.path_join("accounts-chatgpt.png"))
+		panel.account_service.select(1)
+		panel._select_account_service()
+		await get_tree().create_timer(0.2).timeout
+		image = panel.settings_window.get_texture().get_image()
+		if image != null and not image.is_empty(): image.save_png(output.path_join("accounts-claude.png"))
+		panel.account_service.select(0)
+		panel._select_account_service()
 		panel.open_settings("generation")
 		await get_tree().create_timer(0.3).timeout
 		image = panel.settings_window.get_texture().get_image()
 		if image != null and not image.is_empty(): image.save_png(output.path_join("generation.png"))
 		panel.settings_window.hide()
+		panel.chat._open_options()
+		await get_tree().create_timer(0.2).timeout
+		image = panel.chat.runtime_options.get_texture().get_image()
+		if image != null and not image.is_empty(): image.save_png(output.path_join("chat-options.png"))
+		panel.chat.runtime_options.hide()
 	print("Godot AI editor: %s checks, %s failures" % [checks, failures.size()])
 	if not output.is_empty():
 		var file = FileAccess.open(output.path_join("editor-report.json"), FileAccess.WRITE)
@@ -235,3 +251,39 @@ func _chat_workflow_tests() -> void:
 	panel._status("Configurează un furnizor din Setări pentru a începe.")
 	panel._refresh_profiles()
 	panel._render_history()
+
+func _layout_tests() -> void:
+	_check(panel.chat.model_button.get_global_rect().end.y < panel.composer.get_global_rect().position.y, "Model selector has its own row above the composer")
+	_check(not panel.effort_picker.is_visible_in_tree() and not panel.full_control.is_visible_in_tree(), "Advanced agent controls stay out of the composer")
+	_check(not panel.chat.stop_button.is_visible_in_tree(), "Idle chat hides Stop")
+	panel.chat.set_working(true)
+	_check(panel.chat.stop_button.is_visible_in_tree(), "Running chat shows Stop")
+	panel.chat.set_working(false)
+	panel.open_settings("accounts")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(panel.chatgpt_section.visible and not panel.companion_section.visible, "ChatGPT login is separate from companion configuration")
+	panel.account_service.select(1)
+	panel._select_account_service()
+	_check(not panel.chatgpt_section.visible and panel.companion_section.visible and not panel.companion_connection.visible, "Claude has its own login view and collapsed connection details")
+	_check(panel.forms["companion"]["account"].text == "claude" and not panel.forms["companion"]["account"].is_visible_in_tree(), "Account selection replaces manual service name entry")
+	panel.account_service.select(0)
+	panel._select_account_service()
+	if panel.settings_navigation.visible:
+		var font = panel.settings_navigation.get_theme_font("font")
+		var font_size = panel.settings_navigation.get_theme_font_size("font_size")
+		var longest = 0.0
+		for index in range(panel.settings_navigation.item_count): longest = maxf(longest, font.get_string_size(panel.settings_navigation.get_item_text(index), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
+		_check(panel.settings_navigation.size.x >= longest + 12, "Settings categories fit the actual font metrics")
+	else:
+		_check(panel.settings_category.visible and panel.settings_category.item_count == 10, "Compact settings use a full-width category selector")
+	_check(not panel.lists["accounts"].visible and not panel.lists["general"].visible, "Empty saved lists do not create blank sections")
+	var initial_size = panel.settings_window.size
+	panel.settings_window.size = Vector2i(420 * EditorInterface.get_editor_scale(), initial_size.y)
+	await get_tree().process_frame
+	panel._layout_settings()
+	_check(panel.settings_category.visible and not panel.settings_navigation.visible, "Narrow settings switch to category dropdown without clipped names")
+	panel.settings_window.size = initial_size
+	panel._layout_settings()
+	print("AI editor UI scale: ", EditorInterface.get_editor_scale())
+	panel.settings_window.hide()

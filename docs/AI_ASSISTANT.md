@@ -191,6 +191,20 @@ It refuses restoration when file hashes or native scene Undo history changed
 subsequently. Generic method calls, external operations and arbitrary setting
 changes are not reversible checkpoints.
 
+The chat keeps provider/model selection on its own row above the conversation.
+The composer contains attachments, the current mode, microphone and send; Stop
+appears only while working. The mode menu contains reasoning, session write
+permission, context usage and an optional expanded chat view. Empty conversations
+show one welcome prompt rather than an assistant message and repeated setup status.
+
+Settings navigation measures category names using the actual font size. Narrow
+windows use a category dropdown instead of shortening the left-side labels. Empty
+saved-item lists are hidden. Subscription settings show one service at a time:
+ChatGPT has its native login view; Claude, Copilot and Kimi have their companion
+view with connection details collapsed. The service name is selected rather than
+typed manually. Render verification includes 2048x922 and 1280x900 at 150% editor
+scale to cover the Android screenshots that revealed clipped navigation.
+
 ## Playtest and voice boundaries
 
 Playtest uses the fork's native debugger bridge to inspect the running scene,

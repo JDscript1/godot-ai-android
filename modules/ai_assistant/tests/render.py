@@ -17,13 +17,17 @@ def main():
     source = Path(__file__).resolve().parent.parent
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for name, resolution in (("desktop", "1280x900"), ("narrow", "480x900"), ("wide", "1920x1080")):
+    for name, resolution in (("desktop", "1280x900"), ("narrow", "480x900"), ("wide", "1920x1080"), ("phone_landscape", "2048x922"), ("phone_compact", "1280x900")):
         destination = output / name
         destination.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="godot-ai-render-") as directory:
             fixture = Path(directory) / "project"
             shutil.copytree(source / "tests/fixture", fixture,
                             ignore=shutil.ignore_patterns(".godot", "ai_test_*"))
+            if name.startswith("phone_"):
+                config = Path(directory) / "config/godot"
+                config.mkdir(parents=True)
+                (config / "editor_settings-4.7.tres").write_text('[gd_resource type="EditorSettings" format=3]\n\n[resource]\ninterface/editor/appearance/display_scale = 4\n')
             environment = {
                 "GODOT_AI_QA_SOURCE": str(source),
                 "GODOT_AI_QA_OUTPUT": str(destination),
