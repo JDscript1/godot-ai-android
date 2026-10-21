@@ -34,7 +34,7 @@ No inference runtime or generation model is installed automatically.
 ## Execution and recovery
 
 Analysis is the initial mode. Both confirmation and autonomous modes require
-enabling **Control complet pentru această sesiune**. Confirmation mode displays
+enabling **Permite modificări în această sesiune**. Confirmation mode displays
 each modifying/external operation before dispatch. Turning permission off also
 gates generic object calls and external MCP calls.
 
@@ -82,7 +82,7 @@ npm run build
 
 On Termux with a Debian proot installation, add `--proot` to the Python commands
 and use the official Linux arm64 editor path. Rendered evidence is saved under
-`.ai-qa/rendered/{desktop,narrow,wide}` with screenshots, reports and editor logs.
+`.ai-qa/rendered/{desktop,narrow,wide,phone_landscape,phone_compact}` with screenshots, reports and editor logs.
 
 The `Godot AI Android` GitHub workflow also compiles the native Android arm64
 editor and verifies the APK signature, package metadata, ABI and SHA-256 hash.
@@ -101,10 +101,11 @@ Evidence must be distinguished:
 | --- | --- |
 | Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 97 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
 | Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 9 tests passed with deterministic runtimes, including independent child sessions, attachments and context usage; TypeScript build passed |
-| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 38 checks passed at each requested resolution of 1280x900, 480x900 and 1920x1080 with upstream Godot; includes queue/model retention, independent approvals and rollback conflicts. Godot may enforce a larger minimum window on the narrow display |
-| Native fork main screen, desktop vault, game screenshot/input/watchdog and internal-script scene saves | 46 checks at each of the three resolutions passed using the fork compiled from `66cd1fb`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39640190502) |
-| Android C++/Kotlin integration and APK | [Build 66cd1fb passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39640190502), including signature, persistent signing identity, phone package and ARM64 library checks; all 12 embedded script sources were matched to the downloaded native library |
-| Physical Android installation, touch, Keystore and suspend/resume | Device verification pending; desktop rendering does not establish these |
+| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 51 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers readable settings categories, compact navigation, separate account views, clean composer and visible voice cancellation. Godot may enforce a larger minimum editor window on the narrow display |
+| Native fork main screen, desktop vault, game screenshot/input/watchdog and internal-script scene saves | 59 checks in each of the five configurations passed using the fork compiled from `605654d`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39646652993) |
+| Android C++/Kotlin integration and APK | [Build 605654d passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39646652993), including signature, persistent signing identity, phone package and ARM64 library checks; all 12 embedded script sources were matched to the downloaded native library |
+| Physical Android UI | The user supplied two Android screenshots showing the original AI screen and settings open; category clipping was reproduced at 150% scale. The revised APK still needs a device check |
+| Android touch, Keystore, microphone and suspend/resume | Full device verification pending; desktop rendering does not establish these |
 | ChatGPT, Claude, Copilot and Kimi account logins | User-authorized live account checks required |
 | Runware and local ComfyUI image/GLB generation | Live configured-provider checks required |
 | Real Ollama/LM Studio coding and tool use | Reachable configured-model checks required |
@@ -114,17 +115,17 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The tested APK source is `66cd1fbb423bd1d246a1387f2f74dc3d82fe6e40`.
-Download its `Godot-AI-Android-arm64-66cd1fbb423bd1d246a1387f2f74dc3d82fe6e40`
-[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39640190502/artifacts/12364857731)
-from the build above. The APK is 144,796,977 bytes; its SHA-256 is
-`cc5bc31dc3b68f9b79cf8abac22a74e6c2034f84579dbe91d1d09b8f78e6795e`.
-The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-66cd1fb-debug.apk`,
+The tested APK source is `605654dd4bc498f232d35516a8b84704f468dac9`.
+Download its `Godot-AI-Android-arm64-605654dd4bc498f232d35516a8b84704f468dac9`
+[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39646652993/artifacts/12367282842)
+from the build above. The APK is 144,813,361 bytes; its SHA-256 is
+`8a41eac64efbd2eab878f5c49204dffe3d45c64c7d3d94f16ea90f762f28a685`.
+The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-605654d-debug.apk`,
 with a matching `.sha256` file. Its signature, checksum, package, ABI, Android
 voice declarations/classes and exact embedded AI sources were checked locally.
 The persistent development certificate SHA-256 is
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
-The earlier `db300bd` APK remains in Download. Later documentation-only commits
+Earlier delivered APKs remain in Download. Later documentation-only commits
 do not change the APK's tested source.
 
 Native desktop verification runs under Xvfb/Mesa. Nonfatal Vulkan-probe and X11
