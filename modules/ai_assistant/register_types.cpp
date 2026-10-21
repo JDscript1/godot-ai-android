@@ -1,5 +1,7 @@
 #include "register_types.h"
+
 #include "ai_assistant_editor.h"
+
 #include "core/object/class_db.h"
 
 void initialize_ai_assistant_module(ModuleInitializationLevel p_level) {
@@ -16,5 +18,7 @@ void initialize_ai_assistant_module(ModuleInitializationLevel p_level) {
 }
 
 void uninitialize_ai_assistant_module(ModuleInitializationLevel p_level) {
-	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) uninitialize_ai_runtime_capture();
+	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
+		uninitialize_ai_runtime_capture();
+	}
 }

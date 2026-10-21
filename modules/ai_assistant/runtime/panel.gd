@@ -115,6 +115,8 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	cancel["cancelled"] = true
+	if agent_jobs != null: agent_jobs.stop()
+	if speech != null: speech.stop()
 	if approval_pending: approval_decided.emit(false)
 
 func _build_chat() -> void:
@@ -639,7 +641,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	var user_message = {"id": Common.uid(), "role": "user", "content": _redact(text.strip_edges()), "attachments": active_attachments, "turn_id": current_turn}
 	history.append(user_message)
 	_persist_history()
-	_display("user", str(user_message["content"]))
+	transcript = chat.append_message("user", str(user_message["content"]), user_message)
 	composer.clear()
 	_status("Pregătesc contextul și instrumentele…")
 	active_definitions = tools.definitions() + assets.definitions() + _agent_definitions()
@@ -1194,6 +1196,8 @@ func _choose(selection: Dictionary) -> void:
 			for model_index in range(model_picker.item_count):
 				if model_picker.get_item_metadata(model_index) == selection.get("model"): model_picker.select(model_index)
 			_refresh_efforts()
+			for effort_index in range(effort_picker.item_count):
+				if effort_picker.get_item_metadata(effort_index) == selection.get("effort", ""): effort_picker.select(effort_index)
 			break
 
 func _refresh_conversations() -> void:
@@ -1355,7 +1359,10 @@ func _reference_context() -> String:
 	for reference in active_references:
 		var path = str(reference)
 		if not Common.project_path(path).is_empty():
-			paths.append(path)
+			if DirAccess.dir_exists_absolute(path):
+				var files = tools.execute("godot_files", {"path": path}, 0, false).get("result", [])
+				output += "\nDirectory reference " + path + ":\n" + "\n".join(files).left(12000)
+			else: paths.append(path)
 			var parent = path.get_base_dir()
 			while parent.begins_with("res://") and parent != "res://":
 				var instructions = parent.path_join("AGENTS.md")
@@ -1389,7 +1396,17 @@ func _reference_picker(kind: String) -> void:
 	list.custom_minimum_size = Vector2(260, 280)
 	body.add_child(list)
 	var entries: Array = []
-	if kind == "files": entries = tools.execute("godot_files", {}, 0, false).get("result", [])
+	if kind == "files":
+		entries = tools.execute("godot_files", {}, 0, false).get("result", [])
+		var folders = []
+		for file in entries:
+			var folder = str(file).get_base_dir()
+			while folder.begins_with("res://") and folder != "res://":
+				if not folder + "/" in folders: folders.append(folder + "/")
+				var parent = folder.get_base_dir()
+				if parent == folder: break
+				folder = parent
+		entries = folders + entries
 	elif kind == "nodes":
 		var root = EditorInterface.get_edited_scene_root()
 		if root != null: _node_references(root, root, entries)
@@ -1526,8 +1543,8 @@ func _compact() -> void:
 	_finish_chat("Context compactat; mesajele originale rămân în istoric." if result.get("ok", false) else str(result.get("error", "Compactare nereușită.")))
 
 func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
-	var input = int(usage.get("usedTokens", usage.get("input_tokens", usage.get("prompt_tokens", usage.get("inputTokens", 0)))))
-	var output = int(usage.get("output_tokens", usage.get("completion_tokens", usage.get("outputTokens", 0))))
+	var input = int(usage.get("usedTokens", usage.get("input_tokens", usage.get("prompt_tokens", usage.get("inputTokens", usage.get("promptTokenCount", 0))))))
+	var output = int(usage.get("output_tokens", usage.get("completion_tokens", usage.get("outputTokens", usage.get("candidatesTokenCount", 0)))))
 	var limit = int(usage.get("contextWindowTokens", 0))
 	for item in profile.get("models", []):
 		if item["id"] == model: limit = int(item.get("context", 0))

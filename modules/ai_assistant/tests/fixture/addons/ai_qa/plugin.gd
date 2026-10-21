@@ -89,6 +89,22 @@ func _run() -> void:
 		var changed = toolset.execute("godot_write_file", {"path": "res://ai_test_probe.gd", "text": before + "\n# temporary fixture edit\n"}, 2, true)
 		var restored = toolset.execute("godot_restore_file", {"index": changed.get("result", {}).get("recovery_index", -1)}, 2, true)
 		_check(restored.get("ok", false) and FileAccess.get_file_as_string("res://ai_test_probe.gd") == before, "Restore previous file bytes")
+	# Check grouped rollback and conflicts against real editor state, not just a mock.
+	if probe != null:
+		toolset.turn_id = "fixture-restore"
+		toolset.execute("godot_set", {"handle": str(created["result"]["handle"]), "property": "position", "value": {"$type": "Vector3", "value": [9, 8, 7]}}, 2, true)
+		toolset.execute("godot_write_file", {"path": "res://ai_restore_probe.txt", "text": "AI content"}, 2, true)
+		var manual = FileAccess.open("res://ai_restore_probe.txt", FileAccess.WRITE)
+		manual.store_string("Manual content")
+		manual.close()
+		var conflict = toolset.restore_turn("fixture-restore")
+		_check(conflict.get("code") == "restore_conflict" and probe.position == Vector3(9, 8, 7), "Rollback conflict preserves manual bytes and scene")
+		manual = FileAccess.open("res://ai_restore_probe.txt", FileAccess.WRITE)
+		manual.store_string("AI content")
+		manual.close()
+		var rollback = toolset.restore_turn("fixture-restore")
+		_check(rollback.get("ok", false) and not FileAccess.file_exists("res://ai_restore_probe.txt") and probe.position == Vector3(1, 2, 3), "Grouped rollback restores file and native scene Undo")
+		toolset.turn_id = ""
 	if native: await _native_runtime_tests()
 	panel._display("assistant", "Asistentul AI este integrat în editor. Configurează un serviciu cloud sau local din Setări pentru a începe.")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")

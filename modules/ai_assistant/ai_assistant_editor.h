@@ -1,8 +1,10 @@
 #pragma once
 
-#include "editor/plugins/editor_plugin.h"
 #include "ai_runtime_bridge.h"
+
 #include "editor/inspector/editor_inspector.h"
+#include "editor/plugins/editor_plugin.h"
+
 #include "modules/gdscript/gdscript.h"
 
 class AIAssistantSecretStore : public RefCounted {
@@ -10,8 +12,10 @@ class AIAssistantSecretStore : public RefCounted {
 	String directory;
 	Vector<uint8_t> master_key;
 	bool ensure_directory();
+
 protected:
 	static void _bind_methods();
+
 public:
 	bool store(const String &p_name, const String &p_value);
 	String read(const String &p_name);
@@ -23,6 +27,7 @@ class AIAssistantEditorPlugin;
 class AIAssistantSettingsInspector : public EditorInspectorPlugin {
 	GDCLASS(AIAssistantSettingsInspector, EditorInspectorPlugin);
 	AIAssistantEditorPlugin *plugin = nullptr;
+
 public:
 	void set_plugin(AIAssistantEditorPlugin *p_plugin) { plugin = p_plugin; }
 	bool can_handle(Object *p_object) override;
@@ -36,8 +41,10 @@ class AIAssistantEditorPlugin : public EditorPlugin {
 	Ref<AIAssistantSecretStore> secrets;
 	Ref<AIAssistantDebugger> runtime_debugger;
 	Vector<Ref<GDScript>> scripts;
+
 protected:
 	static void _bind_methods();
+
 public:
 	bool has_main_screen() const override { return true; }
 	String get_plugin_name() const override { return "AI Assistant"; }

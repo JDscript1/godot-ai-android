@@ -49,8 +49,7 @@ export class TurnManager {
     const input = turnSchema.parse(raw);
     const parent = this.accounts.get(input.account);
     if (input.child && !this.createRuntime) throw new Error("Independent child sessions unavailable");
-    const account = input.child ? this.createRuntime!(input.account) : parent;
-    if (!account) throw new Error("Account runtime unavailable");
+    if (!parent) throw new Error("Account runtime unavailable");
     this.prune();
     if ([...this.#turns.values()].some(turn => turn.status === "running" && turn.account === input.account && turn.child === input.child)) {
       throw new Error("This account already has an active turn");
@@ -68,6 +67,7 @@ export class TurnManager {
         execute: async (argumentsValue) => this.#requestTool(turn, definition.name, argumentsValue),
       });
     }
+    const account = input.child ? this.createRuntime!(input.account) : parent;
     this.#turns.set(turn.id, turn);
     // SDK runtimes only see the broker. Actual project access and user approvals stay in the APK.
     void account.chat({
@@ -96,7 +96,7 @@ export class TurnManager {
         pending.reject(new Error("Turn ended"));
       }
       turn.pending.clear();
-      if (input.child) void account.close();
+      if (input.child) void Promise.resolve(account.close()).catch(() => {});
     });
     return { id: turn.id };
   }

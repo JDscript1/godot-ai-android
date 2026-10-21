@@ -9407,12 +9407,12 @@ EditorNode::EditorNode() {
 
 	if (AssetLibraryEditorPlugin::is_available()) {
 		add_editor_plugin(memnew(AssetLibraryEditorPlugin));
+	} else {
+		print_verbose("Asset Store not available (due to using Web editor, or SSL support disabled).");
 	}
 #ifdef MODULE_AI_ASSISTANT_ENABLED
 	add_editor_plugin(memnew(AIAssistantEditorPlugin));
-#endif else {
-		print_verbose("Asset Store not available (due to using Web editor, or SSL support disabled).");
-	}
+#endif
 
 	// More visually meaningful to have this later.
 	add_editor_plugin(memnew(AnimationPlayerEditorPlugin));

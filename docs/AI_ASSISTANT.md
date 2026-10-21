@@ -142,3 +142,63 @@ adapters. The test counts above cover the exercised paths, not every engine meth
 - [Runware TRELLIS.2](https://runware.ai/docs/models/microsoft-trellis-2)
 - [Runware Rodin Gen-2](https://runware.ai/docs/models/hyper3d-rodin-gen-2)
 - [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+
+## Native chat workspace
+
+The AI main screen is registered immediately after Asset Store. Scene,
+FileSystem and Inspector docks stay available. The native chat uses a graphite
+surface and violet/blue gradient; history collapses when the available workspace
+is narrower than 900 logical pixels. The message column is limited to 760 logical
+pixels. There are no embedded web pages.
+
+Conversations are stored per project, with search, favorites, archive, rename,
+fork and Markdown export to the clipboard. Existing `history.json` is imported
+once and preserved. Images are cached as separate private files. Switching the
+provider/model keeps the conversation and labels responses with their origin;
+provider-specific signed/reasoning blocks are retained only for their originating
+profile and model. Model selection groups API, subscription and local profiles.
+
+The searchable settings window has General, Providers, Subscriptions, Generation,
+MCP, Automations, Journal, Agent, Voice and Playtesting pages. `@` opens project
+file/folder references, `$` opens scene-node references and `/` lists commands.
+Images can be attached to supported multimodal providers. Context counters use
+provider-reported usage when available. `/compact` writes a continuation summary
+while preserving the original conversation.
+
+Plan mode permits inspection and presents an Apply plan button, which switches
+to confirmation mode. Messages sent during a turn enter a queue with their own
+provider/model selection. Stop pauses the queue; `/resume` continues it and
+`/steer <instructions>` interrupts the current turn before using the new request.
+AGENTS.md guidance and editable project memories are included in context.
+
+Explore and General children inspect independently and return proposed changes;
+the parent applies project writes. Cloud profiles allow two children; local and
+companion profiles allow one. Companion protocol 2 creates a separate SDK object
+and session for each child, so a parent waiting for a tool can receive its result.
+Authentication remains shared through the existing local account stores.
+
+The Changes/Undo action shows before/after file contents and offers restoration.
+It refuses restoration when file hashes or native scene Undo history changed
+subsequently. Generic method calls, external operations and arbitrary setting
+changes are not reversible checkpoints.
+
+## Playtest and voice boundaries
+
+Playtest uses the fork's native debugger bridge to inspect the running scene,
+capture its actual viewport and send bounded InputMap/key/mouse/touch events.
+It never substitutes an editor screenshot for a game frame. The default budget
+is 30 steps / 180 seconds. Held input is released on Stop and after a native
+2.2-second watchdog; each requested hold is limited to two seconds. Screenshots
+and child reports are retained in the project's private AI data directory.
+Use a vision-capable model in Playtesting settings or a model whose live catalog
+declares image input. A disconnected debugger or unsupported model is reported
+as blocked rather than a successful playtest.
+
+Voice supports Android SpeechRecognizer, preferring an installed on-device
+service, and a separately configured Whisper-compatible transcription endpoint.
+Endpoint recording is capped at 60 seconds and encoded as mono 16 kHz PCM WAV.
+The transcription key is stored separately from chat credentials. Transcripts
+are inserted into the composer for editing and require an explicit send action.
+Stopping or suspending cancels microphone capture. Android permissions, the
+installed recognition service, hardware audio and live endpoints still require
+physical-device validation; desktop rendering does not establish those results.

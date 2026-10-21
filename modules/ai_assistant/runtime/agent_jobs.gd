@@ -121,7 +121,7 @@ func _companion(job: Dictionary, definitions: Array, instruction: String) -> voi
 				var executed = await execute(job, str(event["name"]), event.get("arguments", {}))
 				await service.companion_request(owner.config["companion"], "/v1/turns/" + id + "/tools/" + str(event["id"]), HTTPClient.METHOD_POST, {"result": executed})
 		if state.get("status") in ["completed", "failed", "cancelled"]:
-			_finish(job, str(state["status"]), str(state.get("text", state.get("error", ""))))
+			_finish(job, str(state["status"]), str(state.get("text", "")) if state["status"] == "completed" else str(state.get("error", "Oprit.")))
 			return
 		await owner.get_tree().create_timer(0.2).timeout
 	await service.companion_request(owner.config["companion"], "/v1/turns/" + id + "/cancel", HTTPClient.METHOD_POST, {})

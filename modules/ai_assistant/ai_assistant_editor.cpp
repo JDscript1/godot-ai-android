@@ -1,19 +1,20 @@
 #include "ai_assistant_editor.h"
+
 #include "runtime.gen.h"
 
 #include "core/crypto/crypto.h"
-#include "core/object/class_db.h"
-#include "core/object/callable_mp.h"
 #include "core/io/config_file.h"
-#include "core/io/json.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
+#include "core/object/callable_mp.h"
+#include "core/object/class_db.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
-#include "editor/settings/editor_settings.h"
 #include "editor/file_system/editor_paths.h"
-#include "scene/gui/button.h"
+#include "editor/settings/editor_settings.h"
 #include "scene/gui/box_container.h"
+#include "scene/gui/button.h"
 
 #ifdef ANDROID_ENABLED
 #include "platform/android/jni_utils.h"
@@ -45,8 +46,12 @@ static String ai_android_vault(const char *p_method, const String &p_name, const
 	} else {
 		output = jstring_to_string(result, env);
 	}
-	if (result) env->DeleteLocalRef(result);
-	if (value) env->DeleteLocalRef(value);
+	if (result) {
+		env->DeleteLocalRef(result);
+	}
+	if (value) {
+		env->DeleteLocalRef(value);
+	}
 	env->DeleteLocalRef(name);
 	env->DeleteLocalRef(cls);
 	return output;
@@ -60,9 +65,13 @@ void AIAssistantSecretStore::_bind_methods() {
 }
 
 bool AIAssistantSecretStore::ensure_directory() {
-	if (!master_key.is_empty()) return true;
+	if (!master_key.is_empty()) {
+		return true;
+	}
 	directory = EditorPaths::get_singleton()->get_config_dir().path_join("ai_assistant_secrets");
-	if (DirAccess::make_dir_recursive_absolute(directory) != OK) return false;
+	if (DirAccess::make_dir_recursive_absolute(directory) != OK) {
+		return false;
+	}
 	const String key_path = directory.path_join("master.key");
 	if (FileAccess::exists(key_path)) {
 		master_key = FileAccess::get_file_as_bytes(key_path);
@@ -89,7 +98,9 @@ bool AIAssistantSecretStore::store(const String &p_name, const String &p_value) 
 	file->set_value("secret", "value", p_value);
 	String path = directory.path_join(p_name.sha256_text() + ".cfg");
 	Error err = file->save_encrypted(path + ".tmp", master_key);
-	if (err != OK) return false;
+	if (err != OK) {
+		return false;
+	}
 	FileAccess::set_unix_permissions(path + ".tmp", 0600);
 	return DirAccess::rename_absolute(path + ".tmp", path) == OK;
 #endif
@@ -101,10 +112,14 @@ String AIAssistantSecretStore::read(const String &p_name) {
 #else
 	ERR_FAIL_COND_V(!ensure_directory(), String());
 	String path = directory.path_join(p_name.sha256_text() + ".cfg");
-	if (!FileAccess::exists(path)) return String();
+	if (!FileAccess::exists(path)) {
+		return String();
+	}
 	Ref<ConfigFile> file;
 	file.instantiate();
-	if (file->load_encrypted(path, master_key) != OK) return String();
+	if (file->load_encrypted(path, master_key) != OK) {
+		return String();
+	}
 	return file->get_value("secret", "value", String());
 #endif
 }
@@ -124,7 +139,9 @@ bool AIAssistantSettingsInspector::can_handle(Object *p_object) {
 }
 
 bool AIAssistantSettingsInspector::parse_property(Object *p_object, const Variant::Type p_type, const String &p_path, const PropertyHint p_hint, const String &p_hint_text, const BitField<PropertyUsageFlags> p_usage, const bool p_wide) {
-	if (!p_path.begins_with("ai_assistant/") || !p_path.ends_with("/configure")) return false;
+	if (!p_path.begins_with("ai_assistant/") || !p_path.ends_with("/configure")) {
+		return false;
+	}
 	Button *button = memnew(Button);
 	button->set_text(TTR("Configure AI Assistant…"));
 	button->connect(SceneStringName(pressed), callable_mp(plugin, &AIAssistantEditorPlugin::open_settings).bind(p_path.get_slice("/", 1)));
@@ -142,26 +159,43 @@ void AIAssistantEditorPlugin::_bind_methods() {
 int64_t AIAssistantEditorPlugin::runtime_request(const String &p_command, const Dictionary &p_arguments) {
 	return runtime_debugger.is_valid() ? runtime_debugger->request(p_command, p_arguments) : -1;
 }
-Dictionary AIAssistantEditorPlugin::runtime_poll(int64_t p_id) { return runtime_debugger->poll(p_id); }
+Dictionary AIAssistantEditorPlugin::runtime_poll(int64_t p_id) {
+	return runtime_debugger->poll(p_id);
+}
 Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const Dictionary &p_args) {
 #ifdef ANDROID_ENABLED
 	JNIEnv *env = get_jni_env();
 	jclass cls = jni_find_class(env, "org/godotengine/editor/AIVoice");
-	if (!cls) return Dictionary();
+	if (!cls) {
+		return Dictionary();
+	}
 	jmethodID method = env->GetStaticMethodID(cls, "command", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
-	if (!method) { env->ExceptionClear(); env->DeleteLocalRef(cls); return Dictionary(); }
+	if (!method) {
+		env->ExceptionClear();
+		env->DeleteLocalRef(cls);
+		return Dictionary();
+	}
 	jstring action = env->NewStringUTF(p_action.utf8().get_data());
 	jstring args = env->NewStringUTF(JSON::stringify(p_args).utf8().get_data());
 	jstring result = (jstring)env->CallStaticObjectMethod(cls, method, action, args);
 	String output;
-	if (env->ExceptionCheck()) env->ExceptionClear();
-	else if (result) output = jstring_to_string(result, env);
-	if (result) env->DeleteLocalRef(result);
-	env->DeleteLocalRef(action); env->DeleteLocalRef(args); env->DeleteLocalRef(cls);
+	if (env->ExceptionCheck()) {
+		env->ExceptionClear();
+	} else if (result) {
+		output = jstring_to_string(result, env);
+	}
+	if (result) {
+		env->DeleteLocalRef(result);
+	}
+	env->DeleteLocalRef(action);
+	env->DeleteLocalRef(args);
+	env->DeleteLocalRef(cls);
 	Variant parsed = JSON::parse_string(output);
 	return parsed.get_type() == Variant::DICTIONARY ? Dictionary(parsed) : Dictionary();
 #else
-	Dictionary result; result["error"] = "Dictarea Android nu este disponibilă pe această platformă."; return result;
+	Dictionary result;
+	result["error"] = "Dictarea Android nu este disponibilă pe această platformă.";
+	return result;
 #endif
 }
 
@@ -230,8 +264,12 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 }
 
 AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
-	if (runtime_debugger.is_valid()) remove_debugger_plugin(runtime_debugger);
-	if (settings_inspector.is_valid()) remove_inspector_plugin(settings_inspector);
+	if (runtime_debugger.is_valid()) {
+		remove_debugger_plugin(runtime_debugger);
+	}
+	if (settings_inspector.is_valid()) {
+		remove_inspector_plugin(settings_inspector);
+	}
 	if (panel) {
 		if (panel->get_parent()) {
 			panel->get_parent()->remove_child(panel);
