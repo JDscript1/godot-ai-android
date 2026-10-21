@@ -1193,6 +1193,7 @@ func _delete_automation() -> void:
 	_save_config()
 
 func _process(_delta: float) -> void:
+	if busy and chat != null: chat._follow()
 	if speech != null: speech.poll(config.get("preferences", {}))
 
 func _selection() -> Dictionary:
