@@ -396,3 +396,7 @@ $RECYCLE.BIN/
 *.msp
 *.lnk
 *.generated.props
+
+# Personal AI editor verification artifacts
+.ai-qa/
+.ai-scons-cache/
