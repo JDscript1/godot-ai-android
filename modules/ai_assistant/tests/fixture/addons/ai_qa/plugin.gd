@@ -110,7 +110,9 @@ func _run() -> void:
 		var rollback = toolset.restore_turn("fixture-restore")
 		_check(rollback.get("ok", false) and not FileAccess.file_exists("res://ai_restore_probe.txt") and probe.position == Vector3(1, 2, 3), "Grouped rollback restores file and native scene Undo")
 		toolset.turn_id = ""
-	if native: await _native_runtime_tests()
+	if native:
+		await _native_runtime_tests()
+		hide_bottom_panel()
 	panel._display("assistant", "Asistentul AI este integrat în editor. Configurează un serviciu cloud sau local din Setări pentru a începe.")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty():
@@ -151,6 +153,7 @@ func _rpc(command: String, args: Dictionary = {}) -> Dictionary:
 	return {"ok": false, "error": "RPC timeout"}
 
 func _native_runtime_tests() -> void:
+	_check(panel.get_script().is_built_in() and panel.get_script().resource_path.begins_with("local://"), "Embedded scripts remain internal when saving a scene")
 	var ai_button: Button
 	var asset_button: Button
 	for node in EditorInterface.get_base_control().find_children("*", "Button", true, false):

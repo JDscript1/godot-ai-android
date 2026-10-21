@@ -239,7 +239,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	for (const AIScriptSource &source : ai_script_sources) {
 		Ref<GDScript> script;
 		script.instantiate();
-		script->set_path(String("res://__godot_ai_builtin__/") + source.name + ".gd");
+		script->set_path(String("local://godot_ai/") + source.name + ".gd");
 		script->set_source_code(String::utf8((const char *)source.data));
 		if (script->reload() != OK) {
 			ERR_PRINT(String("AI Assistant could not load embedded script: ") + source.name);
@@ -248,6 +248,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 		for (int i = 0; i < scripts.size(); i++) {
 			script->set(ai_script_sources[i].binding, scripts[i]);
 		}
+		script->set_edited(false);
 		scripts.push_back(script);
 	}
 	panel = memnew(VBoxContainer);

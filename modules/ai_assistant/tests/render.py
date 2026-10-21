@@ -41,7 +41,11 @@ def main():
             report_path.unlink(missing_ok=True)
             result = subprocess.run(command, env={**os.environ, **environment},
                                     capture_output=True, text=True, timeout=90)
-            (destination / "editor.log").write_text(result.stdout + result.stderr)
+            log = result.stdout + result.stderr
+            (destination / "editor.log").write_text(log)
+            if "SCRIPT ERROR:" in log or "ERROR: Cannot save GDScript file" in log:
+                print(log)
+                raise SystemExit(f"{name}: embedded script or save regression")
             if result.returncode or not report_path.exists():
                 print(result.stdout + result.stderr)
                 raise SystemExit(f"{name}: editor verification failed ({result.returncode})")
