@@ -140,4 +140,4 @@ func request(url: String, method: int = HTTPClient.METHOD_GET, headers: PackedSt
 	return result
 
 func _expired(deadline: int, cancel: Dictionary) -> bool:
-	return cancel.get("cancelled", false) or Time.get_ticks_msec() > deadline
+	return not is_instance_valid(owner) or not owner.is_inside_tree() or cancel.get("cancelled", false) or Time.get_ticks_msec() > deadline

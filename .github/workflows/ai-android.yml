@@ -30,6 +30,17 @@ jobs:
           curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
           unzip -q /tmp/godot.zip -d /tmp/godot-ai
           python modules/ai_assistant/tests/run.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
+      - name: Render desktop and narrow editor panels
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri
+          python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AI-editor-rendered-verification
+          path: .ai-qa/rendered
+          if-no-files-found: warn
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -67,6 +78,15 @@ jobs:
         run: |
           python -m pip install 'scons==4.10.1'
           sdkmanager 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
+      - name: Restore personal debug signing key
+        env:
+          AI_DEBUG_KEYSTORE_BASE64: ${{ secrets.GODOT_AI_DEBUG_KEYSTORE }}
+        run: |
+          if [ -n "$AI_DEBUG_KEYSTORE_BASE64" ]; then
+            install -d -m 700 "$HOME/.android"
+            printf '%s' "$AI_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+          fi
       - name: Compile editor and APK
         run: scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes cache_path="$SCONS_CACHE" -j4
       - uses: actions/cache/save@v4
@@ -76,15 +96,29 @@ jobs:
           key: godot-ai-android-4.7.2-${{ github.sha }}
       - name: Verify APK
         run: |
-          APK=$(find bin/android_editor_builds -name '*android*debug*.apk' -print -quit)
-          test -n "$APK"
-          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$APK" | head -3
+          APK=bin/android_editor_builds/android_editor-android-debug.apk
+          test -f "$APK"
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$APK" > "$APK.badging.txt"
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          apk = Path('bin/android_editor_builds/android_editor-android-debug.apk')
+          metadata = Path(str(apk) + '.badging.txt').read_text()
+          assert "package: name='com.jdscript.godotai.debug'" in metadata
+          with zipfile.ZipFile(apk) as archive:
+              abis = {name.split('/')[1] for name in archive.namelist() if name.startswith('lib/') and name.endswith('.so')}
+              assert abis == {'arm64-v8a'}, abis
+              assert 'lib/arm64-v8a/libgodot_android.so' in archive.namelist()
+          print(metadata.splitlines()[0])
+          print('Verified arm64 native libraries and Android phone/tablet package.')
+          PY
           sha256sum "$APK" > "$APK.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: Godot-AI-Android-arm64-${{ github.sha }}
           path: |
-            bin/android_editor_builds/*android*debug*.apk
-            bin/android_editor_builds/*.sha256
+            bin/android_editor_builds/android_editor-android-debug.apk
+            bin/android_editor_builds/android_editor-android-debug.apk.sha256
+            bin/android_editor_builds/android_editor-android-debug.apk.badging.txt
           if-no-files-found: error

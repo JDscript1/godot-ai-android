@@ -84,6 +84,10 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             self.reply({"prompt_id": "fixture-job", "number": 0})
         elif location.path.endswith("/chat/completions"):
             has_result = any(message.get("role") == "tool" for message in payload.get("messages", []))
+            if location.path.startswith("/json/"):
+                message = {"role": "assistant", "content": "JSON verified"} if has_result else {"role": "assistant", "content": None, "tool_calls": [{"id": "json-call-a", "function": {"name": "godot_project", "arguments": "{}"}}, {"id": "json-call-b", "function": {"name": "godot_files", "arguments": "{}"}}]}
+                self.reply({"choices": [{"message": message, "finish_reason": "stop" if has_result else "tool_calls"}]})
+                return
             if has_result:
                 events = [{"choices": [{"delta": {"content": "Verificat: română 🐦"}, "finish_reason": None}]}, {"choices": [{"delta": {}, "finish_reason": "stop"}]}]
             else:

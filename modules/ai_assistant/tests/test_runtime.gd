@@ -54,8 +54,17 @@ func _run() -> void:
 	check(common.parse_url("http://192.168.1.8:1234/v1", true).get("ok", false), "Allow configured LAN endpoint")
 	check(common.parse_url("http://[::1]:1234/v1", true).get("ok", false), "Allow configured IPv6 endpoint")
 	check(common.uid().length() == 36 and common.uid().get_slice("-", 2).begins_with("4"), "Task identifiers use UUIDv4")
+	var assets_script = scripts["assets"]
+	var rodin = assets_script.build_runware_task({"asset_kind": "mesh", "model": "hyper3d:rodin@gen-2"}, "bird", "data:image/png;base64,fixture", common.uid())
+	check(rodin.get("result", {}).get("inputs", {}).get("images") == ["data:image/png;base64,fixture"] and not rodin["result"].has("inputImages"), "Rodin reference uses documented nested inputs.images")
+	var rapid = assets_script.build_runware_task({"asset_kind": "mesh", "model": "tencent:hunyuan-3d@3.1-rapid"}, "bird", "data:image/png;base64,fixture", common.uid())
+	check(rapid.get("result", {}).get("inputs", {}).has("image") and not rapid["result"].has("positivePrompt"), "Hunyuan Rapid reference uses inputs.image without exclusive prompt")
+	check(not assets_script.build_runware_task({"asset_kind": "mesh", "model": "microsoft:trellis-2@4b"}, "bird", "", common.uid()).get("ok", false), "Image-only 3D model requires a reference before submitting")
+	check(not assets_script.build_runware_task({"asset_kind": "image", "model": "fixture"}, "bird", "fixture-reference", common.uid()).get("ok", false), "Unsupported image reference is reported rather than silently discarded")
 	check(common.decode_variant({"$type": "Vector3", "value": [1, 2, 3]}) == Vector3(1, 2, 3), "Decode typed Godot arguments")
 	check(not "fixture-secret" in common.redact("Bearer fixture-secret", ["fixture-secret"]), "Redact credentials")
+	check(common.contains_inline_secrets({"1": {"inputs": {"api_key": "fixture-key"}}}), "Workflow credentials are detected before saving")
+	check(not common.contains_inline_secrets({"1": {"inputs": {"token_count": 77}}}), "Ordinary workflow parameters remain supported")
 	var decoder = scripts["transport"].SSEDecoder.new()
 	var events = []
 	var data = "data: {\"value\":\"română 🐦\"}\r\n\r\ndata: [DONE]\n\n".to_utf8_buffer()
@@ -104,6 +113,11 @@ func _run() -> void:
 func _network_tests(node: Node) -> void:
 	var vault = FakeVault.new()
 	var adapter = scripts["providers"].new(node, vault)
+	vault.store("oauth-record", JSON.stringify({"access_token": "fixture-access", "refresh_token": "fixture-refresh"}))
+	var mismatched = await adapter.list_models({"id": "oauth-record", "kind": "chat", "url": mock_url + "/v1", "allow_http": true})
+	check(mismatched.get("code") == "credential_type_mismatch", "OAuth records never become API-key headers")
+	var wrong_host = await adapter.list_models({"id": "oauth-record", "kind": "siwc", "url": mock_url + "/v1", "allow_http": true})
+	check(wrong_host.get("code") == "credential_type_mismatch", "ChatGPT credentials are bound to the official OpenAI endpoint")
 	var profile = {"id": "fixture", "kind": "chat", "url": mock_url + "/v1", "allow_http": true}
 	var listed = await adapter.list_models(profile)
 	check(listed.get("ok", false) and listed.get("result", []).size() == 1, "Real HTTP model discovery")
@@ -117,6 +131,15 @@ func _network_tests(node: Node) -> void:
 		var second = await adapter.complete(profile, history, [], "fixture", "", {})
 		check(second.get("ok", false) and second.get("message", {}).get("content") == "Verificat: română 🐦", "Real multi-turn tool/result continuation")
 	var incomplete_profile = profile.duplicate()
+	var json_profile = profile.duplicate()
+	json_profile["url"] = mock_url + "/json/v1"
+	var json_first = await adapter.complete(json_profile, [{"role": "user", "content": "Inspect"}], [], "fixture", "", {})
+	check(json_first.get("ok", false) and json_first.get("calls", []).size() == 2, "Compatible JSON-only servers retain separate tool calls")
+	if json_first.get("ok", false):
+		var json_history = [{"role": "user", "content": "Inspect"}, json_first["message"]]
+		for call in json_first["calls"]: json_history.append({"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": "{}"})
+		var json_second = await adapter.complete(json_profile, json_history, [], "fixture", "", {})
+		check(json_second.get("ok", false) and json_second.get("message", {}).get("content") == "JSON verified", "Compatible JSON-only server tool continuation")
 	incomplete_profile["url"] = mock_url + "/incomplete/v1"
 	var incomplete = await adapter.complete(incomplete_profile, [{"role": "user", "content": "Inspect"}], [], "fixture", "", {})
 	check(not incomplete.get("ok", false) and incomplete.get("code") == "incomplete_stream", "Interrupted provider streams never report success")
@@ -152,6 +175,8 @@ func _network_tests(node: Node) -> void:
 		var refreshed = await assets.refresh(str(submitted["result"]["id"]), generation, {})
 		check(refreshed.get("ok", false) and refreshed.get("result", {}).get("status") == "completed", "ComfyUI download and artifact validation: " + kind)
 		if not refreshed.get("ok", false): continue
+		var waited = await assets.wait_for_job(str(submitted["result"]["id"]), generation, {}, 1)
+		check(waited.get("ok", false) and waited.get("result", {}).get("status") == "completed", "Generation wait returns the verified result: " + kind)
 		if kind == "mesh":
 			var document = GLTFDocument.new()
 			var state = GLTFState.new()
@@ -163,3 +188,8 @@ func _network_tests(node: Node) -> void:
 		check(imported.get("ok", false) and FileAccess.file_exists(str(imported.get("result", {}).get("path", ""))), "Import artifact into the fixture project: " + kind)
 		var again = assets.import_job(str(submitted["result"]["id"]), "res://ai_test_assets")
 		check(again.get("ok", false) and again.get("result", {}).get("path") != imported.get("result", {}).get("path"), "Artifact import never overwrites: " + kind)
+	var bad_profile = {"id": "fixture-bad-output", "kind": "comfy", "asset_kind": "mesh", "url": mock_url, "allow_http": true, "workflow": {"2": {"class_type": "FixturePrompt", "inputs": {"text": ""}}}, "prompt_node": "2", "prompt_input": "text", "output_node": "2"}
+	var bad_submit = await assets.submit(bad_profile, "Fixture", "", {})
+	if bad_submit.get("ok", false):
+		var missing = await assets.refresh(str(bad_submit["result"]["id"]), bad_profile, {})
+		check(missing.get("code") == "missing_artifact", "Completed workflows with wrong output bindings fail explicitly")

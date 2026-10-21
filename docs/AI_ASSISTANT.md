@@ -17,6 +17,11 @@ configuration window, also reachable from the **AI Assistant** bottom panel.
 - **Generare:** configure Runware with your key and model, or an existing ComfyUI
   server. Import a workflow exported in API format, bind its prompt/reference fields
   and output node, then validate the server. PNG and self-contained GLB 2.0 are supported.
+  Runware's public catalog lists model IDs; it does not validate your credentials.
+  Its image form supports text-to-image. For 3D, TRELLIS.2 requires a reference image;
+  Rodin, Meshy, Tripo and Hunyuan accept text or the supported reference binding.
+  Models requiring extra inputs, such as a segmentation mask, need a configured
+  ComfyUI workflow. A cancelled wait retains the remote job for later retrieval.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
   configure the process in the companion and connect to its `/mcp/<name>` URL.
 - **Automatizări:** save a task's instructions and active provider, then run it manually.
@@ -65,28 +70,46 @@ Original Godot Agent/Hydra-Go-3D worktrees were not edited.
 Run the embedded-runtime tests with an upstream or forked 4.7.2 editor binary:
 
 ```sh
-godot --headless --path modules/ai_assistant/tests/fixture \
-  --script "$PWD/modules/ai_assistant/tests/test_runtime.gd" \
-  -- --source="$PWD/modules/ai_assistant"
+python modules/ai_assistant/tests/run.py --godot /absolute/path/to/godot
+# Requires xvfb-run and a working OpenGL software driver on headless Linux:
+python modules/ai_assistant/tests/render.py --godot /absolute/path/to/godot
 cd tools/ai-companion
 npm ci
 npm test
 npm run build
 ```
 
+On Termux with a Debian proot installation, add `--proot` to the Python commands
+and use the official Linux arm64 editor path. Rendered evidence is saved under
+`.ai-qa/rendered/{desktop,narrow}` with screenshots, reports and editor logs.
+
 The `Godot AI Android` GitHub workflow also compiles the native Android arm64
-editor and verifies the APK signature, package metadata and SHA-256 hash.
+editor and verifies the APK signature, package metadata, ABI and SHA-256 hash.
+Only the phone/tablet APK `android_editor-android-debug.apk` is delivered.
+The personal fork uses the Actions secret `GODOT_AI_DEBUG_KEYSTORE` to preserve
+the debug signing identity across updates. Other forks may configure their own
+base64-encoded development keystore, or receive an ephemeral runner debug key.
+This is a development build; no production signing key is included in source.
 
 Evidence must be distinguished:
 
 | Area | Current verification |
 | --- | --- |
-| Embedded runtime compilation, URL/path handling, tool modes, SSE and wire conversion | Automated local tests |
-| Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | Automated tests with deterministic runtimes |
-| Android C++/Kotlin integration and APK | CI build required |
-| Native panel rendering and physical Android touch/lifecycle | Device/editor check required |
+| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 73 automated assertions passed locally with official Godot 4.7.2; provider responses are deterministic fixtures |
+| Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 7 tests passed with deterministic runtimes; TypeScript build passed |
+| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 22 checks passed at each of 1280x900 and 480x900 under the real Linux editor with a fixture secret store |
+| Android C++/Kotlin integration and APK | [Initial native build passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39599251683); signature and phone package checked locally. The latest source still requires its matching CI artifact |
+| Physical Android installation, touch, Keystore and suspend/resume | Device verification pending; desktop rendering does not establish these |
 | ChatGPT, Claude, Copilot and Kimi account logins | User-authorized live account checks required |
 | Runware and local ComfyUI image/GLB generation | Live configured-provider checks required |
+| Real Ollama/LM Studio coding and tool use | Reachable configured-model checks required |
+
+The native tool layer exposes scene and script editing, files with recovery,
+resources/materials, project/editor settings, animation players, run/stop,
+Output/Debugger text and semantic editor controls. Reflection supplies methods,
+properties and signals for classes and discovered object handles. This provides
+general editor access, while unreflected/private C++ operations need explicit
+adapters. The test counts above cover the exercised paths, not every engine method.
 
 ## Official protocol references
 
@@ -94,4 +117,7 @@ Evidence must be distinguished:
 - [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 - [ChatGPT plan inference limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
 - [ComfyUI routes](https://docs.comfy.org/development/comfyui-server/comms_routes)
+- [Runware task polling](https://runware.ai/docs/models-api/task-polling)
+- [Runware TRELLIS.2](https://runware.ai/docs/models/microsoft-trellis-2)
+- [Runware Rodin Gen-2](https://runware.ai/docs/models/hyper3d-rodin-gen-2)
 - [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)

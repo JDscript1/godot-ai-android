@@ -450,6 +450,14 @@ func _save_provider() -> void:
 		_status(str(checked["error"]))
 		return
 	var key = str(p["key"].text).strip_edges()
+	for previous in config["providers"]:
+		if previous["id"] != id: continue
+		if previous.get("kind") == "siwc":
+			_status("Conturile ChatGPT se gestionează din Abonamente. Poți actualiza catalogul folosind Testează / modele.")
+			return
+		if key.is_empty() and not vault.read(id).is_empty() and (str(previous.get("url", "")) != url or previous.get("issuer") != issuer["id"]):
+			_status("Pentru schimbarea serviciului sau adresei introdu explicit cheia corespunzătoare.")
+			return
 	if not key.is_empty():
 		var normalized = Providers.detect(key, str(issuer["id"]))
 		if normalized.get("ok", false): key = str(normalized["secret"])
@@ -602,7 +610,9 @@ func _start_chat(text: String) -> void:
 		for call in response["calls"]:
 			if cancel.get("cancelled", false): break
 			var result = await _execute_call(str(call["name"]), call["arguments"])
-			history.append({"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": _redact(JSON.stringify(result)).left(24000)})
+			var serialized = _redact(JSON.stringify(result))
+			if serialized.length() > 24000: serialized = JSON.stringify({"truncated": true, "preview": serialized.left(22000), "next": "Request a narrower inspection or file range."})
+			history.append({"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": serialized})
 		_persist_history()
 	_finish_chat("Oprit." if cancel.get("cancelled", false) else "Limita de pași a fost atinsă. Verifică rezultatele înainte de continuare.")
 
@@ -634,10 +644,12 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	elif name == "asset_generate":
 		var profile = _generation_profile(str(args.get("profile", "")))
 		result = await assets.submit(profile, str(args.get("prompt", "")), str(args.get("reference", "")), cancel) if not profile.is_empty() else Common.failure("Profil de generare inexistent.")
-	elif name == "asset_status":
+	elif name in ["asset_status", "asset_wait"]:
 		var job = assets.find_job(str(args.get("job", "")))
 		var profile = _generation_profile(str(job.get("profile_id", "")))
-		result = await assets.refresh(str(args.get("job", "")), profile, cancel) if not profile.is_empty() else Common.failure("Profil de generare inexistent.")
+		if profile.is_empty(): result = Common.failure("Profil de generare inexistent.")
+		elif name == "asset_wait": result = await assets.wait_for_job(str(args["job"]), profile, cancel, int(args.get("max_seconds", 300)))
+		else: result = await assets.refresh(str(args["job"]), profile, cancel)
 	elif name == "asset_import": result = assets.import_job(str(args.get("job", "")), str(args.get("directory", "res://ai_assets")))
 	else: result = tools.execute(name, args, mode_picker.selected, full_control.button_pressed)
 	_audit(name, args, result)
@@ -825,6 +837,8 @@ func _pick_workflow() -> void:
 		var value: Variant = Common.read_json(path)
 		if not value is Dictionary or value.is_empty() or value.has("nodes"):
 			_status("Exportă workflowul din ComfyUI în format API, fără nodurile de interfață.")
+		elif Common.contains_inline_secrets(value):
+			_status("Workflowul conține credențiale. Configurează-le pe serverul ComfyUI înainte de import.")
 		else:
 			forms["generation"]["workflow"] = value
 			_status("Workflow importat: %s noduri. Configurează intrările și nodul rezultat." % value.size())
@@ -898,6 +912,7 @@ func _test_generation() -> void:
 		dialog.canceled.connect(dialog.queue_free)
 		add_child(dialog)
 		dialog.popup_centered_clamped(Vector2i(650, 450), 0.9)
+		_status("Catalog public Runware. Cheia și accesul la model se verifică la generare.")
 
 func _generate() -> void:
 	if busy: return
@@ -921,12 +936,17 @@ func _selected_job() -> Dictionary:
 	return assets.jobs[selection[0]] if not selection.is_empty() and selection[0] < assets.jobs.size() else {}
 
 func _refresh_job() -> void:
+	if busy: return
 	var job = _selected_job()
 	if job.is_empty(): return
 	var profile = _generation_profile(str(job["profile_id"]))
 	if profile.is_empty(): return
+	busy = true
+	send_button.disabled = true
 	cancel = {"cancelled": false}
 	var result = await assets.refresh(str(job["id"]), profile, cancel)
+	busy = false
+	send_button.disabled = false
 	_status("Stare: " + str(result.get("result", {}).get("status", "")) if result.get("ok", false) else str(result.get("error", "Eroare de generare.")))
 	_refresh_lists()
 

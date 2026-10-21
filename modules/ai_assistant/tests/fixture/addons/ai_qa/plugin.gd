@@ -92,6 +92,7 @@ func _run() -> void:
 		await get_tree().create_timer(0.5).timeout
 		print("AI settings dimensions: ", panel.settings_window.size)
 		_check(panel.settings_window.size.y <= DisplayServer.screen_get_size().y, "Settings dialog fits the display height")
+		_check(panel.settings_window.size.x <= DisplayServer.screen_get_size().x, "Settings dialog fits the display width")
 		image = panel.settings_window.get_texture().get_image()
 		if image != null and not image.is_empty(): image.save_png(output.path_join("settings.png"))
 		panel.open_settings("generation")

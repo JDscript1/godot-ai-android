@@ -47,6 +47,8 @@ static func detect(key: String, issuer: String = "") -> Dictionary:
 
 func headers(profile: Dictionary) -> PackedStringArray:
 	var secret = vault.read(str(profile["id"])) if vault != null else ""
+	var stored: Variant = Common.parse_json(secret)
+	if profile.get("kind") != "siwc" and stored is Dictionary and stored.has("access_token"): return PackedStringArray()
 	if profile.get("kind") == "siwc":
 		var tokens: Variant = Common.parse_json(secret)
 		secret = str(tokens.get("access_token", "")) if tokens is Dictionary else ""
@@ -62,6 +64,8 @@ func headers(profile: Dictionary) -> PackedStringArray:
 	return result
 
 func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
+	var credential_error = _credential_error(profile)
+	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
 	var url = str(profile.get("url", "")).trim_suffix("/")
 	var result = await transport.request(url + "/models", HTTPClient.METHOD_GET, headers(profile), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel})
 	if not result.get("ok", false): return result
@@ -88,6 +92,8 @@ func ollama_capabilities(profile: Dictionary, model: String, cancel: Dictionary 
 	return await transport.request(root + "/api/show", HTTPClient.METHOD_POST, headers(profile), {"model": model}, {"allow_http": profile.get("allow_http", false), "cancel": cancel})
 
 func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable()) -> Dictionary:
+	var credential_error = _credential_error(profile)
+	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
 	var kind = str(profile.get("kind", "chat"))
 	var wire = build_request(kind, messages, tools, model, effort)
 	var path = str(wire["path"])
@@ -99,6 +105,9 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 		if not delta.is_empty() and on_delta.is_valid(): on_delta.call(delta)
 	var result = await transport.request(str(profile["url"]).trim_suffix("/") + path, HTTPClient.METHOD_POST, headers(profile), wire["body"], {"allow_http": profile.get("allow_http", false), "cancel": cancel, "on_event": receive})
 	if not result.get("ok", false): return result
+	# Some otherwise compatible local servers return a complete JSON message despite stream=true.
+	if kind == "chat" and result.get("events", []).is_empty() and result.get("json") is Dictionary:
+		consume_event(kind, result["json"], collected)
 	if not str(collected["error"]).is_empty(): return Common.failure(str(collected["error"]), "provider_error")
 	if not collected["terminal"]: return Common.failure("Fluxul s-a încheiat înaintea confirmării de finalizare.", "incomplete_stream")
 	var calls = []
@@ -113,6 +122,12 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 	if not collected["items"].is_empty(): message["provider_items"] = collected["items"]
 	if not collected["blocks"].is_empty(): message["provider_blocks"] = collected["blocks"].values()
 	return {"ok": true, "message": message, "calls": calls, "usage": collected["usage"], "finish": collected["finish"]}
+
+func _credential_error(profile: Dictionary) -> String:
+	if profile.get("kind") == "siwc" and str(profile.get("url", "")).trim_suffix("/") != "https://api.openai.com/v1": return "Conturile ChatGPT folosesc exclusiv endpointul oficial OpenAI."
+	var stored: Variant = Common.parse_json(vault.read(str(profile["id"]))) if vault != null else null
+	if profile.get("kind") != "siwc" and stored is Dictionary and stored.has("access_token"): return "Un cont cu abonament nu poate fi convertit într-o cheie API. Reconectează profilul din Abonamente."
+	return ""
 
 static func build_request(kind: String, messages: Array, tools: Array, model: String, effort: String = "") -> Dictionary:
 	var system = []
@@ -254,11 +269,13 @@ static func consume_event(kind: String, event: Dictionary, state: Dictionary) ->
 	else:
 		state["usage"] = event.get("usage", state["usage"])
 		for choice in event.get("choices", []):
-			var delta: Dictionary = choice.get("delta", {})
+			var delta: Dictionary = choice.get("delta", choice.get("message", {}))
 			state["text"] += str(delta.get("content", "")) if delta.get("content") != null else ""
 			state["reasoning"] += str(delta.get("reasoning_content", "")) if delta.get("reasoning_content") != null else ""
-			for fragment in delta.get("tool_calls", []):
-				var index = str(fragment.get("index", 0))
+			var fragments: Array = delta.get("tool_calls", [])
+			for fragment_index in range(fragments.size()):
+				var fragment: Dictionary = fragments[fragment_index]
+				var index = str(fragment.get("index", fragment_index))
 				if not state["calls"].has(index): state["calls"][index] = {"id": Common.uid(), "name": "", "arguments": ""}
 				var call: Dictionary = state["calls"][index]
 				if fragment.has("id"): call["id"] = fragment["id"]

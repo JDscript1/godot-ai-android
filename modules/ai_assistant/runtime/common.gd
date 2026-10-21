@@ -105,6 +105,17 @@ static func parse_json(text: String) -> Variant:
 	var parser = JSON.new()
 	return parser.data if parser.parse(text) == OK else null
 
+static func contains_inline_secrets(value: Variant) -> bool:
+	if value is Dictionary:
+		for key in value:
+			var normalized = str(key).to_lower().replace("_", "").replace("-", "")
+			if normalized in ["apikey", "accesstoken", "refreshtoken", "password", "authorization"] and value[key] is String and not str(value[key]).is_empty(): return true
+			if contains_inline_secrets(value[key]): return true
+	elif value is Array:
+		for item in value:
+			if contains_inline_secrets(item): return true
+	return false
+
 static func decode_variant(value: Variant) -> Variant:
 	if value is Dictionary and value.has("$type"):
 		var components = value.get("value", [])

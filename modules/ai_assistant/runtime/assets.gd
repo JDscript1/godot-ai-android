@@ -20,7 +20,7 @@ func configure(directory: String) -> void:
 	jobs = Common.read_json(cache_directory.path_join("jobs.json"), [])
 
 func definitions() -> Array:
-	return [Common.tool("asset_generate", "Generate an image or GLB with a configured Runware or local ComfyUI profile. The job is retained for later polling; use asset_status to retrieve it.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
+	return [Common.tool("asset_generate", "Generate an image or GLB with a configured Runware or local ComfyUI profile. The job is retained for later polling; use asset_wait to wait for its result before importing.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
 
 func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	if profile.get("kind") == "comfy":
@@ -31,6 +31,8 @@ func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	var available = []
 	for model in result["json"]:
 		if not model is Dictionary or model.get("status") == "retired": continue
+		# SAM also requires a mask; the simple one-reference form cannot supply it.
+		if str(model.get("air", "")).begins_with("meta:sam@3d"): continue
 		var capabilities: Array = model.get("capabilities", [])
 		var suitable = "text-to-image" in capabilities if profile.get("asset_kind", "image") == "image" else ("text-to-3d" in capabilities or "image-to-3d" in capabilities)
 		if suitable: available.append(model)
@@ -69,29 +71,38 @@ func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dict
 		job["external_id"] = result["json"]["prompt_id"]
 		job["output_node"] = output_node
 	else:
-		var model = str(profile.get("model", ""))
-		if model.is_empty(): return Common.failure("Alege modelul de generare.")
-		var task = {"taskType": "3dInference" if kind == "mesh" else "imageInference", "taskUUID": id, "model": model, "deliveryMethod": "async", "includeCost": true, "outputFormat": "GLB" if kind == "mesh" else "PNG"}
-		if kind == "image":
-			task["positivePrompt"] = prompt
-			task["width"] = int(profile.get("width", 1024))
-			task["height"] = int(profile.get("height", 1024))
-		elif model.to_lower().begins_with("microsoft:trellis-2"):
-			var source = _reference_data(reference)
-			if source.is_empty(): return Common.failure("Acest model 3D necesită o imagine de referință.")
-			task["inputs"] = {"image": source}
-		else:
-			task["positivePrompt"] = prompt
-			if not reference.is_empty():
-				var source = _reference_data(reference)
-				if source.is_empty(): return Common.failure("Imagine de referință invalidă.")
-				task["inputImages"] = [source]
-		result = await _runware(profile, [task], cancel)
+		var reference_data = _reference_data(reference) if not reference.is_empty() else ""
+		if not reference.is_empty() and reference_data.is_empty(): return Common.failure("Imagine de referință invalidă.")
+		var built = build_runware_task(profile, prompt, reference_data, id)
+		if not built.get("ok", false): return built
+		result = await _runware(profile, [built["result"]], cancel)
 		if not result.get("ok", false): return result
 	job["status"] = "processing"
 	jobs.append(job)
 	_save()
 	return Common.success(job.duplicate(true))
+
+static func build_runware_task(profile: Dictionary, prompt: String, reference_data: String, id: String) -> Dictionary:
+	var kind = str(profile.get("asset_kind", "image"))
+	var model = str(profile.get("model", ""))
+	if model.is_empty(): return Common.failure("Alege modelul de generare.")
+	var task = {"taskType": "3dInference" if kind == "mesh" else "imageInference", "taskUUID": id, "model": model, "deliveryMethod": "async", "includeCost": true, "outputFormat": "GLB" if kind == "mesh" else "PNG"}
+	if kind == "image":
+		if not reference_data.is_empty(): return Common.failure("Profilul Runware de imagini generează din text. Pentru un workflow cu imagine de referință configurează ComfyUI.")
+		task["positivePrompt"] = prompt
+		task["width"] = int(profile.get("width", 1024))
+		task["height"] = int(profile.get("height", 1024))
+	elif model.begins_with("meta:sam@3d"):
+		return Common.failure("SAM 3D necesită și o mască. Configurează un workflow ComfyUI cu toate intrările necesare sau alege alt model.")
+	elif model.to_lower().begins_with("microsoft:trellis-2"):
+		if reference_data.is_empty(): return Common.failure("Acest model 3D necesită o imagine de referință.")
+		task["inputs"] = {"image": reference_data}
+	elif not reference_data.is_empty():
+		# Current Runware schemas use singular image for Hunyuan Rapid, arrays elsewhere.
+		task["inputs"] = {"image": reference_data} if model.begins_with("tencent:hunyuan-3d@3.1-rapid") else {"images": [reference_data]}
+	else:
+		task["positivePrompt"] = prompt
+	return Common.success(task)
 
 func refresh(id: String, profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	var job = find_job(id)
@@ -119,6 +130,10 @@ func refresh(id: String, profile: Dictionary, cancel: Dictionary) -> Dictionary:
 			if ".." in filename or ".." in subfolder or filename.is_absolute_path(): return Common.failure("Cale de rezultat ComfyUI invalidă.")
 			download_url = str(profile["url"]).trim_suffix("/") + "/view?filename=" + filename.uri_encode() + "&subfolder=" + subfolder.uri_encode() + "&type=" + str(artifact.get("type", "output")).uri_encode()
 			break
+		if download_url.is_empty() and history.get("status", {}).get("status_str", "") == "success":
+			job["status"] = "failed"
+			_save()
+			return Common.failure("Workflowul s-a încheiat, dar nodul rezultat selectat nu oferă fișierul PNG/GLB cerut. Verifică nodul și formatul rezultatului.", "missing_artifact")
 	else:
 		var result = await _runware(profile, [{"taskType": "getResponse", "taskUUID": str(job["external_id"])}], cancel)
 		if not result.get("ok", false): return result
@@ -132,6 +147,10 @@ func refresh(id: String, profile: Dictionary, cancel: Dictionary) -> Dictionary:
 			if download_url.is_empty() and not item.get("outputs", {}).get("files", []).is_empty(): download_url = str(item["outputs"]["files"][0].get("url", ""))
 			if item.has("cost"): job["cost_usd"] = item["cost"]
 			if not download_url.is_empty(): break
+			if item.get("status") in ["success", "completed"]:
+				job["status"] = "failed"
+				_save()
+				return Common.failure("Furnizorul a finalizat sarcina fără o adresă de rezultat recunoscută.", "missing_artifact")
 		if not download_url.is_empty():
 			var parsed = Common.parse_url(download_url)
 			if not parsed.get("ok", false) or not (str(parsed["host"]) == "runware.ai" or str(parsed["host"]).ends_with(".runware.ai")): return Common.failure("Destinație de descărcare Runware nevalidată.")
@@ -171,6 +190,15 @@ func import_job(id: String, directory: String) -> Dictionary:
 	job["imported_path"] = path
 	_save()
 	return Common.success({"path": path, "import_requested": true})
+
+func wait_for_job(id: String, profile: Dictionary, cancel: Dictionary, max_seconds: int = 300) -> Dictionary:
+	var deadline = Time.get_ticks_msec() + clampi(max_seconds, 1, 600) * 1000
+	while not cancel.get("cancelled", false):
+		var result = await refresh(id, profile, cancel)
+		if not result.get("ok", false) or result.get("result", {}).get("status") in ["completed", "failed"]: return result
+		if Time.get_ticks_msec() >= deadline: return result
+		await owner.get_tree().create_timer(1.0).timeout
+	return Common.failure("Urmărirea a fost oprită. Sarcina poate continua la furnizor; reia verificarea din Generare.", "cancelled")
 
 func find_job(id: String) -> Dictionary:
 	for job in jobs:
