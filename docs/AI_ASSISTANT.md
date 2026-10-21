@@ -101,11 +101,28 @@ Evidence must be distinguished:
 | Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 73 automated assertions passed locally with official Godot 4.7.2; provider responses are deterministic fixtures |
 | Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 7 tests passed with deterministic runtimes; TypeScript build passed |
 | Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 22 checks passed at each of 1280x900 and 480x900 under the real Linux editor with a fixture secret store |
-| Android C++/Kotlin integration and APK | [Initial native build passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39599251683); signature and phone package checked locally. The latest source still requires its matching CI artifact |
+| Android C++/Kotlin integration and APK | [Build db300bd passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39603879713), including signature, persistent signing identity, phone package and ARM64 library checks |
 | Physical Android installation, touch, Keystore and suspend/resume | Device verification pending; desktop rendering does not establish these |
 | ChatGPT, Claude, Copilot and Kimi account logins | User-authorized live account checks required |
 | Runware and local ComfyUI image/GLB generation | Live configured-provider checks required |
 | Real Ollama/LM Studio coding and tool use | Reachable configured-model checks required |
+
+On 2026-10-21, the public Runware catalog was also fetched successfully through
+the module's real Godot HTTP transport (six 3D choices after filtering the
+mask-dependent model). This establishes catalog access only; no account or
+credit-consuming generation was used for that check.
+
+The tested APK source is `db300bd0d259c9293ebd01e81090f974c0500b7f`.
+Download its `Godot-AI-Android-arm64-db300bd0d259c9293ebd01e81090f974c0500b7f`
+[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39603879713/artifacts/12347972126)
+from the build above. The APK is 144,698,609 bytes; its SHA-256 is
+`ca32e95178d7322e19ed75144cdf1c4b7fb94275992fbb86984ca5c3f7891adf`.
+The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-db300bd-debug.apk`,
+with a matching `.sha256` file. Its signature, checksum, package, ABI and native
+AI module markers were checked locally after downloading the CI artifact.
+The persistent development certificate SHA-256 is
+`2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
+Later documentation-only commits do not change that APK's tested source.
 
 The native tool layer exposes scene and script editing, files with recovery,
 resources/materials, project/editor settings, animation players, run/stop,
