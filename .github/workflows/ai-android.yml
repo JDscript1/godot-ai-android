@@ -86,6 +86,7 @@ jobs:
             install -d -m 700 "$HOME/.android"
             printf '%s' "$AI_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
             chmod 600 "$HOME/.android/debug.keystore"
+            echo "GODOT_AI_DEBUG_KEYSTORE_FILE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
           fi
       - name: Compile editor and APK
         run: scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes cache_path="$SCONS_CACHE" -j4
@@ -102,6 +103,9 @@ jobs:
           "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$APK" > "$APK.badging.txt"
           python - <<'PY'
           from pathlib import Path
+          import hashlib
+          import os
+          import subprocess
           import zipfile
           apk = Path('bin/android_editor_builds/android_editor-android-debug.apk')
           metadata = Path(str(apk) + '.badging.txt').read_text()
@@ -110,6 +114,13 @@ jobs:
               abis = {name.split('/')[1] for name in archive.namelist() if name.startswith('lib/') and name.endswith('.so')}
               assert abis == {'arm64-v8a'}, abis
               assert 'lib/arm64-v8a/libgodot_android.so' in archive.namelist()
+          if os.environ.get('GODOT_AI_DEBUG_KEYSTORE_FILE'):
+              certificate = subprocess.run(['keytool', '-exportcert', '-keystore', os.environ['GODOT_AI_DEBUG_KEYSTORE_FILE'], '-storepass', 'android', '-alias', 'androiddebugkey'], check=True, capture_output=True).stdout
+              expected = hashlib.sha256(certificate).hexdigest()
+              signer = str(Path(os.environ['ANDROID_HOME']) / 'build-tools/36.1.0/apksigner')
+              actual = subprocess.run([signer, 'verify', '--print-certs', str(apk)], check=True, capture_output=True, text=True).stdout
+              assert f'certificate SHA-256 digest: {expected}' in actual, 'Unexpected APK signing identity'
+              print('Verified persistent personal debug signing certificate: ' + expected)
           print(metadata.splitlines()[0])
           print('Verified arm64 native libraries and Android phone/tablet package.')
           PY

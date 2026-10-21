@@ -89,6 +89,9 @@ Only the phone/tablet APK `android_editor-android-debug.apk` is delivered.
 The personal fork uses the Actions secret `GODOT_AI_DEBUG_KEYSTORE` to preserve
 the debug signing identity across updates. Other forks may configure their own
 base64-encoded development keystore, or receive an ephemeral runner debug key.
+For local builds, `GODOT_AI_DEBUG_KEYSTORE_FILE` selects a development keystore
+with the standard `androiddebugkey` alias and `android` debug passwords. CI also
+compares the APK certificate with that keystore before uploading an artifact.
 This is a development build; no production signing key is included in source.
 
 Evidence must be distinguished:
