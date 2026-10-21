@@ -29,7 +29,7 @@ jobs:
         run: |
           curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
           unzip -q /tmp/godot.zip -d /tmp/godot-ai
-          /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --headless --path modules/ai_assistant/tests/fixture --script "$PWD/modules/ai_assistant/tests/test_runtime.gd" -- --source="$PWD/modules/ai_assistant"
+          python modules/ai_assistant/tests/run.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -54,6 +54,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - uses: android-actions/setup-android@v3
       - uses: actions/cache@v4
         with:
           path: .ai-scons-cache

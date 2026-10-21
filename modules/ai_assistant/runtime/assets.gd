@@ -177,7 +177,7 @@ static func validate_artifact(path: String, kind: String) -> Dictionary:
 		if file.get_32() != file.get_length(): return Common.failure("GLB trunchiat.")
 		var length = file.get_32()
 		if file.get_32() != 0x4E4F534A or length > file.get_length() - 20: return Common.failure("GLB fără document JSON valid.")
-		var document: Variant = JSON.parse_string(file.get_buffer(length).get_string_from_utf8())
+		var document: Variant = Common.parse_json(file.get_buffer(length).get_string_from_utf8())
 		if not document is Dictionary or str(document.get("asset", {}).get("version", "")) != "2.0": return Common.failure("Document glTF invalid.")
 		for image in document.get("images", []):
 			if image.has("uri") and not str(image["uri"]).begins_with("data:"): return Common.failure("GLB conține imagini externe; este necesar un fișier autonom.")
@@ -187,7 +187,8 @@ static func validate_artifact(path: String, kind: String) -> Dictionary:
 		file.seek(0)
 		if file.get_buffer(8) != PackedByteArray([137, 80, 78, 71, 13, 10, 26, 10]): return Common.failure("Rezultatul nu este PNG.")
 		var image = Image.new()
-		if image.load(path) != OK or image.is_empty(): return Common.failure("Imagine PNG coruptă.")
+		file.seek(0)
+		if image.load_png_from_buffer(file.get_buffer(file.get_length())) != OK or image.is_empty(): return Common.failure("Imagine PNG coruptă.")
 	return Common.success()
 
 func _headers(profile: Dictionary) -> PackedStringArray:

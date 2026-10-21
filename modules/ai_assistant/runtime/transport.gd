@@ -33,7 +33,8 @@ class SSEDecoder:
 		if data == "[DONE]":
 			ended = true
 			return
-		var parsed = JSON.parse_string(data)
+		var parser = JSON.new()
+		var parsed: Variant = parser.data if parser.parse(data) == OK else null
 		if parsed is Dictionary:
 			if not event_name.is_empty(): parsed["_event"] = event_name
 			callback.call(parsed)
@@ -134,7 +135,7 @@ func request(url: String, method: int = HTTPClient.METHOD_GET, headers: PackedSt
 	if final_status not in [HTTPClient.STATUS_CONNECTED, HTTPClient.STATUS_DISCONNECTED]:
 		return Common.failure("Fluxul HTTP a fost întrerupt.", "interrupted")
 	var text = bytes.get_string_from_utf8() if file == null else ""
-	var result = {"ok": status >= 200 and status < 300, "status": status, "headers": response_headers, "json": JSON.parse_string(text), "text": text, "events": events, "bytes": bytes, "saved_path": save_path}
+	var result = {"ok": status >= 200 and status < 300, "status": status, "headers": response_headers, "json": Common.parse_json(text), "text": text, "events": events, "bytes": bytes, "saved_path": save_path}
 	if not result["ok"]: result["error"] = "HTTP %s: %s" % [status, text.left(1000)]
 	return result
 

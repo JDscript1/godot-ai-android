@@ -78,7 +78,7 @@ static func read_json(path: String, fallback: Variant = {}) -> Variant:
 	if not FileAccess.file_exists(path): return fallback
 	var file = FileAccess.open(path, FileAccess.READ)
 	if file == null or file.get_length() > 16 * 1024 * 1024: return fallback
-	var value = JSON.parse_string(file.get_as_text())
+	var value = parse_json(file.get_as_text())
 	return fallback if value == null else value
 
 static func json_safe(value: Variant, depth: int = 0) -> Variant:
@@ -99,6 +99,11 @@ static func json_safe(value: Variant, depth: int = 0) -> Variant:
 	if value is Quaternion: return {"$type": "Quaternion", "value": [value.x, value.y, value.z, value.w]}
 	if typeof(value) in [TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING]: return value
 	return var_to_str(value)
+
+static func parse_json(text: String) -> Variant:
+	if text.is_empty(): return null
+	var parser = JSON.new()
+	return parser.data if parser.parse(text) == OK else null
 
 static func decode_variant(value: Variant) -> Variant:
 	if value is Dictionary and value.has("$type"):

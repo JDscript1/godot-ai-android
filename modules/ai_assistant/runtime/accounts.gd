@@ -90,7 +90,7 @@ func login_chatgpt(profile: Dictionary, cancel: Dictionary, on_status: Callable 
 	return Common.success(connected)
 
 func ensure_access(profile: Dictionary, cancel: Dictionary) -> Dictionary:
-	var tokens: Variant = JSON.parse_string(vault.read(str(profile["id"])))
+	var tokens: Variant = Common.parse_json(vault.read(str(profile["id"])))
 	if not tokens is Dictionary: return Common.failure("Conectează contul ChatGPT.", "login_required")
 	if float(tokens.get("expires_at", 0)) > Time.get_unix_time_from_system() + 60: return Common.success()
 	if not tokens.has("refresh_token"): return Common.failure("Reconectează contul ChatGPT.", "login_required")
@@ -109,8 +109,8 @@ func ensure_access(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 func validate_id_token(token: String, audience: String, nonce: String, cancel: Dictionary) -> Dictionary:
 	var parts = token.split(".")
 	if parts.size() != 3: return Common.failure("ID token invalid.")
-	var header: Variant = JSON.parse_string(_unbase64url(parts[0]).get_string_from_utf8())
-	var claims: Variant = JSON.parse_string(_unbase64url(parts[1]).get_string_from_utf8())
+	var header: Variant = Common.parse_json(_unbase64url(parts[0]).get_string_from_utf8())
+	var claims: Variant = Common.parse_json(_unbase64url(parts[1]).get_string_from_utf8())
 	if not header is Dictionary or not claims is Dictionary or header.get("alg") != "RS256": return Common.failure("Algoritmul semnăturii ID token nu este acceptat.")
 	var discovery = await transport.request(ISSUER + "/.well-known/openid-configuration", HTTPClient.METHOD_GET, [], null, {"cancel": cancel})
 	if not discovery.get("ok", false) or not discovery.get("json") is Dictionary: return Common.failure("Configurația OIDC nu este disponibilă.")

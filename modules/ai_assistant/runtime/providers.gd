@@ -48,7 +48,7 @@ static func detect(key: String, issuer: String = "") -> Dictionary:
 func headers(profile: Dictionary) -> PackedStringArray:
 	var secret = vault.read(str(profile["id"])) if vault != null else ""
 	if profile.get("kind") == "siwc":
-		var tokens: Variant = JSON.parse_string(secret)
+		var tokens: Variant = Common.parse_json(secret)
 		secret = str(tokens.get("access_token", "")) if tokens is Dictionary else ""
 	var result = PackedStringArray()
 	match str(profile.get("kind", "chat")):
@@ -105,7 +105,7 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 	for index in collected["calls"]:
 		var item: Dictionary = collected["calls"][index]
 		var arguments: Variant = item.get("arguments", {})
-		if arguments is String: arguments = JSON.parse_string(arguments)
+		if arguments is String: arguments = Common.parse_json(arguments)
 		if not arguments is Dictionary: return Common.failure("Modelul a produs argumente JSON invalide.", "invalid_tool_arguments")
 		calls.append({"id": str(item.get("id", Common.uid())), "name": str(item.get("name", "")), "arguments": arguments})
 	var message = {"role": "assistant", "content": str(collected["text"]), "tool_calls": calls}
@@ -232,7 +232,7 @@ static func consume_event(kind: String, event: Dictionary, state: Dictionary) ->
 				if not state["blocks"].has(index): return
 				var block: Dictionary = state["blocks"][index]
 				if block.has("_partial_json"):
-					block["input"] = JSON.parse_string(str(block["_partial_json"]))
+					block["input"] = Common.parse_json(str(block["_partial_json"]))
 					block.erase("_partial_json")
 				if block.get("type") == "tool_use": state["calls"][index] = {"id": block["id"], "name": block["name"], "arguments": block.get("input", {})}
 			"message_delta":

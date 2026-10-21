@@ -339,7 +339,7 @@ func _refresh_secrets() -> void:
 	for profile in profiles:
 		var secret = vault.read(str(profile["id"]))
 		if not secret.is_empty(): secrets.append(secret)
-		var record: Variant = JSON.parse_string(secret)
+		var record: Variant = Common.parse_json(secret)
 		if record is Dictionary:
 			for key in ["access_token", "refresh_token", "id_token"]:
 				if record.has(key): secrets.append(str(record[key]))
@@ -570,7 +570,7 @@ func _start_chat(text: String) -> void:
 			_finish_chat(str(response.get("error", "Cererea a eșuat.")))
 			return
 		var message: Dictionary = response["message"]
-		message = JSON.parse_string(_redact(JSON.stringify(message)))
+		message = Common.parse_json(_redact(JSON.stringify(message)))
 		history.append(message)
 		if not live["started"] and not str(message.get("content", "")).is_empty(): _display("assistant", str(message["content"]))
 		if response["calls"].is_empty():
@@ -620,7 +620,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	return result
 
 func _audit(name: String, args: Dictionary, result: Dictionary) -> void:
-	journal.append({"time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": JSON.parse_string(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
+	journal.append({"time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": Common.parse_json(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
 	if journal.size() > 1000: journal = journal.slice(-1000)
 	Common.atomic_json(project_directory.path_join("journal.json"), journal)
 

@@ -29,6 +29,8 @@ func definitions() -> Array:
 		Common.tool("godot_create_scene", "Create an unsaved scene with the given Node class as root.", {"type": string, "name": string}, ["type", "name"], "write"),
 		Common.tool("godot_create_node", "Create a node with Undo. Parent is a path relative to the scene root.", {"parent": string, "type": string, "name": string}, ["type", "name"], "write"),
 		Common.tool("godot_remove_node", "Remove a scene node with Undo.", {"path": string}, ["path"], "write"),
+		Common.tool("godot_attach_script", "Attach a project GDScript to a scene node, with Undo.", {"path": string, "script": string}, ["path", "script"], "write"),
+		Common.tool("godot_connect_signal", "Connect a signal between scene nodes, persistently and with Undo.", {"source": string, "signal": string, "target": string, "method": string}, ["source", "signal", "target", "method"], "write"),
 		Common.tool("godot_save_scene", "Save the current scene to a project path.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_open_scene", "Open a project scene.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_describe", "Discover methods, properties and signals of a class or object handle. Script-defined methods are included for objects.", {"class": string, "handle": string, "filter": string}, []),
@@ -122,6 +124,34 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			undo.add_undo_reference(node)
 			undo.commit_action()
 			return Common.success("Nod eliminat; disponibil în Undo.")
+		"godot_attach_script":
+			if root == null: return Common.failure("Nu există scenă activă.")
+			var node = root.get_node_or_null(NodePath(str(args["path"])))
+			var path = Common.project_path(str(args["script"]))
+			if node == null or not _inside_scene(node, root) or path.is_empty() or path.get_extension() != "gd" or not FileAccess.file_exists(path): return Common.failure("Nod sau script de proiect invalid.")
+			var script = ResourceLoader.load(path) as Script
+			if script == null or not script.can_instantiate(): return Common.failure("Scriptul nu poate fi încărcat. Verifică erorile de parsare.")
+			var undo = plugin.get_undo_redo()
+			undo.create_action("AI: attach script")
+			undo.add_do_property(node, "script", script)
+			undo.add_undo_property(node, "script", node.get_script())
+			undo.commit_action()
+			return Common.success(_encode(node))
+		"godot_connect_signal":
+			if root == null: return Common.failure("Nu există scenă activă.")
+			var source = root.get_node_or_null(NodePath(str(args["source"])))
+			var target = root.get_node_or_null(NodePath(str(args["target"])))
+			var signal_name = str(args["signal"])
+			var method = str(args["method"])
+			if source == null or target == null or not _inside_scene(source, root) or not _inside_scene(target, root) or not source.has_signal(signal_name) or not target.has_method(method): return Common.failure("Semnal, metodă sau nod invalid.")
+			var callable = Callable(target, method)
+			if source.is_connected(signal_name, callable): return Common.success("Conexiunea există deja.")
+			var undo = plugin.get_undo_redo()
+			undo.create_action("AI: connect signal")
+			undo.add_do_method(source, "connect", signal_name, callable, CONNECT_PERSIST)
+			undo.add_undo_method(source, "disconnect", signal_name, callable)
+			undo.commit_action()
+			return Common.success(true)
 		"godot_save_scene":
 			var path = Common.project_path(str(args["path"]))
 			if path.is_empty() or path.get_extension() not in ["tscn", "scn"]: return Common.failure("Destinație de scenă invalidă.")
@@ -273,7 +303,7 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 		if not object is Resource: return Common.failure("Obiectul nu este Resource.")
 		var path = Common.project_path(str(args["path"]))
 		if path.is_empty(): return Common.failure("Destinație invalidă.")
-		_snapshot(path)
+		if _snapshot(path) < 0: return Common.failure("Copia de recuperare nu a putut fi creată.")
 		var error = ResourceSaver.save(object, path)
 		return Common.success(path) if error == OK else Common.failure(error_string(error))
 	var property = str(args["property"])
@@ -369,6 +399,7 @@ func _settings(name: String, args: Dictionary) -> Dictionary:
 		var key = str(args["key"])
 		if key.is_empty() or key.begins_with("ai_assistant/") or _sensitive(key): return Common.failure("Setare rezervată sau secretă.")
 		settings.set_setting(key, Common.decode_variant(args["value"]))
+		if args.get("scope", "project") == "editor": return Common.success({"key": key, "persistence": "editor-managed"})
 		var error = settings.save()
 		return Common.success(key) if error == OK else Common.failure(error_string(error))
 	var output = {}

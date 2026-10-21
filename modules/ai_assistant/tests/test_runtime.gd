@@ -4,6 +4,7 @@ var scripts: Dictionary = {}
 var failures = 0
 var assertions = 0
 var source_directory = ""
+var mock_url = ""
 
 class FakeVault:
 	extends RefCounted
@@ -26,6 +27,7 @@ func check(condition: bool, description: String) -> void:
 func _run() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--source="): source_directory = argument.trim_prefix("--source=")
+		if argument.begins_with("--mock-url="): mock_url = argument.trim_prefix("--mock-url=")
 	if source_directory.is_empty():
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
@@ -93,6 +95,71 @@ func _run() -> void:
 	var transport = scripts["transport"].new(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
+	if not mock_url.is_empty(): await _network_tests(node)
 	node.queue_free()
+	await process_frame
 	print("Godot AI: %s assertions, %s failures" % [assertions, failures])
 	quit(0 if failures == 0 else 1)
+
+func _network_tests(node: Node) -> void:
+	var vault = FakeVault.new()
+	var adapter = scripts["providers"].new(node, vault)
+	var profile = {"id": "fixture", "kind": "chat", "url": mock_url + "/v1", "allow_http": true}
+	var listed = await adapter.list_models(profile)
+	check(listed.get("ok", false) and listed.get("result", []).size() == 1, "Real HTTP model discovery")
+	check(listed.get("result", [{}])[0].get("efforts", []) == ["high", "max"], "Use provider-declared reasoning efforts")
+	var history = [{"role": "user", "content": "Inspect"}]
+	var first = await adapter.complete(profile, history, [], "fixture", "", {})
+	check(first.get("ok", false) and first.get("calls", []).size() == 1, "Real HTTP streaming tool call")
+	if first.get("ok", false):
+		history.append(first["message"])
+		history.append({"role": "tool", "tool_call_id": "fixture-call", "tool_name": "godot_project", "content": "{}"})
+		var second = await adapter.complete(profile, history, [], "fixture", "", {})
+		check(second.get("ok", false) and second.get("message", {}).get("content") == "Verificat: română 🐦", "Real multi-turn tool/result continuation")
+	var incomplete_profile = profile.duplicate()
+	incomplete_profile["url"] = mock_url + "/incomplete/v1"
+	var incomplete = await adapter.complete(incomplete_profile, [{"role": "user", "content": "Inspect"}], [], "fixture", "", {})
+	check(not incomplete.get("ok", false) and incomplete.get("code") == "incomplete_stream", "Interrupted provider streams never report success")
+	for kind in ["responses", "anthropic", "gemini"]:
+		var native_profile = profile.duplicate()
+		native_profile["kind"] = kind
+		var result = await adapter.complete(native_profile, [{"role": "user", "content": "Inspect"}], [], "fixture", "", {})
+		check(result.get("ok", false) and not str(result.get("message", {}).get("content", "")).is_empty(), "Real HTTP adapter: " + kind)
+	var stopping = {"cancelled": false}
+	var slow_profile = profile.duplicate()
+	slow_profile["url"] = mock_url + "/slow/v1"
+	create_timer(0.05).timeout.connect(func() -> void: stopping["cancelled"] = true)
+	var stopped = await adapter.complete(slow_profile, [{"role": "user", "content": "Inspect"}], [], "fixture", "", stopping)
+	check(not stopped.get("ok", false) and stopped.get("code") == "cancelled", "Cancel a provider HTTP request in flight")
+	var mcp = scripts["mcp"].new(node, vault)
+	var server = {"id": "fixture-mcp", "url": mock_url + "/mcp", "allow_http": true, "trusted_read": false}
+	var catalog = await mcp.discover(server)
+	check(catalog.get("ok", false) and catalog.get("result", []).size() == 2, "MCP initialize, session and paginated discovery")
+	if catalog.get("ok", false):
+		var name = str(catalog["result"][0]["name"])
+		var denied = await mcp.call_tool(name, {}, 0, false, {})
+		check(denied.get("code") == "permission_denied", "Untrusted MCP read annotations do not grant access")
+		var called = await mcp.call_tool(name, {}, 2, true, {})
+		check(called.get("ok", false) and "real fixture tool result" in JSON.stringify(called), "MCP real HTTP tool execution")
+	var assets = scripts["assets"].new(node, vault)
+	var scratch = OS.get_user_data_dir().path_join("ai_test_generation")
+	assets.configure(scratch)
+	for kind in ["image", "mesh"]:
+		var generation = {"id": "fixture-comfy", "kind": "comfy", "asset_kind": kind, "url": mock_url, "allow_http": true, "workflow": {"1": {"class_type": "SaveGLB" if kind == "mesh" else "SaveImage", "inputs": {"text": ""}}}, "prompt_node": "1", "prompt_input": "text", "output_node": "1"}
+		var submitted = await assets.submit(generation, "Fixture", "", {})
+		check(submitted.get("ok", false), "ComfyUI submit: " + kind)
+		if not submitted.get("ok", false): continue
+		var refreshed = await assets.refresh(str(submitted["result"]["id"]), generation, {})
+		check(refreshed.get("ok", false) and refreshed.get("result", {}).get("status") == "completed", "ComfyUI download and artifact validation: " + kind)
+		if not refreshed.get("ok", false): continue
+		if kind == "mesh":
+			var document = GLTFDocument.new()
+			var state = GLTFState.new()
+			check(document.append_from_file(str(refreshed["result"]["file"]), state) == OK, "Generated GLB actually loads through Godot's importer")
+			var scene = document.generate_scene(state)
+			check(scene != null, "Godot builds the generated GLB scene")
+			if scene != null: scene.free()
+		var imported = assets.import_job(str(submitted["result"]["id"]), "res://ai_test_assets")
+		check(imported.get("ok", false) and FileAccess.file_exists(str(imported.get("result", {}).get("path", ""))), "Import artifact into the fixture project: " + kind)
+		var again = assets.import_job(str(submitted["result"]["id"]), "res://ai_test_assets")
+		check(again.get("ok", false) and again.get("result", {}).get("path") != imported.get("result", {}).get("path"), "Artifact import never overwrites: " + kind)
