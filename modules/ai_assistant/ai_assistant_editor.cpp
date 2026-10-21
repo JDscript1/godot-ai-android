@@ -3,7 +3,7 @@
 
 #include "core/crypto/crypto.h"
 #include "core/object/class_db.h"
-#include "core/object/callable_method_pointer.h"
+#include "core/object/callable_mp.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"

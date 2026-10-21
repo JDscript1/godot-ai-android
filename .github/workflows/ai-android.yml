@@ -58,7 +58,7 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: .ai-scons-cache
           key: godot-ai-android-4.7.2-${{ github.sha }}
@@ -68,7 +68,12 @@ jobs:
           python -m pip install 'scons==4.10.1'
           sdkmanager 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
       - name: Compile editor and APK
-        run: scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes -j2
+        run: scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes cache_path="$SCONS_CACHE" -j4
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .ai-scons-cache
+          key: godot-ai-android-4.7.2-${{ github.sha }}
       - name: Verify APK
         run: |
           APK=$(find bin/android_editor_builds -name '*android*debug*.apk' -print -quit)

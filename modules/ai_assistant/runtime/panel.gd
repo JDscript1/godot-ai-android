@@ -146,6 +146,8 @@ func _build_settings() -> void:
 	settings_content.add_child(settings_tabs)
 	settings_status = Label.new()
 	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	settings_status.custom_minimum_size.x = 240 * EditorInterface.get_editor_scale()
+	settings_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_content.add_child(settings_status)
 	var provider_tab = _tab("Furnizori", "providers")
 	var p = _form(provider_tab, "provider")
@@ -238,7 +240,8 @@ func _build_settings() -> void:
 	_field(m, "url", "Adresă MCP")
 	_field(m, "key", "Token Bearer", true)
 	_check(m, "allow_http", "Permite HTTP pentru serverul local")
-	_check(m, "trusted_read", "Am încredere în clasificarea read-only a acestui server")
+	_check(m, "trusted_read", "Permite citirea în Analiză")
+	m["trusted_read"].tooltip_text = "Acordă încredere clasificării read-only declarate de acest server MCP."
 	var mcp_row = _row(mcp_tab)
 	_button(mcp_row, "Salvează server", _save_mcp)
 	_button(mcp_row, "Server nou", func() -> void: _clear_form("mcp"))
@@ -846,9 +849,6 @@ func _save_generation() -> void:
 		profile["workflow"] = form.get("workflow", {})
 	else:
 		profile["url"] = "https://api.runware.ai/v1"
-		if str(profile["model"]).is_empty():
-			_status("Introdu un model Runware sau verifică lista de modele.")
-			return
 	var key = str(form["key"].text).strip_edges()
 	if not key.is_empty() and not vault.store(id, key):
 		_status("Cheia nu a putut fi salvată.")

@@ -90,6 +90,8 @@ func _run() -> void:
 		if image != null and not image.is_empty(): image.save_png(output.path_join("editor-panel.png"))
 		panel.open_settings("providers")
 		await get_tree().create_timer(0.5).timeout
+		print("AI settings dimensions: ", panel.settings_window.size)
+		_check(panel.settings_window.size.y <= DisplayServer.screen_get_size().y, "Settings dialog fits the display height")
 		image = panel.settings_window.get_texture().get_image()
 		if image != null and not image.is_empty(): image.save_png(output.path_join("settings.png"))
 		panel.open_settings("generation")

@@ -25,8 +25,16 @@ func definitions() -> Array:
 func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	if profile.get("kind") == "comfy":
 		return await transport.request(str(profile["url"]).trim_suffix("/") + "/object_info", HTTPClient.METHOD_GET, _headers(profile), null, _options(profile, cancel))
-	var result = await _runware(profile, [{"taskType": "modelSearch", "taskUUID": Common.uid(), "search": str(profile.get("search", "")), "limit": 100}], cancel)
-	return result
+	var result = await transport.request("https://runware.ai/docs/models/index.json", HTTPClient.METHOD_GET, [], null, {"cancel": cancel})
+	if not result.get("ok", false): return result
+	if not result.get("json") is Array: return Common.failure("Catalogul public Runware nu este disponibil.")
+	var available = []
+	for model in result["json"]:
+		if not model is Dictionary or model.get("status") == "retired": continue
+		var capabilities: Array = model.get("capabilities", [])
+		var suitable = "text-to-image" in capabilities if profile.get("asset_kind", "image") == "image" else ("text-to-3d" in capabilities or "image-to-3d" in capabilities)
+		if suitable: available.append(model)
+	return {"ok": true, "result": available, "source": "public_catalog", "credential_verified": false}
 
 func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dictionary) -> Dictionary:
 	var id = Common.uid()
