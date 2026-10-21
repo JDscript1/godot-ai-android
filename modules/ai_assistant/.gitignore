@@ -1,0 +1,5 @@
+runtime.gen.h
+tests/fixture/.godot/
+tests/fixture/ai_test_*
+__pycache__/
+tests/__pycache__/

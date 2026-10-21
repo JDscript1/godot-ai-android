@@ -1,0 +1,11 @@
+#!/usr/bin/env python
+Import("env")
+Import("env_modules")
+
+import runtime_builder
+
+env_ai = env_modules.Clone()
+sources = ["runtime/" + name + ".gd" for name in runtime_builder.SCRIPT_NAMES]
+header = env_ai.Command("runtime.gen.h", sources, env_ai.Run(runtime_builder.embed))
+env_ai.Depends("ai_assistant_editor.cpp", header)
+env_ai.add_source_files(env.modules_sources, "*.cpp")

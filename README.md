@@ -1,3 +1,13 @@
+# Godot AI · Android editor fork
+
+Personal Android editor fork based on **Godot 4.7.2**, with an editor-only AI module,
+direct cloud/local providers, MCP, generation profiles and an optional personal
+subscription companion. Open **Editor Settings → General → AI Assistant** to configure it.
+
+See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
+development build; live subscription/generation and physical Android validation
+are tracked separately from automated checks. The original engine documentation follows.
+
 # Godot Engine
 
 <p align="center">

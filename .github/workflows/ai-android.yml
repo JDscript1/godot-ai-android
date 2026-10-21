@@ -1,0 +1,81 @@
+name: Godot AI Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ai/android-assistant"]
+    paths:
+      - "modules/ai_assistant/**"
+      - "platform/android/java/editor/**"
+      - "tools/ai-companion/**"
+      - ".github/workflows/ai-android.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-ai-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test embedded runtime with upstream Godot
+        run: |
+          curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot-ai
+          /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --headless --path modules/ai_assistant/tests/fixture --script "$PWD/modules/ai_assistant/tests/test_runtime.gd" -- --source="$PWD/modules/ai_assistant"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Test companion
+        working-directory: tools/ai-companion
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/.ai-scons-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/cache@v4
+        with:
+          path: .ai-scons-cache
+          key: godot-ai-android-4.7.2-${{ github.sha }}
+          restore-keys: godot-ai-android-4.7.2-
+      - name: Install build tools
+        run: |
+          python -m pip install 'scons==4.10.1'
+          sdkmanager 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
+      - name: Compile editor and APK
+        run: scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes -j2
+      - name: Verify APK
+        run: |
+          APK=$(find bin/android_editor_builds -name '*android*debug*.apk' -print -quit)
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$APK" | head -3
+          sha256sum "$APK" > "$APK.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Godot-AI-Android-arm64-${{ github.sha }}
+          path: |
+            bin/android_editor_builds/*android*debug*.apk
+            bin/android_editor_builds/*.sha256
+          if-no-files-found: error

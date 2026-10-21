@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/JDscript1/godot-agent",
+  "commit": "c5f660059bd1a3be40c843e8090a8c9ff876dd74",
+  "note": "Copied selected working-tree sources, including existing local changes. Original files remain untouched.",
+  "sha256": {
+    "packages/core/src/secrets.ts": "90ced264dabeb0844a5fe37f9f762a25a12fbe247fe1db0876b915ecd816bd3b",
+    "packages/core/src/provider-store.ts": "571b998a9eaadd9293d27f26eaa60d8cf208f455404445700dc3b3fa7e34cd78",
+    "packages/core/src/policy.ts": "d4117757d1637c8687737f1f7efa6b8313ab78a75d4e00ae68c0ead12522fbe5",
+    "packages/core/src/tool-broker.ts": "cd40026d727d3680471d6c54505736b93a7b2ebb9ccfd9be141b210755745091",
+    "packages/core/src/audit-log.ts": "143217dee39798d8a3451dda8b64072a71d7b05e509b2c1a720f5f951fbbd1fa",
+    "packages/core/src/agent-kernel.ts": "6954414965edd27cefc232caa695d1147e3c5c3ca5a2aca830dc89d1d8db6b6c",
+    "packages/core/src/skill-registry.ts": "5a630610e5886b5eeec7beaf650bfcd1af300e55ace6ba8dbb029dd236e179cf",
+    "packages/core/src/index.ts": "a92f00015450294794e4b7dfc99f98c37ccc535cab5f1699941bd0f0328fe949",
+    "packages/core/src/account-secret-store.ts": "965c625e1d4f17aaa5fe47023418e7f41dd1dc0beb93c128105d80a245e65b94",
+    "packages/core/src/context-budget.ts": "7475682fe34933f4fc9596b7cc035aaa95e60279dc584c130e9274a079bf851d",
+    "packages/core/src/agent-instructions.ts": "92e552adbcc2c60addcb4229bb868a3eb278e0802b4f011d3988c6e22bbbc0c1",
+    "packages/protocol/src/index.ts": "1f554326283d8267be486fc83508f73c8b7cd29275c8b40d6e862f472c46b499",
+    "providers/src/types.ts": "791552ac5afd12a7265d286971e95954a259df21de58341094e92145558a303c",
+    "providers/src/openai-responses.ts": "1928cbc44825b88324e6cfc889941510214aa015256c1296b884a38561ce0277",
+    "providers/src/openai-chat.ts": "b8eb5e2d18c0627c67750899faee8ad24ebc35402642fc5c76067350b70a9484",
+    "providers/src/gemini.ts": "86a654297a28e63e83295245145ca4a2e77d8db7ee0e2dac4f98d8b819333495",
+    "providers/src/anthropic.ts": "bb2f36649d39008bacdf9d3e075f388ec58165784ff83822660541120c8c91c7",
+    "providers/src/index.ts": "a0acfbd6bd6ae86dab759f0699ef95309dc7011d72be533e3d96c7b4a90f6818",
+    "apps/gateway/src/account-runtime.ts": "c874663088755af5996b222c484975600c599385970b04955671dce8157d21d6",
+    "apps/gateway/src/account-process.ts": "252864cb5e2f36cfe10352cf8205da84cf8c9f7699ea5cb65d178a5b1963ec91",
+    "apps/gateway/src/claude-account-runtime.ts": "5e2eb88d86bd02a432ebb6b4c7fbcd99a4274a4cfd1e0092d6387d0737492efa",
+    "apps/gateway/src/copilot-account-runtime.ts": "85a65463855b7e549866574f2b188998b529a0f26934435f8b37e409c29ceba1",
+    "apps/gateway/src/kimi-account-runtime.ts": "06c91a444f2fa25403b5133c5867eced255c84fe115e7bd7e3141fabd8c48b34",
+    "apps/gateway/src/broker-mcp-server.ts": "e90222a279b53595b30e475eebcf18224dc0c69ec75a6a803839fe292266980d",
+    "apps/gateway/src/tool-result-content.ts": "7c812a2defcce242cff0d0aa8e46da2291f9cc001c69969c8d5671e1ad913b07",
+    "apps/gateway/src/context-budget.ts": "b77591b0e987a965faa337433a9dee28343fdf7b8a1dfc0c03f9eb7ed2b86355"
+  }
+}

@@ -36,6 +36,10 @@ package org.godotengine.editor
  * This is the implementation of the editor used when running on Android devices.
  */
 open class GodotEditor : BaseGodotEditor() {
+	override fun onCreate(savedInstanceState: android.os.Bundle?) {
+		AISecretVault.initialize(applicationContext)
+		super.onCreate(savedInstanceState)
+	}
 
 	override fun getXRRuntimePermissions(): MutableSet<String> {
 		val xrRuntimePermissions = super.getXRRuntimePermissions()
