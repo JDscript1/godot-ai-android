@@ -126,7 +126,6 @@ func _ready() -> void:
 	options_button = button(controls, "Analiză ▾", _open_options)
 	options_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	options_button.clip_text = false
-	options_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls.add_child(spacer)

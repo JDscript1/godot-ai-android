@@ -255,6 +255,9 @@ func _chat_workflow_tests() -> void:
 func _layout_tests() -> void:
 	_check(panel.chat.model_button.get_global_rect().end.y < panel.composer.get_global_rect().position.y, "Model selector has its own row above the composer")
 	_check(not panel.effort_picker.is_visible_in_tree() and not panel.full_control.is_visible_in_tree(), "Advanced agent controls stay out of the composer")
+	var mode_button = panel.chat.options_button
+	var mode_text_width = mode_button.get_theme_font("font").get_string_size(mode_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_button.get_theme_font_size("font_size")).x
+	_check(mode_button.size.x >= mode_text_width + mode_button.get_theme_stylebox("normal").get_minimum_size().x, "Current mode label fits without clipping")
 	_check(not panel.chat.stop_button.is_visible_in_tree(), "Idle chat hides Stop")
 	panel.chat.set_working(true)
 	_check(panel.chat.stop_button.is_visible_in_tree(), "Running chat shows Stop")
