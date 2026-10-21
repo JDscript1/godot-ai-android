@@ -31,6 +31,7 @@ var active_definitions: Array = []
 var transcript: RichTextLabel
 var composer: TextEdit
 var status_label: Label
+var settings_status: Label
 var profile_picker: OptionButton
 var model_picker: OptionButton
 var mode_picker: OptionButton
@@ -64,9 +65,13 @@ func _ready() -> void:
 	assets = Assets.new(self, vault)
 	assets.configure(project_directory.path_join("generated"))
 	accounts = Accounts.new(self, vault)
+	var editor_settings = EditorInterface.get_editor_settings()
+	var timeout = int(editor_settings.get_setting("ai_assistant/connection/request_timeout_seconds")) if editor_settings.has_setting("ai_assistant/connection/request_timeout_seconds") else 180
+	for service in [providers, mcp, assets, accounts]: service.transport.timeout_seconds = clampi(timeout, 10, 600)
 	custom_minimum_size = Vector2(0, 380) * EditorInterface.get_editor_scale()
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_build_chat()
+	if editor_settings.has_setting("ai_assistant/general/default_mode"): mode_picker.select(clampi(int(editor_settings.get_setting("ai_assistant/general/default_mode")), 0, 2))
 	_build_settings()
 	_refresh_secrets()
 	_refresh_profiles()
@@ -97,7 +102,8 @@ func _build_chat() -> void:
 	effort_picker.add_item("Reasoning: Auto")
 	toolbar.add_child(effort_picker)
 	full_control = CheckBox.new()
-	full_control.text = "Control complet pentru această sesiune"
+	full_control.text = "Control complet"
+	full_control.tooltip_text = "Permite modificări pentru această sesiune, în modul Cu confirmare sau Autonom."
 	toolbar.add_child(full_control)
 	_button(toolbar, "Setări", open_settings)
 	_button(toolbar, "Conversație nouă", _new_conversation)
@@ -133,9 +139,14 @@ func _build_settings() -> void:
 	settings_window.min_size = Vector2i(340, 420)
 	settings_window.close_requested.connect(settings_window.hide)
 	add_child(settings_window)
+	var settings_content = VBoxContainer.new()
+	settings_window.add_child(settings_content)
 	settings_tabs = TabContainer.new()
 	settings_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	settings_window.add_child(settings_tabs)
+	settings_content.add_child(settings_tabs)
+	settings_status = Label.new()
+	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	settings_content.add_child(settings_status)
 	var provider_tab = _tab("Furnizori", "providers")
 	var p = _form(provider_tab, "provider")
 	_choice(p, "issuer", "Serviciu", Providers.CATALOG.map(func(item: Dictionary) -> String: return str(item["name"])))
@@ -156,6 +167,8 @@ func _build_settings() -> void:
 				if Providers.CATALOG[index]["id"] == entry["id"]: p["issuer"].select(index)
 			p["url"].text = str(entry["url"])
 			p["name"].text = str(entry["name"]))
+	p["url"].text = str(Providers.CATALOG[0]["url"])
+	p["name"].text = str(Providers.CATALOG[0]["name"])
 	var row = _row(provider_tab)
 	_button(row, "Salvează profil", _save_provider)
 	_button(row, "Profil nou", func() -> void: _clear_form("provider"))
@@ -257,6 +270,7 @@ func _tab(title: String, id: String) -> VBoxContainer:
 	var column = VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(column)
+	_label(column, {"providers": "Profiluri AI salvate", "accounts": "Conturi conectate", "generation": "Profiluri de generare salvate", "mcp": "Servere MCP configurate", "automations": "Sarcini salvate", "journal": "Ultimele operații"}.get(id, ""))
 	var list = ItemList.new()
 	list.custom_minimum_size.y = 100
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -320,6 +334,7 @@ func open_settings(section: String = "") -> void:
 
 func _status(message: String) -> void:
 	if status_label != null: status_label.text = _redact(message).left(2000)
+	if settings_status != null: settings_status.text = _redact(message).left(2000)
 
 func _display(role: String, text: String) -> void:
 	transcript.push_bold()
@@ -518,6 +533,10 @@ func _authorize(definition: Dictionary, args: Dictionary) -> bool:
 
 func _start_chat(text: String) -> void:
 	if busy or text.strip_edges().is_empty(): return
+	var editor_settings = EditorInterface.get_editor_settings()
+	if editor_settings.has_setting("ai_assistant/general/enabled") and not editor_settings.get_setting("ai_assistant/general/enabled"):
+		_status("Activează asistentul din Editor Settings → AI Assistant → General.")
+		return
 	var profile = _current_profile().duplicate(true)
 	if profile.is_empty() or model_picker.selected < 0:
 		_status("Configurează un profil și selectează un model.")
@@ -531,6 +550,7 @@ func _start_chat(text: String) -> void:
 	_refresh_secrets()
 	var user_message = {"role": "user", "content": _redact(text.strip_edges())}
 	history.append(user_message)
+	_persist_history()
 	_display("user", str(user_message["content"]))
 	composer.clear()
 	_status("Pregătesc contextul și instrumentele…")
@@ -588,7 +608,9 @@ func _context_messages() -> Array:
 	var snapshot = tools.execute("godot_project", {}, 0, false)
 	instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
 	instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "kind": profile.get("asset_kind", "image")}))
-	var start = maxi(0, history.size() - 24)
+	var settings = EditorInterface.get_editor_settings()
+	var history_limit = clampi(int(settings.get_setting("ai_assistant/general/history_messages")) if settings.has_setting("ai_assistant/general/history_messages") else 24, 2, 200)
+	var start = maxi(0, history.size() - history_limit)
 	while start > 0 and history[start].get("role") != "user": start -= 1
 	return [{"role": "system", "content": instructions}] + history.slice(start)
 
@@ -652,6 +674,8 @@ func _close_unanswered_calls() -> void:
 
 func _login_chatgpt() -> void:
 	if busy: return
+	busy = true
+	send_button.disabled = true
 	var profile = {"id": Common.uid(), "host_id": "urn:uuid:" + Common.uid(), "kind": "siwc", "url": Accounts.RESOURCE, "name": "ChatGPT", "models": []}
 	for saved in config["providers"]:
 		if saved.get("kind") == "siwc":
@@ -659,6 +683,8 @@ func _login_chatgpt() -> void:
 			break
 	cancel = {"cancelled": false}
 	var result = await accounts.login_chatgpt(profile, cancel, _status)
+	busy = false
+	send_button.disabled = false
 	if not result.get("ok", false):
 		_status(str(result.get("error", "Autentificare nereușită.")))
 		return
@@ -684,6 +710,7 @@ func _save_companion() -> void:
 			return
 	form["key"].clear()
 	config["companion"] = connection
+	EditorInterface.get_editor_settings().set_setting("ai_assistant/companion/url", connection["url"])
 	_save_config()
 	await _refresh_accounts()
 
@@ -778,6 +805,8 @@ func _companion_chat(profile: Dictionary, model: String, definitions: Array, eff
 				var text = _redact(str(state.get("text", live_text)))
 				history.append({"role": "assistant", "content": text})
 				if not started: _display("assistant", text)
+				elif text.begins_with(live_text): transcript.add_text(text.substr(live_text.length()))
+				elif text != live_text: _display("assistant", text)
 			else:
 				_display("assistant", "Execuție întreruptă: " + str(state.get("error", state.get("status"))))
 			return
@@ -876,9 +905,13 @@ func _generate() -> void:
 	if profile.is_empty():
 		_status("Selectează un profil de generare salvat.")
 		return
+	busy = true
+	send_button.disabled = true
 	cancel = {"cancelled": false}
 	_status("Trimit cererea de generare…")
 	var result = await assets.submit(profile, str(forms["generation"]["prompt"].text), str(forms["generation"]["reference"].text), cancel)
+	busy = false
+	send_button.disabled = false
 	_audit("asset_generate", {"profile": profile["id"]}, result)
 	_status("Generarea a fost acceptată. Folosește Actualizează rezultatul pentru progres." if result.get("ok", false) else str(result.get("error", "Generarea a eșuat.")))
 	_refresh_lists()

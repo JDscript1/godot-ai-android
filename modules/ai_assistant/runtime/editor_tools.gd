@@ -129,8 +129,9 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var node = root.get_node_or_null(NodePath(str(args["path"])))
 			var path = Common.project_path(str(args["script"]))
 			if node == null or not _inside_scene(node, root) or path.is_empty() or path.get_extension() != "gd" or not FileAccess.file_exists(path): return Common.failure("Nod sau script de proiect invalid.")
-			var script = ResourceLoader.load(path) as Script
-			if script == null or not script.can_instantiate(): return Common.failure("Scriptul nu poate fi încărcat. Verifică erorile de parsare.")
+			var script = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REPLACE) as Script
+			if script == null or str(script.get_instance_base_type()).is_empty() or not node.is_class(script.get_instance_base_type()): return Common.failure("Scriptul nu poate fi atașat acestui tip de nod. Verifică baza scriptului și erorile de parsare.")
+			if script.reload(true) != OK: return Common.failure("Scriptul conține erori de parsare.")
 			var undo = plugin.get_undo_redo()
 			undo.create_action("AI: attach script")
 			undo.add_do_property(node, "script", script)
@@ -262,6 +263,11 @@ func _describe(args: Dictionary) -> Dictionary:
 	var object = _resolve(str(args.get("handle", "")))
 	var type = str(args.get("class", ""))
 	var filter = str(args.get("filter", "")).to_lower()
+	if object == null and type.is_empty():
+		var classes = []
+		for class_name_value in ClassDB.get_class_list():
+			if filter.is_empty() or filter in str(class_name_value).to_lower(): classes.append(str(class_name_value))
+		return Common.success({"classes": classes.slice(0, 1000), "total": classes.size()})
 	var methods: Array = []
 	var properties: Array = []
 	var signals: Array = []

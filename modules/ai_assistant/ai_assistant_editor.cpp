@@ -151,7 +151,6 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	EDITOR_DEF("ai_assistant/general/max_agent_steps", 30);
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "ai_assistant/general/max_agent_steps", PROPERTY_HINT_RANGE, "1,100,1"));
 	EDITOR_DEF("ai_assistant/general/history_messages", 24);
-	EDITOR_DEF("ai_assistant/general/language", "ro");
 	EDITOR_DEF("ai_assistant/companion/url", "http://127.0.0.1:7341");
 	EDITOR_DEF("ai_assistant/generation/import_directory", "res://ai_assets");
 	EDITOR_DEF("ai_assistant/connection/request_timeout_seconds", 180);
