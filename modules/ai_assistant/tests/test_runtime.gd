@@ -236,3 +236,10 @@ func _new_feature_tests() -> void:
 	check(wav.slice(0, 4).get_string_from_ascii() == "RIFF" and wav.decode_u32(24) == 16000 and wav.decode_u16(22) == 1 and wav.size() == 32044, "Voice resampling creates valid mono 16kHz one-second WAV")
 	var tools = scripts["editor_tools"].new()
 	check(tools.execute("godot_write_file", {"path": "res://blocked.txt", "text": "x"}, 3, true).get("code") == "permission_denied", "Plan mode independently denies mutations")
+
+	check(store.item(fork_id).get("selection", {}).get("model") == "vision", "Fork retains its originating model selection")
+	var jobs = scripts["agent_jobs"].new()
+	jobs.jobs = {"one": {"status": "running", "profile": {"id": "one"}}, "two": {"status": "running", "profile": {"id": "two"}}}
+	check(not jobs.spawn("Inspect", "Explore", {"id": "third"}, "m", "", "p").get("ok", false), "Cloud child limit applies across provider profiles")
+	jobs.jobs.erase("two")
+	check(not jobs.spawn("Inspect", "General", {"id": "local", "issuer": "ollama"}, "m", "", "p").get("ok", false), "Local models do not start an extra parallel child")

@@ -41,7 +41,7 @@ func discover(server: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 func call_tool(name: String, args: Dictionary, mode: int, full_control: bool, cancel: Dictionary) -> Dictionary:
 	if not tool_index.has(name): return Common.failure("Instrument MCP necunoscut.")
 	var tool: Dictionary = tool_index[name]
-	if tool["risk"] != "read" and (mode == 0 or not full_control): return Common.failure("Instrumentul MCP necesită permisiune de modificare.", "permission_denied")
+	if tool["risk"] != "read" and (mode in [0, 3] or not full_control): return Common.failure("Instrumentul MCP necesită permisiune de modificare.", "permission_denied")
 	return await _rpc(tool["server"], "tools/call", {"name": tool["original"], "arguments": args}, cancel)
 
 func _rpc(server: Dictionary, method: String, params: Dictionary, cancel: Dictionary, notification: bool = false, use_session: bool = true) -> Dictionary:

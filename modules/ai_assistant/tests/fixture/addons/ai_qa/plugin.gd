@@ -56,6 +56,11 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 10, "Build all settings forms")
+	await _chat_workflow_tests()
+	await get_tree().process_frame
+	_check(panel.chat.thread.size.x >= minf(740 * EditorInterface.get_editor_scale(), panel.chat.scroll.size.x - 40 * EditorInterface.get_editor_scale()), "Chat column uses the available readable width")
+	_check(panel.chat.thread.size.x <= 760 * EditorInterface.get_editor_scale() + 1, "Chat column stays within 760 logical pixels")
+	_check(panel.chat.sidebar.visible == (panel.chat.size.x / EditorInterface.get_editor_scale() >= 900), "History sidebar responds to available workspace width")
 	var scene = EditorInterface.get_edited_scene_root()
 	if scene == null:
 		scene = Node3D.new()
@@ -146,6 +151,14 @@ func _rpc(command: String, args: Dictionary = {}) -> Dictionary:
 	return {"ok": false, "error": "RPC timeout"}
 
 func _native_runtime_tests() -> void:
+	var ai_button: Button
+	var asset_button: Button
+	for node in EditorInterface.get_base_control().find_children("*", "Button", true, false):
+		if node.text == "AI Assistant": ai_button = node
+		if node.text == "Asset Store": asset_button = node
+	_check(ai_button != null and asset_button != null and ai_button.get_parent() == asset_button.get_parent() and ai_button.get_index() == asset_button.get_index() + 1, "Native AI tab is immediately after Asset Store")
+	_check(panel.vault.store("qa-secret", "fixture-vault-test") and panel.vault.read("qa-secret") == "fixture-vault-test", "Native encrypted desktop credential store round trip")
+	_check(panel.vault.erase("qa-secret") and panel.vault.read("qa-secret").is_empty(), "Native credential store erases test secret")
 	EditorInterface.play_current_scene()
 	var state = {}
 	for attempt in range(40):
@@ -169,3 +182,53 @@ func _native_runtime_tests() -> void:
 		_check(released.get("ok", false) and released.get("result", {}).get("properties", {}).get("held") == false, "Native watchdog releases held game input")
 	EditorInterface.stop_playing_scene()
 	await get_tree().create_timer(0.4).timeout
+
+func _fixture_approval(name: String, results: Dictionary, operation_cancel: Dictionary = {}) -> void:
+	results[name] = await panel._authorize({"name": name, "risk": "write"}, {}, operation_cancel)
+
+func _chat_workflow_tests() -> void:
+	panel.config["providers"] = [
+		{"id": "qa-cloud", "name": "Fixture cloud", "issuer": "deepseek", "kind": "chat", "models": [{"id": "qa-code", "efforts": ["high"]}]},
+		{"id": "qa-local", "name": "Fixture local", "issuer": "ollama", "kind": "chat", "models": [{"id": "qa-local-code"}]},
+	]
+	panel._refresh_profiles()
+	panel._choose({"profile": "qa-cloud", "model": "qa-code", "effort": "high"})
+	panel.busy = true
+	panel._send_or_queue("Queued fixture instruction")
+	panel._choose({"profile": "qa-local", "model": "qa-local-code"})
+	_check(panel.queued.size() == 1 and panel.queued[0]["selection"]["profile"] == "qa-cloud" and panel.queued[0]["selection"]["effort"] == "high", "Queued messages retain provider, model and reasoning selection")
+	panel.busy = false
+	panel.queued.clear()
+	panel.history = [{"role": "user", "id": "fixture-history", "content": "Preserved fixture history"}]
+	panel._persist_history()
+	var original = str(panel.conversations.index["active"])
+	panel._choose({"profile": "qa-cloud", "model": "qa-code"})
+	_check(panel.history.size() == 1 and panel.history[0]["content"] == "Preserved fixture history", "Switch providers without clearing chat")
+	panel._new_conversation()
+	_check(panel.history.is_empty() and panel.conversations.select(original) and panel.conversations.load_active().size() == 1, "New conversation keeps the previous transcript")
+	panel.history = panel.conversations.load_active()
+	panel._new_conversation()
+	panel.chat.picker_search.text = "Fixture local"
+	panel.chat._filter_models()
+	_check(panel.chat.picker_list.item_count == 2 and panel.chat.picker_list.get_item_text(0).contains("locale"), "Search model selector within local provider group")
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.cancel = {"cancelled": false}
+	var decisions = {}
+	_fixture_approval.call_deferred("first", decisions)
+	_fixture_approval.call_deferred("second", decisions)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(panel.approval_pending and panel.approval_dialog.dialog_text.begins_with("first"), "Concurrent agent approvals have separate prompts")
+	panel._decide(true)
+	await get_tree().process_frame
+	_check(decisions.get("first") == true and not decisions.has("second") and panel.approval_dialog.dialog_text.begins_with("second"), "One approval authorizes exactly one queued operation")
+	panel._decide(false)
+	await get_tree().process_frame
+	_check(decisions.get("second") == false, "Second concurrent operation can be independently denied")
+	panel.mode_picker.select(0)
+	panel.full_control.button_pressed = false
+	panel.config["providers"] = []
+	panel._status("Configurează un furnizor din Setări pentru a începe.")
+	panel._refresh_profiles()
+	panel._render_history()

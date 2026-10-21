@@ -79,12 +79,14 @@ func _ready() -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root_column.add_child(scroll)
-	var center = CenterContainer.new()
+	scroll.resized.connect(_size_messages)
+	var center = HBoxContainer.new()
+	center.alignment = BoxContainer.ALIGNMENT_CENTER
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
 	thread = VBoxContainer.new()
-	thread.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	thread.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center.add_child(thread)
 	scroll.get_v_scroll_bar().value_changed.connect(func(value: float) -> void: follow_bottom = value >= scroll.get_v_scroll_bar().max_value - scroll.get_v_scroll_bar().page - 60)
 	tasks_label = label(root_column, "")
@@ -156,6 +158,11 @@ func _resize() -> void:
 	var scale = EditorInterface.get_editor_scale()
 	sidebar.visible = size.x / scale >= 900
 	if model_button != null: model_button.custom_minimum_size.x = minf(260, maxf(150, size.x / scale - 100))
+	_size_messages.call_deferred()
+
+func _size_messages() -> void:
+	if thread == null or scroll == null: return
+	var scale = EditorInterface.get_editor_scale()
 	thread.custom_minimum_size.x = minf(760 * scale, maxf(180, scroll.size.x - 24 * scale))
 
 func style(color: Color, radius: int = 12) -> StyleBoxFlat:

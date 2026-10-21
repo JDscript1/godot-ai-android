@@ -17,7 +17,7 @@ def main():
     source = Path(__file__).resolve().parent.parent
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for name, resolution in (("desktop", "1280x900"), ("narrow", "480x900")):
+    for name, resolution in (("desktop", "1280x900"), ("narrow", "480x900"), ("wide", "1920x1080")):
         destination = output / name
         destination.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="godot-ai-render-") as directory:

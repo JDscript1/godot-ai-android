@@ -11,8 +11,11 @@ func _init(panel: Node = null) -> void: owner = panel
 
 func spawn(task: String, kind: String, profile: Dictionary, model: String, references: String, parent: String) -> Dictionary:
 	if task.strip_edges().is_empty() or not kind in ["Explore", "General", "Playtest"]: return Common.failure("Sarcină sau tip de subagent invalid.")
-	var limit = 1 if profile.get("kind") == "companion" or profile.get("issuer") in ["ollama", "lmstudio", "llamacpp"] else 2
-	var active = jobs.values().filter(func(job: Dictionary) -> bool: return job["status"] == "running" and job["profile"]["id"] == profile["id"])
+	var active = jobs.values().filter(func(job: Dictionary) -> bool: return job["status"] == "running")
+	var limited = profile.get("kind") == "companion" or profile.get("issuer") in ["ollama", "lmstudio", "llamacpp"]
+	for job in active:
+		if job["profile"].get("kind") == "companion" or job["profile"].get("issuer") in ["ollama", "lmstudio", "llamacpp"]: limited = true
+	var limit = 1 if limited else 2
 	if active.size() >= limit: return Common.failure("Limita subagenților acestui profil a fost atinsă. Așteaptă rezultatele existente.")
 	if kind == "Playtest" and playtest_busy: return Common.failure("Există deja un playtest activ.")
 	var id = Common.uid()
@@ -68,10 +71,10 @@ func _run(job: Dictionary) -> void:
 		for step in range(maximum):
 			if job["cancel"].get("cancelled", false): break
 			job["steps"] = step + 1
-			owner.chat.tasks_label.text = "%s · pas %s · %s" % [job["kind"], step + 1, job["task"]]
+			if owner.current_turn == job["parent"]: owner.chat.tasks_label.text = "%s · pas %s · %s" % [job["kind"], step + 1, job["task"]]
 			var response = await service.complete(job["profile"], messages, definitions, str(job["model"]), "", job["cancel"])
 			if not response.get("ok", false):
-				_finish(job, "failed", str(response.get("error")))
+				_finish(job, "cancelled" if job["cancel"].get("cancelled", false) else "failed", str(response.get("error")))
 				break
 			messages.append(response["message"])
 			if response["calls"].is_empty():
@@ -90,7 +93,7 @@ func _finish(job: Dictionary, status: String, text: String) -> void:
 	job["status"] = status
 	job["text"] = owner._redact(text)
 	if job["kind"] == "Playtest": playtest_busy = false
-	owner.chat.activity(str(job["kind"]) + " · " + status, job["text"])
+	if owner.current_turn == job["parent"]: owner.chat.activity(str(job["kind"]) + " · " + status, job["text"])
 	Common.atomic_json(owner.project_directory.path_join("jobs").path_join(str(job["id"]) + ".json"), {"id": job["id"], "parent": job["parent"], "kind": job["kind"], "task": owner._redact(str(job["task"])), "status": status, "report": job["text"], "steps": job["steps"]})
 
 func _companion(job: Dictionary, definitions: Array, instruction: String) -> void:
@@ -140,13 +143,13 @@ func execute(job: Dictionary, name: String, args: Dictionary) -> Dictionary:
 				DirAccess.make_dir_recursive_absolute(directory)
 				var file = FileAccess.open(directory.path_join("frame_%s.png" % Time.get_ticks_msec()), FileAccess.WRITE)
 				if file != null: file.store_buffer(bytes)
-				owner.chat.append_message("assistant", "", {"origin_label": "Playtest · captură din joc", "attachments": [{"mimeType": "image/png", "data": frame["result"]["data"]}]})
+				if owner.current_turn == job["parent"]: owner.chat.append_message("assistant", "", {"origin_label": "Playtest · captură din joc", "attachments": [{"mimeType": "image/png", "data": frame["result"]["data"]}]})
 				var status = await runtime("status", {}, job["cancel"])
 				return {"ok": true, "result": {"width": frame["result"]["width"], "height": frame["result"]["height"], "runtime": status.get("result", {})}, "images": [{"name": "game.png", "mimeType": "image/png", "data": frame["result"]["data"]}]}
 			return frame
 		if name == "playtest_state": return await runtime("inspect", args, job["cancel"])
 		if name == "playtest_input":
-			if not await owner._authorize({"name": name, "risk": "write"}, args): return Common.failure("Input neautorizat.")
+			if not await owner._authorize({"name": name, "risk": "write"}, args, job["cancel"]): return Common.failure("Input neautorizat.")
 			var result = await runtime("input", args, job["cancel"])
 			var deadline = Time.get_ticks_msec() + clampi(int(args.get("duration_ms", 100)), 1, 2000)
 			while Time.get_ticks_msec() < deadline and not job["cancel"].get("cancelled", false): await owner.get_tree().process_frame

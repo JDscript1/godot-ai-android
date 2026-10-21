@@ -82,6 +82,7 @@ func _ready() -> void:
 	conversations = Conversations.new()
 	conversations.configure(project_directory)
 	history = conversations.load_active()
+	_close_unanswered_calls()
 	config["version"] = 2
 	if not config.has("preferences"): config["preferences"] = {}
 	agent_jobs = AgentJobs.new(self)
@@ -447,6 +448,7 @@ func _refresh_models() -> void:
 	_refresh_efforts()
 
 func _refresh_efforts() -> void:
+	chat.model_button.text = "Alege furnizor / model ▾"
 	if model_picker.selected >= 0:
 		chat.model_button.text = str(_current_profile().get("name", "")) + " · " + model_picker.get_item_text(model_picker.selected)
 	effort_picker.clear()
@@ -573,6 +575,7 @@ func _remove_profile(category: String, form_id: String) -> void:
 func _new_conversation() -> void:
 	if busy: return
 	_persist_history()
+	_end_conversation_jobs()
 	conversations.create()
 	history = []
 	pending_attachments.clear()
@@ -604,15 +607,17 @@ func _decide(accepted: bool) -> void:
 	approval_dialog.hide()
 	approval_decided.emit(accepted)
 
-func _authorize(definition: Dictionary, args: Dictionary) -> bool:
+func _authorize(definition: Dictionary, args: Dictionary, operation_cancel: Dictionary = {}) -> bool:
 	if definition.get("risk", "external") == "read": return true
+	while approval_pending and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false): await get_tree().process_frame
+	if cancel.get("cancelled", false) or operation_cancel.get("cancelled", false): return false
 	if mode_picker.selected in [0, 3] or not full_control.button_pressed: return false
 	if mode_picker.selected == 2: return true
 	approval_pending = true
 	approval_dialog.dialog_text = str(definition["name"]) + "\n\n" + _redact(JSON.stringify(args, "  ")).left(5000)
 	approval_dialog.popup_centered_clamped(Vector2i(620, 420), 0.9)
 	var accepted: bool = await approval_decided
-	return accepted and not cancel.get("cancelled", false)
+	return accepted and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false) and mode_picker.selected in [1, 2] and full_control.button_pressed
 
 func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	if busy or text.strip_edges().is_empty(): return
@@ -879,7 +884,17 @@ func _logout_account() -> void:
 	await _refresh_accounts()
 
 func _companion_chat(profile: Dictionary, model: String, definitions: Array, effort: String) -> void:
-	var request = {"account": profile["account"], "model": model, "text": history[-1]["content"], "history": history.slice(0, -1).filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": message.get("content", "")}), "instructions": _context_messages()[0]["content"], "tools": definitions, "mode": "plan" if mode_picker.selected in [0, 3] else "agent", "effort": effort, "attachments": active_attachments}
+	var context = _context_messages()
+	var images = active_attachments.duplicate(true)
+	for message in context.slice(1, -1):
+		for image in message.get("attachments", []):
+			if images.size() < 4 and image.has("data"): images.append(image)
+	if not images.is_empty():
+		var health = await accounts.companion_request(config["companion"], "/health", HTTPClient.METHOD_GET, null, cancel)
+		if not health.get("json", {}).get("features", {}).get("attachments", false):
+			_display("assistant", "Actualizează companionul la protocolul 2 pentru transmiterea imaginilor. Cererea nu a fost trimisă.")
+			return
+	var request = {"account": profile["account"], "model": model, "text": history[-1]["content"], "history": context.slice(1, -1).filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": message.get("content", "")}), "instructions": _context_messages()[0]["content"], "tools": definitions, "mode": "plan" if mode_picker.selected in [0, 3] else "agent", "effort": effort, "attachments": images}
 	var start = await accounts.companion_request(config["companion"], "/v1/turns", HTTPClient.METHOD_POST, request, cancel)
 	if not start.get("ok", false):
 		_status(str(start.get("error", "Companion indisponibil.")))
@@ -1253,8 +1268,10 @@ func _chat_action(name: String, args: Dictionary) -> void:
 				_status("Oprește execuția înainte de schimbarea conversației.")
 				return
 			_persist_history()
+			_end_conversation_jobs()
 			if conversations.select(str(args["id"])):
 				history = conversations.load_active()
+				_close_unanswered_calls()
 				_load_summary()
 				pending_references.clear()
 				pending_attachments.clear()
@@ -1268,6 +1285,7 @@ func _chat_action(name: String, args: Dictionary) -> void:
 		"fork":
 			if busy: return
 			_persist_history()
+			_end_conversation_jobs()
 			conversations.fork_at(str(args["message"]))
 			history = conversations.load_active()
 			_render_history()
@@ -1521,7 +1539,7 @@ func _compact() -> void:
 	var model = str(model_picker.get_item_metadata(model_picker.selected))
 	var result: Dictionary
 	if profile.get("kind") == "companion":
-		var created = await accounts.companion_request(config["companion"], "/v1/turns", HTTPClient.METHOD_POST, {"account": profile["account"], "model": model, "text": "Summarize the earlier conversation for continuation. No tools.", "instructions": str(messages[0]["content"]), "history": history.filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": str(message.get("content", ""))}), "tools": [], "mode": "plan"})
+		var created = await accounts.companion_request(config["companion"], "/v1/turns", HTTPClient.METHOD_POST, {"account": profile["account"], "model": model, "text": "Summarize the earlier conversation for continuation. No tools.", "instructions": str(messages[0]["content"]), "history": history.slice(compact_through).filter(func(message: Dictionary) -> bool: return message.get("role") in ["user", "assistant"]).map(func(message: Dictionary) -> Dictionary: return {"role": message["role"], "text": str(message.get("content", ""))}).slice(-100), "tools": [], "mode": "plan"})
 		if created.get("ok", false):
 			var id = str(created["json"]["result"]["id"])
 			while not cancel_compact.get("cancelled", false):
@@ -1548,7 +1566,7 @@ func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
 	var limit = int(usage.get("contextWindowTokens", 0))
 	for item in profile.get("models", []):
 		if item["id"] == model: limit = int(item.get("context", 0))
-	chat.context_label.text = "Context: %s%s · ieșire %s tokeni" % [str(input) if input else "—", (" / %s" % limit) if limit else "", str(output) if output else "—"]
+	chat.context_label.text = "Context: %s%s · ieșire %s tokeni" % [("≈" if usage.get("estimated", false) else "") + str(input) if input else "—", (" / %s" % limit) if limit else "", str(output) if output else "—"]
 
 func _agent_definitions() -> Array:
 	return [Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Common.tool("task_update", "Publish the current task checklist.", {"tasks": {"type": "array", "items": {"type": "string"}}}, ["tasks"]), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
@@ -1608,3 +1626,11 @@ func _load_summary() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED and speech != null: speech.stop()
+
+func _end_conversation_jobs() -> void:
+	if agent_jobs != null: agent_jobs.stop()
+	if speech != null: speech.stop()
+	current_turn = ""
+	queued.clear()
+	tasks.clear()
+	if chat != null: chat.tasks_label.text = ""
