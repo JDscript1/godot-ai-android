@@ -12,12 +12,12 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`12794c4`**
-  (`12794c4c81ecb8e88a5ea2e7e011dee4fb76d738`).
-- APK-ul include harness-ul, extinderile de tool use, sertarele, controalele
-  compacte și logo-urile upstream. Este livrat cu numele stabil
-  `Godot-AI-Android-arm64-debug.apk`; installerul `588bef1` a fost eliminat
-  din Download după verificarea înlocuitorului.
+- Ultimul commit livrat și verificat ca pachet: **`9a019f6`**
+  (`9a019f60290ee2b0d6f5ce5883e64d7f1246a47f`).
+- APK-ul include Auto/Plan, progres structurat, Markdown nativ, harness-ul,
+  extinderile de tool use, sertarele, controalele compacte și logo-urile upstream.
+  Este livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`. Versiunea
+  `12794c4` a fost înlocuită atomic; în Download rămâne un singur APK al fork-ului.
 
 ## Implementări existente
 
@@ -166,7 +166,7 @@ Uneltele MCP descoperite se adaugă dinamic; nu toate cele 49 sunt expuse simult
 în fiecare rol sau mod. Modulul încorporează acum **17 scripturi**, inclusiv
 datele SVG pentru iconuri.
 
-## Etapa Auto/Plan și lizibilitate — verificare locală încheiată
+## Etapa Auto/Plan și lizibilitate — livrată în APK `9a019f6`
 
 Selectorul de model este redus la maximum 150 unități logice, reasoning la 104.
 Auto planifică intern când modelul consideră necesar, apoi continuă execuția;
@@ -178,16 +178,20 @@ Au trecut **167 verificări funcționale**, zero erori, și **3 teste de livrare
 Regresia de editor a trecut **142 verificări în fiecare dintre cinci configurații**,
 fără erori și cu ieșire normală. Au fost inspectate capturile de chat formatat,
 plan și opțiuni Auto/Plan. Verificarea C++ și încorporarea celor 17 surse au trecut.
-Editorul nativ recompilat și noul APK urmează; installerul `12794c4` rămâne ultima
-livrare verificată până atunci. Dovezi: `.ai-qa/auto-plan-final/`,
-`.ai-qa/auto-plan-embedding.json` și `.ai-qa/auto-plan-verification.json`.
+Editorul nativ recompilat a trecut **152 × 5 verificări**, fără erori. Cele trei
+joburi ale [workflow-ului `39740297032`](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032) au reușit.
+APK-ul `9a019f6` a fost verificat și livrat; toate cele 17 surse corespund byte
+cu byte bibliotecii ARM64. Companionul a trecut 9 teste și build-ul TypeScript
+local și în CI, cu runtimes simulate. Dovezi: `.ai-qa/auto-plan-final/`,
+`.ai-qa/auto-plan-native-ci/.ai-qa/native-rendered/`,
+`.ai-qa/auto-plan-verification.json` și `.ai-qa/delivery-9a019f6.json`.
 
 ## Dovezi de verificare
 
 | Etapă | Dovezi | Limite |
 | --- | --- | --- |
-| Auto/Plan și lizibilitate (surse curente) | 167 aserțiuni, 142 × 5 verificări upstream, 3 teste de livrare, C++ și 17 surse încorporate verificate | APK nou și execuție în editorul nativ recompilat în curs; modele reale nevalidate |
-| APK `12794c4` | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
+| APK `9a019f6` — Auto/Plan și lizibilitate | [Workflow `39740297032`](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032) reușit: 167 aserțiuni, 142 × 5 verificări upstream, 152 × 5 verificări native, 3 teste de livrare, 9 teste companion + build, C++ și 17 surse încorporate verificate | Livrat atomic în Download; fără teste fizice Android sau furnizori reali |
+| APK `12794c4` (istoric) | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
 | APK `588bef1` (istoric) | Workflow `39725331751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
 | APK `e98ddb7` (istoric) | Workflow `39707618934`; semnătură, pachet, ARM64 și surse încorporate verificate | Înlocuit la 22.10.2026 de APK-ul `588bef1` |
 | Interfață și punte nativă anterioare | Rapoarte documentate în `docs/AI_ASSISTANT.md` | Randarea desktop nu dovedește comportamentul fizic Android |
@@ -231,12 +235,13 @@ Proot/X11 pot apărea în loguri; acestea nu constituie validare fizică Android
 
 Ultimul installer:
 `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
-(144.944.433 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
-Fișierul `.sha256` este lângă APK. Installerul `588bef1` și checksum-ul lui au
-fost eliminate; în Download rămâne un singur APK al fork-ului.
+(144.960.817 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
+Fișierul `.sha256` este lângă APK. Versiunea `12794c4` a fost înlocuită atomic
+la aceeași cale stabilă, după verificarea noii versiuni; în Download rămâne un
+singur APK al fork-ului.
 
 SHA-256:
-`ee87843477cdaff55a109508093804883f85f5ab97206537cbf133e9debc5db3`.
+`82e62aa5b2165511bfc6ef866b77846842f9a896ed1a778620d823a632941f7b`.
 
 Certificatul de dezvoltare a rămas neschimbat:
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
@@ -303,6 +308,14 @@ Certificatul de dezvoltare a rămas neschimbat:
   limitată, migrarea preferințelor, selector mai scurt, Markdown nativ și carduri
   de progres. Verificare funcțională locală: 167 aserțiuni, zero erori; APK nou
   încă nelivrat la această etapă.
+
+- **22.10.2026:** livrare finală Auto/Plan `9a019f6`, workflow `39740297032` reușit.
+  167 aserțiuni, 142 × 5 verificări upstream și 152 × 5 verificări native, fără
+  erori. Companion: 9 teste și TypeScript build trecute local și în CI. APK de
+  144.960.817 bytes verificat: pachet, ARM64, certificat persistent, SHA-256 și
+  toate cele 17 scripturi identice sursei. Versiunea anterioară a fost înlocuită
+  atomic la numele stabil din Download; nu s-au creat installere duplicate.
+  Testarea fizică Android și planificarea/coding cu modele reale rămân de validat.
 
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).

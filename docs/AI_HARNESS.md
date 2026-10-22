@@ -6,9 +6,9 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-The original harness ships in APK `12794c4`. The Auto/Plan extensions described
-below are a subsequent source change; its delivery evidence is tracked in
-[the project progress record](../PROGRES_SI_PLAN.md).
+The original harness shipped in APK `12794c4`. Auto/Plan and structured task
+progress ship in APK `9a019f6`, built in [workflow 39740297032](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032).
+Delivery evidence is tracked in [the project progress record](../PROGRES_SI_PLAN.md).
 
 ## Execution boundaries
 
@@ -152,13 +152,13 @@ Results on 2026-10-22. The runtime and upstream-editor rows used the upstream
 Godot 4.7.2 Linux ARM64 editor locally; the native bridge row used the fork's
 desktop editor compiled in CI. The first harness extraction passed 122
 assertions and 80 checks in each of five editor configurations. The current
-Auto/Plan source and earlier delivered native build have these results:
+Auto/Plan source and delivered native build have these results:
 
 | Scope | Result |
 | --- | --- |
-| Runtime compilation, protocols, registry, and harness behavior | 167 assertions, zero failures locally |
+| Runtime compilation, protocols, registry, and harness behavior | 167 assertions, zero failures locally and in CI |
 | Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 142 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
-| Native diagnostics bridge | Earlier delivered `12794c4`: 142 checks per configuration. Rebuild and native Auto/Plan execution pending |
+| Native diagnostics bridge | 152 checks in each of the same five configurations with the fork compiled from `9a019f6` in CI, including Auto/Plan flow, restoration, real scene mutation/verification and native diagnostics |
 | Generated embedding header | All 17 script payloads match their source bytes (including embedded icons); registry precedes its consumers and panel remains last |
 
 Rendered reports and editor logs are in
@@ -166,7 +166,11 @@ Rendered reports and editor logs are in
 extraction reports remain in `.ai-qa/tool-use-final/<configuration>/`. The
 editor fixture loads the current embedded-service sources in an isolated
 project; the separate CI-native job rebuilds the fork's desktop editor and
-runs the same fixture against it.
+runs the same fixture against it. The latest native reports are in
+`.ai-qa/auto-plan-native-ci/.ai-qa/native-rendered/<configuration>/`. The delivered
+APK passed package, ABI, signature and all 17 embedded-source comparisons; see
+`.ai-qa/delivery-9a019f6.json`. The companion passed 9 tests and its TypeScript
+build locally and in CI. Those tests use deterministic account runtimes.
 
 The runtime suite exercises the real HTTP provider/tool/result loop against a
 local protocol fixture, plus retry exhaustion, streaming failures, cancellation,
