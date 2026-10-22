@@ -13,11 +13,14 @@ def main():
     parser.add_argument("--godot", required=True)
     parser.add_argument("--proot", action="store_true")
     parser.add_argument("--output", default=".ai-qa/rendered")
+    parser.add_argument("--only", choices=["desktop", "narrow", "wide", "phone_landscape", "phone_compact"])
     args = parser.parse_args()
     source = Path(__file__).resolve().parent.parent
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     for name, resolution in (("desktop", "1280x900"), ("narrow", "480x900"), ("wide", "1920x1080"), ("phone_landscape", "2048x922"), ("phone_compact", "1280x900")):
+        if args.only and name != args.only:
+            continue
         destination = output / name
         destination.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="godot-ai-render-") as directory:
@@ -43,15 +46,20 @@ def main():
                            *(f"{key}={value}" for key, value in environment.items()), *command]
             report_path = destination / "editor-report.json"
             report_path.unlink(missing_ok=True)
-            result = subprocess.run(command, env={**os.environ, **environment},
-                                    capture_output=True, text=True, timeout=90)
-            log = result.stdout + result.stderr
-            (destination / "editor.log").write_text(log)
+            log_path = destination / "editor.log"
+            try:
+                with log_path.open("w") as stream:
+                    result = subprocess.run(command, env={**os.environ, **environment},
+                                            stdout=stream, stderr=subprocess.STDOUT, timeout=90)
+            except subprocess.TimeoutExpired:
+                print(log_path.read_text())
+                raise SystemExit(f"{name}: editor verification timed out")
+            log = log_path.read_text()
             if "SCRIPT ERROR:" in log or "ERROR: Cannot save GDScript file" in log:
                 print(log)
                 raise SystemExit(f"{name}: embedded script or save regression")
             if result.returncode or not report_path.exists():
-                print(result.stdout + result.stderr)
+                print(log)
                 raise SystemExit(f"{name}: editor verification failed ({result.returncode})")
             report = json.loads(report_path.read_text())
             print(f"{name}: {report['checks']} checks, {len(report['failures'])} failures")

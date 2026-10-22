@@ -192,19 +192,43 @@ It refuses restoration when file hashes or native scene Undo history changed
 subsequently. Generic method calls, external operations and arbitrary setting
 changes are not reversible checkpoints.
 
-The chat keeps provider/model selection on its own row above the conversation.
-The composer contains attachments, the current mode, microphone and send; Stop
-appears only while working. The mode menu contains reasoning, session write
-permission, context usage and an optional expanded chat view. Empty conversations
-show one welcome prompt rather than an assistant message and repeated setup status.
+The compact header contains provider/model selection, history, new conversation,
+expanded workspace and settings. User messages form small right-aligned bubbles;
+assistant messages use the main reading column. The composer starts at one line
+and grows to a bounded height. Image and project references appear as removable
+chips, with image thumbnails. Empty task/reference rows reserve no space.
+Stop appears only while working. The mode menu contains reasoning, session write
+permission and context usage. Empty conversations show one welcome prompt.
+
+Streaming updates the existing message blocks at a bounded rate. Fenced code has
+syntax colors, its language and a copy action during streaming as well as after
+completion. Finishing a response preserves its widgets and layout. Message actions
+use compact icons and a secondary menu. The Changes view highlights actual old
+and new file contents in red and green and retains conflict-aware restoration.
+Operations appear in expandable activity groups with details hidden initially.
+Graphite surfaces, violet accents and monochrome vector icons are shared across
+chat and settings. New live messages use a short opacity transition; General has
+a reduce-motion preference. History loading does not animate each old message.
 
 Settings navigation measures category names using the actual font size. Narrow
-windows use a category dropdown instead of shortening the left-side labels. Empty
-saved-item lists are hidden. Subscription settings show one service at a time:
+windows use a category dropdown instead of shortening the left-side labels.
+Provider profiles use a compact selector, monogram and connection badge. A saved
+profile or manual model is shown as unverified until a catalog request succeeds;
+the last successful verification is stored with the profile. API keys, Save and
+Verify actions stay in the basic form. Profile name, URL, HTTP and manual model
+are in an advanced section, opened for local/custom endpoints. Saved keys stay
+masked and can be retained by leaving the field empty. Other saved lists size to
+their item count, and empty lists are hidden. Voice and generation show fields
+for the selected backend. Settings feedback is separate from chat progress.
+Subscription settings show one service at a time:
 ChatGPT has its native login view; Claude, Copilot and Kimi have their companion
 view with connection details collapsed. The service name is selected rather than
 typed manually. Render verification includes 2048x922 and 1280x900 at 150% editor
 scale to cover the Android screenshots that revealed clipped navigation.
+Verification also renders populated conversations, streamed code, activity,
+actual file differences and settings with a saved provider, instead of relying
+on an empty chat. Live account/model, hardware voice, Android keyboard, rotation
+and device touch checks remain separate from these deterministic desktop cases.
 
 ## Playtest and voice boundaries
 

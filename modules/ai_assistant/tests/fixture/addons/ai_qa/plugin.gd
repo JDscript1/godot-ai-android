@@ -114,6 +114,7 @@ func _run() -> void:
 	if native:
 		await _native_runtime_tests()
 		hide_bottom_panel()
+	await _populated_chat_tests()
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty():
 		DirAccess.make_dir_recursive_absolute(output)
@@ -121,6 +122,11 @@ func _run() -> void:
 		var image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 		_check(image != null and not image.is_empty(), "Render editor panel")
 		if image != null and not image.is_empty(): image.save_png(output.path_join("editor-panel.png"))
+		panel.chat.follow_bottom = true
+		panel.chat._follow()
+		await get_tree().create_timer(0.2).timeout
+		image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+		if image != null and not image.is_empty(): image.save_png(output.path_join("conversation-bottom.png"))
 		panel.open_settings("providers")
 		await get_tree().create_timer(0.5).timeout
 		print("AI settings dimensions: ", panel.settings_window.size)
@@ -253,7 +259,7 @@ func _chat_workflow_tests() -> void:
 	panel._render_history()
 
 func _layout_tests() -> void:
-	_check(panel.chat.model_button.get_global_rect().end.y < panel.composer.get_global_rect().position.y, "Model selector has its own row above the composer")
+	_check(panel.chat.model_button.get_global_rect().end.y < panel.composer.get_global_rect().position.y, "Model selector stays in the header above the conversation")
 	_check(not panel.effort_picker.is_visible_in_tree() and not panel.full_control.is_visible_in_tree(), "Advanced agent controls stay out of the composer")
 	var mode_button = panel.chat.options_button
 	var mode_text_width = mode_button.get_theme_font("font").get_string_size(mode_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_button.get_theme_font_size("font_size")).x
@@ -298,3 +304,103 @@ func _layout_tests() -> void:
 	panel._layout_settings()
 	print("AI editor UI scale: ", EditorInterface.get_editor_scale())
 	panel.settings_window.hide()
+
+func _populated_chat_tests() -> void:
+	var scale = EditorInterface.get_editor_scale()
+	panel.tools.execute("godot_write_file", {"path": "res://ai_visual_diff.txt", "text": "speed = 5\n"}, 2, true)
+	panel.tools.turn_id = "visual-diff"
+	panel.tools.execute("godot_write_file", {"path": "res://ai_visual_diff.txt", "text": "speed = 12\n"}, 2, true)
+	panel.tools.turn_id = ""
+	panel._show_changes("visual-diff")
+	await get_tree().create_timer(0.2).timeout
+	var changes: AcceptDialog
+	for child in panel.get_children():
+		if child is AcceptDialog and child.title == "Modificările execuției": changes = child
+	var diff: CodeEdit = changes.find_children("*", "CodeEdit", true, false)[0]
+	var additions = false
+	var deletions = false
+	for index in range(diff.get_line_count()):
+		if diff.get_line(index) == "+ speed = 12": additions = diff.get_line_background_color(index).g > diff.get_line_background_color(index).r
+		if diff.get_line(index) == "- speed = 5": deletions = diff.get_line_background_color(index).r > diff.get_line_background_color(index).g
+	_check(additions and deletions, "Changes show actual before and after content with distinct colors")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty(): changes.get_texture().get_image().save_png(output.path_join("changes.png"))
+	changes.hide()
+	changes.queue_free()
+	_check(panel.tools.restore_turn("visual-diff").get("ok", false), "Visual diff keeps recovery operational")
+	panel.chat.motion_enabled = false
+	panel._status("")
+	panel.history = [{"id": "visual-user", "role": "user", "content": "hei"}]
+	panel._render_history()
+	await get_tree().create_timer(0.2).timeout
+	var user: Dictionary = panel.chat.message_records[0]
+	_check(user["card"].size.x <= panel.chat.thread.size.x * 0.75 and user["card"].size.y < 90 * scale, "Short user messages have compact bubbles")
+	_check(absf(user["card"].get_global_rect().end.x - user["row"].get_global_rect().end.x) < 2, "User bubbles align to the right")
+	_check(not panel.chat.tasks_label.visible and not panel.chat.reference_label.visible, "Empty task and reference rows reserve no chat space")
+	_check(panel.chat.scroll.size.y >= panel.chat.size.y * 0.5, "Conversation receives at least half the available workspace")
+	_check(panel.chat.size.x <= panel.size.x + 2, "Message width does not force the chat outside its workspace")
+	var compact_height = panel.composer.size.y
+	panel.composer.text = "Linie\n".repeat(12)
+	await get_tree().create_timer(0.2).timeout
+	_check(panel.composer.size.y > compact_height and panel.composer.size.y <= 112 * scale + 1, "Composer grows with text up to its height limit")
+	panel.composer.clear()
+	panel.pending_references = ["res://example.gd"]
+	panel._composer_hints()
+	_check(panel.chat.attachment_chips.visible and panel.chat.attachment_chips.get_child_count() == 1, "References appear as removable chips")
+	panel._chat_action("remove_attachment", {"kind": "reference", "index": 0})
+	_check(panel.pending_references.is_empty() and not panel.chat.attachment_chips.visible, "Removing a reference updates the actual pending context")
+	var source = "extends Node3D\n\nfunc _ready():\n\tprint(\"Salut din Godot\")"
+	var answer = "Putem construi scena împreună.\n\n**Pașii propuși**\n- Verific structura proiectului.\n- Pregătesc scriptul și verific rezultatul.\n\n```gdscript\n" + source + "\n```\n\nModificările rămân disponibile pentru revizuire."
+	panel.current_origin = {"origin_label": "DeepSeek · Model de probă", "turn_id": "visual-turn"}
+	panel._display("assistant", "")
+	var anchor = panel.transcript
+	panel.chat.stream_text(anchor, answer.left(answer.length() / 2))
+	await get_tree().create_timer(0.15).timeout
+	panel.chat.stream_text(anchor, answer.substr(answer.length() / 2))
+	await get_tree().create_timer(0.2).timeout
+	var assistant: Dictionary = anchor.get_meta("message")
+	var body_id = assistant["body"].get_instance_id()
+	var before = assistant["card"].size.y
+	_check(assistant["blocks"].size() == 3 and assistant["blocks"][1]["editor"].text == source, "Streaming renders highlighted fenced code before completion")
+	var copy: Button = assistant["blocks"][1]["node"].get_child(0).get_child(1)
+	copy.pressed.emit()
+	_check(DisplayServer.clipboard_get() == source, "Code copy preserves source without Markdown fences")
+	var completed = {"id": "visual-answer", "role": "assistant", "content": answer, "origin_label": "DeepSeek · Model de probă", "turn_id": "visual-turn"}
+	panel.history.append(completed)
+	panel.chat.finish_stream(anchor, completed)
+	panel._finish_chat("Finalizat.")
+	await get_tree().create_timer(0.2).timeout
+	_check(is_instance_valid(anchor) and assistant["body"].get_instance_id() == body_id and absf(assistant["card"].size.y - before) < 2, "Completion keeps the same message widgets and layout")
+	_check(not assistant["actions"][0].disabled and assistant["metadata"]["id"] == "visual-answer", "Completed message actions bind to the stored conversation message")
+	panel.chat.activity("Inspectează scena · finalizat", "Fixture result")
+	panel.chat.activity("Verifică scriptul · finalizat", "Fixture result")
+	var group = panel.chat.activity_group
+	var entries = group.get_meta("entries")
+	_check(entries.get_child_count() == 2 and not entries.visible, "Operations form one collapsed activity group")
+	group.get_meta("toggle").pressed.emit()
+	_check(entries.visible, "Activity details expand on request")
+	group.get_meta("toggle").pressed.emit()
+	panel.config["providers"] = [{"id": "visual-provider", "name": "DeepSeek", "issuer": "deepseek", "kind": "chat", "url": "https://api.deepseek.com", "models": [{"id": "visual-code", "name": "Model de probă"}]}]
+	panel._refresh_lists()
+	panel._refresh_profiles()
+	panel._edit_provider(0)
+	_check(panel.provider_selector.item_count == 2 and not panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved profiles use a compact selector with advanced fields collapsed")
+	_check(panel.provider_badge.text.contains("neverificată"), "Saved model metadata does not imply a verified connection")
+	panel.config["providers"][0]["verified_at"] = 1
+	panel._refresh_lists()
+	_check(panel.provider_badge.text.contains("Conexiune verificată"), "Verified profiles show their distinct connection state")
+	panel.open_settings("providers")
+	await get_tree().create_timer(0.2).timeout
+	var key = panel.forms["provider"]["key"]
+	_check(key.is_visible_in_tree() and key.get_global_rect().end.y < panel.settings_window.size.y - 60 * scale, "API key remains visible with a saved provider")
+	panel._status("Profil verificat pentru captura de test.")
+	_check(panel.settings_status.visible and not panel.chat.status.visible, "Settings feedback is separate from chat status")
+	_check(panel.settings_navigation.get_theme_stylebox("panel").bg_color == Color("0d1320"), "Saved lists and settings navigation use the graphite theme")
+	panel.settings_window.hide()
+	var was_expanded = EditorInterface.is_distraction_free_mode_enabled()
+	panel.chat.expand_button.pressed.emit()
+	_check(EditorInterface.is_distraction_free_mode_enabled() != was_expanded, "Header expand button controls the native editor workspace")
+	panel.chat.expand_button.pressed.emit()
+	panel.chat.follow_bottom = false
+	panel.chat.scroll.scroll_vertical = 0
+	await get_tree().create_timer(0.2).timeout

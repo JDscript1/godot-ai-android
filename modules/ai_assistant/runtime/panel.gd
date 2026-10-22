@@ -77,6 +77,10 @@ var turn_cancel: Dictionary = {}
 var tasks: Array = []
 var compact_summary = ""
 var compact_through = 0
+var provider_selector: OptionButton
+var provider_badge: Label
+var provider_advanced: VBoxContainer
+var provider_mark: Label
 
 func configure(editor_plugin: EditorPlugin, secret_store: RefCounted) -> void:
 	plugin = editor_plugin
@@ -118,6 +122,7 @@ func _ready() -> void:
 	_choose(conversations.item(str(conversations.index["active"])).get("selection", {}))
 	_load_summary()
 	_refresh_lists()
+	if not config["providers"].is_empty(): _edit_provider(0)
 	_render_history()
 	_refresh_conversations()
 	set_process(true)
@@ -197,19 +202,46 @@ func _build_settings() -> void:
 	general_form["max_steps"].text = str(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/max_agent_steps")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/max_agent_steps") else "30"
 	_check(general_form, "enabled", "Activează asistentul")
 	general_form["enabled"].button_pressed = bool(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/enabled")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/enabled") else true
+	_check(general_form, "reduce_motion", "Redu animațiile interfeței")
+	general_form["reduce_motion"].button_pressed = bool(preferences.get("reduce_motion", false))
+	chat.motion_enabled = not general_form["reduce_motion"].button_pressed
 	_button(general, "Salvează preferințele", _save_preferences)
 	var provider_tab = _tab("Furnizori AI", "providers")
+	var profile_row = HBoxContainer.new()
+	provider_tab.add_child(profile_row)
+	provider_mark = _label(profile_row, "AI")
+	provider_mark.autowrap_mode = TextServer.AUTOWRAP_OFF
+	provider_mark.custom_minimum_size.x = 32 * EditorInterface.get_editor_scale()
+	provider_mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	provider_mark.add_theme_color_override("font_color", Color("bea0ef"))
+	provider_selector = OptionButton.new()
+	provider_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	profile_row.add_child(provider_selector)
+	provider_selector.item_selected.connect(func(index: int) -> void:
+		if index > 0: _edit_provider(index - 1)
+		else: _new_provider())
+	chat.icon_button(profile_row, "Add", "Adaugă un profil", _new_provider)
+	provider_badge = _label(provider_tab, "Adaugă cheia furnizorului pentru a conecta un model.")
+	provider_badge.add_theme_color_override("font_color", Color("a9b5cb"))
 	var p = _form(provider_tab, "provider")
 	_choice(p, "issuer", "Serviciu", Providers.CATALOG.map(func(item: Dictionary) -> String: return str(item["name"])))
+	_field(p, "key", "Cheie API", true)
+	var row = _row(provider_tab)
+	_button(row, "Salvează", _save_provider)
+	_button(row, "Verifică / modele", _test_provider)
+	_button(row, "Șterge", func() -> void: _remove_profile("providers", "provider"))
+	provider_advanced = _disclosure(provider_tab, "Opțiuni avansate")
+	p["container"] = provider_advanced
 	_field(p, "name", "Nume profil")
 	_field(p, "url", "Adresă API")
-	_field(p, "key", "Cheie API", true)
 	_check(p, "allow_http", "Permite HTTP pentru serverul local")
 	_field(p, "manual_model", "Model manual (opțional)")
 	p["issuer"].item_selected.connect(func(index: int) -> void:
 		p["url"].text = str(Providers.CATALOG[index]["url"])
 		p["name"].text = str(Providers.CATALOG[index]["name"])
 		p["allow_http"].button_pressed = bool(Providers.CATALOG[index].get("local", false)))
+	p["issuer"].item_selected.connect(func(index: int) -> void:
+		provider_advanced.visible = bool(Providers.CATALOG[index].get("local", false)) or Providers.CATALOG[index]["id"] == "custom")
 	p["key"].text_changed.connect(func(text: String) -> void:
 		var detection = Providers.detect(text)
 		if detection.get("ok", false) and str(p.get("editing", "")).is_empty():
@@ -220,11 +252,6 @@ func _build_settings() -> void:
 			p["name"].text = str(entry["name"]))
 	p["url"].text = str(Providers.CATALOG[0]["url"])
 	p["name"].text = str(Providers.CATALOG[0]["name"])
-	var row = _row(provider_tab)
-	_button(row, "Salvează profil", _save_provider)
-	_button(row, "Profil nou", func() -> void: _clear_form("provider"))
-	_button(row, "Testează / modele", _test_provider)
-	_button(row, "Șterge profil", func() -> void: _remove_profile("providers", "provider"))
 	lists["providers"].item_selected.connect(_edit_provider)
 	var account_tab = _tab("Abonamente", "accounts")
 	_label(account_tab, "Alege serviciul pe care vrei să îl conectezi.")
@@ -275,6 +302,9 @@ func _build_settings() -> void:
 	_field(g, "key", "Cheie / token (dacă este necesar)", true)
 	_check(g, "allow_http", "Permite HTTP pentru serverul local")
 	_field(g, "model", "Model Runware")
+	var workflow_bindings = _disclosure(gen_tab, "Configurare workflow ComfyUI")
+	g["workflow_fields"] = workflow_bindings
+	g["container"] = workflow_bindings
 	_field(g, "prompt_node", "Nod prompt ComfyUI")
 	_field(g, "prompt_input", "Câmp prompt")
 	g["prompt_input"].text = "text"
@@ -282,6 +312,8 @@ func _build_settings() -> void:
 	_field(g, "reference_input", "Câmp referință")
 	g["reference_input"].text = "image"
 	_field(g, "output_node", "Nod rezultat ComfyUI")
+	g["kind"].item_selected.connect(func(index: int) -> void: _generation_fields(index, workflow_bindings))
+	_generation_fields(g["kind"].selected, workflow_bindings)
 	var gen_row = _row(gen_tab)
 	_button(gen_row, "Importă workflow API", _pick_workflow)
 	_button(gen_row, "Salvează profil", _save_generation)
@@ -289,6 +321,8 @@ func _build_settings() -> void:
 	_button(gen_row, "Verifică server / modele", _test_generation)
 	_button(gen_row, "Șterge profil", func() -> void: _remove_profile("generation", "generation"))
 	lists["generation"].item_selected.connect(_edit_generation)
+	_label(gen_tab, "Creează o resursă")
+	g["container"] = _form_container(gen_tab)
 	_field(g, "prompt", "Prompt de generare")
 	_field(g, "reference", "Referință din proiect (res://)")
 	_field(g, "destination", "Destinație import")
@@ -350,7 +384,7 @@ func _build_settings() -> void:
 	_check(voice_form, "allow_http", "Permite HTTP pentru serverul local")
 	voice_form["allow_http"].button_pressed = bool(preferences.get("voice_allow_http", false))
 	_button(voice_tab, "Salvează vocea", _save_preferences)
-	var play_tab = _tab("Playtesting", "playtesting")
+	var play_tab = _tab("Testare joc", "playtesting")
 	var play_form = _form(play_tab, "playtesting")
 	for field in [["profile", "ID profil vizual (gol = profilul curent)"], ["model", "Model vizual (gol = modelul curent)"], ["seconds", "Durată maximă, secunde"], ["steps", "Pași maximi"]]:
 		_field(play_form, field[0], field[1])
@@ -361,6 +395,8 @@ func _build_settings() -> void:
 	for section in forms:
 		var fields: Dictionary = forms[section]
 		fields["editing"] = ""
+	voice_form["backend"].item_selected.connect(func(_index: int) -> void: _voice_fields())
+	_voice_fields()
 
 func _tab(title: String, id: String) -> VBoxContainer:
 	var scroll = ScrollContainer.new()
@@ -379,7 +415,7 @@ func _tab(title: String, id: String) -> VBoxContainer:
 	list_header.hide()
 	list_headers[id] = list_header
 	var list = ItemList.new()
-	list.custom_minimum_size.y = 100 * EditorInterface.get_editor_scale()
+	list.custom_minimum_size.y = 44 * EditorInterface.get_editor_scale()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.hide()
 	column.add_child(list)
@@ -387,18 +423,73 @@ func _tab(title: String, id: String) -> VBoxContainer:
 	return column
 
 func _form(parent: Node, id: String) -> Dictionary:
-	var grid = VBoxContainer.new()
-	parent.add_child(grid)
-	var form = {"container": grid}
+	var form = {"container": _form_container(parent), "groups": {}}
 	forms[id] = form
 	return form
 
+func _form_container(parent: Node) -> VBoxContainer:
+	var column = VBoxContainer.new()
+	column.add_theme_constant_override("separation", int(6 * EditorInterface.get_editor_scale()))
+	parent.add_child(column)
+	return column
+
+func _disclosure(parent: Node, title: String) -> VBoxContainer:
+	var body = VBoxContainer.new()
+	var toggle = _button(parent, title + "  ▾", func() -> void: body.visible = not body.visible)
+	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	parent.add_child(body)
+	body.set_meta("toggle", toggle)
+	body.hide()
+	return body
+
+func _generation_fields(index: int, workflow: Control) -> void:
+	var form: Dictionary = forms["generation"]
+	form["groups"]["url"].visible = index == 1
+	form["groups"]["model"].visible = index == 0
+	workflow.get_meta("toggle").visible = index == 1
+	if index == 0: workflow.hide()
+
+func _voice_fields() -> void:
+	var form: Dictionary = forms["voice"]
+	var endpoint = form["backend"].selected == 1
+	for key in ["url", "model", "key"]: form["groups"][key].visible = endpoint
+	form["allow_http"].visible = endpoint
+
+func _refresh_provider_selector() -> void:
+	if provider_selector == null: return
+	provider_selector.clear()
+	provider_selector.add_item("Adaugă un furnizor")
+	var editing = str(forms["provider"].get("editing", ""))
+	provider_mark.text = "AI"
+	provider_badge.text = "Adaugă cheia furnizorului pentru a conecta un model."
+	for profile in config["providers"]:
+		provider_selector.add_item(str(profile["name"]))
+		if str(profile["id"]) == editing:
+			provider_selector.select(provider_selector.item_count - 1)
+			provider_mark.text = str(profile["name"]).left(1).to_upper()
+			var count = profile.get("models", []).size()
+			provider_badge.text = ("● Conexiune verificată" if profile.has("verified_at") else "○ Configurat · conexiune neverificată") + " · %s %s" % [count, "model" if count == 1 else "modele"]
+			provider_badge.add_theme_color_override("font_color", Color("a2d2b0") if profile.has("verified_at") else Color("a9b5cb"))
+
+func _new_provider() -> void:
+	_clear_form("provider")
+	var form: Dictionary = forms["provider"]
+	form["issuer"].select(0)
+	form["name"].text = str(Providers.CATALOG[0]["name"])
+	form["url"].text = str(Providers.CATALOG[0]["url"])
+	form["key"].placeholder_text = "Introdu cheia API"
+	provider_advanced.hide()
+	_refresh_provider_selector()
+
 func _field(form: Dictionary, id: String, title: String, secret: bool = false) -> void:
-	_label(form["container"], title)
+	var group = _form_container(form["container"])
+	if not form.has("groups"): form["groups"] = {}
+	form["groups"][id] = group
+	_label(group, title)
 	var edit = LineEdit.new()
 	edit.secret = secret
 	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	form["container"].add_child(edit)
+	group.add_child(edit)
 	form[id] = edit
 
 func _choice(form: Dictionary, id: String, title: String, options: Array) -> void:
@@ -437,19 +528,21 @@ func _button(parent: Node, title: String, callback: Callable) -> Button:
 func open_settings(section: String = "") -> void:
 	if settings_window == null: return
 	if section_tabs.has(section): _select_settings(int(section_tabs[section]))
+	settings_status.hide()
 	settings_window.popup_centered_clamped(Vector2i(900, 760) * EditorInterface.get_editor_scale(), 0.94)
 	_layout_settings.call_deferred()
 
 func _status(message: String) -> void:
-	if status_label != null:
-		status_label.text = _redact(message).left(2000)
-		status_label.visible = not message.is_empty() and message != "Configurează un furnizor din Setări pentru a începe."
-	if settings_status != null:
-		settings_status.text = _redact(message).left(2000)
-		settings_status.visible = status_label.visible
+	var text = _redact(message).left(2000)
+	if text == "Configurează un furnizor din Setări pentru a începe.": text = ""
+	if settings_window != null and settings_window.visible and not busy:
+		settings_status.text = text
+		settings_status.visible = not text.is_empty()
+	else:
+		chat.show_status("" if text in ["Finalizat.", "Sarcină încheiată."] else text, busy)
 
 func _display(role: String, text: String, metadata: Dictionary = {}) -> void:
-	transcript = chat.append_message(role, _redact(text), metadata if not metadata.is_empty() else current_origin, false)
+	transcript = chat.append_message(role, _redact(text), metadata if not metadata.is_empty() else current_origin)
 
 func _save_config() -> void:
 	if Common.atomic_json(data_directory.path_join("config.json"), config) != OK: _status("Setările nu au putut fi salvate.")
@@ -502,7 +595,7 @@ func _refresh_efforts() -> void:
 	if model_picker.selected >= 0:
 		chat.model_button.text = str(_current_profile().get("name", "")) + " · " + model_picker.get_item_text(model_picker.selected)
 	effort_picker.clear()
-	effort_picker.add_item("Reasoning: Auto")
+	effort_picker.add_item("Automat")
 	effort_picker.set_item_metadata(0, "")
 	if model_picker.selected < 0: return
 	var profile = _current_profile()
@@ -523,6 +616,7 @@ func _refresh_lists() -> void:
 		for job in assets.jobs: lists["jobs"].add_item("%s · %s · %s" % [job["id"].left(8), job["kind"], job["status"]])
 	_refresh_journal()
 	_refresh_list_visibility()
+	_refresh_provider_selector()
 
 func _fill(form_id: String, profile: Dictionary) -> void:
 	var form: Dictionary = forms[form_id]
@@ -582,6 +676,8 @@ func _save_provider() -> void:
 	var manual = str(p["manual_model"].text).strip_edges()
 	if not manual.is_empty() and not models.any(func(item: Dictionary) -> bool: return item["id"] == manual): models.append({"id": manual, "name": manual, "source": "manual", "capabilities": {}})
 	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models}
+	for previous in config["providers"]:
+		if previous["id"] == id and previous.get("url") == url and previous.get("issuer") == issuer["id"] and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
 	p["editing"] = id
 	_upsert("providers", profile)
 	_status("Profil salvat. Folosește Testează / modele pentru catalogul disponibil.")
@@ -591,6 +687,10 @@ func _edit_provider(index: int) -> void:
 	_fill("provider", profile)
 	for issuer_index in range(Providers.CATALOG.size()):
 		if Providers.CATALOG[issuer_index]["id"] == profile.get("issuer", "custom"): forms["provider"]["issuer"].select(issuer_index)
+	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
+	provider_advanced.visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "custom"]
+	_refresh_provider_selector()
+	settings_status.hide()
 
 func _test_provider() -> void:
 	var id = str(forms["provider"].get("editing", ""))
@@ -607,6 +707,7 @@ func _test_provider() -> void:
 			_status(str(result.get("error", "Catalog indisponibil; poți introduce un model manual.")))
 			return
 		profile["models"] = result["result"]
+		profile["verified_at"] = Time.get_unix_time_from_system()
 		_save_config()
 		_status("Conexiune verificată. %s modele; suportul coding/tool calling se verifică separat." % profile["models"].size())
 		return
@@ -734,7 +835,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 			if not live["started"]:
 				_display("assistant", "")
 				live["started"] = true
-			transcript.add_text(_redact(piece))
+				chat.stream_text(transcript, _redact(piece))
 		var response = await providers.complete(profile, context, visible, model, effort, cancel, delta)
 		if not response.get("ok", false):
 			_finish_chat(str(response.get("error", "Cererea a eșuat.")))
@@ -747,6 +848,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		_set_usage(response.get("usage", {}), profile, model)
 		history.append(message)
 		if not live["started"] and not str(message.get("content", "")).is_empty(): _display("assistant", str(message["content"]))
+		if is_instance_valid(transcript) and (live["started"] or not str(message.get("content", "")).is_empty()): chat.finish_stream(transcript, message)
 		if response["calls"].is_empty():
 			_finish_chat("Finalizat." if response.get("finish", "") not in ["length", "MAX_TOKENS", "max_tokens"] else "Răspuns oprit la limita modelului.")
 			return
@@ -806,7 +908,8 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	return result
 
 func _audit(name: String, args: Dictionary, result: Dictionary) -> void:
-	chat.activity(name + (" · finalizat" if result.get("ok", false) else " · eșuat"), _redact(JSON.stringify(result)).left(12000))
+	var titles = {"godot_project": "Inspectează proiectul", "godot_files": "Caută fișiere", "godot_scene": "Inspectează scena", "godot_create_node": "Creează un nod", "godot_set": "Modifică proprietăți", "godot_write_file": "Actualizează fișierul", "godot_attach_script": "Atașează scriptul", "godot_save_scene": "Salvează scena", "asset_generate": "Generează resursa", "task_update": "Actualizează pașii"}
+	chat.activity(str(titles.get(name, name)) + (" · finalizat" if result.get("ok", false) else " · eșuat"), name + "\n" + _redact(JSON.stringify(result)).left(12000))
 	journal.append({"turn_id": current_turn, "time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": Common.parse_json(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
 	if journal.size() > 1000: journal = journal.slice(-1000)
 	Common.atomic_json(project_directory.path_join("journal.json"), journal)
@@ -820,8 +923,14 @@ func _finish_chat(message: String) -> void:
 	_close_unanswered_calls()
 	busy = false
 	send_button.disabled = false
+	if is_instance_valid(transcript) and transcript.has_meta("message"):
+		var partial: Dictionary = transcript.get_meta("message")
+		if partial.get("streaming", false) and not str(partial["text"]).is_empty():
+			var saved = current_origin.duplicate(true)
+			saved.merge({"id": Common.uid(), "role": "assistant", "content": partial["text"]}, true)
+			history.append(saved)
+			chat.finish_stream(transcript, saved)
 	_persist_history()
-	_render_history()
 	_refresh_lists()
 	_status(message + (" · %s mesaje în coadă" % queued.size() if not queued.is_empty() else ""))
 	if not queued.is_empty() and not queue_paused: _run_next.call_deferred()
@@ -982,7 +1091,7 @@ func _companion_chat(profile: Dictionary, model: String, definitions: Array, eff
 					started = true
 				var piece = _redact(str(event.get("text", "")))
 				live_text += piece
-				transcript.add_text(piece)
+				chat.stream_text(transcript, piece)
 			elif event.get("kind") == "tool":
 				var executed = await _execute_call(str(event["name"]), event.get("arguments", {}))
 				await accounts.companion_request(config["companion"], "/v1/turns/" + id + "/tools/" + str(event["id"]), HTTPClient.METHOD_POST, {"result": executed})
@@ -993,8 +1102,7 @@ func _companion_chat(profile: Dictionary, model: String, definitions: Array, eff
 				message.merge(current_origin, true)
 				history.append(message)
 				if not started: _display("assistant", text)
-				elif text.begins_with(live_text): transcript.add_text(text.substr(live_text.length()))
-				elif text != live_text: _display("assistant", text)
+				chat.finish_stream(transcript, message)
 			else:
 				_display("assistant", "Execuție întreruptă: " + str(state.get("error", state.get("status"))))
 			return
@@ -1049,6 +1157,7 @@ func _edit_generation(index: int) -> void:
 	var profile: Dictionary = config["generation"][index]
 	_fill("generation", profile)
 	forms["generation"]["kind"].select(1 if profile["kind"] == "comfy" else 0)
+	_generation_fields(forms["generation"]["kind"].selected, forms["generation"]["workflow_fields"])
 	forms["generation"]["asset_kind"].select(1 if profile["asset_kind"] == "mesh" else 0)
 	forms["generation"]["destination"].text = "res://ai_assets"
 
@@ -1288,6 +1397,7 @@ func _refresh_conversations() -> void:
 	chat.refresh_history(conversations.listing(chat.search.text, chat.archived.button_pressed), active)
 
 func _render_history() -> void:
+	chat.restoring = true
 	chat.clear_messages()
 	chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
 	if history.size() > chat.loaded:
@@ -1298,6 +1408,7 @@ func _render_history() -> void:
 		if message.get("role") in ["user", "assistant"] and (not str(message.get("content", "")).is_empty() or not message.get("attachments", []).is_empty()):
 			transcript = chat.append_message(str(message["role"]), _redact(str(message.get("content", ""))), message)
 		elif message.get("role") == "tool": chat.activity(str(message.get("tool_name", "Operație")), _redact(str(message.get("content", ""))))
+	chat.restoring = false
 
 func _send_or_queue(text: String = "") -> void:
 	if text.is_empty(): text = composer.text
@@ -1330,6 +1441,11 @@ func _chat_action(name: String, args: Dictionary) -> void:
 		"model": _choose(args)
 		"voice": speech.start(config.get("preferences", {}))
 		"attach": _pick_attachment()
+		"remove_attachment":
+			var values = pending_attachments if args.get("kind") == "image" else pending_references
+			var index = int(args.get("index", -1))
+			if index >= 0 and index < values.size(): values.remove_at(index)
+			_composer_hints()
 		"open":
 			if busy:
 				_status("Oprește execuția înainte de schimbarea conversației.")
@@ -1438,6 +1554,9 @@ func _refresh_list_visibility() -> void:
 	if account_logout != null: account_logout.visible = lists["accounts"].item_count > 0
 	for id in list_headers:
 		var visible = lists[id].item_count > 0 and not list_headers[id].text.is_empty()
+		if id == "providers": visible = false
+		var font = lists[id].get_theme_font("font")
+		lists[id].custom_minimum_size.y = mini(lists[id].item_count, 3) * (font.get_height(lists[id].get_theme_font_size("font_size")) + 6 * EditorInterface.get_editor_scale()) + lists[id].get_theme_stylebox("panel").get_minimum_size().y
 		lists[id].visible = visible
 		list_headers[id].visible = visible
 
@@ -1480,6 +1599,8 @@ func _save_preferences() -> void:
 			elif control is OptionButton: prefs[prefix + key] = control.selected
 			elif control is CheckBox: prefs[prefix + key] = control.button_pressed
 	config["preferences"] = prefs
+	prefs["reduce_motion"] = forms["general"]["reduce_motion"].button_pressed
+	chat.motion_enabled = not prefs["reduce_motion"]
 	var settings = EditorInterface.get_editor_settings()
 	settings.set_setting("ai_assistant/general/max_agent_steps", clampi(int(forms["general"]["max_steps"].text), 1, 100))
 	settings.set_setting("ai_assistant/general/enabled", forms["general"]["enabled"].button_pressed)
@@ -1517,6 +1638,7 @@ func _reference_context() -> String:
 
 func _composer_hints() -> void:
 	chat.reference_label.text = " · ".join(pending_references) + (" · %s imagini" % pending_attachments.size() if not pending_attachments.is_empty() else "")
+	chat.show_attachments(pending_attachments, pending_references)
 	var text = composer.text
 	if text.ends_with("@") or text.ends_with("$") or text == "/": _reference_picker("files" if text.ends_with("@") else ("nodes" if text.ends_with("$") else "commands"))
 
@@ -1711,6 +1833,7 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 		"task_update":
 			tasks = args.get("tasks", [])
 			chat.tasks_label.text = _redact(" · ".join(tasks)).left(2000)
+			chat.activity("Pașii sarcinii", _redact("\n".join(tasks)).left(2000))
 			return Common.success(tasks)
 		"memory_write":
 			memory_editor.text = _redact(str(args.get("text", ""))).left(32000)
@@ -1723,10 +1846,16 @@ func _show_changes(turn: String) -> void:
 	dialog.title = "Modificările execuției"
 	var body = VBoxContainer.new()
 	dialog.add_child(body)
-	var text = TextEdit.new()
+	dialog.theme = chat.theme
+	var text = CodeEdit.new()
 	text.editable = false
-	text.custom_minimum_size = Vector2(260, 280)
+	text.custom_minimum_size = Vector2(260, 280) * EditorInterface.get_editor_scale()
 	text.text = _redact(tools.diff_turn(turn))
+	text.gutters_draw_line_numbers = true
+	for index in range(text.get_line_count()):
+		var line = text.get_line(index)
+		if line.begins_with("+ "): text.set_line_background_color(index, Color("203f32"))
+		elif line.begins_with("- "): text.set_line_background_color(index, Color("462c38"))
 	body.add_child(text)
 	_button(body, "Restaurează modificările acestei execuții", func() -> void:
 		if busy: return
