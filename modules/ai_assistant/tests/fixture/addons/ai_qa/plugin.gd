@@ -797,6 +797,9 @@ func _configuration_screenshots(output: String) -> void:
 	panel.settings_window.hide()
 	var base = EditorInterface.get_base_control()
 	var groups = {}
+	var center_columns = []
+	for child in base.find_child("DockHSplitMain", true, false).get_children():
+		if child is Control and not str(child.name).begins_with("DockVSplit"): center_columns.append({"node": child, "maximum": child.custom_maximum_size})
 	for name in ["DockVSplitLeftL", "DockVSplitLeftR", "DockVSplitRightL", "DockVSplitRightR"]:
 		var group = base.find_child(name, true, false)
 		if group != null: groups[name] = group.visible
@@ -808,6 +811,8 @@ func _configuration_screenshots(output: String) -> void:
 		var docked = panel.get_parent() is EditorDock
 		_check(panel.chat.get_global_rect().end.x <= panel.get_viewport().get_visible_rect().end.x + 1 and panel.chat.send_button.get_global_rect().end.x <= panel.get_viewport().get_visible_rect().end.x + 1, "Dock and Send stay inside the usable editor width: " + str(index))
 		_check(docked == (index != 0) and panel.is_visible_in_tree(), "Chat placement is active and visible: " + str(index))
+		if index != 0: _assert_workspace_bounds(index, output, "normal")
+		RenderingServer.force_draw(false)
 		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(["dock-center.png", "dock-left.png", "dock-right.png"][index]))
 		if index != 0:
 			var slot = panel.get_parent().get_parent() as TabContainer
@@ -824,6 +829,21 @@ func _configuration_screenshots(output: String) -> void:
 	await get_tree().process_frame
 	for name in groups:
 		_check(base.find_child(name, true, false).visible == groups[name], "Returning to central chat restores secondary dock visibility: " + name)
+	for column in center_columns: _check(column["node"].custom_maximum_size == column["maximum"], "Returning to central chat restores the workspace size constraint")
+
+func _assert_workspace_bounds(index: int, output: String, variant: String) -> void:
+	var rect = panel.chat.get_global_rect()
+	_check(panel.get_viewport().get_visible_rect().grow(1).encloses(rect), "The complete dock stays inside the viewport: " + str(index) + " / " + variant)
+	var viewport_3d = EditorInterface.get_editor_viewport_3d(0).get_parent() as Control
+	if viewport_3d.is_visible_in_tree():
+		_check(not viewport_3d.get_global_rect().intersection(rect.grow(-1)).has_area(), "The actual 3D viewport does not cover the chat: " + str(index) + " / " + variant)
+	var main = EditorInterface.get_base_control().find_child("DockHSplitMain", true, false) as Control
+	var columns = []
+	for child in main.get_children():
+		if not child is Control or not child.is_visible_in_tree(): continue
+		columns.append({"name": child.name, "rect": str(child.get_global_rect()), "minimum": str(child.get_combined_minimum_size()), "maximum": str(child.get_combined_maximum_size())})
+		if not child.is_ancestor_of(panel): _check(not child.get_global_rect().intersection(rect.grow(-1)).has_area(), "Editor column does not cover the chat: " + str(child.name) + " / " + str(index) + " / " + variant)
+	embedded["common"].atomic_json(output.path_join("dock-geometry-" + str(index) + "-" + variant + ".json"), {"chat": str(rect), "viewport_3d": str(viewport_3d.get_global_rect()), "columns": columns})
 
 func _narrow_dock_controls(slot: TabContainer, placement_index: int, output: String) -> void:
 	var previous = slot.custom_maximum_size
@@ -831,6 +851,7 @@ func _narrow_dock_controls(slot: TabContainer, placement_index: int, output: Str
 	await get_tree().create_timer(0.2).timeout
 	while panel.dock_layout_busy: await get_tree().process_frame
 	for _frame in range(5): await get_tree().process_frame
+	_assert_workspace_bounds(placement_index, output, "narrow")
 	var scope = panel.chat.get_global_rect().grow(1)
 	for control in [panel.chat.model_button, panel.chat.reasoning_button, panel.chat.options_button, panel.chat.context_indicator, panel.chat.voice_button, panel.chat.send_button, panel.chat.expand_button, panel.chat.navigation_buttons["settings"]]:
 		var fits = scope.encloses(control.get_global_rect()) and panel.get_parent().get_global_rect().grow(1).encloses(control.get_global_rect())

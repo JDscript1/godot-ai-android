@@ -82,9 +82,16 @@ chatului și ale tabului, nu doar marginea ferestrei.
 - Butoane setări: **286 verificări** fără eșecuri pe ecran compact la 150%
   (`.ai-qa/ui-settings-actions/`), inclusiv preview imagine real și păstrarea
   selecției la reordonare.
-- Baza auditului `db972be` a trecut workflow-ul `39832915947`, inclusiv APK
-  și editor nativ. Extinderea pentru acțiunile din setări necesită noul build;
-  livrarea anterioară din Download, `6539a44`, nu conține aceste corecții.
+- `09103e8` a trecut workflow-ul `39833659749`: 297 aserțiuni runtime,
+  286 verificări × 5 upstream și 296 × 5 în editor nativ. Inspecția capturii
+  native compacte a arătat totuși suprapunerea coloanei 3D peste chat; acest
+  pachet nu a fost livrat.
+- Corecția suplimentară limitează coloana centrală la lățimea rămasă, urmărește
+  modificarea coloanelor și restabilește limitele la revenirea în centru.
+  Testele verifică și suprapunerea cu viewport-ul 3D și cu fiecare coloană
+  vizibilă; capturile forțează o randare curentă și includ geometria în JSON.
+  Proba locală compactă: 82 verificări fără eșecuri înainte de noul build
+  (`.ai-qa/dock-center-bounds/`). Download conține încă pachetul anterior.
 - Butoanele care depind de microfon, autentificare, provideri, servicii de generare,
   servere MCP și catalogul public Store necesită separat verificare cu dispozitivul
   sau serviciul real. Fixture-urile nu confirmă un cont sau serviciu live.

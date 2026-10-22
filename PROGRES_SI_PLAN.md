@@ -613,3 +613,18 @@ verificările exercită fișiere, indexuri, dialoguri și tranziții reale în e
   (`.ai-qa/dock-audit-responsive/`). Baza auditului `db972be` a trecut complet
   workflow-ul 39832915947; nu a fost livrată ca versiune intermediară în Download.
   Extinderea pentru setări se compilează separat înaintea înlocuirii APK-ului.
+
+
+### Inspecție nativă suplimentară
+
+- Workflow-ul 39833659749 (`09103e8`) a trecut: 297 aserțiuni runtime,
+  286 verificări × 5 upstream și 296 × 5 native. Captura nativă compactă
+  a arătat însă coloana centrală peste chat; testele măsurau încadrarea
+  controalelor, fără suprapunerea dintre coloane. APK-ul nu a fost livrat.
+- Adăugată limitarea temporară a coloanei centrale la spațiul rămas și
+  recalcularea după schimbarea coloanelor. Limita originală se restabilește
+  la revenirea în centru. Verificările includ viewport-ul 3D, celelalte coloane,
+  marginea stângă a ferestrei și geometria JSON; capturile forțează randarea.
+- 82 verificări locale compacte fără eșecuri înaintea noului build;
+  `.ai-qa/dock-center-bounds/`. Capturile native noi sunt obligatorii înainte
+  de livrare. Download păstrează momentan versiunea 6539a44.

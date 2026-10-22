@@ -121,6 +121,9 @@ var dock_hidden_groups: Array = []
 var dock_viewport_size = Vector2.ZERO
 var dock_width_root: WeakRef
 var dock_width_previous = Vector2(-1, -1)
+var dock_center: WeakRef
+var dock_center_previous = Vector2(-1, -1)
+var dock_columns_signature = ""
 
 func configure(editor_plugin: EditorPlugin, secret_store: RefCounted) -> void:
 	plugin = editor_plugin
@@ -1989,7 +1992,8 @@ func _process(_delta: float) -> void:
 		elif not dock_layout_busy:
 			var dock = get_parent() as EditorDock
 			var slot = dock.get_parent() as TabContainer if dock != null else null
-			if slot != null and not dock.get_rect().is_equal_approx(_dock_content_rect(slot)): _queue_dock_layout()
+			var main = EditorInterface.get_base_control().find_child("DockHSplitMain", true, false)
+			if (slot != null and not dock.get_rect().is_equal_approx(_dock_content_rect(slot))) or (main != null and _dock_columns_state(main) != dock_columns_signature): _queue_dock_layout()
 	if editor_control != null: editor_control.poll()
 	if chat != null:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
@@ -2771,6 +2775,11 @@ func _show_change_preview(result: Dictionary, call_id: String) -> void:
 	chat.show_changes(id, preview)
 
 func _restore_dock_groups() -> void:
+	if dock_center != null:
+		var center = dock_center.get_ref()
+		if center != null: center.custom_maximum_size = dock_center_previous
+		dock_center = null
+	dock_columns_signature = ""
 	if dock_width_root != null:
 		var root = dock_width_root.get_ref()
 		if root != null: root.custom_maximum_size = dock_width_previous
@@ -2814,6 +2823,30 @@ func _fit_chat_dock() -> void:
 	dock.offset_right = rect.end.x - slot.size.x
 	dock.offset_bottom = rect.end.y - slot.size.y
 
+func _dock_columns_state(main: Control) -> String:
+	var values = []
+	for child in main.get_children():
+		if child is Control: values.append([child.name, child.visible, child.position, child.size])
+	return str(values)
+
+func _fit_editor_center(main: Control) -> void:
+	var center: Control
+	var available = minf(main.size.x, get_viewport().get_visible_rect().end.x - main.global_position.x)
+	var visible_columns = 0
+	for child in main.get_children():
+		if not child is Control or not child.visible: continue
+		visible_columns += 1
+		if str(child.name).begins_with("DockVSplit"): available -= child.size.x
+		else: center = child
+	if center == null: return
+	available -= max(0, visible_columns - 1) * main.get_theme_constant("separation")
+	if dock_center == null:
+		dock_center = weakref(center)
+		dock_center_previous = center.custom_maximum_size
+	# A native workspace toolbar may have a larger minimum than the split gives
+	# its column. Bound that column so it cannot paint over the AI dock.
+	center.custom_maximum_size.x = maxf(1, available)
+
 func _fit_dock_layout(generation: int) -> void:
 	if not is_inside_tree() or generation != dock_layout_generation: return
 	await get_tree().process_frame
@@ -2843,7 +2876,12 @@ func _fit_dock_layout(generation: int) -> void:
 			await get_tree().process_frame
 			await get_tree().process_frame
 			if not is_inside_tree() or generation != dock_layout_generation: return
+		_fit_editor_center(main)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		if not is_inside_tree() or generation != dock_layout_generation: return
 	_fit_chat_dock()
+	if main != null: dock_columns_signature = _dock_columns_state(main)
 	if generation == dock_layout_generation:
 		dock_layout_busy = false
 
