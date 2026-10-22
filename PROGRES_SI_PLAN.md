@@ -447,3 +447,12 @@ compacte și adaptoarele Meshy/Tripo/OpenAI; compilarea APK este autorizată din
   erori**, captură inspectată vizual. Dovezi: `.ai-qa/integrations-without-services/`
   și `.ai-qa/integrations-without-services.log`. Modificare numai în surse,
   fără recompilare sau înlocuire APK în această iterație.
+
+- **22.10.2026 — specificație fișiere în chat și control vizual:** adăugat
+  `docs/AI_CHAT_FILES_AND_EDITOR_CONTROL.md`, cu cerințe, îmbunătățiri, etape și
+  criterii de acceptare pentru carduri locale, mențiuni prin swipe, imagini
+  fullscreen, preview 3D comun, capturi/control editor, Asset Store și diff real.
+  Baza existentă a fost verificată în cod; uneltele UI semantice există deja,
+  dar preview-ul universal și statisticile reale +/− nu sunt implementate.
+  Consultate documentațiile Android/Godot. Este o propunere documentată, fără
+  schimbări de runtime, teste noi sau recompilare APK în această etapă.
