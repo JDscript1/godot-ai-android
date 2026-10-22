@@ -95,3 +95,26 @@ chatului și ale tabului, nu doar marginea ferestrei.
 - Butoanele care depind de microfon, autentificare, provideri, servicii de generare,
   servere MCP și catalogul public Store necesită separat verificare cu dispozitivul
   sau serviciul real. Fixture-urile nu confirmă un cont sau serviciu live.
+
+
+## Validare finală a surselor `2538551`
+
+Workflow [39835516663](https://github.com/JDscript1/godot-ai-android/actions/runs/39835516663)
+încheiat cu succes: runtime, native-editor și Android.
+
+- Runtime CI: 297 aserțiuni fără eșecuri; local 302, inclusiv cinci probe Blender.
+- Editor upstream: 305 verificări × 5 dimensiuni, zero eșecuri.
+- Editor nativ: 315 verificări × 5 dimensiuni, zero eșecuri.
+- Revalidare locală a dock-urilor: 83 verificări × 5 dimensiuni, zero eșecuri.
+- Trei teste de livrare, regresia timestamp și nouă teste companion au trecut;
+  build-ul TypeScript a trecut în CI.
+- Inspectate capturile native `phone_compact/dock-left.png` și
+  `phone_landscape/dock-left.png`: întregul chat și controalele sunt vizibile,
+  iar viewport-ul 3D nu se suprapune peste el.
+
+Dovezi: `.ai-qa/dock-center-responsive/`, `.ai-qa/2538551-native-ci/`,
+`.ai-qa/2538551-runtime-ci.log`, `.ai-qa/2538551-native-ci.log`.
+APK-ul final este verificat și livrat la `Download/Godot-AI-Android-arm64-debug.apk`,
+22.10.2026, 21:11:14 CEST; 145,157,425 bytes, semnătură persistentă și
+25 surse încorporate verificate. În Download există un singur installer al fork-ului.
+Validarea fizică Android și serviciile live rămân separate.

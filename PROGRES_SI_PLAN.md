@@ -12,12 +12,12 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`6539a44`**
-  (`6539a444278b828b35baa53e9df1f1d7f3e243ed`).
+- Ultimul commit livrat și verificat ca pachet: **`2538551`**
+  (`25385516d329a373d37196148e293ca7fa05733a`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `db5343b` a fost
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `6539a44` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -628,3 +628,43 @@ verificările exercită fișiere, indexuri, dialoguri și tranziții reale în e
 - 82 verificări locale compacte fără eșecuri înaintea noului build;
   `.ai-qa/dock-center-bounds/`. Capturile native noi sunt obligatorii înainte
   de livrare. Download păstrează momentan versiunea 6539a44.
+
+
+### Validare finală audit — sursă 2538551
+
+- Workflow [39835516663](https://github.com/JDscript1/godot-ai-android/actions/runs/39835516663):
+  toate cele trei etape încheiate cu succes. 297 aserțiuni runtime CI, 305
+  verificări × 5 upstream și 315 × 5 native, fără eșecuri; local 302 aserțiuni
+  și 83 verificări de dock × 5. Nouă teste companion și build TypeScript trecute.
+- Capturile native compacte și landscape sunt inspectate: chat complet vizibil,
+  cu Setări, Dictare și Trimite în interior, fără suprapunerea viewport-ului 3D.
+- Dovezi: `.ai-qa/2538551-native-ci/`, `.ai-qa/2538551-runtime-ci.log`,
+  `.ai-qa/2538551-native-ci.log`, `.ai-qa/dock-center-responsive/`.
+- APK final compilat; descărcarea și verificarea locală sunt în curs. Niciunul
+  dintre APK-urile intermediare nu a înlocuit pachetul din Download.
+
+
+## Livrare audit interfață — 22.10.2026, 21:11:14 CEST
+
+- Sursă **25385516d329a373d37196148e293ca7fa05733a**, workflow
+  [39835516663](https://github.com/JDscript1/godot-ai-android/actions/runs/39835516663): runtime, native-editor și Android trecute.
+- 297 aserțiuni CI; 305 verificări × 5 în editor upstream și 315 × 5 în editor
+  nativ, fără eșecuri. Local: 302 aserțiuni și 83 verificări de dock × 5.
+- Capturile native compacte și landscape confirmă chat complet vizibil,
+  fără suprapunerea viewport-ului 3D. Auditul include efectele reale ale
+  dialogurilor, fișierele/indexurile conversațiilor, export, ciorne, selecții
+  stabile, preview și dezactivarea acțiunilor indisponibile.
+- APK: **145,157,425 bytes**, `com.jdscript.godotai.debug`, numai ARM64.
+  Semnătura persistentă și toate cele 25 de surse încorporate sunt verificate.
+- Înlocuit atomic `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
+  la **21:11:14 CEST**, cu checksum alăturat. Verificat un singur installer
+  al fork-ului în Download; alte descărcări sunt păstrate.
+- SHA-256: `f8d4d2d208d06655d2b731872423260b02fb2ccbcd7ba8485eaa3932c4bd8a52`.
+- Dovezi: `.ai-qa/delivery-2538551.json`, `.ai-qa/ui-audit-verification.json`,
+  `.ai-qa/2538551-native-ci/`, `.ai-qa/2538551-runtime-ci.log`,
+  `.ai-qa/2538551-native-ci.log`.
+- Validarea fizică Android, microfonul și serviciile live rămân separate.
+
+Jurnal: 22.10.2026 — livrat auditul de încadrare și comportament al butoanelor;
+versiunile intermediare nu au fost livrate. Documentația curentă indică sursa,
+testele și APK-ul verificat.
