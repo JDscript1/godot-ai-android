@@ -6,9 +6,8 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-This describes the source implementation added on 2026-10-22. The previously
-delivered APK built from `e98ddb7` predates this extraction and has not been
-replaced by this change.
+This describes the source implementation added on 2026-10-22. The APK built
+from `588bef1` includes it; the previously delivered APK from `e98ddb7` did not.
 
 ## Execution boundaries
 
@@ -116,21 +115,25 @@ introduced by this change.
 
 ## Verification
 
-Local results on 2026-10-22, using the upstream Godot 4.7.2 Linux ARM64 editor.
-The first harness extraction passed 122 assertions and 80 checks in each of five
-editor configurations. The subsequent tool-use extension has these results:
+Results on 2026-10-22. The runtime and upstream-editor rows used the upstream
+Godot 4.7.2 Linux ARM64 editor locally; the native bridge row used the fork's
+desktop editor compiled in CI. The first harness extraction passed 122
+assertions and 80 checks in each of five editor configurations. The final
+source, including tool use and the composer selector, has these results:
 
 | Scope | Result |
 | --- | --- |
 | Runtime compilation, protocols, registry, and harness behavior | 149 assertions, zero failures |
-| Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 91 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact; zero failures and normal exits |
-| Native diagnostics bridge | Android-configured C++ syntax/type check; execution requires the rebuilt native editor |
+| Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 129 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
+| Native diagnostics bridge | 139 checks in each of the same five configurations with the fork compiled from `588bef1` in CI, including valid/invalid draft diagnostics and the unsaved-draft guard |
 | Generated embedding header | All 14 script payloads match their source bytes; registry precedes its consumers and panel remains last |
 
 Rendered reports and editor logs are in
-`.ai-qa/tool-use-final/<configuration>/`. The editor fixture loads the
-current embedded-service sources in an isolated project; it does not rebuild
-the native Android or desktop fork binary.
+`.ai-qa/composer-drawer-complete/<configuration>/`; the earlier tool-use
+extraction reports remain in `.ai-qa/tool-use-final/<configuration>/`. The
+editor fixture loads the current embedded-service sources in an isolated
+project; the separate CI-native job rebuilds the fork's desktop editor and
+runs the same fixture against it.
 
 The runtime suite exercises the real HTTP provider/tool/result loop against a
 local protocol fixture, plus retry exhaustion, streaming failures, cancellation,
@@ -145,7 +148,8 @@ dispatcher, rather than calling only a mock tool executor.
 
 Use the commands in [AI Assistant verification](AI_ASSISTANT.md#verification).
 Desktop editor execution and rendered fixtures do not establish physical Android
-suspend/resume behavior, new APK packaging, or live subscription/model support.
+suspend/resume behavior, device touch/keyboard input, or live subscription/model
+support.
 
 ## Native coding tools
 

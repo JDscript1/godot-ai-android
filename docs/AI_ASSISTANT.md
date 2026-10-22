@@ -86,8 +86,8 @@ Original Godot Agent/Hydra-Go-3D worktrees were not edited.
 
 ## Verification
 
-The 2026-10-22 harness source is tested separately from the previously delivered
-APK listed below. See [the harness contract and verification scope](AI_HARNESS.md).
+The 2026-10-22 harness source is included in the APK listed below. See
+[the harness contract and verification scope](AI_HARNESS.md).
 
 Run the embedded-runtime tests with an upstream or forked 4.7.2 editor binary:
 
@@ -120,11 +120,11 @@ Evidence must be distinguished:
 
 | Area | Current verification |
 | --- | --- |
-| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 97 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
+| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 149 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
 | Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 9 tests passed with deterministic runtimes, including independent child sessions, attachments and context usage; TypeScript build passed |
-| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 74 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback and workspace expansion. Godot may enforce a larger minimum editor window on the narrow display |
-| Native fork main screen, desktop vault, game screenshot/input/watchdog and internal-script scene saves | 82 checks in each of the five configurations passed using the fork compiled from `e98ddb7`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934) |
-| Android C++/Kotlin integration and APK | [Build e98ddb7 passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934), including signature, persistent signing identity, phone package and ARM64 library checks; all 12 embedded script sources were matched to the downloaded native library |
+| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 129 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback, workspace expansion and the provider/model/reasoning drawer with atomic selection and cancellation. Godot may enforce a larger minimum editor window on the narrow display |
+| Native fork main screen, desktop vault, game screenshot/input/watchdog, internal-script scene saves and native GDScript diagnostics | 139 checks in each of the five configurations passed using the fork compiled from `588bef1`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751) |
+| Android C++/Kotlin integration and APK | [Build 588bef1 passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751), including signature, persistent signing identity, phone package and ARM64 library checks; all 14 embedded script sources passed the local byte-for-byte embedding check |
 | Physical Android UI | The user supplied screenshots of prior Android versions, including a real conversation and provider settings. The current visual redesign still needs device verification |
 | Android touch, Keystore, microphone and suspend/resume | Full device verification pending; desktop rendering does not establish these |
 | ChatGPT, Claude, Copilot and Kimi account logins | User-authorized live account checks required |
@@ -136,18 +136,18 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The tested APK source is `e98ddb7948011f309c43aa106db021c9e4bc0300`.
-Download its `Godot-AI-Android-arm64-e98ddb7948011f309c43aa106db021c9e4bc0300`
-[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934/artifacts/12395887189)
-from the build above. The APK is 144,829,745 bytes; its SHA-256 is
-`9063d311384e365a3b502dc95ca6a103a4fbaffd37cb4b605030a9bc7d6053be`.
-The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-e98ddb7-debug.apk`,
-with a matching `.sha256` file. Its signature, checksum, package, ABI, Android
-voice declarations/classes and exact embedded AI sources were checked locally.
+The tested APK source is `588bef198bf5535e65dea91864c11b2e7d1366bf`.
+Download its `Godot-AI-Android-arm64-588bef198bf5535e65dea91864c11b2e7d1366bf`
+[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751/artifacts/12402693760)
+from the build above. The APK is 144,895,281 bytes; its SHA-256 is
+`e208b1e7894d2153ee2e6677e6a5372cfe16c0691dea845502a8b839c3299a92`.
+The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-588bef1-debug.apk`,
+with a matching `.sha256` file. Its checksum, package and ABI were checked
+locally; CI verified the signature against the persistent development
+certificate. The previous `e98ddb7` installer was removed from Download.
 The persistent development certificate SHA-256 is
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
-Earlier delivered APKs remain in Download. Later documentation-only commits
-do not change the APK's tested source.
+Later documentation-only commits do not change the APK's tested source.
 
 Native desktop verification runs under Xvfb/Mesa. Nonfatal Vulkan-probe and X11
 window warnings can occur in this virtual display; this is not physical-device

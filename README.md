@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934/artifacts/12395887189)
-(GitHub Actions artifact, source `e98ddb7`).
+[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751/artifacts/12402693760)
+(GitHub Actions artifact, source `588bef1`).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -18,7 +18,8 @@ documentul de progres actualizat după fiecare etapă importantă.
 
 The [built-in harness](docs/AI_HARNESS.md) runs direct API agent sessions inside
 Godot without Termux, a console, or an external agent runtime. The linked APK
-predates this source change; its tested version remains identified above.
+includes the harness and the composer model selector; its tested source is
+identified above.
 
 # Godot Engine
 
