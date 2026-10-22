@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tempfile
 
@@ -12,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--godot", required=True)
     parser.add_argument("--proot", action="store_true")
+    parser.add_argument("--scenario", choices=["all", "dock"], default="all")
     parser.add_argument("--output", default=".ai-qa/rendered")
     parser.add_argument("--only", choices=["desktop", "narrow", "wide", "phone_landscape", "phone_compact"])
     args = parser.parse_args()
@@ -33,6 +35,7 @@ def main():
                 (config / "editor_settings-4.7.tres").write_text('[gd_resource type="EditorSettings" format=3]\n\n[resource]\ninterface/editor/appearance/display_scale = 4\n')
             environment = {
                 "GODOT_AI_QA_SOURCE": str(source),
+                "GODOT_AI_QA_SCENARIO": args.scenario,
                 "GODOT_AI_QA_OUTPUT": str(destination),
                 "XDG_CONFIG_HOME": str(Path(directory) / "config"),
                 "XDG_DATA_HOME": str(Path(directory) / "data"),
@@ -49,8 +52,23 @@ def main():
             log_path = destination / "editor.log"
             try:
                 with log_path.open("w") as stream:
-                    result = subprocess.run(command, env={**os.environ, **environment},
-                                            stdout=stream, stderr=subprocess.STDOUT, timeout=180)
+                    process = subprocess.Popen(command, env={**os.environ, **environment},
+                                               stdout=stream, stderr=subprocess.STDOUT,
+                                               start_new_session=True)
+                    try:
+                        process.wait(timeout=180)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                            process.wait(timeout=5)
+                        except (ProcessLookupError, subprocess.TimeoutExpired):
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            process.wait()
+                        raise
+                    result = process
             except subprocess.TimeoutExpired:
                 print(log_path.read_text())
                 raise SystemExit(f"{name}: editor verification timed out")

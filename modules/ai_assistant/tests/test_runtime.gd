@@ -136,6 +136,12 @@ func _run() -> void:
 	_new_feature_tests()
 	_tool_registry_tests()
 	_diff_tests()
+	var vision_profile = {"models": [{"id": "vision", "capabilities": {"vision": true}}, {"id": "unknown", "capabilities": {}}], "vision_overrides": {"unknown": 1, "text": 2}}
+	check(scripts["providers"].vision_allowed(vision_profile, "vision"), "Declared vision support permits referenced image pixels")
+	check(scripts["providers"].vision_allowed(vision_profile, "unknown"), "Explicit per-model vision permission supports catalogs without modality metadata")
+	check(not scripts["providers"].vision_allowed(vision_profile, "text") and not scripts["providers"].vision_allowed(vision_profile, "missing"), "Text-only and unknown models never receive images implicitly")
+	vision_profile["vision_overrides"]["vision"] = 2
+	check(not scripts["providers"].vision_allowed(vision_profile, "vision"), "An explicit text-only choice takes precedence over catalog vision metadata")
 	var node = Node.new()
 	root.add_child(node)
 	var transport = scripts["transport"].new(node)

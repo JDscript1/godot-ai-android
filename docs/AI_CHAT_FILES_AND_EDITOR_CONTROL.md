@@ -17,6 +17,10 @@ limitele implementării. Nu adaugă o pagină duplicată în Integrări.
 | Store | `store.gd`: protocol v1, versiuni compatibile, preflight ZIP, staging, instalator nativ, activare și manifest pentru dezinstalare |
 | Modificări | `diff.gd`: Myers limitat, hunks și totaluri reale; propuneri dry-run separate, scene cu operații Undo |
 
+Dock-ul păstrează chatul în lățimea ferestrei. Când spațiul este insuficient,
+panourile secundare se pliază temporar și revin la poziția centrală sau după
+mărirea ferestrei.
+
 Runtime-ul direct rămâne în Godot; nu cere Termux, Python, Node sau shell pe
 telefon. Fișierele alese explicit și folderele accesibile sunt citite prin
 FileAccess/DirAccess. APK-ul are deja permisiunea de acces general la stocare;
@@ -32,6 +36,11 @@ Scenelor inactive li se eliberează resursele la închiderea viewerului.
 
 Backend-ul de captură operează Godot, inclusiv ferestrele sale; MediaProjection,
 controlul altor aplicații, OBJ/FBX și conversia .blend sunt extensii separate.
+Unele cataloage omit modalitățile de intrare. În Furnizori → Opțiuni avansate,
+utilizatorul poate selecta modelul și alege Din catalog / Permite imagini / Doar
+text; alegerea este separată pentru fiecare model și se salvează cu profilul.
+Aplicația nu deduce vision din numele modelului.
+
 Pachetele Store cu binare native sunt refuzate până la validarea platformei.
 Dezinstalarea folosește și puntea nativă pentru cache-ul GDScript;
 editorul upstream raportează explicit lipsa acesteia. Catalogul public Store a răspuns HTTP 403 în verificarea locală; protocolul și

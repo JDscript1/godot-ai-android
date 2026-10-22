@@ -81,7 +81,9 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 		if item.has("supportedGenerationMethods") and not "generateContent" in item["supportedGenerationMethods"]: continue
 		if str(item.get("type", "")) in ["embedding", "embeddings"]: continue
 		var capabilities: Dictionary = item.get("capabilities", {}).duplicate(true) if item.get("capabilities", {}) is Dictionary else {}
-		if "image" in item.get("input_modalities", item.get("inputModalities", [])): capabilities["vision"] = true
+		var architecture: Dictionary = item.get("architecture", {}) if item.get("architecture") is Dictionary else {}
+		var modalities = item.get("input_modalities", item.get("inputModalities", architecture.get("input_modalities", [])))
+		if modalities is Array and modalities.any(func(value: Variant) -> bool: return str(value).to_lower() == "image"): capabilities["vision"] = true
 		var supported: Dictionary = item.get("supported_parameters", {}) if item.get("supported_parameters", {}) is Dictionary else {}
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
@@ -331,3 +333,10 @@ static func parts(message: Dictionary, kind: String) -> Array:
 	if not text.is_empty(): output.append({"type": "input_text" if kind == "responses" else "text", "text": text})
 	output.append_array(image_parts(message, kind))
 	return output
+
+static func vision_allowed(profile: Dictionary, model_id: String) -> bool:
+	var policy = int(profile.get("vision_overrides", {}).get(model_id, 0))
+	if policy != 0: return policy == 1
+	for model in profile.get("models", []):
+		if model.get("id") == model_id: return bool(model.get("capabilities", {}).get("vision", false))
+	return false

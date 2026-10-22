@@ -113,6 +113,12 @@ var memory_hash = ""
 var integration_settings: Dictionary = {}
 var current_placement = 0
 var expanded_dock = 0
+var dock_layout_busy = false
+var dock_layout_generation = 0
+var dock_hidden_groups: Array = []
+var dock_viewport_size = Vector2.ZERO
+var dock_width_root: WeakRef
+var dock_width_previous = Vector2(-1, -1)
 
 func configure(editor_plugin: EditorPlugin, secret_store: RefCounted) -> void:
 	plugin = editor_plugin
@@ -173,11 +179,10 @@ func _ready() -> void:
 	_status("Configurează un furnizor din Setări pentru a începe.")
 
 func _exit_tree() -> void:
+	_restore_dock_groups()
 	cancel["cancelled"] = true
 	if editor_control != null: editor_control.release()
 	if agent_jobs != null: agent_jobs.stop()
-	pending_files.clear()
-	compare_file = ""
 	if media_view != null: media_view.hide()
 	if speech != null: speech.stop()
 	if integrations != null: integrations.stop()
@@ -322,6 +327,18 @@ func _build_settings() -> void:
 	_field(p, "url", "Adresă API")
 	_check(p, "allow_http", "Permite HTTP pentru serverul local")
 	_field(p, "manual_model", "Model manual (opțional)")
+	_choice(p, "vision_model", "Capabilități model", [])
+	p["vision_model"].fit_to_longest_item = false
+	p["vision_model"].clip_text = true
+	p["vision_model"].text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_choice(p, "vision_policy", "Imagini", ["Din catalog", "Permite imagini", "Doar text"])
+	p["vision_policy"].tooltip_text = "Alegerea se aplică doar modelului selectat și se salvează cu profilul."
+	p["vision_model"].item_selected.connect(func(_index: int) -> void: _provider_vision_selection())
+	p["vision_policy"].item_selected.connect(func(index: int) -> void:
+		if p["vision_model"].selected >= 0:
+			var id = str(p["vision_model"].get_item_metadata(p["vision_model"].selected))
+			p["vision_pending"][id] = index)
+	_refresh_provider_vision({})
 	p["issuer"].item_selected.connect(func(index: int) -> void:
 		provider_mark.texture = chat.provider_icon({"issuer": Providers.CATALOG[index]["id"]})
 		p["url"].text = str(Providers.CATALOG[index]["url"])
@@ -524,6 +541,7 @@ func _set_placement(index: int, persist: bool = true) -> void:
 		forms["general"]["dock"].select(int(config.get("preferences", {}).get("dock", 0)))
 		_status("Schimbă poziția după încheierea sarcinii.")
 		return
+	_restore_dock_groups()
 	if plugin.has_method("set_chat_placement"):
 		plugin.call("set_chat_placement", index)
 	elif index != 0:
@@ -531,6 +549,8 @@ func _set_placement(index: int, persist: bool = true) -> void:
 		forms["general"]["dock"].select(0)
 		return
 	current_placement = index
+	dock_viewport_size = get_viewport().get_visible_rect().size
+	_queue_dock_layout()
 	if persist:
 		expanded_dock = 0
 		if index != 0: EditorInterface.set_distraction_free_mode(false)
@@ -868,6 +888,7 @@ func _new_provider() -> void:
 	form["url"].text = str(Providers.CATALOG[0]["url"])
 	form["key"].placeholder_text = "Introdu cheia API"
 	provider_advanced.hide()
+	_refresh_provider_vision({})
 	_refresh_provider_selector()
 
 func _field(form: Dictionary, id: String, title: String, secret: bool = false) -> void:
@@ -1062,19 +1083,24 @@ func _save_provider() -> void:
 	p["key"].clear()
 	var models = []
 	for previous in config["providers"]:
-		if previous["id"] == id: models = previous.get("models", [])
+		if previous["id"] == id and previous.get("url") == url and previous.get("issuer") == issuer["id"]: models = previous.get("models", [])
 	var manual = str(p["manual_model"].text).strip_edges()
 	if not manual.is_empty() and not models.any(func(item: Dictionary) -> bool: return item["id"] == manual): models.append({"id": manual, "name": manual, "source": "manual", "capabilities": {}})
-	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models}
+	var vision_overrides: Dictionary = p.get("vision_pending", {}).duplicate(true)
+	for previous in config["providers"]:
+		if previous["id"] == id and (previous.get("url") != url or previous.get("issuer") != issuer["id"]): vision_overrides = {}
+	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models, "vision_overrides": vision_overrides}
 	for previous in config["providers"]:
 		if previous["id"] == id and previous.get("url") == url and previous.get("issuer") == issuer["id"] and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
 	p["editing"] = id
 	_upsert("providers", profile)
+	_refresh_provider_vision(profile)
 	_status("Profil salvat. Folosește Testează / modele pentru catalogul disponibil.")
 
 func _edit_provider(index: int) -> void:
 	var profile: Dictionary = config["providers"][index]
 	_fill("provider", profile)
+	_refresh_provider_vision(profile)
 	for issuer_index in range(Providers.CATALOG.size()):
 		if Providers.CATALOG[issuer_index]["id"] == profile.get("issuer", "custom"): forms["provider"]["issuer"].select(issuer_index)
 	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
@@ -1098,6 +1124,7 @@ func _test_provider() -> void:
 			return
 		profile["models"] = result["result"]
 		profile["verified_at"] = Time.get_unix_time_from_system()
+		_refresh_provider_vision(profile, true)
 		_save_config()
 		_status("Conexiune verificată. %s modele; suportul coding/tool calling se verifică separat." % profile["models"].size())
 		return
@@ -1885,6 +1912,13 @@ func _input(event: InputEvent) -> void:
 	if editor_control != null: editor_control.user_input(event)
 
 func _process(_delta: float) -> void:
+	if current_placement != 0 and is_visible_in_tree():
+		var viewport_size = get_viewport().get_visible_rect().size
+		if viewport_size != dock_viewport_size:
+			_restore_dock_groups()
+			dock_viewport_size = viewport_size
+			_queue_dock_layout()
+		elif not dock_layout_busy and get_global_rect().end.x > viewport_size.x + 1: _queue_dock_layout()
 	if editor_control != null: editor_control.poll()
 	if chat != null:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
@@ -2495,9 +2529,9 @@ func _end_conversation_jobs() -> void:
 		chat.set_context(0, 0)
 
 func _vision_enabled() -> bool:
-	for model in _current_profile().get("models", []):
-		if model.get("id") == current_origin.get("model_id", model_picker.get_item_metadata(model_picker.selected) if model_picker.selected >= 0 else ""): return bool(model.get("capabilities", {}).get("vision", false))
-	return false
+	var model = str(current_origin.get("model_id", "")) if busy else ""
+	if model.is_empty() and model_picker != null and model_picker.selected >= 0: model = str(model_picker.get_item_metadata(model_picker.selected))
+	return Providers.vision_allowed(_current_profile(), model)
 
 func _show_files(ids: Array, call_id: String) -> void:
 	for record in chat.message_records:
@@ -2510,7 +2544,7 @@ func _observe_file(id: String) -> Dictionary:
 	var item = file_registry.describe(id, scope)
 	if item.is_empty() or not item.get("available", false): return Common.failure("Referință inexistentă în conversația curentă.")
 	if item["kind"] == "image":
-		if not _vision_enabled(): return Common.success({"file": item, "vision": false, "note": "Modelul curent nu declară vision. Imaginea este afișată utilizatorului, nu analizată vizual."})
+		if not _vision_enabled(): return Common.success({"file": item, "vision": false, "note": "Vision nu este confirmat pentru modelul curent. Imaginea este afișată utilizatorului. Dacă modelul acceptă imagini, utilizatorul poate activa Imagini în Furnizori → Opțiuni avansate pentru acel model."})
 		var attachment = file_registry.image_attachment(id, scope)
 		return {"ok": not attachment.is_empty(), "result": {"id": id, "sha256": item["sha256"]}, "images": [attachment] if not attachment.is_empty() else []}
 	if item["kind"] == "mesh": return await _observe_model(item)
@@ -2593,3 +2627,71 @@ func _show_change_preview(result: Dictionary, call_id: String) -> void:
 	var id = call_id.sha256_text().left(32) + "-proposal"
 	Common.atomic_json(project_directory.path_join("runs").path_join(id + "-changes.json"), preview)
 	chat.show_changes(id, preview)
+
+func _restore_dock_groups() -> void:
+	if dock_width_root != null:
+		var root = dock_width_root.get_ref()
+		if root != null: root.custom_maximum_size = dock_width_previous
+		dock_width_root = null
+	dock_layout_generation += 1
+	dock_layout_busy = false
+	for reference in dock_hidden_groups:
+		var group = reference.get_ref()
+		if group == null: continue
+		if group.get_children().any(func(child: Node) -> bool: return child is Control and child.visible): group.show()
+	dock_hidden_groups.clear()
+
+func _queue_dock_layout() -> void:
+	if current_placement == 0 or dock_layout_busy: return
+	dock_layout_busy = true
+	_fit_dock_layout.call_deferred(dock_layout_generation)
+
+func _fit_dock_layout(generation: int) -> void:
+	if not is_inside_tree() or generation != dock_layout_generation: return
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree() or generation != dock_layout_generation: return
+	var base = EditorInterface.get_base_control()
+	var main = base.find_child("DockHSplitMain", true, false) as Control
+	if main != null and main.is_ancestor_of(self):
+		var root: Control = main
+		while root.get_parent() is Control and root.get_parent() != base: root = root.get_parent()
+		if dock_width_root == null:
+			dock_width_root = weakref(root)
+			dock_width_previous = root.custom_maximum_size
+		root.custom_maximum_size.x = maxf(1, get_viewport().get_visible_rect().size.x - root.get_global_position().x * 2)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		if not is_inside_tree() or generation != dock_layout_generation: return
+		var order = ["DockVSplitLeftL", "DockVSplitLeftR", "DockVSplitRightR", "DockVSplitRightL"] if current_placement == 2 else ["DockVSplitRightR", "DockVSplitRightL", "DockVSplitLeftL", "DockVSplitLeftR"]
+		for name in order:
+			var available = minf(main.size.x, get_viewport().get_visible_rect().size.x - main.get_global_position().x)
+			if main.get_combined_minimum_size().x <= available + 1: break
+			var group = base.find_child(name, true, false) as Control
+			if group == null or not group.visible or group.is_ancestor_of(self): continue
+			dock_hidden_groups.append(weakref(group))
+			group.hide()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			if not is_inside_tree() or generation != dock_layout_generation: return
+	if generation == dock_layout_generation:
+		dock_layout_busy = false
+
+func _refresh_provider_vision(profile: Dictionary, keep_pending: bool = false) -> void:
+	var form: Dictionary = forms["provider"]
+	var selected = str(form["vision_model"].get_item_metadata(form["vision_model"].selected)) if form.get("vision_profile", "") == profile.get("id", "") and form["vision_model"].selected >= 0 else ""
+	form["vision_profile"] = profile.get("id", "")
+	if not keep_pending: form["vision_pending"] = profile.get("vision_overrides", {}).duplicate(true)
+	form["vision_model"].clear()
+	for model in profile.get("models", []):
+		form["vision_model"].add_item(str(model.get("name", model["id"])))
+		form["vision_model"].set_item_metadata(form["vision_model"].item_count - 1, str(model["id"]))
+		if model["id"] == selected or (selected.is_empty() and _current_profile().get("id") == profile.get("id") and model_picker != null and model_picker.selected >= 0 and model_picker.get_item_metadata(model_picker.selected) == model["id"]): form["vision_model"].select(form["vision_model"].item_count - 1)
+	form["vision_model"].disabled = form["vision_model"].item_count == 0
+	form["vision_policy"].disabled = form["vision_model"].item_count == 0
+	_provider_vision_selection()
+
+func _provider_vision_selection() -> void:
+	var form: Dictionary = forms["provider"]
+	var id = str(form["vision_model"].get_item_metadata(form["vision_model"].selected)) if form["vision_model"].selected >= 0 else ""
+	form["vision_policy"].select(clampi(int(form.get("vision_pending", {}).get(id, 0)), 0, 2))

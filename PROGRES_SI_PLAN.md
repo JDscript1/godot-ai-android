@@ -506,3 +506,25 @@ QA vizual și adaptorul Store sunt în lucru. APK-ul din Download rămâne db534
   încorporate și 76 hash-uri SVG, plus trei teste de livrare și regresia mtime.
   Verificările pe cinci dimensiuni continuă în `.ai-qa/files-release-render/`.
   Compilarea fork-ului și APK-ului urmează; nu sunt încă declarate livrate.
+
+- **Fork compilat, etapă intermediară:** sursa `cdc6834`, workflow
+  `39817624076`: compilarea Android a reușit; 234 verificări desktop în fork-ul
+  nativ au trecut, inclusiv inputul real cu mouse și dezinstalarea addonului.
+  Workflow-ul complet a eșuat la marginea dock-ului drept în configurația narrow;
+  APK-ul intermediar nu a fost livrat în Download.
+- Corectată adaptarea la lățimea viewport-ului: limitarea cadrului editorului,
+  pliere temporară a panourilor secundare și restaurare când chatul revine în
+  centru. Scenariul izolat narrow trece cu 36 verificări; captură inspectată în
+  `.ai-qa/dock-viewport-fit/narrow/dock-right.png`. Reluăm suita completă înaintea
+  unei noi compilări/livrări. Runnerul QA oprește grupul propriu de procese la
+  timeout pentru a evita servere Xvfb rămase active.
+
+- **Validare layout completă:** 228 verificări × 5 configurații locale fără
+  eșecuri (`.ai-qa/files-responsive-final/`): desktop, narrow, wide,
+  phone_landscape și phone_compact. Include limitele dock/Trimite și revenirea
+  panourilor după chat central.
+- **Capabilități imagini:** catalogul poate omite modalitățile de intrare. În
+  opțiunile furnizorului există acum control salvat separat pentru fiecare
+  model: Din catalog / Permite imagini / Doar text. Numele modelului nu este
+  folosit pentru a presupune vision. 294 aserțiuni runtime fără eșecuri în
+  `.ai-qa/files-capabilities-unit.log`; verificarea formularului este separată.

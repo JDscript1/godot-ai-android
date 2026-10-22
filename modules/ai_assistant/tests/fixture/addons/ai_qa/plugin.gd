@@ -121,9 +121,14 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 10, "Build all settings forms")
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "dock":
+		await _configuration_screenshots(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	await _chat_workflow_tests()
 	await _layout_tests()
 	await _control_settings_tests()
+	_vision_settings_tests()
 	await _file_chat_tests()
 	await _model_and_control_tests()
 	await _store_install_tests()
@@ -235,6 +240,9 @@ func _run() -> void:
 		await _drawer_screenshots(output)
 		await _plan_and_markdown_screenshots(output)
 		await _configuration_screenshots(output)
+	_finish_report(output)
+
+func _finish_report(output: String) -> void:
 	print("Godot AI editor: %s checks, %s failures" % [checks, failures.size()])
 	if not output.is_empty():
 		var file = FileAccess.open(output.path_join("editor-report.json"), FileAccess.WRITE)
@@ -646,9 +654,16 @@ func _configuration_screenshots(output: String) -> void:
 	await get_tree().create_timer(0.2).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-skills.png"))
 	panel.settings_window.hide()
+	var base = EditorInterface.get_base_control()
+	var groups = {}
+	for name in ["DockVSplitLeftL", "DockVSplitLeftR", "DockVSplitRightL", "DockVSplitRightR"]:
+		var group = base.find_child(name, true, false)
+		if group != null: groups[name] = group.visible
 	for index in [1, 2, 0]:
 		panel._set_placement(index)
 		await get_tree().create_timer(0.3).timeout
+		while panel.dock_layout_busy: await get_tree().process_frame
+		await get_tree().process_frame
 		var docked = panel.get_parent() is EditorDock
 		_check(panel.chat.get_global_rect().end.x <= panel.get_viewport().get_visible_rect().end.x + 1 and panel.chat.send_button.get_global_rect().end.x <= panel.get_viewport().get_visible_rect().end.x + 1, "Dock and Send stay inside the usable editor width: " + str(index))
 		_check(docked == (index != 0) and panel.is_visible_in_tree(), "Chat placement is active and visible: " + str(index))
@@ -660,6 +675,10 @@ func _configuration_screenshots(output: String) -> void:
 			panel.chat.expand_button.pressed.emit()
 			await get_tree().create_timer(0.2).timeout
 			_check(panel.get_parent() is EditorDock and not EditorInterface.is_distraction_free_mode_enabled() and panel.config["preferences"]["dock"] == index, "Top collapse restores the original dock and preserves its saved preference")
+
+	await get_tree().process_frame
+	for name in groups:
+		_check(base.find_child(name, true, false).visible == groups[name], "Returning to central chat restores secondary dock visibility: " + name)
 
 func _tap_drawer(key: String, value: String) -> void:
 	for index in range(panel.chat.picker_list.item_count):
@@ -996,3 +1015,31 @@ func _store_install_tests() -> void:
 	if native: _check(removed.get("ok", false) and not FileAccess.file_exists(source), "Unmodified tracked addon uninstalls after being disabled")
 	else: _check(removed.get("code") == "native_bridge_unavailable" and FileAccess.file_exists(source), "Upstream editor reports the native cache-removal bridge requirement without deleting live scripts")
 	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+
+func _vision_settings_tests() -> void:
+	var original = panel.config["providers"].duplicate(true)
+	var selection = panel._selection()
+	panel.config["providers"].append({"id": "qa-vision-settings", "name": "Vision QA", "issuer": "custom", "kind": "chat", "url": "https://vision.example/v1", "models": [{"id": "qa-image", "name": "QA images", "capabilities": {}}, {"id": "qa-text", "name": "QA text", "capabilities": {}}]})
+	panel._refresh_profiles()
+	panel._choose({"profile": "qa-vision-settings", "model": "qa-image"})
+	panel._edit_provider(panel.config["providers"].size() - 1)
+	var form: Dictionary = panel.forms["provider"]
+	form["vision_model"].select(0)
+	form["vision_model"].item_selected.emit(0)
+	form["vision_policy"].select(1)
+	form["vision_policy"].item_selected.emit(1)
+	panel._save_provider()
+	_check(panel._vision_enabled() and not embedded["providers"].vision_allowed(panel._current_profile(), "qa-text"), "Provider settings permit images only for the explicitly selected model")
+	form["vision_model"].select(1)
+	form["vision_model"].item_selected.emit(1)
+	_check(form["vision_policy"].selected == 0 and form["vision_pending"].get("qa-image") == 1, "Selecting another model preserves its separate image policy")
+	form["vision_policy"].select(2)
+	form["vision_policy"].item_selected.emit(2)
+	panel._save_provider()
+	var saved: Dictionary = panel.Common.read_json(panel.data_directory.path_join("config.json"), {})
+	var profile: Dictionary = saved["providers"][-1]
+	_check(profile.get("vision_overrides", {}).get("qa-image") == 1 and profile["vision_overrides"].get("qa-text") == 2, "Per-model image preferences persist with the provider profile")
+	panel.config["providers"] = original
+	panel._save_config()
+	panel._choose(selection)
+	if not original.is_empty(): panel._edit_provider(0)
