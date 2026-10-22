@@ -246,10 +246,13 @@ static func validate_artifact(path: String, kind: String) -> Dictionary:
 		var length = file.get_32()
 		if file.get_32() != 0x4E4F534A or length > file.get_length() - 20 or length > 8 * 1024 * 1024: return Common.failure("GLB fără document JSON valid.")
 		var document: Variant = Common.parse_json(file.get_buffer(length).get_string_from_utf8())
-		if not document is Dictionary or str(document.get("asset", {}).get("version", "")) != "2.0": return Common.failure("Document glTF invalid.")
+		if not document is Dictionary or not document.get("asset") is Dictionary or str(document["asset"].get("version", "")) != "2.0": return Common.failure("Document glTF invalid.")
+		if not document.get("images", []) is Array or not document.get("buffers", []) is Array: return Common.failure("Liste de dependențe glTF invalide.")
 		for image in document.get("images", []):
+			if not image is Dictionary: return Common.failure("Imagine glTF invalidă.")
 			if image.has("uri") and not str(image["uri"]).begins_with("data:"): return Common.failure("GLB conține imagini externe; este necesar un fișier autonom.")
 		for buffer in document.get("buffers", []):
+			if not buffer is Dictionary: return Common.failure("Buffer glTF invalid.")
 			if buffer.has("uri") and not str(buffer["uri"]).begins_with("data:"): return Common.failure("GLB conține buffere externe.")
 	else:
 		file.seek(0)

@@ -50,13 +50,15 @@ func _ready() -> void:
 	visibility_changed.connect(func() -> void:
 		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE if is_visible_in_tree() else SubViewport.UPDATE_DISABLED
 		if not is_visible_in_tree():
-			for player in players: player.pause())
+			for player in players:
+				if is_instance_valid(player): player.pause())
 
 func load_file(path: String) -> Dictionary:
 	if path.get_extension().to_lower() not in ["glb", "gltf"]: return Common.failure("Preview 3D disponibil pentru GLB/glTF.")
 	var document = GLTFDocument.new()
 	var state = GLTFState.new()
 	if document.append_from_file(path, state) != OK: return Common.failure("Modelul nu poate fi încărcat de Godot.")
+	if state.get_nodes().size() > 5000: return Common.failure("Model prea complex pentru preview mobil.", "preview_too_complex")
 	var scene = document.generate_scene(state)
 	if scene == null: return Common.failure("Modelul nu conține o scenă validă.")
 	var queue = [scene]
@@ -72,6 +74,7 @@ func load_file(path: String) -> Dictionary:
 		var node: Node = queue.pop_front()
 		nodes += 1
 		if nodes > 5000:
+			players.clear()
 			scene.free()
 			return Common.failure("Model prea complex pentru preview mobil.")
 		if node is ImporterMeshInstance3D:
@@ -115,6 +118,7 @@ func load_file(path: String) -> Dictionary:
 			return Common.failure("Model prea complex pentru bugetul de preview mobil.", "preview_too_complex")
 		queue.append_array(node.get_children())
 	if meshes == 0:
+		players.clear()
 		scene.free()
 		return Common.failure("Model fără geometrie vizibilă.")
 	if pivot != null: world.remove_child(pivot); pivot.queue_free()

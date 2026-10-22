@@ -676,6 +676,8 @@ func _file_registry_tests(node: Node) -> void:
 	var second_model = registry.register_file(model_path, "conversation-a")
 	check(first_model.get("ok", false) and second_model.get("ok", false) and first_model["result"]["id"] != second_model["result"]["id"], "glTF dependency edits create a new revision even when the JSON is unchanged")
 	check(FileAccess.get_file_as_string(str(first_model["result"]["path"]).get_base_dir().path_join("mesh.bin")) == "before", "Earlier glTF buffer snapshots remain immutable")
+	scripts["common"].atomic_json(model_path, {"asset": {"version": "2.0"}, "buffers": null})
+	check(not registry.register_file(model_path, "conversation-a").get("ok", false), "Malformed glTF dependency metadata returns a tool failure without throwing a script error")
 	var json = FileAccess.get_file_as_string(registry.directory.path_join("index.json"))
 	check(not "base64" in json and not "data:image" in json and FileAccess.file_exists(registered["result"]["preview"]), "Registry persists metadata and thumbnails without duplicating binary blobs in JSON")
 	for definition in scripts["file_registry"].definitions(): check(scripts["tool_registry"].new([definition]).error.is_empty(), "File tool schema is discoverable: " + str(definition["name"]))

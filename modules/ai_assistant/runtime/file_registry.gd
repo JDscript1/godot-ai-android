@@ -96,7 +96,9 @@ func register_file(path: String, scope: String) -> Dictionary:
 		if not copied.get("ok", false): return copied
 		snapshot = copied["result"]
 	elif not FileAccess.file_exists(snapshot) and DirAccess.copy_absolute(source, snapshot) != OK: return Common.failure("Nu pot păstra versiunea fișierului.")
-	if extension != "gltf" and FileAccess.get_sha256(snapshot) != sha: return Common.failure("Fișierul s-a schimbat în timpul copierii. Reîncearcă.")
+	if extension != "gltf" and FileAccess.get_sha256(snapshot) != sha:
+		DirAccess.remove_absolute(snapshot)
+		return Common.failure("Fișierul s-a schimbat în timpul copierii. Reîncearcă.")
 	var item = {"id": id, "name": source.get_file(), "kind": kind, "source": source, "path": snapshot, "sha256": sha, "bytes": size, "modified": FileAccess.get_modified_time(source), "scopes": [scope], "preview": "", "pinned": false}
 	if kind == "image":
 		var image = Image.load_from_file(snapshot)
@@ -115,11 +117,12 @@ func register_file(path: String, scope: String) -> Dictionary:
 
 func _gltf_bundle(source: String) -> Dictionary:
 	var document: Variant = Common.parse_json(FileAccess.get_file_as_string(source))
-	if not document is Dictionary: return Common.failure("Document glTF invalid.")
+	if not document is Dictionary or not document.get("asset") is Dictionary or document["asset"].get("version") != "2.0": return Common.failure("Document glTF invalid.")
+	if not document.get("buffers", []) is Array or not document.get("images", []) is Array: return Common.failure("Liste de dependențe glTF invalide.")
 	var dependencies = {}
 	var total = FileAccess.get_file_as_bytes(source).size()
 	for part in document.get("buffers", []) + document.get("images", []):
-		if not part is Dictionary: return Common.failure("Dependență glTF invalidă.")
+		if not part is Dictionary or (part.has("uri") and not part["uri"] is String): return Common.failure("Dependență glTF invalidă.")
 		var uri = str(part.get("uri", ""))
 		if uri.is_empty() or uri.begins_with("data:"): continue
 		var decoded = uri.uri_decode()

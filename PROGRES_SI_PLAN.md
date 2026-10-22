@@ -535,3 +535,9 @@ QA vizual și adaptorul Store sunt în lucru. APK-ul din Download rămâne db534
   cardurile aceluiași fișier; la eroare de salvare se păstrează starea anterioară.
   Scenariul izolat pentru fișiere: 39 verificări fără eșecuri
   (`.ai-qa/files-pin-sync/`).
+
+- **Fișiere invalide:** metadatele glTF/GLB sunt validate înainte de parcurgerea
+  dependențelor; preview-urile eșuate eliberează referințele de animație. Numărul
+  de noduri glTF este verificat și înainte de generarea scenei. O copie schimbată
+  în timpul citirii este eliminată din cache, fără atingerea sursei.
+  295 aserțiuni runtime fără eșecuri (`.ai-qa/files-invalid-models.log`).
