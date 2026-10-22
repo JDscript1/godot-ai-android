@@ -31,6 +31,7 @@ jobs:
           curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
           unzip -q /tmp/godot.zip -d /tmp/godot-ai
           python modules/ai_assistant/tests/run.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
+          python modules/ai_assistant/tests/test_delivery.py
       - name: Render desktop and narrow editor panels
         run: |
           sudo apt-get update -qq

@@ -1,6 +1,7 @@
 @tool
 extends HBoxContainer
 static var Common: GDScript
+static var Icons: GDScript
 signal action(name: String, args: Dictionary)
 var sidebar: VBoxContainer
 var chats: ItemList
@@ -132,7 +133,7 @@ func _ready() -> void:
 	reference_label.hide()
 	compose_panel = PanelContainer.new()
 	var compose_style = style(Color("1d2130"), 18)
-	compose_style.set_content_margin_all(10 * EditorInterface.get_editor_scale())
+	compose_style.set_content_margin_all(8 * EditorInterface.get_editor_scale())
 	compose_style.border_color = Color("35364c")
 	compose_style.set_border_width_all(1)
 	compose_panel.add_theme_stylebox_override("panel", compose_style)
@@ -191,6 +192,9 @@ func _ready() -> void:
 	send_button.add_theme_stylebox_override("normal", style(Color("7650c5")))
 	stop_button = icon_button(composer_controls, "Stop", "Oprește agentul", func() -> void: action.emit("stop", {}))
 	stop_button.hide()
+	for control in [model_button, reasoning_button, options_button, voice_button, send_button, stop_button, composer_controls.get_child(0)]:
+		_compact_button(control)
+	send_button.add_theme_stylebox_override("normal", _compact_style(Color("7650c5")))
 	provider_picker = OptionButton.new()
 	model_picker = OptionButton.new()
 	effort_picker = OptionButton.new()
@@ -239,15 +243,48 @@ func _resize() -> void:
 
 func _layout_composer() -> void:
 	if selection_row == null: return
-	var inline = root_column.size.x >= 620 * EditorInterface.get_editor_scale()
+	var inline = root_column.size.x >= 600 * EditorInterface.get_editor_scale()
 	var target: Node = composer_controls if inline else compose_column
 	if selection_row.get_parent() != target:
 		selection_row.reparent(target, false)
 		target.move_child(selection_row, 1 if inline else 2)
-	selection_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controls_spacer.visible = not inline
-	voice_button.visible = not stop_button.visible or root_column.size.x >= 380 * EditorInterface.get_editor_scale()
+	selection_row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	controls_spacer.show()
+	voice_button.visible = not stop_button.visible
+	_size_selection_chips()
 	_layout_drawer()
+
+func _compact_style(color: Color) -> StyleBoxFlat:
+	var box = style(color, 8)
+	var scale = EditorInterface.get_editor_scale()
+	box.content_margin_left = 8 * scale
+	box.content_margin_right = 8 * scale
+	box.content_margin_top = 5 * scale
+	box.content_margin_bottom = 5 * scale
+	return box
+
+func _compact_button(control: Button) -> void:
+	var scale = EditorInterface.get_editor_scale()
+	control.custom_minimum_size = Vector2(32 if control.text.is_empty() else 0, 32) * scale
+	control.add_theme_font_size_override("font_size", int(12 * scale))
+	control.add_theme_constant_override("icon_max_width", int(16 * scale))
+	control.add_theme_constant_override("h_separation", int(4 * scale))
+	control.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT if control.text.is_empty() else Color("252939")))
+	control.add_theme_stylebox_override("hover", _compact_style(Color("393456")))
+	control.add_theme_stylebox_override("pressed", _compact_style(Color("59458c")))
+
+func _size_selection_chips() -> void:
+	if reasoning_button == null: return
+	var scale = EditorInterface.get_editor_scale()
+	var font = reasoning_button.get_theme_font("font")
+	var font_size = reasoning_button.get_theme_font_size("font_size")
+	var effort_width = minf(112 * scale, font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
+	reasoning_button.custom_minimum_size.x = effort_width
+	reasoning_button.custom_maximum_size.x = effort_width
+	var available = maxf(72 * scale, root_column.size.x - 20 * scale - effort_width)
+	var model_width = minf(minf(220 * scale, available), font.get_string_size(model_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
+	model_button.custom_minimum_size.x = model_width
+	model_button.custom_maximum_size.x = model_width
 
 func _size_messages() -> void:
 	if thread == null or scroll == null: return
@@ -483,9 +520,7 @@ func sync_selection() -> void:
 	model_button.icon = provider_icon(profile)
 	model_button.tooltip_text = (str(profile.get("name", "Furnizor")) + " · " + str(selection["model"]) + "\nSchimbă furnizorul sau modelul") if not model.is_empty() else "Adaugă un furnizor și alege un model"
 	reasoning_button.text = effort_label(str(selection["effort"]))
-	var font = reasoning_button.get_theme_font("font")
-	var text_width = font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, reasoning_button.get_theme_font_size("font_size")).x
-	reasoning_button.custom_minimum_size.x = minf(150 * EditorInterface.get_editor_scale(), text_width + 58 * EditorInterface.get_editor_scale())
+	_size_selection_chips()
 	reasoning_button.tooltip_text = "Reasoning · " + reasoning_button.text
 	reasoning_button.disabled = model.is_empty()
 
@@ -782,59 +817,11 @@ func icon_button(parent: Node, icon_name: String, hint: String, callback: Callab
 
 func _icon(name: String) -> Texture2D:
 	if icon_cache.has(name): return icon_cache[name]
-	# Original vector symbols, rasterized at the editor scale; no font glyphs or network assets.
-	var paths = {
-		"Add": "M12 5v14M5 12h14", "ArrowUp": "m6 12 6-6 6 6M12 6v13", "Stop": "M6 6h12v12H6Z",
-		"Microphone": "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0ZM6 10v1a6 6 0 0 0 12 0v-1M12 17v4M8 21h8",
-		"Menu": "M4 6h16M4 12h16M4 18h16", "Settings": "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z",
-		"Expand": "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5", "Copy": "M8 8h12v12H8ZM16 4H4v12",
-		"Retry": "M4 11a8 8 0 1 1 2 7M4 4v7h7", "More": "M5 11h1v2H5ZM11 11h1v2h-1ZM17 11h1v2h-1Z",
-		"Changes": "M8 3H4v18h16V7l-4-4H8ZM8 11h8M8 15h8M12 8v6", "Close": "m6 6 12 12M18 6 6 18",
-		"Back": "m10 5-7 7 7 7M3 12h18", "Check": "m5 12 4 4L19 6", "Search": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14m5 12 6 6",
-		"Attach": "m9 13 7-7a3 3 0 0 1 4 4L10 20a5 5 0 0 1-7-7L13 3M7 15l9-9",
-		"Models": "m12 3 9 5-9 5-9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5",
-		"Reasoning": "M9 4a3 3 0 0 0-5 3 4 4 0 0 0-1 7 3 3 0 0 0 6 5V4Zm6 0a3 3 0 0 1 5 3 4 4 0 0 1 1 7 3 3 0 0 1-6 5V4ZM6 9l3 2m6 2 3-3M6 16h3m6 0h3",
-		"Auto": "m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z",
-		"Providers": "M4 4h6v6H4Zm10 0h6v6h-6ZM4 14h6v6H4Zm10 0h6v6h-6Z",
-		"Cloud": "M6 18a5 5 0 0 1-1-10 7 7 0 0 1 13-1 5.5 5.5 0 0 1 0 11H6Z",
-		"Accounts": "M9 3h6v5l-3 3-3-3ZM4 8H2v13h20V8h-2M7 16h10",
-		"Local": "M3 4h18v13H3Zm5 17h8m-4-4v4M6 8h6M6 12h3",
-		"Inspect": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14m5 12 6 6M7 10h6m-3-3v6",
-		"Confirm": "m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Zm-4 9 3 3 5-6",
-		"Agent": "M7 6h10l4 6-4 6H7l-4-6Zm5-3v3m-4 5v2m8-2v2M9 18v3m6-3v3",
-		"Plan": "M9 5h12M9 12h12M9 19h12M3 4h2v2H3Zm0 7h2v2H3Zm0 7h2v2H3Z",
-		"MCP": "M8 3v5m8-5v5M5 8h14v4a7 7 0 0 1-14 0Zm7 11v3",
-		"Generation": "M3 4h18v16H3Zm0 12 5-5 4 4 3-3 6 6M15 7h2v2h-2Z",
-		"Automations": "m13 2-9 12h7l-1 8 10-12h-7Z", "Journal": "M5 3h14v18H5ZM8 7h8M8 11h8M8 15h5",
-		"Play": "m8 4 13 8-13 8Z", "Favorite": "m12 3 3 6 6 1-4 5 1 6-6-3-6 3 1-6-4-5 6-1Z",
-		"Rename": "m4 16 12-12 4 4L8 20H4Zm9-9 4 4", "Archive": "M3 3h18v5H3Zm2 5v13h14V8M9 12h6",
-		"Export": "M4 12v8h16v-8M12 15V3m-5 5 5-5 5 5", "Delete": "M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7",
-		"File": "M5 3h9l5 5v13H5Zm9 0v6h5M8 13h8m-8 4h6",
-		"Provider_openai": "m12 3 7 4v10l-7 4-7-4V7Zm0 0v8l7 6M5 7l7 4-7 6m7-6v10m0-10 7-4",
-		"Provider_anthropic": "m3 19 6-14 6 14M6 13h6M16 5l5 14",
-		"Provider_gemini": "M12 2c0 6-4 10-10 10 6 0 10 4 10 10 0-6 4-10 10-10-6 0-10-4-10-10Z",
-		"Provider_deepseek": "M3 10c4 0 4 4 9 4 4 0 6-3 6-6l4-3-1 7c-1 6-6 8-11 6-4-1-6-4-7-8Zm7 1 2-5 3 4m-3 4h1",
-		"Provider_openrouter": "M3 12h8m-4-5 5 5-5 5m5-5 5-7h4m-9 7 5 7h4m-2-16 2 2-2 2m0 10 2 2-2 2",
-		"Provider_qwen": "m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Zm0 6-4 7h8Z",
-		"Provider_kimi": "M5 4v16M19 4l-9 8 9 8M5 12h5",
-		"Provider_copilot": "M4 8h16v11H4ZM6 8l2-4h8l2 4M7 11h3v3H7Zm7 0h3v3h-3ZM9 17h6M2 11v5m20-5v5",
-		"Provider_mistral": "M3 20V4l9 10 9-10v16M7 20v-8m10 0v8M3 4h4m10 0h4",
-		"Provider_groq": "M17 8a7 7 0 1 0-5 11h5v-8h-5m5 4 4 5",
-		"Provider_xai": "M4 4l16 16M20 4 4 20m8-9 8-7M4 20l8-8",
-		"Provider_zai": "M4 5h16L4 19h16M8 9h8m-8 6h8",
-		"Provider_minimax": "M3 18V6l6 9 3-5 3 5 6-9v12",
-		"Provider_nvidia": "M2 12c5-8 15-8 20 0-5 8-15 8-20 0Zm6 0a4 4 0 1 0 8 0 4 4 0 1 0-8 0m4-2v4",
-		"Provider_siliconflow": "m12 3 8 5v8l-8 5-8-5V8Zm-8 5 8 4 8-4m-8 4v9m-4-11 8 6",
-		"Provider_ollama": "M6 11 7 2l4 7h2l4-7 1 9c3 4 1 10-6 10S3 15 6 11Zm3 3h1m4 0h1m-5 3h4",
-		"Provider_lmstudio": "M3 3v18h18M7 15V6l5 6 5-6v9M7 17h12",
-		"Provider_llamacpp": "M4 5h5v7h7V5h4v15h-4v-4H9v4H4Zm8 2h1m-1-4h1",
-		"Provider_custom": "M8 5H5v14h3m8-14h3v14h-3m-3-9-2 14"
-	}
-	var colors = {"openai": "83d6bd", "anthropic": "e3b497", "gemini": "94b5ff", "deepseek": "84aaff", "openrouter": "c7b4ff", "qwen": "b6a0ff", "kimi": "90c8ff", "mistral": "ffbd75", "groq": "ff927e", "xai": "e7eaf4", "zai": "90c7d3", "minimax": "ffacc8", "nvidia": "b1de75", "siliconflow": "baacff", "ollama": "e3e7ee", "lmstudio": "b5a0ff", "llamacpp": "e6d0ac", "custom": "a7b7ce"}
-	var color = str(colors.get(name.trim_prefix("Provider_"), "dce1ef"))
+	var svg = str(Icons.DATA.get(name, Icons.DATA["More"]))
+	# Preserve upstream artwork and brand colors. Mono assets inherit the dark UI ink.
+	svg = svg.replace("currentColor", "#dce1ef")
 	var image = Image.new()
-	var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 24 24"><path d="%s" fill="none" stroke="#%s" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' % [int(24 * EditorInterface.get_editor_scale()), int(24 * EditorInterface.get_editor_scale()), paths.get(name, paths["More"]), color]
-	image.load_svg_from_string(svg)
+	if image.load_svg_from_string(svg, EditorInterface.get_editor_scale()) != OK: return null
 	icon_cache[name] = ImageTexture.create_from_image(image)
 	return icon_cache[name]
 

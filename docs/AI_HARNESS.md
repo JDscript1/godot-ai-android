@@ -126,7 +126,7 @@ source, including tool use and the composer selector, has these results:
 | Runtime compilation, protocols, registry, and harness behavior | 149 assertions, zero failures |
 | Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 129 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
 | Native diagnostics bridge | 139 checks in each of the same five configurations with the fork compiled from `588bef1` in CI, including valid/invalid draft diagnostics and the unsaved-draft guard |
-| Generated embedding header | All 14 script payloads match their source bytes; registry precedes its consumers and panel remains last |
+| Generated embedding header | All 15 script payloads match their source bytes (including embedded icons); registry precedes its consumers and panel remains last |
 
 Rendered reports and editor logs are in
 `.ai-qa/composer-drawer-complete/<configuration>/`; the earlier tool-use

@@ -238,13 +238,24 @@ use compact icons and a secondary menu. The Changes view highlights actual old
 and new file contents in red and green and retains conflict-aware restoration.
 Operations appear in expandable activity groups with details hidden initially.
 Graphite surfaces, violet accents and vector icons are shared across chat and
-settings. Provider identities use distinct colored original emblems (Qwen regions
-share one identity), with a generic symbol for custom endpoints. These are app
-symbols, not downloaded official brand logos. Drawers, reasoning, work modes,
-settings categories, history and attachments have dedicated action icons.
-Textures are generated locally at editor scale and cached. New live messages use
+settings. Provider identities use downloaded brand marks from Lobe Icons and the
+upstream llama.cpp repository; action icons use Lucide. All 57 SVGs, pinned URLs,
+hashes and full licenses are kept in `modules/ai_assistant/icons/`. The artwork
+is embedded in the native module, rendered at editor scale and cached offline.
+Qwen regions share their brand mark; custom endpoints have a generic code icon.
+Composer controls use 32 logical pixels in height, 16 pixel icons, 12 pixel text
+and reduced padding. Model/reasoning chips fit their labels, bounded at 220/112
+logical pixels, instead of stretching across the composer. New live messages use
 a short opacity transition; General has
 a reduce-motion preference. History loading does not animate each old message.
+
+For each verified delivery, `misc/scripts/deliver_ai_android.py` installs
+`Download/Godot-AI-Android-arm64-debug.apk` atomically and removes superseded
+Godot AI installers and their checksum files from that folder. It verifies the
+workflow revision/result, artifact checksum, signature, package, ABI and every
+embedded script before delivery. Other apps/downloads are preserved. The next
+delivery follows this stable-name policy; the previous installer remains usable
+until a new artifact has passed verification.
 
 Settings navigation measures category names using the actual font size. Narrow
 windows use a category dropdown instead of shortening the left-side labels.

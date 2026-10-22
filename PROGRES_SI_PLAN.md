@@ -46,11 +46,19 @@ drept funcție validată cu un serviciu real.
 - Pe lățimi mari, selectorul și reasoning-ul sunt pe rândul acțiunilor; pe
   lățimi mici au un rând propriu. Numele lungi sunt prescurtate vizual, cu
   detalii complete în tooltip. Listele sertarului se derulează separat.
-- Iconuri vectoriale originale, generate local și păstrate în cache, pentru
-  identitățile furnizorilor, sertare, reasoning, moduri, istoricul conversațiilor,
-  categorii de setări, abonamente și tipurile de generare. Regiunile Qwen
-  folosesc aceeași identitate; endpointurile custom au un simbol generic.
-  Sunt simboluri proprii ale interfeței, nu logo-uri oficiale descărcate.
+- Controale compacte în composer: înălțime de 32 unități, iconuri de 16 unități,
+  text de 12 unități și margini reduse. Selectorul ocupă lățimea textului, până
+  la 220 unități; reasoning-ul până la 112. Valorile se adaptează scalei editorului.
+- **57 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
+  Icons, logo llama.cpp din repository-ul ggml-org și acțiuni Lucide. Acestea
+  înlocuiesc aproximările desenate anterior. Sunt încorporate local, fără acces
+  la internet la afișare. Sursele, reviziile fixe, hash-urile și licențele sunt în
+  `modules/ai_assistant/icons/`; cache-ul folosește scala editorului.
+- La fiecare livrare se păstrează un singur installer al acestui fork în
+  Download, cu numele stabil `Godot-AI-Android-arm64-debug.apk` și checksum-ul
+  asociat. Installerul nou se verifică înainte de înlocuire; celelalte aplicații
+  și fișiere ale utilizatorului nu sunt șterse. Regula este în `AGENTS.md`, iar
+  livrarea verificată este automatizată în `misc/scripts/deliver_ai_android.py`.
 - Setări separate pentru furnizori, abonamente, generare, MCP, automatizări,
   jurnal, agent, voce și testarea jocului. Navigarea se adaptează ferestrelor
   înguste. Există preferință pentru reducerea animațiilor.
@@ -141,7 +149,8 @@ Implementat în surse și inclus în APK-ul `588bef1`:
 Catalogul are acum **49 tipuri de unelte definite**: 35 pentru editor, 4 pentru
 generare, 5 pentru sarcini/subagenți, 3 pentru Playtest și 2 pentru descoperire.
 Uneltele MCP descoperite se adaugă dinamic; nu toate cele 49 sunt expuse simultan
-în fiecare rol sau mod. Modulul încorporează acum **14 scripturi**.
+în fiecare rol sau mod. Modulul încorporează acum **15 scripturi**, inclusiv
+datele SVG pentru iconuri.
 
 ## Dovezi de verificare
 
@@ -153,6 +162,7 @@ Uneltele MCP descoperite se adaugă dinamic; nu toate cele 49 sunt expuse simult
 | Harness propriu, prima etapă | 122 verificări funcționale, zero erori; 80 verificări în editor în fiecare dintre cinci configurații, zero erori; 13 surse încorporate verificate byte cu byte | Godot upstream ARM64, fixture izolat |
 | Extinderi tool use | **149 verificări funcționale**, zero erori; **91 verificări în editor în fiecare dintre cinci configurații**, zero erori; 14 scripturi verificate byte cu byte | Puntea nativă a fost compilată și executată în jobul native-editor al workflow-ului `39725351751` (**139 verificări × 5**, zero erori) |
 | Selector și sertare în composer | **149 verificări funcționale**, zero erori; **129 verificări în fiecare dintre cinci configurații de editor**, zero erori; 14 scripturi verificate byte cu byte | Randare cu Godot upstream ARM64 și date de probă; APK-ul include codul, dar testarea fizică rămâne separată |
+| Controale compacte și artwork upstream | **150 verificări funcționale** și **132 × 5 verificări în editor**, fără erori; 15 surse încorporate verificate byte cu byte; 57 SVG-uri verificate față de hash-urile upstream | Sursele curente sunt verificate local; livrarea APK-ului este consemnată separat după compilare |
 
 Rapoartele extinderilor tool use sunt în `.ai-qa/tool-use-final/`, pentru `desktop`,
 `narrow`, `wide`, `phone_landscape` și `phone_compact`. Manifestul local
@@ -243,6 +253,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   instalat în Download, iar APK-ul `e98ddb7` a fost eliminat. Semnătura de
   dezvoltare persistentă a rămas aceeași. Jobul native-editor a executat
   fixture-ul pe editorul fork-ului: 139 × 5 verificări, zero erori.
+- **22.10.2026:** controale de jos reduse de la 44 la 32 unități, cu lățimi
+  limitate după text; înlocuite simbolurile aproximative cu 57 SVG-uri upstream
+  Lobe Icons, Lucide și llama.cpp. Testele locale au încheiat 150 verificări
+  funcționale și 132 × 5 verificări în editor, fără erori. Adăugate verificarea
+  și înlocuirea atomică a installerului, cu nume stabil în Download.
 
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).

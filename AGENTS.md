@@ -1,6 +1,10 @@
 # Godot AI Android project guidance
 
-- Preserve user projects, assets, previous APKs and unrelated worktrees.
+- Preserve user projects, assets and unrelated worktrees.
+- On every APK delivery, verify the new installer first, then replace older
+  Godot AI fork installers and their checksum files in Android Download. Keep
+  one current installer there, using a stable filename. Do not remove other
+  applications or user downloads. Build evidence may stay in the project.
 - For substantive AI assistant, companion, build or delivery changes, update
   `PROGRES_SI_PLAN.md` in Romanian before finishing the task. Record what changed,
   checks actually run, evidence paths, limitations and remaining work. Keep its

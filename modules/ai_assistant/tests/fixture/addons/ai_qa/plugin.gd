@@ -49,8 +49,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
+	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -397,7 +397,10 @@ func _layout_tests() -> void:
 	_check(not panel.effort_picker.is_visible_in_tree() and not panel.full_control.is_visible_in_tree(), "Advanced agent controls stay out of the composer")
 	var mode_button = panel.chat.options_button
 	var mode_text_width = mode_button.get_theme_font("font").get_string_size(mode_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_button.get_theme_font_size("font_size")).x
-	_check(mode_button.size.x >= mode_text_width + mode_button.get_theme_stylebox("normal").get_minimum_size().x + mode_button.icon.get_width() - 2, "Current mode icon and label fit without clipping")
+	_check(mode_button.size.x >= mode_text_width + mode_button.get_theme_stylebox("normal").get_minimum_size().x + mode_button.get_theme_constant("icon_max_width") - 2, "Current mode icon and label fit without clipping")
+	var scale = EditorInterface.get_editor_scale()
+	_check(panel.chat.model_button.size.x <= 220 * scale + 1 and panel.chat.reasoning_button.size.x <= 112 * scale + 1, "Composer selection chips keep compact bounded widths")
+	_check(panel.chat.model_button.size.y <= 32 * scale + 2 and panel.chat.send_button.size.y <= 32 * scale + 2 and panel.chat.options_button.size.y <= 32 * scale + 2, "Composer controls use the compact 32 pixel height")
 	panel.chat._open_picker()
 	await get_tree().process_frame
 	await get_tree().process_frame
