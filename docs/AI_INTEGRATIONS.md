@@ -1,12 +1,12 @@
 # Control, integrations and project skills
 
-These are source changes after APK `9a019f6`. No APK was rebuilt for this stage.
+These changes ship in APK `db5343b`, built and verified in [workflow 39772723053](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053).
 
 ## Control
 
-The work mode menu contains Auto and Plan only. General contains YOLO, chat
+The work mode menu contains Auto, Default and Plan only. General contains YOLO, chat
 placement (center/left/right), and completion sounds with a preview action.
-Preferences save immediately. YOLO defaults to off: Auto asks before each
+Preferences save immediately. YOLO defaults to off: Auto and Default ask before each
 modifying/external operation. Enabling YOLO permits automatic operations;
 Plan remains read-only. Applying a plan never changes the YOLO preference.
 Execution and history budgets remain internal, outside General.
@@ -17,9 +17,9 @@ restores the main tab. Docked chat stays available beside the editor, and openin
 its tab restores the prior workspace. Moving it is refused during active work or
 voice capture. The top expand action temporarily centers docked chat and restores
 its prior dock on collapse, retaining the saved position. Docked expansion also
-waits for active work to finish. Preferences survive restart. Native C++ was checked for syntax;
-the rendered fixture exercises real editor docks with its test EditorPlugin.
-Execution of the newly compiled C++ bridge remains pending.
+waits for active work to finish. Preferences survive restart. The C++ bridge compiled and ran in the native fork editor fixture: 188 checks
+in each of five display configurations, including real dock moves. Physical
+Android interaction and sound output remain unverified.
 
 A small ring and percentage stay visible in the bottom toolbar. Input usage is
 compared with a known model capacity; estimated values are marked and unknown

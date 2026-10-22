@@ -6,8 +6,9 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-The original harness shipped in APK `12794c4`. Auto/Plan and structured task
-progress ship in APK `9a019f6`, built in [workflow 39740297032](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032).
+The original harness shipped in APK `12794c4`. The current APK `db5343b` includes
+Auto / Default / Plan and the control/integration changes, built in
+[workflow 39772723053](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053).
 Delivery evidence is tracked in [the project progress record](../PROGRES_SI_PLAN.md).
 
 ## Execution boundaries

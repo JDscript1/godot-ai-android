@@ -12,17 +12,14 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`9a019f6`**
-  (`9a019f60290ee2b0d6f5ce5883e64d7f1246a47f`).
-- APK-ul include Auto/Plan, progres structurat, Markdown nativ, harness-ul,
-  extinderile de tool use, sertarele, controalele compacte și logo-urile upstream.
-  Este livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`. Versiunea
-  `12794c4` a fost înlocuită atomic; în Download rămâne un singur APK al fork-ului.
-
-**Etapa curentă este autorizată pentru compilare și livrare:** control YOLO,
-context, dock-uri, sunete, Integrări, Skills, jurnal, AGENT.MD, Auto / Default / Plan
-și generare nativă Meshy / Tripo / OpenAI Images. Până la verificarea noului APK,
-installerul anterior `9a019f6` rămâne în Download.
+- Ultimul commit livrat și verificat ca pachet: **`db5343b`**
+  (`db5343b03d4637a32bac880a7bdbdd8c7d31c2ab`).
+- APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
+  sunete, Integrări, Skills, Jurnal, AGENT.MD și generare Meshy/Tripo/OpenAI.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `9a019f6` a fost
+  înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
+- Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
+  generarea cu chei plătite rămân de validat separat.
 
 ## Implementări existente
 
@@ -171,14 +168,14 @@ Uneltele MCP descoperite se adaugă dinamic; nu toate cele 49 sunt expuse simult
 în fiecare rol sau mod. Sursele curente încorporează **19 scripturi**, inclusiv
 datele SVG pentru iconuri.
 
-## Etapa control și Integrări — numai în surse
+## Etapa control și Integrări — inclusă în APK `db5343b`
 
 - Indicator separat de context în bara de jos: inel, procent și detalii la hover.
   Folosește consumul/capacitatea cunoscută a modelului ales; lipsa limitei arată
   „—”, fără procent inventat. Se resetează între modele și conversații.
 - General conține YOLO, poziția chatului și sunetele. Preferințele se salvează
   imediat. Limitele tehnice și activarea asistentului au dispărut din interfață.
-  Meniul Auto/Plan nu mai conține permisiuni, context sau extindere duplicată.
+  Meniul Auto/Default/Plan nu mai conține permisiuni, context sau extindere duplicată.
 - Poziție Centru / Stânga / Dreapta prin `EditorDock`; se mută același panel,
   cu aceeași conversație. Mutarea este refuzată în timpul lucrului sau dictării.
   Extinderea de sus mută temporar dock-ul în centru și îl restaurează la
@@ -218,9 +215,10 @@ normală. Capturile finale pentru General, Integrări, Skills, AGENT.MD, consola
 de jurnal, context și dock-uri au fost inspectate vizual. Încorporarea celor
 **19 scripturi** și hash-urile celor **61 SVG-uri** au fost verificate.
 
-Nu s-a compilat un APK nou. Puntea C++ de dock nu a fost executată într-un fork
-recompilat în această etapă; fixture-ul folosește dock-urile reale Godot prin
-pluginul de test. Windows, Android fizic și sunetul pe hardware rămân de validat.
+Prima iterație a fost păstrată numai în surse. Ulterior, APK-ul `db5343b` include
+această etapă: puntea C++ a fost compilată și executată în editorul nativ
+(188 verificări × 5 configurații, fără erori). Windows, Android fizic și
+sunetul pe hardware rămân de validat.
 Dovezi: `.ai-qa/control-settings-runtime-complete.log`,
 `.ai-qa/control-settings-complete/`, `.ai-qa/github-read-live.json` și
 `.ai-qa/control-settings-verification.json`.
@@ -249,8 +247,8 @@ local și în CI, cu runtimes simulate. Dovezi: `.ai-qa/auto-plan-final/`,
 
 | Etapă | Dovezi | Limite |
 | --- | --- | --- |
-| Control și Integrări (numai surse) | 187 aserțiuni, 172 × 5 verificări în editorul upstream; C++ verificat static; 19 scripturi și 61 SVG-uri verificate; Blender real → GLB → Godot și GitHub public native HTTP | APK neschimbat; C++ dock nou neexecutat într-un fork recompilat, Windows/Android/audio hardware nevalidate |
-| APK `9a019f6` — Auto/Plan și lizibilitate | [Workflow `39740297032`](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032) reușit: 167 aserțiuni, 142 × 5 verificări upstream, 152 × 5 verificări native, 3 teste de livrare, 9 teste companion + build, C++ și 17 surse încorporate verificate | Livrat atomic în Download; fără teste fizice Android sau furnizori reali |
+| APK `db5343b` — moduri, Integrări și generare | [Workflow `39772723053`](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053) reușit; 237 aserțiuni locale / 232 în CI, 178 × 5 verificări upstream și 188 × 5 native, trei teste livrare, nouă teste companion + build; 19 scripturi comparate exact cu biblioteca APK, 65 SVG-uri | Livrat atomic în Download; fără teste fizice Android sau generare plătită reală |
+| APK `9a019f6` — Auto/Plan și lizibilitate (istoric) | [Workflow `39740297032`](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032) reușit: 167 aserțiuni, 142 × 5 verificări upstream, 152 × 5 verificări native, 3 teste de livrare, 9 teste companion + build, C++ și 17 surse încorporate verificate | Livrat atomic în Download; fără teste fizice Android sau furnizori reali |
 | APK `12794c4` (istoric) | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
 | APK `588bef1` (istoric) | Workflow `39725331751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
 | APK `e98ddb7` (istoric) | Workflow `39707618934`; semnătură, pachet, ARM64 și surse încorporate verificate | Înlocuit la 22.10.2026 de APK-ul `588bef1` |
@@ -295,13 +293,13 @@ Proot/X11 pot apărea în loguri; acestea nu constituie validare fizică Android
 
 Ultimul installer:
 `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
-(144.960.817 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
-Fișierul `.sha256` este lângă APK. Versiunea `12794c4` a fost înlocuită atomic
+(145.026.353 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
+Fișierul `.sha256` este lângă APK. Versiunea `9a019f6` a fost înlocuită atomic
 la aceeași cale stabilă, după verificarea noii versiuni; în Download rămâne un
 singur APK al fork-ului.
 
 SHA-256:
-`82e62aa5b2165511bfc6ef866b77846842f9a896ed1a778620d823a632941f7b`.
+`233cbc8980e4a2323f5af292463ff4da7c2edcb0c9cd98da7090c8ae51ab06fe`.
 
 Certificatul de dezvoltare a rămas neschimbat:
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
@@ -412,9 +410,27 @@ Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 - Verificări locale: **237 aserțiuni runtime** și **178 × 5 verificări în editor**
   fără erori; trei teste de livrare, C++ syntax/format, 19 scripturi încorporate
   exact și 65 SVG-uri cu hash valid. Inspectate capturile pentru cele trei moduri
-  și formularele Meshy/Tripo. Datele APK vor fi înscrise după finalizare.
+  și formularele Meshy/Tripo/OpenAI. Workflow-ul `39772723053` a trecut, inclusiv
+  188 × 5 verificări în fork-ul nativ și 232 aserțiuni în CI. APK verificat: semnătură
+  persistentă, pachet, ARM64 și toate cele 19 surse identice cu biblioteca nativă.
 - Documentație: `docs/AI_GENERATION.md`; dovezi în `.ai-qa/modes-generation-*`.
   Testele de generare folosesc fixture HTTP, nu chei plătite reale.
 
 Jurnal: **22.10.2026** — adăugate cele trei moduri, politica Auto, răspunsuri
 compacte și adaptoarele Meshy/Tripo/OpenAI; compilarea APK este autorizată din nou.
+
+- **22.10.2026 — livrare:** APK `db5343b`, workflow `39772723053` reușit,
+  înlocuire atomică la calea stabilă din Download, un singur installer și checksum
+  valid. Dovezi: `.ai-qa/delivery-db5343b.json`, `.ai-qa/modes-generation-verification.json`,
+  `.ai-qa/db5343b-native-ci/`, `.ai-qa/db5343b-runtime-ci.log`.
+  Verificările cu chei plătite și Android fizic rămân distincte și neefectuate.
+
+- **Livrare / metadate Android:** după înlocuirea atomică, stocarea partajată a
+  păstrat timestamp-ul anterior, deși hash-ul și conținutul APK erau noi.
+  Scriptul de livrare actualizează acum explicit data APK/checksum și o include
+  în raport. Fișierul curent indică **22.10.2026, 13:53 CEST**. Trei teste
+  existente de livrare și noua regresie de timestamp au trecut local
+  (`python misc/scripts/tests/test_ai_delivery_timestamp.py`). Broadcast-ul de
+  scanare media a fost trimis; afișarea în managerul Android de fișiere rămâne
+  verificabilă pe dispozitiv. A fost schimbat doar ajutorul de livrare, fără
+  schimbarea surselor încorporate în APK-ul deja verificat.

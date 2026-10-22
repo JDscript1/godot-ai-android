@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032/artifacts/12409280793)
-(GitHub Actions artifact, source `9a019f6`).
+[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053/artifacts/12423521704)
+(GitHub Actions artifact, source `db5343b`).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -18,13 +18,13 @@ documentul de progres actualizat după fiecare etapă importantă.
 
 The [built-in harness](docs/AI_HARNESS.md) runs direct API agent sessions inside
 Godot without Termux, a console, or an external agent runtime. The linked APK
-includes Auto/Plan, structured task progress and the compact composer selector;
+includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
-Current source changes add [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md).
-Auto / Default / Plan and [native Meshy, Tripo and image generation](docs/AI_GENERATION.md)
-are being packaged with them. The link above identifies the preceding APK until
-the new build and delivery verification finish.
+The APK also includes [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md),
+plus [native Meshy, Tripo and image generation](docs/AI_GENERATION.md).
+Automated generation checks use HTTP fixtures; paid-provider and physical Android
+validation remain separate.
 
 # Godot Engine
 

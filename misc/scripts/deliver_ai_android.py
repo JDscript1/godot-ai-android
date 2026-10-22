@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify a CI APK, deliver it atomically, and remove superseded fork downloads."""
 import argparse
+from datetime import datetime
 import ast
 import hashlib
 import json
@@ -47,6 +48,8 @@ def atomic_copy(source, target, expected):
             os.fsync(outgoing.fileno())
         assert sha256(temporary) == expected, 'Copied installer checksum differs'
         os.replace(temporary, target)
+        # Android shared-storage FUSE can retain the replaced entry's old mtime.
+        os.utime(target, None)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -103,13 +106,14 @@ def main():
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, checksum)
+        os.utime(checksum, None)
         for old, previous_hash in superseded:
             assert sha256(old) == previous_hash, 'Old download changed during delivery'
             old.unlink()
             Path(str(old) + '.sha256').unlink(missing_ok=True)
             report['removed'].append(str(old))
         report['delivered'] = True
-    report.update(path=str(output), bytes=output.stat().st_size)
+    report.update(path=str(output), bytes=output.stat().st_size, modified_at=datetime.fromtimestamp(output.stat().st_mtime).astimezone().isoformat())
     evidence = Path('.ai-qa') / f'delivery-{args.commit[:7]}.json'
     evidence.parent.mkdir(exist_ok=True)
     evidence.write_text(json.dumps(report, indent=2) + '\n')
