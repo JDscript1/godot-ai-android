@@ -131,6 +131,7 @@ func _run() -> void:
 		return
 	await _chat_workflow_tests()
 	await _history_button_tests()
+	await _settings_action_tests()
 	await _layout_tests()
 	await _control_settings_tests()
 	_vision_settings_tests()
@@ -577,6 +578,48 @@ func _history_button_tests() -> void:
 	panel.chat.archived.set_pressed_no_signal(false)
 	panel._refresh_conversations()
 	DirAccess.remove_absolute(export_path)
+
+func _settings_action_tests() -> void:
+	panel._update_settings_controls()
+	_check(panel.settings_actions["provider_delete"].disabled and panel.settings_actions["generation_delete"].disabled and panel.settings_actions["mcp_delete"].disabled, "Delete-profile buttons are disabled when no saved profile is being edited")
+	_check(panel.settings_actions["job_preview"].disabled and panel.settings_actions["job_import"].disabled and panel.settings_actions["job_refresh"].disabled, "Generation result actions are disabled when there is no selection")
+	var previous_profiles = panel.config["generation"].duplicate(true)
+	var previous_jobs = panel.assets.jobs.duplicate(true)
+	var previous_editing = panel.forms["generation"]["editing"]
+	var path = panel.project_directory.path_join("button-preview.png")
+	var image = Image.create(4, 3, false, Image.FORMAT_RGB8)
+	image.fill(Color.RED)
+	image.save_png(path)
+	panel.config["generation"] = [{"id": "button-profile", "name": "Button fixture", "kind": "openai_image", "asset_kind": "image"}]
+	panel.forms["generation"]["editing"] = "button-profile"
+	panel.assets.jobs = [{"id": "button-first", "profile_id": "button-profile", "kind": "image", "status": "running"}, {"id": "button-ready", "profile_id": "button-profile", "kind": "image", "status": "completed", "file": path}]
+	panel._refresh_lists()
+	panel.lists["jobs"].select(1)
+	panel.assets.jobs.reverse()
+	panel._refresh_lists()
+	_check(panel._selected_job().get("id") == "button-ready" and not panel.settings_actions["job_preview"].disabled and not panel.settings_actions["job_import"].disabled, "Updating and reordering generation results preserves their stable selection and enables ready actions")
+	panel.settings_actions["job_preview"].pressed.emit()
+	var previews = panel.generation_preview.find_children("*", "TextureRect", false, false)
+	_check(previews.size() == 1 and previews[0].texture != null and previews[0].texture.get_image().get_pixel(0, 0).r > 0.9, "Generation Preview button decodes the selected result into an actual image")
+	panel.assets.jobs[0]["status"] = "running"
+	panel._refresh_lists()
+	_check(panel.settings_actions["job_preview"].disabled and panel.settings_actions["job_import"].disabled and not panel.settings_actions["job_refresh"].disabled, "Pending generation results allow refresh while preview and import remain unavailable")
+	panel.busy = true
+	panel._update_settings_controls()
+	_check(panel.settings_actions.values().all(func(control: Button) -> bool: return control.disabled), "Settings actions that depend on mutable selection are disabled while another operation runs")
+	panel.busy = false
+	panel._update_settings_controls()
+	panel.settings_actions["generation_delete"].pressed.emit()
+	_check(panel.config["generation"].is_empty() and panel.settings_actions["generation_delete"].disabled and panel.settings_actions["job_refresh"].disabled and FileAccess.file_exists(path), "Delete-generation-profile button removes its profile, preserves generated files and disables stale actions")
+	panel.config["generation"] = previous_profiles
+	panel.assets.jobs = previous_jobs
+	panel.forms["generation"]["editing"] = previous_editing
+	for child in panel.generation_preview.get_children():
+		panel.generation_preview.remove_child(child)
+		child.queue_free()
+	panel._refresh_lists()
+	DirAccess.remove_absolute(path)
+	await get_tree().process_frame
 
 func _layout_tests() -> void:
 	await get_tree().process_frame

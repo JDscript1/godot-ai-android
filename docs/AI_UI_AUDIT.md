@@ -33,6 +33,12 @@ Setări și Trimite, iar Șterge impunea arhivarea fără să indice această co
   ales. Modificări/Undo este dezactivat dacă răspunsul nu are modificări;
   Copiază este dezactivat pentru un răspuns fără text.
 
+- Listele de profiluri și rezultate păstrează selecția după ID, inclusiv după
+  actualizare sau reordonare. Rezultatul nou este selectat după trimitere.
+- Acțiunile din setări care cer un profil, rezultat sau skill salvat sunt
+  dezactivate până există selecția necesară. Previzualizare și Import cer un
+  fișier finalizat și descărcat; Actualizează cere profilul conectat.
+
 ## Contracte verificate
 
 | Control | Efect verificat în fixture izolat |
@@ -46,6 +52,9 @@ Setări și Trimite, iar Șterge impunea arhivarea fără să indice această co
 | Șterge | nume în confirmare, anulare intactă, ștergere pe disc, index redeschis |
 | Copiază răspuns | conținutul răspunsului ales în clipboard |
 | Ramifică de aici | capătul corect al ramurii, originalul complet pe disc |
+| Rezultate generate | selecție stabilă, preview cu pixeli reali, stări pending/completed |
+| Șterge profil generare | profil eliminat, fișiere generate păstrate, acțiuni actualizate |
+| Acțiuni setări | fără selecție și în timpul execuției sunt dezactivate |
 | Setări / Închide | fereastra se deschide și se închide efectiv |
 | Istoric / Înapoi | pagini alternative în dock îngust, fără lărgirea coloanei |
 | Extinde / restrânge | centru și întoarcere la dock, preferință păstrată |
@@ -68,8 +77,14 @@ chatului și ale tabului, nu doar marginea ferestrei.
 - Editor upstream: 279 verificări fără eșecuri pe desktop și fereastră îngustă;
   după corectarea înălțimii barei, 279 fără eșecuri și pe fereastra mare
   (`.ai-qa/dock-audit-final/`, `.ai-qa/dock-audit-wrap-height/`).
-  Revalidarea dock-urilor pe cinci dimensiuni și compilarea noului APK sunt în curs;
-  livrarea anterioară `6539a44` nu conține aceste corecții.
+- Dock-uri: **64 verificări × 5 dimensiuni**, zero eșecuri
+  (`.ai-qa/dock-audit-responsive/`), cu capturi inspectate.
+- Butoane setări: **286 verificări** fără eșecuri pe ecran compact la 150%
+  (`.ai-qa/ui-settings-actions/`), inclusiv preview imagine real și păstrarea
+  selecției la reordonare.
+- Baza auditului `db972be` a trecut workflow-ul `39832915947`, inclusiv APK
+  și editor nativ. Extinderea pentru acțiunile din setări necesită noul build;
+  livrarea anterioară din Download, `6539a44`, nu conține aceste corecții.
 - Butoanele care depind de microfon, autentificare, provideri, servicii de generare,
   servere MCP și catalogul public Store necesită separat verificare cu dispozitivul
   sau serviciul real. Fixture-urile nu confirmă un cont sau serviciu live.

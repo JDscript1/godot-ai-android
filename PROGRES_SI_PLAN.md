@@ -597,3 +597,19 @@ public rămân de verificat separat; limitele de format/platformă sunt în
 
 Jurnal: 22.10.2026 — corecții de încadrare și audit al efectelor butoanelor;
 verificările exercită fișiere, indexuri, dialoguri și tranziții reale în editor.
+
+
+### Extindere audit la acțiunile din setări
+
+- Listele păstrează selecția prin ID la actualizare/reordonare, inclusiv
+  rezultatele de generare. Rezultatul nou devine selecția curentă.
+- Ștergere/testare profiluri, rezultate, skills și sarcini reflectă selecția
+  disponibilă și execuția curentă. Preview și import sunt disponibile pentru
+  fișiere finalizate descărcate, iar refresh cere profilul aferent.
+- 286 verificări în editor upstream compact, fără eșecuri, inclusiv apăsarea
+  butonului Preview și verificarea pixelilor reali; ștergerea unui profil
+  păstrează fișierul generat. Dovezi: `.ai-qa/ui-settings-actions/`.
+- Dock-uri: 64 verificări × 5 dimensiuni fără eșecuri
+  (`.ai-qa/dock-audit-responsive/`). Baza auditului `db972be` a trecut complet
+  workflow-ul 39832915947; nu a fost livrată ca versiune intermediară în Download.
+  Extinderea pentru setări se compilează separat înaintea înlocuirii APK-ului.

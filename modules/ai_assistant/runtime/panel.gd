@@ -63,6 +63,7 @@ var send_button: Button
 var settings_window: AcceptDialog
 var settings_tabs: TabContainer
 var forms: Dictionary = {}
+var settings_actions: Dictionary = {}
 var lists: Dictionary = {}
 var approval_dialog: ConfirmationDialog
 var generation_preview: Control
@@ -320,8 +321,8 @@ func _build_settings() -> void:
 	_field(p, "key", "Cheie API", true)
 	var row = _row(provider_tab)
 	_button(row, "Salvează", _save_provider)
-	_button(row, "Verifică / modele", _test_provider)
-	_button(row, "Șterge", func() -> void: _remove_profile("providers", "provider"))
+	_action_button(row, "Verifică / modele", "provider_test", _test_provider)
+	_action_button(row, "Șterge", "provider_delete", func() -> void: _remove_profile("providers", "provider"))
 	provider_advanced = _disclosure(provider_tab, "Opțiuni avansate")
 	p["container"] = provider_advanced
 	_field(p, "name", "Nume profil")
@@ -436,8 +437,8 @@ func _build_settings() -> void:
 	g["workflow_import"].visible = g["kind"].selected == 1
 	_button(gen_row, "Salvează profil", _save_generation)
 	_button(gen_row, "Profil nou", func() -> void: _clear_form("generation"))
-	_button(gen_row, "Verifică server / modele", _test_generation)
-	_button(gen_row, "Șterge profil", func() -> void: _remove_profile("generation", "generation"))
+	_action_button(gen_row, "Verifică server / modele", "generation_test", _test_generation)
+	_action_button(gen_row, "Șterge profil", "generation_delete", func() -> void: _remove_profile("generation", "generation"))
 	lists["generation"].item_selected.connect(_edit_generation)
 	_label(gen_tab, "Creează o resursă")
 	g["container"] = _form_container(gen_tab)
@@ -446,10 +447,10 @@ func _build_settings() -> void:
 	_field(g, "destination", "Destinație import")
 	g["destination"].text = "res://ai_assets"
 	var job_row = _row(gen_tab)
-	_button(job_row, "Generează", _generate)
-	_button(job_row, "Actualizează rezultatul", _refresh_job)
-	_button(job_row, "Previzualizare", _preview_job)
-	_button(job_row, "Importă în proiect", _import_job)
+	_action_button(job_row, "Generează", "generate", _generate)
+	_action_button(job_row, "Actualizează rezultatul", "job_refresh", _refresh_job)
+	_action_button(job_row, "Previzualizare", "job_preview", _preview_job)
+	_action_button(job_row, "Importă în proiect", "job_import", _import_job)
 	lists["jobs"] = ItemList.new()
 	lists["jobs"].custom_minimum_size.y = 110
 	gen_tab.add_child(lists["jobs"])
@@ -467,8 +468,8 @@ func _build_settings() -> void:
 	var mcp_row = _row(mcp_tab)
 	_button(mcp_row, "Salvează server", _save_mcp)
 	_button(mcp_row, "Server nou", func() -> void: _clear_form("mcp"))
-	_button(mcp_row, "Descoperă uneltele", _test_mcp)
-	_button(mcp_row, "Șterge server", func() -> void: _remove_profile("mcp", "mcp"))
+	_action_button(mcp_row, "Descoperă uneltele", "mcp_test", _test_mcp)
+	_action_button(mcp_row, "Șterge server", "mcp_delete", func() -> void: _remove_profile("mcp", "mcp"))
 	lists["mcp"].item_selected.connect(func(index: int) -> void: _fill("mcp", config["mcp"][index]))
 	var integration_tab = _tab("Integrări", "integrations")
 	_build_integrations(integration_tab)
@@ -681,7 +682,7 @@ func _build_integrations(parent: Node) -> void:
 	var skill_actions = _row(skills)
 	_button(skill_actions, "Nou", _new_skill)
 	_button(skill_actions, "Salvează", _save_skill)
-	_button(skill_actions, "Șterge", _delete_skill)
+	_action_button(skill_actions, "Șterge", "skill_delete", _delete_skill)
 	# Preserve existing saved tasks as an integration subpage.
 	var tasks_page = VBoxContainer.new()
 	tasks_page.name = "Sarcini"
@@ -694,8 +695,8 @@ func _build_integrations(parent: Node) -> void:
 	_field(auto_form, "prompt", "Instrucțiuni")
 	var auto_row = _row(tasks_page)
 	_button(auto_row, "Salvează", _save_automation)
-	_button(auto_row, "Rulează", _run_automation)
-	_button(auto_row, "Șterge", _delete_automation)
+	_action_button(auto_row, "Rulează", "automation_run", _run_automation)
+	_action_button(auto_row, "Șterge", "automation_delete", _delete_automation)
 	lists["automations"].item_selected.connect(func(index: int) -> void: _fill("automation", config["automations"][index]))
 	_refresh_skills()
 
@@ -1021,14 +1022,51 @@ func _refresh_efforts() -> void:
 func _refresh_lists() -> void:
 	for key in ["providers", "generation", "mcp", "automations"]:
 		if not lists.has(key): continue
+		var selected = _selected_list_id(lists[key])
 		lists[key].clear()
-		for item in config[key]: lists[key].add_item(str(item.get("name", item["id"])))
+		for item in config[key]:
+			lists[key].add_item(str(item.get("name", item["id"])))
+			lists[key].set_item_metadata(lists[key].item_count - 1, item["id"])
+			if item["id"] == selected: lists[key].select(lists[key].item_count - 1)
 	if lists.has("jobs"):
+		var selected = _selected_list_id(lists["jobs"])
 		lists["jobs"].clear()
-		for job in assets.jobs: lists["jobs"].add_item("%s · %s · %s" % [job["id"].left(8), job["kind"], job["status"]])
+		for job in assets.jobs:
+			lists["jobs"].add_item("%s · %s · %s" % [job["id"].left(8), job["kind"], job["status"]])
+			lists["jobs"].set_item_metadata(lists["jobs"].item_count - 1, job["id"])
+			if job["id"] == selected: lists["jobs"].select(lists["jobs"].item_count - 1)
 	_refresh_journal()
 	_refresh_list_visibility()
 	_refresh_provider_selector()
+	_update_settings_controls()
+
+func _selected_list_id(list: ItemList) -> String:
+	var selected = list.get_selected_items()
+	return str(list.get_item_metadata(selected[0])) if not selected.is_empty() else ""
+
+func _action_button(parent: Node, title: String, key: String, callback: Callable) -> Button:
+	var control = _button(parent, title, callback)
+	settings_actions[key] = control
+	return control
+
+func _update_settings_controls() -> void:
+	for entry in [["provider", "providers"], ["generation", "generation"], ["mcp", "mcp"], ["automation", "automations"]]:
+		if not forms.has(entry[0]): continue
+		var id = str(forms[entry[0]].get("editing", ""))
+		var exists = config[entry[1]].any(func(item: Dictionary) -> bool: return item["id"] == id)
+		for suffix in ["delete", "test", "run"]: _action_available(entry[0] + "_" + suffix, exists, "Selectează un profil salvat.")
+	_action_available("generate", not _generation_profile().is_empty(), "Selectează un profil de generare salvat.")
+	var job = _selected_job() if lists.has("jobs") else {}
+	_action_available("job_refresh", not job.is_empty() and not _generation_profile(str(job.get("profile_id", ""))).is_empty(), "Selectează un rezultat cu profil conectat.")
+	var ready = not job.is_empty() and job.get("status") == "completed" and FileAccess.file_exists(str(job.get("file", "")))
+	for key in ["job_preview", "job_import"]: _action_available(key, ready, "Selectează un rezultat descărcat și finalizat.")
+	if forms.has("skill"): _action_available("skill_delete", not str(forms["skill"].get("sha256", "")).is_empty(), "Selectează un skill salvat.")
+	if account_logout != null: account_logout.disabled = busy or lists["accounts"].get_selected_items().is_empty()
+
+func _action_available(key: String, available: bool, hint: String) -> void:
+	if not settings_actions.has(key): return
+	settings_actions[key].disabled = busy or not available
+	settings_actions[key].tooltip_text = "Așteaptă încheierea operației." if busy else ("" if available else hint)
 
 func _fill(form_id: String, profile: Dictionary) -> void:
 	var form: Dictionary = forms[form_id]
@@ -1777,10 +1815,16 @@ func _generate() -> void:
 	_audit("asset_generate", {"profile": profile["id"]}, result)
 	_status("Generarea a fost acceptată. Folosește Actualizează rezultatul pentru progres." if result.get("ok", false) else str(result.get("error", "Generarea a eșuat.")))
 	_refresh_lists()
+	if result.get("ok", false):
+		for index in range(lists["jobs"].item_count):
+			if lists["jobs"].get_item_metadata(index) == result.get("result", {}).get("id"): lists["jobs"].select(index)
+	_update_settings_controls()
 
 func _selected_job() -> Dictionary:
-	var selection = lists["jobs"].get_selected_items()
-	return assets.jobs[selection[0]] if not selection.is_empty() and selection[0] < assets.jobs.size() else {}
+	var id = _selected_list_id(lists["jobs"])
+	for job in assets.jobs:
+		if job["id"] == id: return job
+	return {}
 
 func _refresh_job() -> void:
 	if busy: return
@@ -1798,6 +1842,7 @@ func _refresh_job() -> void:
 	_refresh_lists()
 
 func _import_job() -> void:
+	if busy: return
 	var job = _selected_job()
 	if job.is_empty(): return
 	var result = assets.import_job(str(job["id"]), str(forms["generation"]["destination"].text))
@@ -1805,6 +1850,7 @@ func _import_job() -> void:
 	_status("Import solicitat: " + str(result.get("result", {}).get("path", "")) if result.get("ok", false) else str(result.get("error", "Import nereușit.")))
 
 func _preview_job() -> void:
+	if busy: return
 	var job = _selected_job()
 	if job.is_empty() or job.get("status") != "completed": return
 	for child in generation_preview.get_children():
@@ -1924,6 +1970,7 @@ func _run_automation() -> void:
 		return
 
 func _delete_automation() -> void:
+	if busy: return
 	var id = str(forms["automation"].get("editing", ""))
 	config["automations"] = config["automations"].filter(func(item: Dictionary) -> bool: return item["id"] != id)
 	_clear_form("automation")
@@ -1947,6 +1994,7 @@ func _process(_delta: float) -> void:
 	if chat != null:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
 		if busy: chat._follow()
+	if settings_window != null and settings_window.visible: _update_settings_controls()
 	if speech != null: speech.poll(config.get("preferences", {}))
 
 func _selection() -> Dictionary:
