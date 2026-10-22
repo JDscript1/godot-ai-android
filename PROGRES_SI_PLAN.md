@@ -575,3 +575,25 @@ Jurnal: 22.10.2026 — pachetul de fișiere/preview/control/Store/diff este comp
 verificat și livrat. Android fizic, providerii vision reali și catalogul Store
 public rămân de verificat separat; limitele de format/platformă sunt în
 `docs/AI_CHAT_FILES_AND_EDITOR_CONTROL.md`.
+
+
+## Audit dock și butoane — 22.10.2026
+
+- Analizată captura `Screenshot_20261022_200421.jpg`: control tăiat în dock-ul
+  stâng. Corectate limitele reale ale tabului, înălțimea, coloana stângă și
+  adaptarea barei la lățimi mici. Istoricul compact are pagină proprie.
+- Ștergerea nu mai cere arhivare. Confirmarea numește conversația; anularea,
+  erorile de salvare, ultima conversație și redeschiderea indexului au probe pe
+  fișiere reale izolate. Exportul salvează Markdown prin dialog.
+- Corectate favorite/arhivare/redenumire, ciorne pe conversații în sesiune,
+  ramificarea unui mesaj expirat și alegerea planului. Controalele indisponibile
+  sunt dezactivate explicit.
+- Auditul și limitele sunt în [docs/AI_UI_AUDIT.md](docs/AI_UI_AUDIT.md).
+  Runtime local: 302 aserțiuni fără eșecuri. Sintaxa C++ Android a trecut.
+  279 verificări randate fără eșecuri pe desktop și îngust; 279 pe fereastra mare
+  după corectarea înălțimii barei (`.ai-qa/dock-audit-wrap-height/`).
+  Revalidarea dock-urilor pe cinci dimensiuni și noua compilare sunt în curs; APK-ul anterior
+  nu dovedește aceste modificări. Android fizic și serviciile live rămân separate.
+
+Jurnal: 22.10.2026 — corecții de încadrare și audit al efectelor butoanelor;
+verificările exercită fișiere, indexuri, dialoguri și tranziții reale în editor.

@@ -68,6 +68,7 @@ var approval_dialog: ConfirmationDialog
 var generation_preview: Control
 var chat: Control
 var conversations: RefCounted
+var conversation_drafts: Dictionary = {}
 var agent_jobs: RefCounted
 var planner: RefCounted
 var harness: RefCounted
@@ -1143,9 +1144,13 @@ func _remove_profile(category: String, form_id: String) -> void:
 
 func _new_conversation() -> void:
 	if busy: return
-	_persist_history()
+	if not _persist_history(): return
+	_remember_draft()
 	_end_conversation_jobs()
-	conversations.create()
+	if conversations.create().is_empty():
+		_restore_draft()
+		_status("Conversația nouă nu a putut fi salvată.")
+		return
 	history = []
 	chat.set_context(0, 0)
 	pending_attachments.clear()
@@ -1153,8 +1158,24 @@ func _new_conversation() -> void:
 	pending_references.clear()
 	compact_summary = ""
 	compact_through = 0
+	chat.search.clear()
+	chat.archived.set_pressed_no_signal(false)
+	_restore_draft()
+	chat.close_mobile_history()
+	chat.loaded = 50
 	_render_history()
 	_refresh_conversations()
+
+func _remember_draft() -> void:
+	conversation_drafts[str(conversations.index["active"])] = {"text": composer.text, "files": pending_files.duplicate(), "attachments": pending_attachments.duplicate(true), "references": pending_references.duplicate(true)}
+
+func _restore_draft() -> void:
+	var draft: Dictionary = conversation_drafts.get(str(conversations.index["active"]), {})
+	composer.text = str(draft.get("text", ""))
+	pending_files = draft.get("files", []).duplicate()
+	pending_attachments = draft.get("attachments", []).duplicate(true)
+	pending_references = draft.get("references", []).duplicate(true)
+	_composer_hints()
 
 func _persist_history() -> bool:
 	for message in history:
@@ -1918,7 +1939,10 @@ func _process(_delta: float) -> void:
 			_restore_dock_groups()
 			dock_viewport_size = viewport_size
 			_queue_dock_layout()
-		elif not dock_layout_busy and get_global_rect().end.x > viewport_size.x + 1: _queue_dock_layout()
+		elif not dock_layout_busy:
+			var dock = get_parent() as EditorDock
+			var slot = dock.get_parent() as TabContainer if dock != null else null
+			if slot != null and not dock.get_rect().is_equal_approx(_dock_content_rect(slot)): _queue_dock_layout()
 	if editor_control != null: editor_control.poll()
 	if chat != null:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
@@ -2057,14 +2081,19 @@ func _chat_action(name: String, args: Dictionary) -> void:
 			if busy:
 				_status("Oprește execuția înainte de schimbarea conversației.")
 				return
-			_persist_history()
+			if conversations.item(str(args["id"])).is_empty(): return
+			if not _persist_history(): return
+			_remember_draft()
 			_end_conversation_jobs()
 			if conversations.select(str(args["id"])):
 				history = conversations.load_active()
+				chat.loaded = 50
+				chat.close_mobile_history()
 				_close_unanswered_calls()
 				_load_summary()
 				pending_references.clear()
 				pending_attachments.clear()
+				_restore_draft()
 				_choose(conversations.item(str(args["id"])).get("selection", {}))
 				_render_history()
 				_refresh_conversations()
@@ -2074,10 +2103,15 @@ func _chat_action(name: String, args: Dictionary) -> void:
 				if message.get("id") == args.get("message"): DisplayServer.clipboard_set(str(message.get("content", "")))
 		"fork":
 			if busy: return
-			_persist_history()
+			if not history.any(func(message: Dictionary) -> bool: return message.get("id") == args.get("message")): return
+			if not _persist_history(): return
+			_remember_draft()
 			_end_conversation_jobs()
 			var previous_scope = str(conversations.index["active"])
-			conversations.fork_at(str(args["message"]))
+			if conversations.fork_at(str(args["message"])).is_empty():
+				_restore_draft()
+				_status("Ramura conversației nu a putut fi salvată.")
+				return
 			history = conversations.load_active()
 			var ids = []
 			for message in history:
@@ -2090,44 +2124,102 @@ func _chat_action(name: String, args: Dictionary) -> void:
 					var scopes: Array = file_registry.entries[id]["scopes"]
 					if conversations.index["active"] not in scopes: scopes.append(conversations.index["active"])
 			file_registry._save()
+			_restore_draft()
 			_load_summary()
 			_render_history()
 			_refresh_conversations()
 		"retry": _send_or_queue("Continuă folosind starea actuală a proiectului și rezultatele deja obținute. Verifică înainte de a repeta modificări.")
 		"apply_plan":
 			if busy: return
-			mode_picker.select(0)
-			_send_or_queue("Aplică planul propus anterior, verificând mai întâi starea actuală a proiectului.")
+			for message in history:
+				if message.get("id") == args.get("message") and message.get("plan", false):
+					mode_picker.select(0)
+					_send_or_queue("Aplică acest plan, verificând mai întâi starea actuală a proiectului:\n\n" + str(message.get("content", "")))
+					break
 		"changes": _show_changes(str(args.get("turn", "")), str(args.get("path", "")))
 
 func _history_action(action: String) -> void:
-	if busy: return
+	if busy:
+		_status("Oprește execuția înainte de modificarea conversației.")
+		_refresh_conversations()
+		return
 	var id = str(conversations.index["active"])
 	var entry = conversations.item(id)
+	if entry.is_empty(): return
 	match action:
-		"favorite": conversations.update(id, {"favorite": not entry.get("favorite", false)})
-		"archive": conversations.update(id, {"archived": not entry.get("archived", false)})
+		"favorite":
+			if conversations.update(id, {"favorite": not entry.get("favorite", false)}) != OK: _status("Preferința nu a putut fi salvată.")
+		"archive":
+			var archived = not entry.get("archived", false)
+			if conversations.update(id, {"archived": archived}) != OK: _status("Conversația nu a putut fi arhivată.")
+			else: chat.archived.set_pressed_no_signal(archived)
 		"export":
-			DisplayServer.clipboard_set(conversations.markdown())
-			_status("Conversația Markdown a fost copiată în clipboard.")
+			if not _persist_history(): return
+			var contents = conversations.markdown()
+			var dialog = FileDialog.new()
+			dialog.name = "ExportConversation"
+			dialog.title = "Exportă conversația"
+			dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+			dialog.access = FileDialog.ACCESS_FILESYSTEM
+			dialog.filters = PackedStringArray(["*.md ; Markdown"])
+			dialog.current_dir = OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS) if not OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS).is_empty() else ProjectSettings.globalize_path("res://")
+			dialog.current_file = str(entry["title"]).validate_filename().left(80) + ".md"
+			dialog.file_selected.connect(func(path: String) -> void:
+				var output = FileAccess.open(path, FileAccess.WRITE)
+				if output == null: _status("Exportul nu a putut fi salvat.")
+				else:
+					output.store_string(contents)
+					output.flush()
+					_status("Conversație exportată: " + path if output.get_error() == OK else "Exportul nu a putut fi salvat.")
+				dialog.queue_free())
+			dialog.canceled.connect(dialog.queue_free)
+			add_child(dialog)
+			dialog.popup_centered_ratio(0.8)
 		"rename":
 			var dialog = ConfirmationDialog.new()
+			dialog.name = "RenameConversation"
 			dialog.title = "Redenumește conversația"
 			var input = LineEdit.new()
 			input.text = str(entry["title"])
 			input.custom_minimum_size.x = 260
 			dialog.add_child(input)
-			dialog.confirmed.connect(func() -> void: conversations.update(id, {"title": input.text.left(120)}); _refresh_conversations(); dialog.queue_free())
+			input.text_changed.connect(func(text: String) -> void: dialog.get_ok_button().disabled = text.strip_edges().is_empty())
+			input.text_submitted.connect(func(_text: String) -> void:
+				if not dialog.get_ok_button().disabled: dialog.get_ok_button().pressed.emit())
+			dialog.confirmed.connect(func() -> void:
+				if not busy and conversations.update(id, {"title": input.text}) != OK: _status("Numele nu a putut fi salvat.")
+				_refresh_conversations()
+				dialog.queue_free())
 			dialog.canceled.connect(dialog.queue_free)
 			add_child(dialog)
 			dialog.popup_centered()
+			input.grab_focus()
+			input.select_all()
 		"delete":
-			if not entry.get("archived", false):
-				_status("Arhivează conversația înainte de ștergere.")
-				return
 			var dialog = ConfirmationDialog.new()
-			dialog.dialog_text = "Ștergi definitiv conversația arhivată de pe acest dispozitiv?"
-			dialog.confirmed.connect(func() -> void: _end_conversation_jobs(); conversations.remove(id); history = conversations.load_active(); _load_summary(); _render_history(); _refresh_conversations(); dialog.queue_free())
+			dialog.name = "DeleteConversation"
+			dialog.title = "Șterge conversația"
+			dialog.ok_button_text = "Șterge"
+			dialog.dialog_text = "Ștergi definitiv «%s» de pe acest dispozitiv?" % str(entry["title"])
+			dialog.confirmed.connect(func() -> void:
+				if busy: _status("Oprește execuția înainte de ștergerea conversației.")
+				else:
+					var was_active = str(conversations.index["active"]) == id
+					if conversations.remove(id) != OK: _status("Conversația nu a putut fi ștearsă.")
+					else:
+						conversation_drafts.erase(id)
+						if was_active:
+							_end_conversation_jobs()
+							history = conversations.load_active()
+							_restore_draft()
+							chat.loaded = 50
+							chat.archived.set_pressed_no_signal(bool(conversations.item(str(conversations.index["active"])).get("archived", false)))
+							_choose(conversations.item(str(conversations.index["active"])).get("selection", {}))
+							_load_summary()
+							_render_history()
+						_status("Conversație ștearsă.")
+				_refresh_conversations()
+				dialog.queue_free())
 			dialog.canceled.connect(dialog.queue_free)
 			add_child(dialog)
 			dialog.popup_centered()
@@ -2648,6 +2740,32 @@ func _queue_dock_layout() -> void:
 	dock_layout_busy = true
 	_fit_dock_layout.call_deferred(dock_layout_generation)
 
+func _dock_content_rect(slot: TabContainer) -> Rect2:
+	var box = slot.get_theme_stylebox("panel")
+	var rect = Rect2(Vector2(box.get_margin(SIDE_LEFT), box.get_margin(SIDE_TOP)), slot.size - box.get_minimum_size())
+	if slot.tabs_visible:
+		var bar = slot.get_theme_stylebox("tabbar_background")
+		var height = slot.get_tab_bar().get_combined_minimum_size().y + bar.get_margin(SIDE_TOP) + bar.get_margin(SIDE_BOTTOM)
+		if slot.tabs_position == TabContainer.POSITION_TOP: rect.position.y += height
+		rect.size.y -= height
+	return rect
+
+func _fit_chat_dock() -> void:
+	var dock = get_parent() as EditorDock
+	var slot = dock.get_parent() as TabContainer if dock != null else null
+	if slot == null: return
+	var rect = _dock_content_rect(slot)
+	# Minimum-size updates can retain offsets from the previous dock width/height.
+	# Bound the entire chat to its actual tab content, including Android's narrow docks.
+	# Keep height unconstrained so wrapped controls can increase their minimum
+	# and reclaim space from the scroll area after a width change.
+	dock.custom_maximum_size = Vector2(maxf(1, rect.size.x), -1)
+	dock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dock.offset_left = rect.position.x
+	dock.offset_top = rect.position.y
+	dock.offset_right = rect.end.x - slot.size.x
+	dock.offset_bottom = rect.end.y - slot.size.y
+
 func _fit_dock_layout(generation: int) -> void:
 	if not is_inside_tree() or generation != dock_layout_generation: return
 	await get_tree().process_frame
@@ -2662,10 +2780,11 @@ func _fit_dock_layout(generation: int) -> void:
 			dock_width_root = weakref(root)
 			dock_width_previous = root.custom_maximum_size
 		root.custom_maximum_size.x = maxf(1, get_viewport().get_visible_rect().size.x - root.get_global_position().x * 2)
+		_fit_chat_dock()
 		await get_tree().process_frame
 		await get_tree().process_frame
 		if not is_inside_tree() or generation != dock_layout_generation: return
-		var order = ["DockVSplitLeftL", "DockVSplitLeftR", "DockVSplitRightR", "DockVSplitRightL"] if current_placement == 2 else ["DockVSplitRightR", "DockVSplitRightL", "DockVSplitLeftL", "DockVSplitLeftR"]
+		var order = ["DockVSplitLeftL", "DockVSplitLeftR", "DockVSplitRightR", "DockVSplitRightL"] if current_placement == 2 else ["DockVSplitRightR", "DockVSplitRightL", "DockVSplitLeftR", "DockVSplitLeftL"]
 		for name in order:
 			var available = minf(main.size.x, get_viewport().get_visible_rect().size.x - main.get_global_position().x)
 			if main.get_combined_minimum_size().x <= available + 1: break
@@ -2676,6 +2795,7 @@ func _fit_dock_layout(generation: int) -> void:
 			await get_tree().process_frame
 			await get_tree().process_frame
 			if not is_inside_tree() or generation != dock_layout_generation: return
+	_fit_chat_dock()
 	if generation == dock_layout_generation:
 		dock_layout_busy = false
 

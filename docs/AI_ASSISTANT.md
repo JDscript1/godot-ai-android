@@ -202,7 +202,11 @@ is narrower than 900 logical pixels. The message column is limited to 760 logica
 pixels. There are no embedded web pages.
 
 Conversations are stored per project, with search, favorites, archive, rename,
-fork and Markdown export to the clipboard. Existing `history.json` is imported
+fork, confirmed deletion and Markdown export through a save-file dialog. Deletion
+does not require archiving first; cancel preserves the transcript. History opens
+as a separate page in narrow docks. Session drafts are scoped to conversations.
+See [UI audit](AI_UI_AUDIT.md) for behavior checks and validation limits.
+Existing `history.json` is imported
 once and preserved. Images are cached as separate private files. Switching the
 provider/model keeps the conversation and labels responses with their origin;
 provider-specific signed/reasoning blocks are retained only for their originating

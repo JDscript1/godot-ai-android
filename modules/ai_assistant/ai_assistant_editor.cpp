@@ -311,8 +311,8 @@ void AIAssistantEditorPlugin::set_chat_placement(int p_placement) {
 		chat_dock = memnew(EditorDock);
 		chat_dock->set_title("AI Assistant");
 		chat_dock->set_layout_key("GodotAIAssistant");
-		chat_dock->set_default_slot(p_placement == 1 ? EditorDock::DOCK_SLOT_LEFT_UR : EditorDock::DOCK_SLOT_RIGHT_UL);
-		panel->set_custom_minimum_size(Size2(240, 200) * EDSCALE);
+		chat_dock->set_default_slot(p_placement == 1 ? EditorDock::DOCK_SLOT_LEFT_UL : EditorDock::DOCK_SLOT_RIGHT_UL);
+		panel->set_custom_minimum_size(Size2(200, 200) * EDSCALE);
 		chat_dock->add_child(panel);
 		add_dock(chat_dock);
 		chat_dock->make_visible();

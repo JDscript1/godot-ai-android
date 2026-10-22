@@ -10,6 +10,11 @@ var sidebar: VBoxContainer
 var chats: ItemList
 var search: LineEdit
 var archived: CheckBox
+var history_buttons: Dictionary = {}
+var navigation_buttons: Dictionary = {}
+var history_requested = -1
+var history_active = false
+var history_working = false
 var title: Label
 var thread: VBoxContainer
 var scroll: ScrollContainer
@@ -47,7 +52,7 @@ var picker_search: LineEdit
 var picker_list: ItemList
 var reasoning_button: Button
 var selection_row: HBoxContainer
-var composer_controls: HBoxContainer
+var composer_controls: HFlowContainer
 var compose_column: VBoxContainer
 var controls_spacer: Control
 var voice_button: Button
@@ -89,7 +94,14 @@ func _ready() -> void:
 	sidebar = VBoxContainer.new()
 	sidebar.custom_minimum_size.x = 220 * EditorInterface.get_editor_scale()
 	add_child(sidebar)
-	button(sidebar, "Conversație nouă", func() -> void: action.emit("new", {})).icon = _icon("Add")
+	var history_header = HBoxContainer.new()
+	sidebar.add_child(history_header)
+	_compact_button(icon_button(history_header, "Back", "Înapoi la chat", func() -> void: show_history(false)))
+	var new_history = button(history_header, "Conversație nouă", func() -> void: action.emit("new", {}))
+	new_history.icon = _icon("Add")
+	new_history.clip_text = true
+	new_history.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	navigation_buttons["new_history"] = new_history
 	search = LineEdit.new()
 	search.placeholder_text = "Caută conversații…"
 	sidebar.add_child(search)
@@ -105,22 +117,25 @@ func _ready() -> void:
 	var history_actions = HFlowContainer.new()
 	sidebar.add_child(history_actions)
 	for entry in [["Favorite", "Favorite", "favorite"], ["Rename", "Redenumește", "rename"], ["Archive", "Arhivează", "archive"], ["Export", "Exportă", "export"], ["Delete", "Șterge", "delete"]]:
-		icon_button(history_actions, entry[0], entry[1], func() -> void: action.emit(entry[2], {}))
+		history_buttons[entry[2]] = icon_button(history_actions, entry[0], entry[1], func() -> void: action.emit(entry[2], {}))
 	root_column = VBoxContainer.new()
 	root_column.add_theme_constant_override("separation", int(6 * EditorInterface.get_editor_scale()))
 	root_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(root_column)
 	var header = HBoxContainer.new()
 	root_column.add_child(header)
-	var history_button = icon_button(header, "Menu", "Istoricul conversațiilor", func() -> void: sidebar.visible = not sidebar.visible)
+	var history_button = icon_button(header, "Menu", "Istoricul conversațiilor", func() -> void: show_history(not sidebar.visible))
 	_compact_button(history_button)
 	title = label(header, "Conversație nouă")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_compact_button(icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {})))
+	navigation_buttons["new"] = icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {}))
+	_compact_button(navigation_buttons["new"])
 	expand_button = icon_button(header, "Expand", "Extinde / restrânge chatul", _toggle_expanded)
 	_compact_button(expand_button)
-	_compact_button(icon_button(header, "Settings", "Setări", func() -> void: action.emit("settings", {})))
+	navigation_buttons["settings"] = icon_button(header, "Settings", "Setări", func() -> void: action.emit("settings", {}))
+	_compact_button(navigation_buttons["settings"])
+	navigation_buttons["history"] = history_button
 	scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -186,7 +201,8 @@ func _ready() -> void:
 	reasoning_button.custom_maximum_size.x = 150 * EditorInterface.get_editor_scale()
 	reasoning_button.tooltip_text = "Nivel de raționament"
 	reasoning_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
-	composer_controls = HBoxContainer.new()
+	composer_controls = HFlowContainer.new()
+	composer_controls.last_wrap_alignment = FlowContainer.LAST_WRAP_ALIGNMENT_END
 	compose_column.add_child(composer_controls)
 	icon_button(composer_controls, "Attach", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
 	options_button = button(composer_controls, "Auto", _open_options)
@@ -267,14 +283,26 @@ func _ready() -> void:
 func _resize() -> void:
 	if sidebar == null: return
 	var scale = EditorInterface.get_editor_scale()
-	sidebar.visible = size.x / scale >= 900
+	var wide = size.x / scale >= 900
+	sidebar.visible = wide if history_requested < 0 else history_requested == 1
+	sidebar.custom_minimum_size.x = minf(220 * scale, size.x)
+	sidebar.size_flags_horizontal = Control.SIZE_FILL if wide else Control.SIZE_EXPAND_FILL
+	root_column.visible = wide or not sidebar.visible
 	_size_messages.call_deferred()
 	_layout_composer.call_deferred()
 	_layout_drawer.call_deferred()
 
+func show_history(visible: bool) -> void:
+	history_requested = 1 if visible else 0
+	_close_drawer()
+	_resize()
+
+func close_mobile_history() -> void:
+	if size.x / EditorInterface.get_editor_scale() < 900: show_history(false)
+
 func _layout_composer() -> void:
 	if selection_row == null: return
-	var inline = root_column.size.x >= 600 * EditorInterface.get_editor_scale()
+	var inline = size.x >= 600 * EditorInterface.get_editor_scale() and root_column.size.x >= 600 * EditorInterface.get_editor_scale()
 	var target: Node = composer_controls if inline else compose_column
 	if selection_row.get_parent() != target:
 		selection_row.reparent(target, false)
@@ -309,10 +337,12 @@ func _size_selection_chips() -> void:
 	var scale = EditorInterface.get_editor_scale()
 	var font = reasoning_button.get_theme_font("font")
 	var font_size = reasoning_button.get_theme_font_size("font_size")
-	var effort_width = minf(104 * scale, font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
+	# Use the allocated chat width, not a child that may still have an old minimum.
+	var width = minf(size.x, root_column.size.x) - 20 * scale
+	var effort_width = minf(minf(104 * scale, width * 0.42), font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
 	reasoning_button.custom_minimum_size.x = effort_width
 	reasoning_button.custom_maximum_size.x = effort_width
-	var available = maxf(72 * scale, root_column.size.x - 20 * scale - effort_width)
+	var available = maxf(32 * scale, width - selection_row.get_theme_constant("separation") - effort_width)
 	var model_width = minf(minf(150 * scale, available), font.get_string_size(model_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
 	model_button.custom_minimum_size.x = model_width
 	model_button.custom_maximum_size.x = model_width
@@ -621,10 +651,21 @@ func _pick_model(index: int) -> void:
 
 func refresh_history(entries: Array, active: String) -> void:
 	chats.clear()
+	history_active = false
 	for entry in entries:
 		chats.add_item(("★ " if entry.get("favorite", false) else "") + str(entry["title"]))
 		chats.set_item_metadata(chats.item_count - 1, entry["id"])
-		if entry["id"] == active: chats.select(chats.item_count - 1)
+		if entry["id"] == active:
+			chats.select(chats.item_count - 1)
+			history_active = true
+			history_buttons["favorite"].tooltip_text = "Elimină din favorite" if entry.get("favorite", false) else "Adaugă la favorite"
+			history_buttons["archive"].tooltip_text = "Dezarhivează conversația" if entry.get("archived", false) else "Arhivează conversația"
+	history_buttons["export"].tooltip_text = "Exportă conversația în Markdown…"
+	_update_history_controls()
+
+func _update_history_controls() -> void:
+	for control in history_buttons.values(): control.disabled = history_working or not history_active
+	for key in ["new", "new_history"]: navigation_buttons[key].disabled = history_working
 
 func clear_messages() -> void:
 	change_cards.clear()
@@ -849,7 +890,7 @@ func finish_stream(anchor: RichTextLabel, metadata: Dictionary) -> void:
 	record["text"] = str(metadata.get("content", record["text"]))
 	streaming_dirty.erase(anchor)
 	_render_content(record)
-	for control in record.get("actions", []): control.disabled = false
+	_refresh_message_controls(record)
 
 func _process(delta: float) -> void:
 	stream_clock += delta
@@ -866,6 +907,7 @@ func _message_actions(record: Dictionary) -> void:
 	record["actions"] = []
 	for pair in [["Copy", "Copiază răspunsul", "copy"], ["Retry", "Continuă răspunsul", "retry"], ["Changes", "Modificări / Undo", "changes"]]:
 		var control = icon_button(actions, pair[0], pair[1], func() -> void: _message_action(record, pair[2]))
+		control.set_meta("message_action", pair[2])
 		_compact_button(control)
 		control.disabled = record["streaming"]
 		record["actions"].append(control)
@@ -885,6 +927,12 @@ func _message_actions(record: Dictionary) -> void:
 	more.disabled = record["streaming"]
 	record["actions"].append(more)
 	actions.add_child(more)
+	_refresh_message_controls(record)
+
+func _refresh_message_controls(record: Dictionary) -> void:
+	for control in record.get("actions", []):
+		var name = str(control.get_meta("message_action", ""))
+		control.disabled = record["streaming"] or (name == "copy" and str(record["text"]).is_empty()) or (name == "changes" and not change_cards.has(str(record["metadata"].get("turn_id", ""))) and record["metadata"].get("changes", []).is_empty())
 
 func _message_action(record: Dictionary, name: String) -> void:
 	var metadata: Dictionary = record["metadata"]
@@ -1011,6 +1059,9 @@ func _open_options() -> void:
 	runtime_options.popup()
 
 func set_working(working: bool) -> void:
+	if history_working != working:
+		history_working = working
+		_update_history_controls()
 	if stop_button != null and stop_button.visible != working:
 		stop_button.visible = working
 		_layout_composer()
@@ -1026,6 +1077,7 @@ func show_welcome() -> void:
 	thread.alignment = BoxContainer.ALIGNMENT_CENTER
 	var heading = label(thread, "Ce construim astăzi?")
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	heading.add_theme_font_size_override("font_size", int(24 * EditorInterface.get_editor_scale()))
 	var hint = label(thread, "Trimite un mesaj sau atașează un fișier din proiect.")
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1122,6 +1174,8 @@ func show_changes(turn: String, changes: Array) -> void:
 		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		row.clip_text = true
 		row.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	for record in message_records:
+		if record["metadata"].get("turn_id") == turn: _refresh_message_controls(record)
 
 func show_store(items: Array) -> void:
 	for item in items:

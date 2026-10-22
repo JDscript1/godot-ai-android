@@ -33,8 +33,8 @@ func set_chat_placement(index: int) -> void:
 	else:
 		fixture_dock = EditorDock.new()
 		fixture_dock.title = "AI Assistant QA"
-		fixture_dock.default_slot = EditorDock.DOCK_SLOT_LEFT_UR if index == 1 else EditorDock.DOCK_SLOT_RIGHT_UL
-		panel.custom_minimum_size = Vector2(240, 200) * EditorInterface.get_editor_scale()
+		fixture_dock.default_slot = EditorDock.DOCK_SLOT_LEFT_UL if index == 1 else EditorDock.DOCK_SLOT_RIGHT_UL
+		panel.custom_minimum_size = Vector2(200, 200) * EditorInterface.get_editor_scale()
 		fixture_dock.add_child(panel)
 		add_dock(fixture_dock)
 		fixture_dock.make_visible()
@@ -130,6 +130,7 @@ func _run() -> void:
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	await _chat_workflow_tests()
+	await _history_button_tests()
 	await _layout_tests()
 	await _control_settings_tests()
 	_vision_settings_tests()
@@ -484,6 +485,99 @@ func _chat_workflow_tests() -> void:
 	panel._refresh_profiles()
 	panel._render_history()
 
+func _history_button_tests() -> void:
+	panel._new_conversation()
+	panel.history = [{"id": "audit-user", "role": "user", "content": "Transcript export fixture"}, {"id": "audit-answer", "role": "assistant", "content": "Answer fixture"}]
+	panel._persist_history()
+	panel._render_history()
+	var id = str(panel.conversations.index["active"])
+	var path = panel.conversations._path(id)
+	panel.composer.text = "Draft stays with its own conversation"
+	panel.chat.navigation_buttons["new"].pressed.emit()
+	_check(panel.composer.text.is_empty() and panel.history.is_empty(), "New-chat button starts with an empty draft and transcript")
+	panel.chat.action.emit("open", {"id": id})
+	_check(panel.composer.text == "Draft stays with its own conversation" and panel.history.size() == 2, "Opening a conversation restores its own draft without mixing messages")
+	var answer = panel.chat.message_records[-1]
+	_check(answer["actions"][2].disabled, "Changes button is disabled for responses without any changes")
+	answer["actions"][0].pressed.emit()
+	_check(DisplayServer.clipboard_get() == "Answer fixture", "Message Copy button copies the selected response")
+	panel.composer.clear()
+	panel.chat.history_buttons["favorite"].pressed.emit()
+	_check(panel.conversations.item(id)["favorite"] and "Elimină" in panel.chat.history_buttons["favorite"].tooltip_text, "Favorite button changes the active conversation and describes the reverse action")
+	panel.chat.history_buttons["favorite"].pressed.emit()
+	_check(not panel.conversations.item(id)["favorite"], "Favorite button can remove the same favorite")
+	panel.chat.history_buttons["rename"].pressed.emit()
+	var rename = panel.get_node("RenameConversation") as ConfirmationDialog
+	var input = rename.find_children("*", "LineEdit", false, false)[0]
+	input.text = "   "
+	input.text_changed.emit(input.text)
+	_check(rename.get_ok_button().disabled, "Rename rejects an empty conversation name")
+	rename.get_cancel_button().pressed.emit()
+	await get_tree().process_frame
+	_check(panel.conversations.item(id)["title"] != "   ", "Cancel rename keeps the original title")
+	panel.chat.history_buttons["rename"].pressed.emit()
+	rename = panel.get_node("RenameConversation") as ConfirmationDialog
+	input = rename.find_children("*", "LineEdit", false, false)[0]
+	input.text = "  Audit renamed  "
+	input.text_changed.emit(input.text)
+	input.text_submitted.emit(input.text)
+	await get_tree().process_frame
+	_check(panel.chat.title.text == "Audit renamed" and panel.conversations.item(id)["title"] == "Audit renamed", "Rename submits the trimmed name and refreshes the actual chat title")
+	panel.chat.history_buttons["export"].pressed.emit()
+	var export_dialog = panel.get_node("ExportConversation") as FileDialog
+	var export_path = panel.project_directory.path_join("audit-export.md")
+	export_dialog.file_selected.emit(export_path)
+	await get_tree().process_frame
+	var exported = FileAccess.get_file_as_string(export_path)
+	_check(exported.begins_with("# Audit renamed") and "Transcript export fixture" in exported and "Answer fixture" in exported, "Export button writes a Markdown file containing the active conversation")
+	panel.chat.history_buttons["archive"].pressed.emit()
+	_check(panel.conversations.item(id)["archived"] and panel.chat.archived.button_pressed and panel.chat.history_active and "Dezarhivează" in panel.chat.history_buttons["archive"].tooltip_text, "Archive keeps its conversation selected in the archive list and offers unarchive")
+	panel.chat.history_buttons["archive"].pressed.emit()
+	_check(not panel.conversations.item(id)["archived"] and not panel.chat.archived.button_pressed and panel.chat.history_active, "Unarchive returns the conversation to the normal history")
+	panel.chat.search.text = "no matching conversation"
+	panel.chat.search.text_changed.emit(panel.chat.search.text)
+	_check(panel.chat.chats.item_count == 0 and panel.chat.history_buttons["delete"].disabled, "Filtered-out conversations cannot be deleted through an unrelated empty list")
+	panel.chat.search.clear()
+	panel.chat.search.text_changed.emit("")
+	panel.busy = true
+	panel.chat.set_working(true)
+	_check(panel.chat.history_buttons.values().all(func(control: Button) -> bool: return control.disabled) and panel.chat.navigation_buttons["new"].disabled, "History mutations and new chat are visibly disabled while the agent works")
+	panel.busy = false
+	panel.chat.set_working(false)
+	panel.chat.history_buttons["delete"].pressed.emit()
+	var deletion = panel.get_node("DeleteConversation") as ConfirmationDialog
+	_check("Audit renamed" in deletion.dialog_text and FileAccess.file_exists(path), "Delete opens a confirmation naming the unarchived conversation without deleting early")
+	deletion.get_cancel_button().pressed.emit()
+	await get_tree().process_frame
+	_check(FileAccess.file_exists(path) and not panel.conversations.item(id).is_empty() and panel.history.size() == 2, "Cancel deletion preserves transcript, index and displayed messages")
+	panel.chat.history_buttons["delete"].pressed.emit()
+	deletion = panel.get_node("DeleteConversation") as ConfirmationDialog
+	deletion.get_ok_button().pressed.emit()
+	await get_tree().process_frame
+	_check(not FileAccess.file_exists(path) and panel.conversations.item(id).is_empty() and str(panel.conversations.index["active"]) != id and panel.history == panel.conversations.load_active(), "Confirm Delete removes an unarchived transcript and displays the surviving active chat")
+	var reloaded = embedded["conversations"].new()
+	reloaded.configure(panel.project_directory)
+	_check(reloaded.item(id).is_empty(), "Deleted conversations stay deleted after reopening their index")
+	panel._new_conversation()
+	panel.history = [{"id": "branch-first", "role": "user", "content": "Start"}, {"id": "branch-here", "role": "assistant", "content": "Fork here"}, {"id": "branch-later", "role": "user", "content": "Keep only in original"}]
+	panel._persist_history()
+	panel._render_history()
+	var branch_original = str(panel.conversations.index["active"])
+	var record = panel.chat.message_records[1]
+	record["actions"][-1].get_popup().id_pressed.emit(0)
+	_check(str(panel.conversations.index["active"]) != branch_original and panel.history.size() == 2 and panel.history[-1]["id"] == "branch-here", "Message menu forks at the selected response and excludes subsequent messages")
+	var source_data: Dictionary = embedded["common"].read_json(panel.conversations._path(branch_original), {})
+	_check(source_data.get("messages", []).size() == 3, "Forking through the message menu preserves the original transcript on disk")
+	panel.chat.navigation_buttons["settings"].pressed.emit()
+	_check(panel.settings_window.visible, "Header Settings button opens the actual settings window")
+	panel.settings_window.get_ok_button().pressed.emit()
+	_check(not panel.settings_window.visible, "Settings Close button closes its window")
+	panel._new_conversation()
+	panel.chat.search.clear()
+	panel.chat.archived.set_pressed_no_signal(false)
+	panel._refresh_conversations()
+	DirAccess.remove_absolute(export_path)
+
 func _layout_tests() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -673,6 +767,10 @@ func _configuration_screenshots(output: String) -> void:
 		_check(docked == (index != 0) and panel.is_visible_in_tree(), "Chat placement is active and visible: " + str(index))
 		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(["dock-center.png", "dock-left.png", "dock-right.png"][index]))
 		if index != 0:
+			var slot = panel.get_parent().get_parent() as TabContainer
+			var expected = panel._dock_content_rect(slot)
+			_check(panel.get_parent().get_rect().is_equal_approx(expected) and panel.size.y >= expected.size.y - 1, "Dock fills its actual tab content height and width: " + str(index))
+			await _narrow_dock_controls(slot, index, output)
 			panel.chat.expand_button.pressed.emit()
 			await get_tree().create_timer(0.2).timeout
 			_check(not panel.get_parent() is EditorDock and EditorInterface.is_distraction_free_mode_enabled() and panel.is_visible_in_tree(), "Top expand opens docked chat in the central workspace")
@@ -683,6 +781,35 @@ func _configuration_screenshots(output: String) -> void:
 	await get_tree().process_frame
 	for name in groups:
 		_check(base.find_child(name, true, false).visible == groups[name], "Returning to central chat restores secondary dock visibility: " + name)
+
+func _narrow_dock_controls(slot: TabContainer, placement_index: int, output: String) -> void:
+	var previous = slot.custom_maximum_size
+	slot.custom_maximum_size.x = 224 * EditorInterface.get_editor_scale()
+	await get_tree().create_timer(0.2).timeout
+	while panel.dock_layout_busy: await get_tree().process_frame
+	for _frame in range(5): await get_tree().process_frame
+	var scope = panel.chat.get_global_rect().grow(1)
+	for control in [panel.chat.model_button, panel.chat.reasoning_button, panel.chat.options_button, panel.chat.context_indicator, panel.chat.voice_button, panel.chat.send_button, panel.chat.expand_button, panel.chat.navigation_buttons["settings"]]:
+		var fits = scope.encloses(control.get_global_rect()) and panel.get_parent().get_global_rect().grow(1).encloses(control.get_global_rect())
+		if not fits:
+			print("Control bounds: chat=", scope, " host=", panel.get_parent().get_global_rect(), " control=", control.get_global_rect(), " composer=", panel.chat.compose_panel.get_global_rect(), " toolbar=", panel.chat.composer_controls.get_global_rect())
+			EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("dock-clipped-" + str(placement_index) + ".png"))
+		_check(fits, "Narrow dock keeps the complete control visible: " + control.tooltip_text + " / " + str(placement_index))
+	panel.chat.navigation_buttons["history"].pressed.emit()
+	for _frame in range(4): await get_tree().process_frame
+	_check(panel.chat.sidebar.visible and not panel.chat.root_column.visible and panel.chat.get_global_rect().grow(1).encloses(panel.chat.sidebar.get_global_rect()), "History replaces chat inside a narrow dock without expanding outside it")
+	panel.chat.show_history(false)
+	panel.chat.set_context(32768, 32768)
+	panel.speech.transcribing = true
+	for _frame in range(4): await get_tree().process_frame
+	_check(panel.chat.root_column.visible and panel.chat.stop_button.visible and panel.chat.compose_panel.get_global_rect().grow(1).encloses(panel.chat.stop_button.get_global_rect()) and panel.chat.compose_panel.get_global_rect().grow(1).encloses(panel.chat.send_button.get_global_rect()), "Narrow dock keeps Stop and Send accessible with full context and voice transcription")
+	panel.chat.stop_button.pressed.emit()
+	for _frame in range(3): await get_tree().process_frame
+	_check(not panel.speech.transcribing, "The visible Stop button actually cancels voice transcription")
+	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("dock-narrow-" + str(placement_index) + ".png"))
+	slot.custom_maximum_size = previous
+	await get_tree().create_timer(0.15).timeout
+	while panel.dock_layout_busy: await get_tree().process_frame
 
 func _tap_drawer(key: String, value: String) -> void:
 	for index in range(panel.chat.picker_list.item_count):

@@ -14,6 +14,10 @@ func configure(project_directory: String) -> void:
 		var legacy: Variant = Common.read_json(project_directory.path_join("history.json"), [])
 		create("Conversație importată" if legacy is Array and not legacy.is_empty() else "Conversație nouă", legacy if legacy is Array else [])
 	if item(str(index.get("active", ""))).is_empty(): create()
+	for entry in index["items"]:
+		var path = _path(str(entry.get("id", "")))
+		if not path.is_empty() and not FileAccess.file_exists(path) and FileAccess.file_exists(path + ".deleting"):
+			DirAccess.rename_absolute(path + ".deleting", path)
 
 func item(id: String) -> Dictionary:
 	for entry in index["items"]:
@@ -24,10 +28,14 @@ func _path(id: String) -> String:
 	return directory.path_join(id + ".json") if not item(id).is_empty() and id.is_valid_filename() else ""
 
 func create(title: String = "Conversație nouă", messages: Array = []) -> String:
+	var previous = index.duplicate(true)
 	var id = Common.uid()
 	index["items"].append({"id": id, "title": title, "favorite": false, "archived": false, "updated": Time.get_unix_time_from_system(), "selection": {}})
 	index["active"] = id
-	save(messages.duplicate(true))
+	if save(messages.duplicate(true)) != OK:
+		index = previous
+		DirAccess.remove_absolute(directory.path_join(id + ".json"))
+		return ""
 	return id
 
 func load_active() -> Array:
@@ -44,9 +52,11 @@ func load_active() -> Array:
 
 func select(id: String) -> bool:
 	if item(id).is_empty(): return false
+	var previous = index["active"]
 	index["active"] = id
-	_flush()
-	return true
+	if _flush() == OK: return true
+	index["active"] = previous
+	return false
 
 func save(messages: Array, selection: Dictionary = {}) -> Error:
 	var entry = item(str(index["active"]))
@@ -83,14 +93,19 @@ func save(messages: Array, selection: Dictionary = {}) -> Error:
 	if last_error == OK: _flush()
 	return last_error
 
-func update(id: String, changes: Dictionary) -> void:
+func update(id: String, changes: Dictionary) -> Error:
 	var entry = item(id)
-	if entry.is_empty(): return
+	if entry.is_empty(): return ERR_DOES_NOT_EXIST
+	if changes.has("title") and str(changes["title"]).strip_edges().is_empty(): return ERR_INVALID_DATA
+	var previous = entry.duplicate(true)
 	for key in ["title", "favorite", "archived"]:
-		if changes.has(key): entry[key] = changes[key]
-	_flush()
+		if changes.has(key): entry[key] = str(changes[key]).strip_edges().left(120) if key == "title" else changes[key]
+	var error = _flush()
+	if error != OK: entry.merge(previous, true)
+	return error
 
 func fork_at(message_id: String) -> String:
+	if not load_active().any(func(message: Dictionary) -> bool: return message.get("id") == message_id): return ""
 	var messages = []
 	for message in load_active():
 		messages.append(message.duplicate(true))
@@ -100,16 +115,36 @@ func fork_at(message_id: String) -> String:
 		for key in ["tool_calls", "provider_items", "provider_blocks", "reasoning_content"]: messages[-1].erase(key)
 	var selection = item(str(index["active"])).get("selection", {}).duplicate(true)
 	var id = create("Ramură · " + str(item(str(index["active"])).get("title", "Chat")).left(80), messages)
+	if id.is_empty(): return ""
 	save(messages, selection)
 	return id
 
-func remove(id: String) -> void:
+func remove(id: String) -> Error:
 	var path = _path(id)
-	if path.is_empty() or not item(id).get("archived", false): return
-	if DirAccess.remove_absolute(path) != OK: return
+	if path.is_empty(): return ERR_DOES_NOT_EXIST
+	# Retain the original bytes until the new index has been committed.
+	var staged = path + ".deleting"
+	var error = DirAccess.rename_absolute(path, staged)
+	if error != OK: return error
+	var previous = index.duplicate(true)
+	var replacement = ""
 	index["items"] = index["items"].filter(func(entry: Dictionary) -> bool: return entry["id"] != id)
-	if index["active"] == id: create()
-	_flush()
+	if index["active"] == id:
+		var remaining = listing()
+		if remaining.is_empty(): remaining = listing("", true)
+		if remaining.is_empty():
+			replacement = create()
+			if replacement.is_empty(): error = last_error
+		else: index["active"] = remaining[0]["id"]
+	if error == OK: error = _flush()
+	if error == OK: error = DirAccess.remove_absolute(staged)
+	if error != OK:
+		index = previous
+		DirAccess.rename_absolute(staged, path)
+		if not replacement.is_empty(): DirAccess.remove_absolute(directory.path_join(replacement + ".json"))
+		_flush()
+	last_error = error
+	return error
 
 func listing(query: String = "", archived: bool = false) -> Array:
 	var result = index["items"].filter(func(entry: Dictionary) -> bool: return entry.get("archived", false) == archived and (query.is_empty() or query.to_lower() in str(entry["title"]).to_lower()))
@@ -123,5 +158,6 @@ func markdown() -> String:
 			text += "\n## " + ("Tu" if message["role"] == "user" else str(message.get("origin_label", "AI"))) + "\n\n" + str(message.get("content", "")) + "\n"
 	return text
 
-func _flush() -> void:
+func _flush() -> Error:
 	last_error = Common.atomic_json(directory.path_join("index.json"), index)
+	return last_error
