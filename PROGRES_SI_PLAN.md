@@ -317,5 +317,12 @@ Certificatul de dezvoltare a rămas neschimbat:
   atomic la numele stabil din Download; nu s-au creat installere duplicate.
   Testarea fizică Android și planificarea/coding cu modele reale rămân de validat.
 
+- **22.10.2026, 09:50 CEST:** recopiat APK-ul `9a019f6` la calea stabilă din
+  Download după semnalarea orei 08:34. Hash-ul corespundea deja versiunii noi;
+  recopia a actualizat inode-ul și ora modificării, verificată prin `stat`.
+  SHA-256 și unicul installer au fost reverificate; solicitată reindexarea
+  Android, fără confirmarea vizibilității în managerul de fișiere. Nu este o
+  recompilare. Dovezi: `.ai-qa/download-refresh-9a019f6.json`.
+
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).
