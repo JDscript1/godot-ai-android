@@ -66,7 +66,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -75,7 +75,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
+		var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -142,7 +142,9 @@ func _run() -> void:
 	await _harness_tests(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
-	if not mock_url.is_empty(): await _network_tests(node)
+	if not mock_url.is_empty():
+		await _network_tests(node)
+		await _integration_tests(node)
 	node.queue_free()
 	await process_frame
 	print("Godot AI: %s assertions, %s failures" % [assertions, failures])
@@ -150,6 +152,54 @@ func _run() -> void:
 
 func _agent_response(text: String = "", calls: Array = [], finish: String = "stop") -> Dictionary:
 	return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": finish}
+
+func _integration_tests(node: Node) -> void:
+	var service = scripts["integrations"].new(node, FakeVault.new())
+	service.api_url = mock_url
+	service.test_http = true
+	check(not scripts["integrations"].valid_repository("../outside") and not scripts["integrations"].valid_repository("user/project?token=x"), "GitHub repository scope rejects paths and query injection")
+	var result = await service.github_request("fixture/project", {"resource": "repository"})
+	check(result.get("result", {}).get("full_name") == "fixture/project", "Native GitHub HTTP adapter reads the configured repository")
+	result = await service.github_request("fixture/project", {"resource": "contents", "path": "script.gd", "ref": "main"})
+	check(result.get("result", {}).get("text") == "extends Node\n" and result["result"]["sha"] == "fixture-sha", "GitHub content decoding retains source text and revision")
+	result = await service.github_request("fixture/project", {"resource": "contents", "path": "../outside"})
+	check(result.get("code") == "invalid_path", "GitHub content reads reject parent traversal")
+	result = await service.github_request("fixture/project", {"resource": "issues", "page": 2})
+	check(result.get("result", []).size() == 1 and not result["result"][0].has("body"), "GitHub lists return bounded summarized entries")
+	result = await service.github_request("fixture/project", {"title": "Fixture request", "body": "Test only"}, {}, true)
+	check(result.get("result", {}).get("number") == 4, "Issue publication uses the configured endpoint and native POST against a fixture")
+	check(scripts["workspace"].valid_id("scene-workflow") and not scripts["workspace"].valid_id("../secret") and not scripts["workspace"].valid_id("folder/name"), "Portable skill identifiers cannot escape their project directory")
+	for definition in scripts["workspace"].definitions() + service.definitions(true, true):
+		check(scripts["tool_registry"].new([definition]).error.is_empty(), "Integration/skill schema is supported: " + str(definition["name"]))
+	if service.desktop_blender() and FileAccess.file_exists("/usr/bin/blender"):
+		var scratch = OS.get_user_data_dir().path_join("blender-integration")
+		DirAccess.make_dir_recursive_absolute(scratch)
+		var target = scratch.path_join("probe.glb")
+		var source = "res://ai_test_blender.py"
+		var file = FileAccess.open(source, FileAccess.WRITE)
+		file.store_string("import bpy\nbpy.ops.mesh.primitive_cube_add()\nbpy.ops.export_scene.gltf(filepath=" + JSON.stringify(target) + ", export_format='GLB')\nprint('GODOT_AI_BLENDER_PROBE')\n")
+		file.close()
+		result = await service.blender("/usr/bin/blender", {"script": source, "seconds": 45})
+		check(result.get("ok", false) and "GODOT_AI_BLENDER_PROBE" in str(result.get("result", {}).get("output", "")) and scripts["assets"].validate_artifact(target, "mesh").get("ok", false), "Real Blender CLI executes project Python and produces a validated GLB")
+		var document = GLTFDocument.new()
+		var state = GLTFState.new()
+		var parsed = document.append_from_file(target, state)
+		var scene = document.generate_scene(state) if parsed == OK else null
+		check(scene != null and scene.get_child_count() > 0, "Godot imports the GLB produced by the real Blender CLI")
+		if scene != null: scene.free()
+		file = FileAccess.open(source, FileAccess.WRITE)
+		file.store_string("raise RuntimeError('GODOT_AI_EXPECTED_FAILURE')\n")
+		file.close()
+		result = await service.blender("/usr/bin/blender", {"script": source, "seconds": 15})
+		check(result.get("code") == "blender_error" and "EXPECTED_FAILURE" in str(result.get("error", "")), "Blender Python errors propagate as failures instead of success")
+		result = await service.blender("/usr/bin/blender", {"script": source}, {"cancelled": true})
+		check(result.get("code") == "cancelled" and service.processes.is_empty(), "Cancelled Blender operations do not launch a process")
+		file = FileAccess.open(source, FileAccess.WRITE)
+		file.store_string("import time\ntime.sleep(6)\n")
+		file.close()
+		result = await service.blender("/usr/bin/blender", {"script": source, "seconds": 1})
+		check(result.get("code") == "timeout" and service.processes.is_empty(), "Blender execution is bounded and terminates a timed-out child")
+		DirAccess.remove_absolute(source)
 
 func _planning_tests(node: Node) -> void:
 	var plan = scripts["planner"].new()

@@ -23,6 +23,7 @@ public:
 };
 
 class AIAssistantEditorPlugin;
+class EditorDock;
 
 class AIAssistantSettingsInspector : public EditorInspectorPlugin {
 	GDCLASS(AIAssistantSettingsInspector, EditorInspectorPlugin);
@@ -37,6 +38,9 @@ public:
 class AIAssistantEditorPlugin : public EditorPlugin {
 	GDCLASS(AIAssistantEditorPlugin, EditorPlugin);
 	Control *panel = nullptr;
+	EditorDock *chat_dock = nullptr;
+	int chat_placement = 0;
+	String dock_workspace = "3D";
 	Ref<AIAssistantSettingsInspector> settings_inspector;
 	Ref<AIAssistantSecretStore> secrets;
 	Ref<AIAssistantDebugger> runtime_debugger;
@@ -44,11 +48,14 @@ class AIAssistantEditorPlugin : public EditorPlugin {
 
 protected:
 	static void _bind_methods();
+	void _main_screen_changed(const String &p_name);
 
 public:
 	bool has_main_screen() const override { return true; }
 	String get_plugin_name() const override { return "AI Assistant"; }
 	void make_visible(bool p_visible) override;
+	void set_chat_placement(int p_placement);
+	int get_chat_placement() const { return chat_placement; }
 	int64_t runtime_request(const String &p_command, const Dictionary &p_arguments);
 	Dictionary runtime_poll(int64_t p_id);
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);

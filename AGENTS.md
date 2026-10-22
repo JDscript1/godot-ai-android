@@ -19,3 +19,6 @@
   explicitly optional. Do not represent them as native Android integrations.
 - Test changes using the relevant module tests and local tools. Never treat an
   older delivered APK as proof of current unbuilt source changes.
+- Respect source-only iterations: do not rebuild/replace APKs or push module
+  changes that would trigger the Android workflow while the user has requested
+  no APK regeneration. Keep those source commits local until that scope changes.

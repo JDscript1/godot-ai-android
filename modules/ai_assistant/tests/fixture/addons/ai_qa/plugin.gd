@@ -6,11 +6,40 @@ var panel: Control
 var failures: Array = []
 var checks = 0
 var native = false
+var placement = 0
+var fixture_dock: EditorDock
 
 func _has_main_screen() -> bool: return not ClassDB.class_exists("AIAssistantEditorPlugin")
 func _get_plugin_name() -> String: return "AI Assistant QA"
 func _make_visible(value: bool) -> void:
-	if is_instance_valid(panel) and not native: panel.visible = value
+	if is_instance_valid(panel) and not native:
+		if fixture_dock != null:
+			if value: fixture_dock.make_visible()
+		else: panel.visible = value
+
+func set_chat_placement(index: int) -> void:
+	if index == placement: return
+	if fixture_dock != null:
+		fixture_dock.remove_child(panel)
+		remove_dock(fixture_dock)
+		fixture_dock.queue_free()
+		fixture_dock = null
+	else: panel.get_parent().remove_child(panel)
+	placement = index
+	if index == 0:
+		EditorInterface.get_editor_main_screen().add_child(panel)
+		panel.custom_minimum_size = Vector2(0, 200) * EditorInterface.get_editor_scale()
+		EditorInterface.set_main_screen_editor("AI Assistant QA")
+	else:
+		fixture_dock = EditorDock.new()
+		fixture_dock.title = "AI Assistant QA"
+		fixture_dock.default_slot = EditorDock.DOCK_SLOT_LEFT_UR if index == 1 else EditorDock.DOCK_SLOT_RIGHT_UL
+		panel.custom_minimum_size = Vector2(280, 200) * EditorInterface.get_editor_scale()
+		fixture_dock.add_child(panel)
+		add_dock(fixture_dock)
+		fixture_dock.make_visible()
+		EditorInterface.set_main_screen_editor("3D")
+	panel.show()
 
 class FixtureVault:
 	extends RefCounted
@@ -72,8 +101,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
+	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations"}
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -94,6 +123,7 @@ func _run() -> void:
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 10, "Build all settings forms")
 	await _chat_workflow_tests()
 	await _layout_tests()
+	await _control_settings_tests()
 	await get_tree().process_frame
 	_check(panel.chat.thread.size.x >= minf(740 * EditorInterface.get_editor_scale(), panel.chat.scroll.size.x - 40 * EditorInterface.get_editor_scale()), "Chat column uses the available readable width")
 	_check(panel.chat.thread.size.x <= 760 * EditorInterface.get_editor_scale() + 1, "Chat column stays within 760 logical pixels")
@@ -195,6 +225,7 @@ func _run() -> void:
 		panel.chat.runtime_options.hide()
 		await _drawer_screenshots(output)
 		await _plan_and_markdown_screenshots(output)
+		await _configuration_screenshots(output)
 	print("Godot AI editor: %s checks, %s failures" % [checks, failures.size()])
 	if not output.is_empty():
 		var file = FileAccess.open(output.path_join("editor-report.json"), FileAccess.WRITE)
@@ -273,14 +304,12 @@ func _harness_editor_tests(scene: Node) -> void:
 	service.requests = 0
 	service.call_id = "fixture-analysis-write"
 	panel.mode_picker.select(1)
-	panel.chat.confirm_changes.button_pressed = false
 	panel.full_control.button_pressed = false
 	await panel._start_chat("Inspect without modifying")
 	_check(not panel.busy and scene.get_node_or_null("HarnessProbe") == null and "tool_unavailable" in str(panel.history[2].get("content", "")), "Analysis mode excludes mutation tools even when the model requests one")
 	panel._new_conversation()
 	panel.mode_picker.select(0)
 	panel.full_control.button_pressed = true
-	panel.chat.confirm_changes.button_pressed = false
 	var planning_service = FixturePlanningProvider.new()
 	panel.providers = planning_service
 	await panel._start_chat("Pregătește un plan, creează nodul și verifică rezultatul")
@@ -410,8 +439,7 @@ func _chat_workflow_tests() -> void:
 	for service in ["Claude", "Kimi", "GitHub Copilot"]:
 		_check(panel.chat.provider_icon({"kind": "companion", "name": service}) != panel.chat._icon("Accounts"), "Subscription retains its provider emblem: " + service)
 	panel.mode_picker.select(0)
-	panel.chat.confirm_changes.button_pressed = true
-	panel.full_control.button_pressed = true
+	panel.full_control.button_pressed = false
 	panel.cancel = {"cancelled": false}
 	var decisions = {}
 	_fixture_approval.call_deferred("first", decisions)
@@ -426,7 +454,6 @@ func _chat_workflow_tests() -> void:
 	await get_tree().process_frame
 	_check(decisions.get("second") == false, "Second concurrent operation can be independently denied")
 	panel.mode_picker.select(1)
-	panel.chat.confirm_changes.button_pressed = false
 	panel.full_control.button_pressed = false
 	panel.config["providers"] = []
 	panel._status("Configurează un furnizor din Setări pentru a începe.")
@@ -509,6 +536,99 @@ func _plan_and_markdown_screenshots(output: String) -> void:
 	panel.chat._follow()
 	await get_tree().create_timer(0.2).timeout
 	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("structured-plan.png"))
+
+func _control_settings_tests() -> void:
+	_check(panel.section_tabs.has("integrations") and not panel.section_tabs.has("automations") and panel.settings_tabs.get_tab_title(panel.section_tabs["agent"]) == "AGENT.MD", "Integrations and AGENT.MD replace legacy sections")
+	_check(panel.forms["general"].has("yolo") and panel.forms["general"].has("dock") and panel.forms["general"].has("sounds") and not panel.forms["general"].has("max_steps") and not panel.forms["general"].has("enabled"), "General exposes control preferences without technical runtime settings")
+	_check(not "Permisiuni" in panel._settings_labels(panel.chat.runtime_options) and not "Extinde" in panel._settings_labels(panel.chat.runtime_options), "Work mode menu contains no permissions or duplicate expand action")
+	panel.mode_picker.select(0)
+	panel.full_control.button_pressed = false
+	_check(panel._permission_mode() == 1, "YOLO off requires individual operation approval")
+	panel.full_control.button_pressed = true
+	_check(panel._permission_mode() == 2 and panel.config["preferences"]["yolo"], "YOLO preference is saved immediately and enables automatic operations")
+	panel.mode_picker.select(1)
+	_check(panel._permission_mode() == 3, "Plan stays read-only even with YOLO enabled")
+	panel.mode_picker.select(0)
+	panel._set_usage({"usedTokens": 500, "contextWindowTokens": 1000}, {"models": [{"id": "fixture", "context": 0}]}, "fixture")
+	_check(panel.chat.context_label.text == "50%" and panel.chat.context_indicator.get_parent() == panel.chat.composer_controls, "Context filling is independently visible in the bottom toolbar and retains provider limits")
+	panel._set_usage({"input_tokens": 500}, {}, "unknown")
+	_check(panel.chat.context_label.text == "—" and "500" in panel.chat.context_label.tooltip_text, "Unknown context capacity never displays a fabricated percentage")
+	var wave = panel._completion_stream()
+	_check(wave.data.size() > 10000 and wave.mix_rate == 22050 and wave.format == AudioStreamWAV.FORMAT_16_BITS, "Completion sound is a playable native PCM asset without downloaded audio")
+	panel.forms["github"]["repository"].text = "fixture/project"
+	panel.forms["github"]["key"].text = "fixture-integration-key"
+	panel.forms["github"]["enabled"].button_pressed = true
+	var connected = panel._save_connections()
+	var connection_file = FileAccess.get_file_as_string(panel.project_directory.path_join("integrations.json"))
+	_check(connected and "fixture/project" in connection_file and not "fixture-integration-key" in connection_file and panel.forms["github"]["key"].text.is_empty(), "Integration configuration is project-scoped and credentials stay out of its JSON")
+	panel.forms["github"]["enabled"].button_pressed = false
+	panel._save_connections()
+	var definitions = panel.active_definitions
+	panel.active_definitions = panel.Workspace.definitions()
+	panel.planner.reset("skills-fixture")
+	var saved = await panel._execute_call("skill_save", {"id": "scene-check", "description": "Verifică o scenă", "instructions": "Inspectează nodurile, rulează verificările și raportează rezultatul."})
+	_check(saved.get("ok", false) and FileAccess.file_exists("res://.godot_ai/skills/scene-check/SKILL.md") and panel.lists["skills"].item_count == 1, "Agent skill creation writes a portable SKILL.md and updates the manager")
+	var read = panel.workspace.read("scene-check")
+	_check(read.get("ok", false) and "scene-check" in panel.workspace.context(), "Enabled skills are discoverable and readable as project context")
+	var stale = panel.workspace.save({"id": "scene-check", "description": "Changed", "instructions": "Should not overwrite", "expected_sha256": "stale"})
+	_check(stale.get("code") == "skill_conflict", "A stale skill revision cannot overwrite newer instructions")
+	panel.workspace.set_enabled("scene-check", false)
+	_check(panel.workspace.read("scene-check").get("code") == "skill_disabled" and not "scene-check" in panel.workspace.context(), "Disabled skills are excluded from automatic context and agent reads")
+	panel.workspace.set_enabled("scene-check", true)
+	panel._edit_skill(0)
+	_check(panel.forms["skill"]["instructions"].text.begins_with("Inspectează"), "Skill manager edits instructions without duplicating front matter")
+	panel.mode_picker.select(1)
+	var denied = await panel._execute_call("skill_save", {"id": "forbidden-plan", "description": "Denied", "instructions": "Must not write"})
+	_check(not denied.get("ok", true) and not FileAccess.file_exists("res://.godot_ai/skills/forbidden-plan/SKILL.md"), "Plan cannot create skills through the editor dispatcher")
+	panel.mode_picker.select(0)
+	var deleted = panel.workspace.remove("scene-check", read["result"]["sha256"])
+	var recovery = panel.tools.execute("godot_restore_file", {"index": deleted.get("result", {}).get("recovery", {}).get("recovery_index", -1)}, 2, true)
+	_check(deleted.get("ok", false) and recovery.get("ok", false) and panel.workspace.read("scene-check").get("ok", false), "Skill deletion retains a working native recovery copy")
+	panel._refresh_skills()
+	panel.active_definitions = definitions
+	panel.memory_editor.text = "# Memorie proiect\n\nPreferă scene mici și nume clare.\n"
+	var memory = panel._save_memories()
+	_check(memory.get("ok", false) and "Preferă scene mici" in FileAccess.get_file_as_string("res://AGENT.md") and "Preferă scene mici" in panel._reference_context(), "AGENT.MD edits a real project file included in subsequent context")
+	panel.tools.execute("godot_write_file", {"path": "res://AGENT.md", "text": "# Schimbare manuală\n"}, 2, true)
+	_check(panel._save_memories().get("code") == "memory_conflict" and FileAccess.get_file_as_string("res://AGENT.md").contains("manuală"), "Memory editor refuses to overwrite an external AGENT.md change")
+	panel._load_memories()
+	panel._record_event("fixture_log", {"step": 1}, {"ok": true, "result": "Verificare încheiată"})
+	_check(panel.journal_console.text.contains("fixture_log") and panel.journal_console.text.contains("Verificare încheiată"), "Live journal shows chronological operation and result data in a console")
+	panel.journal_filter.text = "fixture_log"
+	panel.journal_filter.text_changed.emit(panel.journal_filter.text)
+	_check(panel.journal_console.text.contains("fixture_log") and not panel.journal_console.text.contains("skill_save"), "Journal search filters activity without deleting stored entries")
+	panel.journal_filter.clear()
+	panel.journal_filter.text_changed.emit("")
+	panel.full_control.button_pressed = false
+	panel.planner.reset()
+
+func _configuration_screenshots(output: String) -> void:
+	panel.chat.set_context(8192, 32768, 430)
+	await get_tree().create_timer(0.15).timeout
+	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("context-filling.png"))
+	for section in ["general", "integrations", "journal", "agent"]:
+		panel.open_settings(section)
+		await get_tree().create_timer(0.2).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-" + section + ".png"))
+	panel.open_settings("integrations")
+	var integration_tabs = panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).find_children("*", "TabContainer", true, false)[0]
+	integration_tabs.current_tab = 1
+	await get_tree().create_timer(0.2).timeout
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-skills.png"))
+	panel.settings_window.hide()
+	for index in [1, 2, 0]:
+		panel._set_placement(index)
+		await get_tree().create_timer(0.3).timeout
+		var docked = panel.get_parent() is EditorDock
+		_check(docked == (index != 0) and panel.is_visible_in_tree(), "Chat placement is active and visible: " + str(index))
+		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(["dock-center.png", "dock-left.png", "dock-right.png"][index]))
+		if index != 0:
+			panel.chat.expand_button.pressed.emit()
+			await get_tree().create_timer(0.2).timeout
+			_check(not panel.get_parent() is EditorDock and EditorInterface.is_distraction_free_mode_enabled() and panel.is_visible_in_tree(), "Top expand opens docked chat in the central workspace")
+			panel.chat.expand_button.pressed.emit()
+			await get_tree().create_timer(0.2).timeout
+			_check(panel.get_parent() is EditorDock and not EditorInterface.is_distraction_free_mode_enabled() and panel.config["preferences"]["dock"] == index, "Top collapse restores the original dock and preserves its saved preference")
 
 func _tap_drawer(key: String, value: String) -> void:
 	for index in range(panel.chat.picker_list.item_count):

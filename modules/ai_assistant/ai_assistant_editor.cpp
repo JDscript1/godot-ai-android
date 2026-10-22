@@ -9,10 +9,12 @@
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "editor/docks/editor_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 
@@ -139,6 +141,9 @@ bool AIAssistantSettingsInspector::can_handle(Object *p_object) {
 }
 
 bool AIAssistantSettingsInspector::parse_property(Object *p_object, const Variant::Type p_type, const String &p_path, const PropertyHint p_hint, const String &p_hint_text, const BitField<PropertyUsageFlags> p_usage, const bool p_wide) {
+	if (p_path.begins_with("ai_assistant/general/") && !p_path.ends_with("/configure")) {
+		return true;
+	}
 	if (!p_path.begins_with("ai_assistant/") || !p_path.ends_with("/configure")) {
 		return false;
 	}
@@ -150,6 +155,8 @@ bool AIAssistantSettingsInspector::parse_property(Object *p_object, const Varian
 }
 
 void AIAssistantEditorPlugin::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_chat_placement", "placement"), &AIAssistantEditorPlugin::set_chat_placement);
+	ClassDB::bind_method(D_METHOD("get_chat_placement"), &AIAssistantEditorPlugin::get_chat_placement);
 	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
 	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
@@ -257,9 +264,57 @@ Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const
 }
 
 void AIAssistantEditorPlugin::make_visible(bool p_visible) {
+	if (chat_dock) {
+		if (p_visible) {
+			chat_dock->make_visible();
+			callable_mp(EditorNode::get_singleton()->get_editor_main_screen(), &EditorMainScreen::select_by_name).call_deferred(dock_workspace);
+		}
+		return;
+	}
 	if (panel) {
 		panel->set_visible(p_visible);
 	}
+}
+
+void AIAssistantEditorPlugin::_main_screen_changed(const String &p_name) {
+	if (p_name != get_plugin_name()) {
+		dock_workspace = p_name;
+	}
+}
+
+void AIAssistantEditorPlugin::set_chat_placement(int p_placement) {
+	ERR_FAIL_COND(p_placement < 0 || p_placement > 2);
+	if (!panel || chat_placement == p_placement) {
+		return;
+	}
+	if (chat_dock) {
+		chat_dock->remove_child(panel);
+		remove_dock(chat_dock);
+		chat_dock->queue_free();
+		chat_dock = nullptr;
+	} else if (panel->get_parent()) {
+		panel->get_parent()->remove_child(panel);
+	}
+	chat_placement = p_placement;
+	EditorMainScreen *main_screen = EditorNode::get_singleton()->get_editor_main_screen();
+	if (p_placement == 0) {
+		main_screen->get_control()->add_child(panel);
+		panel->set_custom_minimum_size(Size2(0, 200) * EDSCALE);
+		main_screen->select_by_name(get_plugin_name());
+	} else {
+		chat_dock = memnew(EditorDock);
+		chat_dock->set_title("AI Assistant");
+		chat_dock->set_layout_key("GodotAIAssistant");
+		chat_dock->set_default_slot(p_placement == 1 ? EditorDock::DOCK_SLOT_LEFT_UR : EditorDock::DOCK_SLOT_RIGHT_UL);
+		panel->set_custom_minimum_size(Size2(280, 200) * EDSCALE);
+		chat_dock->add_child(panel);
+		add_dock(chat_dock);
+		chat_dock->make_visible();
+		if (main_screen->get_selected_plugin() == this) {
+			main_screen->select_by_name(dock_workspace);
+		}
+	}
+	panel->show();
 }
 
 void AIAssistantEditorPlugin::open_settings(const String &p_section) {
@@ -267,25 +322,24 @@ void AIAssistantEditorPlugin::open_settings(const String &p_section) {
 		return;
 	}
 	EditorMainScreen *main_screen = EditorNode::get_singleton()->get_editor_main_screen();
-	if (main_screen) {
+	if (chat_dock) {
+		chat_dock->make_visible();
+	} else if (main_screen) {
 		main_screen->select_by_name(get_plugin_name());
 	}
 	panel->call("open_settings", p_section);
 }
 
 AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
-	EDITOR_DEF("ai_assistant/general/enabled", true);
+	connect("main_screen_changed", callable_mp(this, &AIAssistantEditorPlugin::_main_screen_changed));
 	EDITOR_DEF("ai_assistant/general/configure", String());
 	EDITOR_DEF("ai_assistant/providers/configure", String());
 	EDITOR_DEF("ai_assistant/accounts/configure", String());
 	EDITOR_DEF("ai_assistant/generation/configure", String());
 	EDITOR_DEF("ai_assistant/mcp/configure", String());
-	EDITOR_DEF("ai_assistant/automations/configure", String());
-	EDITOR_DEF("ai_assistant/general/default_mode", 0);
-	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "ai_assistant/general/default_mode", PROPERTY_HINT_ENUM, "Auto,Plan"));
-	EDITOR_DEF("ai_assistant/general/max_agent_steps", 30);
-	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::INT, "ai_assistant/general/max_agent_steps", PROPERTY_HINT_RANGE, "1,100,1"));
-	EDITOR_DEF("ai_assistant/general/history_messages", 24);
+	EDITOR_DEF("ai_assistant/integrations/configure", String());
+	EDITOR_DEF("ai_assistant/journal/configure", String());
+	EDITOR_DEF("ai_assistant/agent/configure", String());
 	EDITOR_DEF("ai_assistant/companion/url", "http://127.0.0.1:7341");
 	EDITOR_DEF("ai_assistant/generation/import_directory", "res://ai_assets");
 	EDITOR_DEF("ai_assistant/connection/request_timeout_seconds", 180);
@@ -329,6 +383,12 @@ AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
 		remove_inspector_plugin(settings_inspector);
 	}
 	if (panel) {
+		if (chat_dock) {
+			chat_dock->remove_child(panel);
+			remove_dock(chat_dock);
+			memdelete(chat_dock);
+			chat_dock = nullptr;
+		}
 		if (panel->get_parent()) {
 			panel->get_parent()->remove_child(panel);
 		}

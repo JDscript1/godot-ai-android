@@ -84,6 +84,11 @@
     "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/githubcopilot.svg",
     "sha256": "bbc7fddc13448236e5edea8c399d2072dc40aa5da5bca07f7a2f412405c500a3"
   },
+  "Provider_github": {
+    "file": "lobe/github.svg",
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/github.svg",
+    "sha256": "1bd763b5d53ab1618e0afce72aacffc7e93d1249c395f713b3b055c087526625"
+  },
   "Add": {
     "file": "lucide/plus.svg",
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/plus.svg",
@@ -278,6 +283,21 @@
     "file": "lucide/code-xml.svg",
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/code-xml.svg",
     "sha256": "a6d2110227be375be21da7324d3c09262c1bf019d06bdeab356d515342ab7cce"
+  },
+  "Skills": {
+    "file": "lucide/book-open-check.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/book-open-check.svg",
+    "sha256": "1c637f1ef7909ed5764f546c7b01534fcfeb724706303781d083df9294fb17bf"
+  },
+  "Integrations": {
+    "file": "lucide/puzzle.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/puzzle.svg",
+    "sha256": "6d80d0c3b214c96945ed0f1c6ee0e4c4ea3911c6cc91c75751fdba08c31eab02"
+  },
+  "Sound": {
+    "file": "lucide/volume-2.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/volume-2.svg",
+    "sha256": "fb404f9c128a0579de67b399177631e5edb3502fdc247ceb30e8b15754b46071"
   },
   "Provider_llamacpp": {
     "file": "ggml/llama1-icon-transparent.svg",

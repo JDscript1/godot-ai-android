@@ -25,7 +25,12 @@ opens the same global configuration window.
   ComfyUI workflow. A cancelled wait retains the remote job for later retrieval.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
   configure the process in the companion and connect to its `/mcp/<name>` URL.
-- **Automatizări:** save a task's instructions and active provider, then run it manually.
+- **General:** YOLO, center/left/right chat placement and completion sounds.
+- **Integrări:** GitHub, desktop Blender CLI, project Skills and saved tasks.
+- **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
+
+The current [control and integration changes](AI_INTEGRATIONS.md) are source-only;
+the last delivered APK remains `9a019f6`. No APK was rebuilt for this stage.
 
 HTTP is opt-in per local connection. `127.0.0.1` means this Android device; a server
 on your computer needs its reachable LAN address or authenticated HTTPS endpoint.
@@ -33,13 +38,11 @@ No inference runtime or generation model is installed automatically.
 
 ## Execution and recovery
 
-The chat exposes **Auto** and **Plan**, with Auto as the default. Auto can inspect,
-plan, execute and verify; Plan permits inspection and proposals only. The mode
-menu contains **Permite modificări în această sesiune** (enabled initially in
-Auto) and the independent **Confirmă fiecare modificare** preference. Turning
-permission off blocks project writes and external operations. Confirmation shows
-each modifying/external operation before dispatch. Legacy defaults migrate to
-the two-mode interface and preserve the old confirmation preference.
+The chat exposes **Auto** and **Plan**, with Auto as the default. The mode menu
+contains only those two choices. General's **YOLO · editări automate** defaults
+to off: Auto asks for each modifying/external operation. Enabling YOLO permits
+automatic operations; Plan remains read-only regardless of YOLO. Applying a plan
+switches to Auto and retains the permission preference. Preferences save immediately.
 
 For complex work the model publishes structured task steps through `task_update`.
 Planning is read-only; the model must publish the executing phase before writes.
@@ -125,6 +128,8 @@ with the standard `androiddebugkey` alias and `android` debug passwords. CI also
 compares the APK certificate with that keystore before uploading an artifact.
 This is a development build; no production signing key is included in source.
 
+Evidence below describes delivered APK `9a019f6`. The newer source-only
+control/integration checks are tracked in [the progress record](../PROGRES_SI_PLAN.md).
 Evidence must be distinguished:
 
 | Area | Current verification |
@@ -200,14 +205,14 @@ provider-specific signed/reasoning blocks are retained only for their originatin
 profile and model. Model selection groups API, subscription and local profiles.
 
 The searchable settings window has General, Providers, Subscriptions, Generation,
-MCP, Automations, Journal, Agent, Voice and Playtesting pages. `@` opens project
+MCP, Integrations, Journal, AGENT.MD, Voice and Playtesting pages. `@` opens project
 file/folder references, `$` opens scene-node references and `/` lists commands.
 Images can be attached to supported multimodal providers. Context counters use
 provider-reported usage when available. `/compact` writes a continuation summary
 while preserving the original conversation.
 
 Plan mode permits inspection and presents an Apply plan button, which switches
-to Auto and enables session writes. The confirmation preference remains in effect.
+to Auto. The YOLO/confirmation preference remains in effect.
 Messages sent during a turn enter a queue with their own provider/model/reasoning
 and Auto/Plan selection; the active turn keeps its original mode. Stop pauses the queue; `/resume` continues it and
 `/steer <instructions>` interrupts the current turn before using the new request.
@@ -239,8 +244,8 @@ User messages form small right-aligned bubbles;
 assistant messages use the main reading column. The composer starts at one line
 and grows to a bounded height. Image and project references appear as removable
 chips, with image thumbnails. Empty task/reference rows reserve no space.
-Stop appears only while working. The mode menu contains session write
-permission and context usage. Empty conversations show one welcome prompt.
+Stop appears only while working. The mode menu contains Auto/Plan only. Context filling has its own ring and
+percentage in the bottom toolbar; details appear on hover. Empty conversations show one welcome prompt.
 
 Assistant messages have compact provider identities and native Markdown for
 headings, emphasis, inline code, lists, quotes, tables and validated HTTP(S) links.
@@ -258,15 +263,15 @@ and new file contents in red and green and retains conflict-aware restoration.
 Operations appear in expandable activity groups with details hidden initially.
 Graphite surfaces, violet accents and vector icons are shared across chat and
 settings. Provider identities use downloaded brand marks from Lobe Icons and the
-upstream llama.cpp repository; action icons use Lucide. All 57 SVGs, pinned URLs,
+upstream llama.cpp repository; action icons use Lucide. All 61 SVGs, pinned URLs,
 hashes and full licenses are kept in `modules/ai_assistant/icons/`. The artwork
 is embedded in the native module, rendered at editor scale and cached offline.
 Qwen regions share their brand mark; custom endpoints have a generic code icon.
 Composer controls use 32 logical pixels in height, 16 pixel icons, 12 pixel text
 and reduced padding. Model/reasoning chips fit their labels, bounded at 150/104
 logical pixels, instead of stretching across the composer. New live messages use
-a short opacity transition; General has
-a reduce-motion preference. History loading does not animate each old message.
+a short opacity transition; the earlier reduce-motion preference remains supported
+in stored configuration. History loading does not animate each old message.
 
 For each verified delivery, `misc/scripts/deliver_ai_android.py` installs
 `Download/Godot-AI-Android-arm64-debug.apk` atomically and removes superseded

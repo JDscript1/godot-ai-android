@@ -16,6 +16,8 @@ static var Harness: GDScript
 static var Planner: GDScript
 static var AgentJobs: GDScript
 static var Speech: GDScript
+static var Workspace: GDScript
+static var Integrations: GDScript
 
 var plugin: EditorPlugin
 var vault: RefCounted
@@ -88,6 +90,16 @@ var provider_badge: Label
 var provider_advanced: VBoxContainer
 var provider_mark: TextureRect
 var active_mode = 2
+var workspace: RefCounted
+var integrations: RefCounted
+var journal_console: CodeEdit
+var journal_filter: LineEdit
+var journal_follow: CheckBox
+var completion_audio: AudioStreamPlayer
+var memory_hash = ""
+var integration_settings: Dictionary = {}
+var current_placement = 0
+var expanded_dock = 0
 
 func configure(editor_plugin: EditorPlugin, secret_store: RefCounted) -> void:
 	plugin = editor_plugin
@@ -99,6 +111,8 @@ func _ready() -> void:
 	project_directory = data_directory.path_join("projects").path_join(ProjectSettings.globalize_path("res://").sha256_text().left(24))
 	var saved: Variant = Common.read_json(data_directory.path_join("config.json"), {})
 	if saved is Dictionary: config.merge(saved, true)
+	var connections: Variant = Common.read_json(project_directory.path_join("integrations.json"), {})
+	integration_settings = connections if connections is Dictionary else {}
 	conversations = Conversations.new()
 	conversations.configure(project_directory)
 	history = conversations.load_active()
@@ -119,6 +133,8 @@ func _ready() -> void:
 	assets = Assets.new(self, vault)
 	assets.configure(project_directory.path_join("generated"))
 	accounts = Accounts.new(self, vault)
+	workspace = Workspace.new(self, project_directory)
+	integrations = Integrations.new(self, vault)
 	var editor_settings = EditorInterface.get_editor_settings()
 	var timeout = int(editor_settings.get_setting("ai_assistant/connection/request_timeout_seconds")) if editor_settings.has_setting("ai_assistant/connection/request_timeout_seconds") else 180
 	for service in [providers, mcp, assets, accounts]: service.transport.timeout_seconds = clampi(timeout, 10, 600)
@@ -142,6 +158,7 @@ func _exit_tree() -> void:
 	cancel["cancelled"] = true
 	if agent_jobs != null: agent_jobs.stop()
 	if speech != null: speech.stop()
+	if integrations != null: integrations.stop()
 	if approval_pending: approval_decided.emit(false)
 
 func _build_chat() -> void:
@@ -152,7 +169,6 @@ func _build_chat() -> void:
 	model_picker = chat.model_picker
 	mode_picker = chat.mode_picker
 	effort_picker = chat.effort_picker
-	full_control = chat.full_control
 	composer = chat.composer
 	status_label = chat.status
 	send_button = chat.send_button
@@ -170,23 +186,14 @@ func _mode() -> int:
 	return active_mode if busy else (mode_picker.get_selected_id() if mode_picker != null and mode_picker.selected >= 0 else 2)
 
 func _permission_mode() -> int:
-	return 3 if _mode() == 3 else (1 if chat.confirm_changes.button_pressed else 2)
+	return 3 if _mode() == 3 else (2 if full_control.button_pressed else 1)
 
 func _load_modes(settings: EditorSettings) -> void:
 	var saved = int(settings.get_setting("ai_assistant/general/default_mode")) if settings.has_setting("ai_assistant/general/default_mode") else 0
 	if int(config["preferences"].get("mode_ui_version", 0)) < 2:
 		mode_picker.select(1 if saved == 3 else 0)
-		chat.confirm_changes.button_pressed = saved == 1
-		config["preferences"]["confirm_changes"] = saved == 1
 		config["preferences"]["mode_ui_version"] = 2
-		settings.set_setting("ai_assistant/general/default_mode", mode_picker.selected)
-		Common.atomic_json(data_directory.path_join("config.json"), config)
-	else:
-		mode_picker.select(clampi(saved, 0, 1))
-		chat.confirm_changes.button_pressed = bool(config["preferences"].get("confirm_changes", false))
-	chat.confirm_changes.toggled.connect(func(value: bool) -> void:
-		config["preferences"]["confirm_changes"] = value
-		Common.atomic_json(data_directory.path_join("config.json"), config))
+	else: mode_picker.select(clampi(saved, 0, 1))
 
 func _build_settings() -> void:
 	settings_window = AcceptDialog.new()
@@ -227,17 +234,29 @@ func _build_settings() -> void:
 	settings_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_content.add_child(settings_status)
 	var general = _tab("General", "general")
-	_label(general, "Godot AI · Chat nativ · Tema Grafit / Violet / Albastru")
 	var preferences = config.get("preferences", {})
 	var general_form = _form(general, "general")
-	_field(general_form, "max_steps", "Pași maximi ai agentului")
-	general_form["max_steps"].text = str(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/max_agent_steps")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/max_agent_steps") else "30"
-	_check(general_form, "enabled", "Activează asistentul")
-	general_form["enabled"].button_pressed = bool(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/enabled")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/enabled") else true
-	_check(general_form, "reduce_motion", "Redu animațiile interfeței")
-	general_form["reduce_motion"].button_pressed = bool(preferences.get("reduce_motion", false))
-	chat.motion_enabled = not general_form["reduce_motion"].button_pressed
-	_button(general, "Salvează preferințele", _save_preferences)
+	_check(general_form, "yolo", "YOLO · editări automate")
+	full_control = general_form["yolo"]
+	full_control.button_pressed = bool(preferences.get("yolo", false))
+	full_control.tooltip_text = "Activat: modificări fără confirmare. Dezactivat: cere confirmare. Plan rămâne doar pentru citire."
+	_choice(general_form, "dock", "Poziție chat", ["Centru", "Stânga", "Dreapta"])
+	general_form["dock"].select(clampi(int(preferences.get("dock", 0)), 0, 2))
+	_check(general_form, "sounds", "Sunete în chat")
+	general_form["sounds"].button_pressed = bool(preferences.get("sounds", false))
+	var sound_row = _row(general)
+	general_form["sounds"].reparent(sound_row, false)
+	general_form["sounds"].size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sound_test = chat.icon_button(sound_row, "Sound", "Ascultă sunetul", func() -> void: _play_completion(true))
+	chat._compact_button(sound_test)
+	full_control.toggled.connect(func(value: bool) -> void: _control_preference("yolo", value))
+	general_form["sounds"].toggled.connect(func(value: bool) -> void: _control_preference("sounds", value))
+	general_form["dock"].item_selected.connect(func(index: int) -> void: _set_placement.call_deferred(index))
+	chat.motion_enabled = not bool(preferences.get("reduce_motion", false))
+	completion_audio = AudioStreamPlayer.new()
+	completion_audio.volume_db = -14
+	add_child(completion_audio)
+	_apply_saved_placement.call_deferred()
 	var provider_tab = _tab("Furnizori AI", "providers")
 	var profile_row = HBoxContainer.new()
 	provider_tab.add_child(profile_row)
@@ -393,29 +412,41 @@ func _build_settings() -> void:
 	_button(mcp_row, "Descoperă uneltele", _test_mcp)
 	_button(mcp_row, "Șterge server", func() -> void: _remove_profile("mcp", "mcp"))
 	lists["mcp"].item_selected.connect(func(index: int) -> void: _fill("mcp", config["mcp"][index]))
-	var automation_tab = _tab("Automatizări", "automations")
-	_label(automation_tab, "Sarcinile salvate pornesc la cerere și respectă modul și permisiunile sesiunii curente.")
-	var auto_form = _form(automation_tab, "automation")
-	_field(auto_form, "name", "Nume sarcină")
-	_field(auto_form, "prompt", "Instrucțiuni")
-	var auto_row = _row(automation_tab)
-	_button(auto_row, "Salvează sarcina", _save_automation)
-	_button(auto_row, "Rulează sarcina", _run_automation)
-	_button(auto_row, "Șterge sarcina", _delete_automation)
-	lists["automations"].item_selected.connect(func(index: int) -> void: _fill("automation", config["automations"][index]))
+	var integration_tab = _tab("Integrări", "integrations")
+	_build_integrations(integration_tab)
 	var journal_tab = _tab("Jurnal", "journal")
-	_label(journal_tab, "Operațiile și rezultatele sunt păstrate local, separat pentru fiecare proiect. Copiile de recuperare sunt accesibile prin instrumentul godot_restore_file.")
-	_button(journal_tab, "Actualizează jurnalul", _refresh_journal)
-	var agent_tab = _tab("Agent", "agent")
-	_label(agent_tab, "Motorul agentului rulează în editor. Conexiunile API directe nu necesită Termux, consolă sau companion.")
-	_label(agent_tab, "Memorii pentru acest proiect. Instrucțiunile AGENTS.md și referințele selectate sunt incluse în context.")
+	var log_toolbar = _row(journal_tab)
+	journal_filter = LineEdit.new()
+	journal_filter.placeholder_text = "Filtrează activitatea…"
+	journal_filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_toolbar.add_child(journal_filter)
+	journal_filter.text_changed.connect(func(_text: String) -> void: _refresh_journal())
+	journal_follow = CheckBox.new()
+	journal_follow.text = "Live"
+	journal_follow.button_pressed = true
+	log_toolbar.add_child(journal_follow)
+	var copy_log = chat.icon_button(log_toolbar, "Copy", "Copiază jurnalul afișat", func() -> void: DisplayServer.clipboard_set(journal_console.text))
+	chat._compact_button(copy_log)
+	journal_console = CodeEdit.new()
+	journal_console.editable = false
+	journal_console.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	journal_console.gutters_draw_line_numbers = false
+	journal_console.custom_minimum_size.y = 400 * EditorInterface.get_editor_scale()
+	journal_console.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	journal_console.add_theme_font_size_override("font_size", int(12 * EditorInterface.get_editor_scale()))
+	journal_tab.add_child(journal_console)
+	var agent_tab = _tab("AGENT.MD", "agent")
+	_label(agent_tab, "AGENT.md · proiect")
 	memory_editor = TextEdit.new()
-	memory_editor.custom_minimum_size.y = 190
+	memory_editor.custom_minimum_size.y = 340 * EditorInterface.get_editor_scale()
+	memory_editor.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	memory_editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	memory_editor.text = str(Common.read_json(project_directory.path_join("memories.json"), {}).get("text", ""))
+	memory_editor.placeholder_text = "Preferințe, convenții și lucruri de reținut pentru acest proiect."
+	_load_memories()
 	agent_tab.add_child(memory_editor)
-	_button(agent_tab, "Salvează memoriile", _save_memories)
-	_label(agent_tab, "Subagenți: Explore, General, Playtest. API cloud: 2 copii; local / companion: 1. Modificările sunt aplicate de agentul principal.")
+	var memory_actions = _row(agent_tab)
+	_button(memory_actions, "Salvează", _save_memories)
+	_button(memory_actions, "Reîncarcă", _load_memories)
 	var voice_tab = _tab("Voce", "voice")
 	var voice_form = _form(voice_tab, "voice")
 	_choice(voice_form, "backend", "Transcriere", ["Serviciul Android", "Endpoint compatibil Whisper"])
@@ -440,11 +471,282 @@ func _build_settings() -> void:
 	voice_form["backend"].item_selected.connect(func(_index: int) -> void: _voice_fields())
 	_voice_fields()
 
+func _control_preference(key: String, value: Variant) -> void:
+	config["preferences"][key] = value
+	if Common.atomic_json(data_directory.path_join("config.json"), config) != OK: _status("Preferința nu a putut fi salvată.")
+
+func _apply_saved_placement() -> void:
+	_set_placement(int(config.get("preferences", {}).get("dock", 0)), false)
+
+func _set_placement(index: int, persist: bool = true) -> void:
+	index = clampi(index, 0, 2)
+	if busy or speech.listening or speech.transcribing:
+		forms["general"]["dock"].select(int(config.get("preferences", {}).get("dock", 0)))
+		_status("Schimbă poziția după încheierea sarcinii.")
+		return
+	if plugin.has_method("set_chat_placement"):
+		plugin.call("set_chat_placement", index)
+	elif index != 0:
+		_status("Poziția dock necesită editorul nativ actualizat.")
+		forms["general"]["dock"].select(0)
+		return
+	current_placement = index
+	if persist:
+		expanded_dock = 0
+		if index != 0: EditorInterface.set_distraction_free_mode(false)
+		_control_preference("dock", index)
+
+func _expand_workspace() -> void:
+	var expanded = EditorInterface.is_distraction_free_mode_enabled()
+	if current_placement != 0 or (expanded and expanded_dock != 0):
+		if busy or speech.listening or speech.transcribing:
+			_status("Extinde sau restrânge dock-ul după încheierea sarcinii.")
+			return
+	if not expanded:
+		if current_placement != 0:
+			expanded_dock = current_placement
+			_set_placement(0, false)
+		EditorInterface.set_distraction_free_mode(true)
+	else:
+		EditorInterface.set_distraction_free_mode(false)
+		if expanded_dock != 0:
+			var restore = expanded_dock
+			expanded_dock = 0
+			_set_placement(restore, false)
+
+func _completion_stream() -> AudioStreamWAV:
+	var rate = 22050
+	var duration = 0.48
+	var bytes = PackedByteArray()
+	bytes.resize(int(rate * duration) * 2)
+	var notes = [659.25, 830.61, 987.77]
+	for index in range(bytes.size() / 2):
+		var time = float(index) / rate
+		var value = 0.0
+		for note in range(3):
+			var elapsed = time - note * 0.075
+			if elapsed >= 0: value += sin(TAU * notes[note] * elapsed) * exp(-elapsed * 13) * minf(elapsed * 150, 1) * 0.18
+		bytes.encode_s16(index * 2, clampi(int(value * 32767), -32768, 32767))
+	var wave = AudioStreamWAV.new()
+	wave.format = AudioStreamWAV.FORMAT_16_BITS
+	wave.mix_rate = rate
+	wave.data = bytes
+	return wave
+
+func _play_completion(preview: bool = false) -> void:
+	if completion_audio == null or (not preview and not config.get("preferences", {}).get("sounds", false)): return
+	if completion_audio.stream == null: completion_audio.stream = _completion_stream()
+	completion_audio.play()
+
+func _integration_card(parent: Node, title: String, icon: String) -> VBoxContainer:
+	var card = PanelContainer.new()
+	card.add_theme_stylebox_override("panel", chat.style(Color("1c2130"), 12))
+	parent.add_child(card)
+	var body = VBoxContainer.new()
+	body.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
+	card.add_child(body)
+	var heading = _row(body)
+	var mark = TextureRect.new()
+	mark.texture = chat._icon(icon)
+	mark.custom_minimum_size = Vector2(20, 20) * EditorInterface.get_editor_scale()
+	mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	heading.add_child(mark)
+	var caption = _label(heading, title)
+	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return body
+
+func _build_integrations(parent: Node) -> void:
+	var tabs = TabContainer.new()
+	tabs.add_theme_stylebox_override("panel", chat.style(Color("171b27"), 10))
+	parent.add_child(tabs)
+	var connections = VBoxContainer.new()
+	connections.name = "Conexiuni"
+	connections.add_theme_constant_override("separation", int(12 * EditorInterface.get_editor_scale()))
+	tabs.add_child(connections)
+	var saved: Dictionary = integration_settings.duplicate(true)
+	var github = _integration_card(connections, "GitHub", "Provider_github")
+	var form = _form(github, "github")
+	_check(form, "enabled", "Activ")
+	form["enabled"].button_pressed = bool(saved.get("github_enabled", false))
+	_field(form, "repository", "Repository")
+	form["repository"].placeholder_text = "proprietar/proiect"
+	form["repository"].text = str(saved.get("github_repository", ""))
+	_field(form, "key", "Token", true)
+	form["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Opțional pentru proiecte publice"
+	var actions = _row(github)
+	_button(actions, "Salvează", _save_connections)
+	_button(actions, "Verifică", _verify_github)
+	_button(actions, "Deconectează", func() -> void:
+		if busy: return
+		vault.erase("integration_github")
+		form["key"].clear()
+		form["key"].placeholder_text = "Opțional pentru proiecte publice"
+		form["enabled"].button_pressed = false
+		_save_connections())
+	form["status"] = _label(github, "Neconectat")
+	if Integrations.desktop_blender():
+		var blender = _integration_card(connections, "Blender CLI", "Models")
+		var b = _form(blender, "blender")
+		_check(b, "enabled", "Activ")
+		b["enabled"].button_pressed = bool(saved.get("blender_enabled", false))
+		_field(b, "path", "Executabil Blender")
+		b["path"].text = str(saved.get("blender_path", ""))
+		var row = _row(blender)
+		_button(row, "Alege…", _pick_blender)
+		_button(row, "Salvează", _save_connections)
+		_button(row, "Verifică", _verify_blender)
+		b["status"] = _label(blender, "Neconectat")
+	var links = _integration_card(connections, "Servicii", "MCP")
+	var link_row = _row(links)
+	_button(link_row, "Servere MCP", func() -> void: open_settings("mcp"))
+	_button(link_row, "Generare 2D / 3D", func() -> void: open_settings("generation"))
+	var skills = VBoxContainer.new()
+	skills.name = "Skills"
+	tabs.add_child(skills)
+	tabs.set_tab_icon(1, chat._icon("Skills"))
+	lists["skills"] = ItemList.new()
+	lists["skills"].custom_minimum_size.y = 84 * EditorInterface.get_editor_scale()
+	skills.add_child(lists["skills"])
+	lists["skills"].item_selected.connect(_edit_skill)
+	var sk = _form(skills, "skill")
+	_field(sk, "id", "ID")
+	sk["id"].placeholder_text = "exemplu-workflow"
+	_field(sk, "description", "Descriere")
+	sk["instructions"] = TextEdit.new()
+	sk["instructions"].placeholder_text = "Instrucțiuni reutilizabile…"
+	sk["instructions"].wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	sk["instructions"].custom_minimum_size.y = 150 * EditorInterface.get_editor_scale()
+	_label(sk["container"], "Instrucțiuni")
+	sk["container"].add_child(sk["instructions"])
+	_check(sk, "enabled", "Activ în acest proiect")
+	sk["enabled"].button_pressed = true
+	var skill_actions = _row(skills)
+	_button(skill_actions, "Nou", _new_skill)
+	_button(skill_actions, "Salvează", _save_skill)
+	_button(skill_actions, "Șterge", _delete_skill)
+	# Preserve existing saved tasks as an integration subpage.
+	var tasks_page = VBoxContainer.new()
+	tasks_page.name = "Sarcini"
+	tabs.add_child(tasks_page)
+	lists["automations"] = ItemList.new()
+	lists["automations"].custom_minimum_size.y = 100 * EditorInterface.get_editor_scale()
+	tasks_page.add_child(lists["automations"])
+	var auto_form = _form(tasks_page, "automation")
+	_field(auto_form, "name", "Nume")
+	_field(auto_form, "prompt", "Instrucțiuni")
+	var auto_row = _row(tasks_page)
+	_button(auto_row, "Salvează", _save_automation)
+	_button(auto_row, "Rulează", _run_automation)
+	_button(auto_row, "Șterge", _delete_automation)
+	lists["automations"].item_selected.connect(func(index: int) -> void: _fill("automation", config["automations"][index]))
+	_refresh_skills()
+
+func _save_connections() -> bool:
+	if busy: return false
+	var g: Dictionary = forms["github"]
+	var repository = str(g["repository"].text).strip_edges()
+	if not repository.is_empty() and not Integrations.valid_repository(repository):
+		_status("Repository invalid. Folosește proprietar/proiect.")
+		return false
+	var key = str(g["key"].text).strip_edges()
+	if not key.is_empty() and not vault.store("integration_github", key):
+		_status("Tokenul nu a putut fi salvat.")
+		return false
+	g["key"].clear()
+	g["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Opțional pentru proiecte publice"
+	var saved: Dictionary = integration_settings.duplicate(true)
+	saved.merge({"github_enabled": g["enabled"].button_pressed, "github_repository": repository}, true)
+	if forms.has("blender"):
+		saved.merge({"blender_enabled": forms["blender"]["enabled"].button_pressed, "blender_path": forms["blender"]["path"].text.strip_edges()}, true)
+	if Common.atomic_json(project_directory.path_join("integrations.json"), saved) != OK:
+		_status("Conexiunea nu a putut fi salvată.")
+		return false
+	integration_settings = saved
+	_refresh_secrets()
+	g["status"].text = "Configurat" if saved["github_enabled"] and not repository.is_empty() else "Dezactivat"
+	return true
+
+func _verify_github() -> void:
+	if not _save_connections(): return
+	var repository = str(integration_settings["github_repository"])
+	forms["github"]["status"].text = "Verific…"
+	var result = await integrations.github_request(repository, {"resource": "repository"})
+	forms["github"]["status"].text = "Conectat · " + repository if result.get("ok", false) else str(result.get("error", "Conexiune eșuată."))
+
+func _pick_blender() -> void:
+	if busy: return
+	var picker = EditorFileDialog.new()
+	picker.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
+	picker.access = EditorFileDialog.ACCESS_FILESYSTEM
+	picker.file_selected.connect(func(path: String) -> void: forms["blender"]["path"].text = path; picker.queue_free())
+	picker.canceled.connect(picker.queue_free)
+	add_child(picker)
+	picker.popup_centered_ratio(0.8)
+
+func _verify_blender() -> void:
+	if not _save_connections(): return
+	forms["blender"]["status"].text = "Verific…"
+	var result = await integrations.blender(str(integration_settings.get("blender_path", "")), {}, {}, true)
+	forms["blender"]["status"].text = str(result.get("result", {}).get("output", "")).get_slice("\n", 0).left(120) if result.get("ok", false) else str(result.get("error", "Blender indisponibil."))
+
+func _refresh_skills() -> void:
+	if not lists.has("skills"): return
+	lists["skills"].clear()
+	for item in workspace.catalog():
+		lists["skills"].add_item(("● " if item["enabled"] else "○ ") + str(item["id"]))
+		lists["skills"].set_item_metadata(lists["skills"].item_count - 1, item)
+
+func _new_skill() -> void:
+	var form: Dictionary = forms["skill"]
+	form["id"].editable = true
+	for key in ["id", "description", "instructions"]: form[key].text = ""
+	form["sha256"] = ""
+	form["enabled"].button_pressed = true
+	lists["skills"].deselect_all()
+
+func _edit_skill(index: int) -> void:
+	var item: Dictionary = lists["skills"].get_item_metadata(index)
+	var loaded = workspace.read(str(item["id"]), true)
+	if not loaded.get("ok", false): return
+	var form: Dictionary = forms["skill"]
+	form["id"].text = item["id"]
+	form["id"].editable = false
+	form["description"].text = item["description"]
+	var content = str(loaded["result"]["instructions"])
+	var end = content.find("\n---", 3) if content.begins_with("---\n") else -1
+	form["instructions"].text = content.substr(end + 4).strip_edges() if end >= 0 else content
+	form["sha256"] = loaded["result"]["sha256"]
+	form["enabled"].button_pressed = loaded["result"]["enabled"]
+
+func _save_skill() -> void:
+	if busy: return
+	var form: Dictionary = forms["skill"]
+	var args = {"id": form["id"].text.strip_edges(), "description": form["description"].text.strip_edges(), "instructions": form["instructions"].text, "expected_sha256": str(form.get("sha256", ""))}
+	var result = workspace.save(Common.parse_json(_redact(JSON.stringify(args))))
+	if result.get("ok", false):
+		result = workspace.set_enabled(str(args["id"]), form["enabled"].button_pressed)
+		form["sha256"] = workspace.read(str(args["id"]), true).get("result", {}).get("sha256", "")
+		form["id"].editable = false
+	_refresh_skills()
+	_audit("skill_save", args, result)
+	_status("Skill salvat." if result.get("ok", false) else str(result.get("error", "Salvare eșuată.")))
+
+func _delete_skill() -> void:
+	if busy: return
+	var form: Dictionary = forms["skill"]
+	var result = workspace.remove(str(form["id"].text), str(form.get("sha256", "")))
+	_audit("skill_delete", {"id": form["id"].text}, result)
+	if result.get("ok", false): _new_skill()
+	_refresh_skills()
+	_status("Skill șters · copie păstrată pentru recuperare." if result.get("ok", false) else str(result.get("error", "Ștergere eșuată.")))
+
 func _tab(title: String, id: String) -> VBoxContainer:
 	var scroll = ScrollContainer.new()
-	scroll.name = title
+	scroll.name = title.replace(".", "_")
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	settings_tabs.add_child(scroll)
+	settings_tabs.set_tab_title(settings_tabs.get_tab_count() - 1, title)
 	section_tabs[id] = settings_tabs.get_tab_count() - 1
 	var column = VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -452,7 +754,7 @@ func _tab(title: String, id: String) -> VBoxContainer:
 	column.add_theme_constant_override("separation", int(10 * EditorInterface.get_editor_scale()))
 	var heading = _label(column, title)
 	heading.add_theme_font_size_override("font_size", settings_tabs.get_theme_font_size("font_size") + 4)
-	var caption = {"providers": "Profiluri salvate", "accounts": "Conturi conectate", "generation": "Profiluri salvate", "mcp": "Servere configurate", "automations": "Sarcini salvate", "journal": "Ultimele operații"}.get(id, "")
+	var caption = {"providers": "Profiluri salvate", "accounts": "Conturi conectate", "generation": "Profiluri salvate", "mcp": "Servere configurate", "integrations": "", "journal": ""}.get(id, "")
 	var list_header = _label(column, caption)
 	list_header.hide()
 	list_headers[id] = list_header
@@ -594,7 +896,7 @@ func _save_config() -> void:
 
 func _refresh_secrets() -> void:
 	secrets.clear()
-	var profiles = config["providers"] + config["generation"] + config["mcp"] + [config["companion"], {"id": "transcription"}]
+	var profiles = config["providers"] + config["generation"] + config["mcp"] + [config["companion"], {"id": "transcription"}, {"id": "integration_github"}]
 	for profile in profiles:
 		var secret = vault.read(str(profile["id"]))
 		if not secret.is_empty(): secrets.append(secret)
@@ -773,6 +1075,7 @@ func _new_conversation() -> void:
 	_end_conversation_jobs()
 	conversations.create()
 	history = []
+	chat.set_context(0, 0)
 	pending_attachments.clear()
 	pending_references.clear()
 	compact_summary = ""
@@ -808,20 +1111,16 @@ func _authorize(definition: Dictionary, args: Dictionary, operation_cancel: Dict
 	if definition.get("risk", "external") == "read": return true
 	while approval_pending and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false): await get_tree().process_frame
 	if cancel.get("cancelled", false) or operation_cancel.get("cancelled", false): return false
-	if _mode() in [0, 3] or not full_control.button_pressed: return false
+	if _mode() in [0, 3]: return false
 	if _permission_mode() == 2: return true
 	approval_pending = true
 	approval_dialog.dialog_text = str(definition["name"]) + "\n\n" + _redact(JSON.stringify(args, "  ")).left(5000)
 	approval_dialog.popup_centered_clamped(Vector2i(620, 420), 0.9)
 	var accepted: bool = await approval_decided
-	return accepted and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false) and _mode() in [1, 2] and full_control.button_pressed
+	return accepted and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false) and _mode() in [1, 2]
 
 func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	if busy or text.strip_edges().is_empty(): return
-	var editor_settings = EditorInterface.get_editor_settings()
-	if editor_settings.has_setting("ai_assistant/general/enabled") and not editor_settings.get_setting("ai_assistant/general/enabled"):
-		_status("Activează asistentul din Editor Settings → AI Assistant → General.")
-		return
 	var profile = _profile_by_id(str(selection.get("profile", _current_profile().get("id", "")))).duplicate(true)
 	if profile.is_empty() or model_picker.selected < 0:
 		_status("Configurează un profil și selectează un model.")
@@ -849,7 +1148,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	transcript = chat.append_message("user", str(user_message["content"]), user_message)
 	composer.clear()
 	_status("Pregătesc contextul și instrumentele…")
-	active_definitions = tools.definitions() + assets.definitions() + _agent_definitions()
+	active_definitions = tools.definitions() + assets.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)), bool(integration_settings.get("blender_enabled", false)))
 	mcp.tool_index.clear()
 	for server in config["mcp"]:
 		if cancel.get("cancelled", false): break
@@ -862,28 +1161,33 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 			_finish_chat(str(access["error"]))
 			return
 		_refresh_secrets()
-	var visible = active_definitions.filter(func(definition: Dictionary) -> bool: return definition["risk"] == "read" or (_mode() in [1, 2] and full_control.button_pressed))
+	var visible = active_definitions.filter(func(definition: Dictionary) -> bool: return definition["risk"] == "read" or (_mode() in [1, 2]))
 	var model = str(selection.get("model", model_picker.get_item_metadata(model_picker.selected)))
 	var effort = str(selection.get("effort", effort_picker.get_item_metadata(effort_picker.selected)))
 	if profile.get("kind") == "companion":
 		var companion_done = false
 		for attempt in range(5):
 			companion_done = await _companion_chat(profile, model, visible, effort, attempt > 0)
-			if not companion_done or cancel.get("cancelled", false) or _mode() == 3 or not full_control.button_pressed or not planner.needs_continuation(): break
+			if not companion_done or cancel.get("cancelled", false) or _mode() == 3 or not planner.needs_continuation(): break
 		_finish_chat("Oprit." if cancel.get("cancelled", false) else ("Sarcină încheiată." if companion_done else "Execuția companionului s-a întrerupt."))
 		return
-	var maximum = clampi(int(EditorInterface.get_editor_settings().get_setting("ai_assistant/general/max_agent_steps")) if EditorInterface.get_editor_settings().has_setting("ai_assistant/general/max_agent_steps") else 30, 1, 100)
+	var maximum = clampi(int(config.get("preferences", {}).get("agent_step_limit", 30)), 1, 100)
 	var complete = func(context: Array, definitions: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
 		return await providers.complete(profile, context, definitions, model, effort, stopping, delta)
 	var metadata = current_origin.merged({"wire_source": str(profile["id"]) + ":" + model})
-	var result = await harness.run({"id": current_turn, "messages": history, "tools": visible, "cancel": cancel, "max_steps": maximum, "metadata": metadata, "deferred_tools": true}, {"complete": complete, "context": _context_messages, "execute": _execute_call, "redact": _redact, "checkpoint": _harness_checkpoint, "needs_continuation": func() -> bool: return _mode() == 2 and full_control.button_pressed and planner.needs_continuation()})
+	var result = await harness.run({"id": current_turn, "messages": history, "tools": visible, "cancel": cancel, "max_steps": maximum, "metadata": metadata, "deferred_tools": true}, {"complete": complete, "context": _context_messages, "execute": _execute_call, "redact": _redact, "checkpoint": _harness_checkpoint, "needs_continuation": func() -> bool: return _mode() == 2 and planner.needs_continuation()})
 	_finish_chat(str(result.get("message", result.get("error", "Cererea a eșuat."))))
 
 func _harness_event(value: Dictionary) -> void:
 	match str(value.get("kind", "")):
 		"request_started":
+			_record_event("agent_request", {"step": value.get("step"), "model": current_origin.get("model_id", "")}, Common.success("Cerere trimisă"))
 			harness_streaming = false
 			_status("Plan · analizează proiectul" if _mode() == 3 else ("Auto · pregătește planul" if planner.phase == "planning" else "Auto · lucrează"))
+		"settled":
+			var outcome: Dictionary = value.get("result", {}).duplicate()
+			outcome.erase("text")
+			_record_event("agent_settled", {}, outcome)
 		"plan_continuation": _status("Auto · continuă pașii rămași")
 		"retry": _status("Conexiune temporar indisponibilă · reîncerc %s/2…" % value["attempt"])
 		"text_delta":
@@ -915,10 +1219,9 @@ func _context_messages() -> Array:
 	if not compact_summary.is_empty(): instructions += "\nEarlier conversation summary:\n" + compact_summary
 	if _mode() == 3: instructions += "\nPLAN MODE: inspect only, return a concrete implementation plan. Never modify the project. Use task_update with intent=propose and phase=completed to publish the finished proposal; its implementation steps remain pending."
 	else: instructions += "\nAUTO MODE: carry out the user's task through implementation and verification. Decide whether a plan is needed based on complexity, uncertainty and dependencies. Simple questions or small edits do not need a plan. For multi-step or cross-file work, use task_update before the first mutation: planning -> executing -> verifying -> completed. Keep at most one step in progress, revise the plan when findings change and only mark verified work complete. planning is an inspection-only phase; publish executing before changing files. Do not stop after merely proposing an execution plan. If the user asks only for a proposal, use intent=propose and do not execute it. If blocked, publish phase=blocked with the reason. Never present internal reasoning; show concise task steps and results."
-	instructions += planner.context()
-	if not full_control.button_pressed: instructions += "\nProject writes are disabled for this session. Inspect and explain; do not promise edits."
-	var settings = EditorInterface.get_editor_settings()
-	var history_limit = clampi(int(settings.get_setting("ai_assistant/general/history_messages")) if settings.has_setting("ai_assistant/general/history_messages") else 24, 2, 200)
+	instructions += planner.context() + workspace.context()
+	if not full_control.button_pressed: instructions += "\nYOLO is off: modifying or external operations need individual user confirmation. Do not ask the user to enable YOLO; submit the intended tool operation for review."
+	var history_limit = clampi(int(config.get("preferences", {}).get("history_messages", 24)), 2, 200)
 	var start = maxi(compact_through, history.size() - history_limit)
 	start = clampi(start, 0, history.size())
 	while start > compact_through and start < history.size() and history[start].get("role") != "user": start -= 1
@@ -944,8 +1247,18 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	var result: Dictionary
 	if name.begins_with("agent_") or name.begins_with("playtest_") or name in ["task_update", "memory_write"]:
 		result = await _agent_call(name, args)
+	elif name.begins_with("skill_"):
+		match name:
+			"skill_list": result = Common.success(workspace.catalog())
+			"skill_read": result = workspace.read(str(args.get("id", "")))
+			"skill_save": result = workspace.save(Common.parse_json(_redact(JSON.stringify(args))))
+		_refresh_skills()
+	elif name in ["github_read", "github_create_issue"]:
+		result = await integrations.github_request(str(integration_settings.get("github_repository", "")), Common.parse_json(_redact(JSON.stringify(args))), cancel, name == "github_create_issue")
+	elif name == "blender_run":
+		result = await integrations.blender(str(integration_settings.get("blender_path", "")), args, cancel)
 	elif name.begins_with("mcp_"):
-		result = await mcp.call_tool(name, args, _permission_mode(), full_control.button_pressed, cancel)
+		result = await mcp.call_tool(name, args, _permission_mode(), true, cancel)
 	elif name == "asset_generate":
 		var profile = _generation_profile(str(args.get("profile", "")))
 		result = await assets.submit(profile, str(args.get("prompt", "")), str(args.get("reference", "")), cancel) if not profile.is_empty() else Common.failure("Profil de generare inexistent.")
@@ -956,7 +1269,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		elif name == "asset_wait": result = await assets.wait_for_job(str(args["job"]), profile, cancel, int(args.get("max_seconds", 300)))
 		else: result = await assets.refresh(str(args["job"]), profile, cancel)
 	elif name == "asset_import": result = assets.import_job(str(args.get("job", "")), str(args.get("directory", "res://ai_assets")))
-	else: result = tools.execute(name, args, _permission_mode(), full_control.button_pressed)
+	else: result = tools.execute(name, args, _permission_mode(), true)
 	_audit(name, args, result)
 	_refresh_lists()
 	return result
@@ -966,16 +1279,36 @@ func _audit(name: String, args: Dictionary, result: Dictionary) -> void:
 	if result.has("images"): result["images"] = result["images"].map(func(item: Dictionary) -> Dictionary: return {"name": item.get("name", ""), "mimeType": item.get("mimeType", "")})
 	var titles = {"godot_project": "Inspectează proiectul", "godot_files": "Caută fișiere", "godot_scene": "Inspectează scena", "godot_create_node": "Creează un nod", "godot_set": "Modifică proprietăți", "godot_write_file": "Actualizează fișierul", "godot_attach_script": "Atașează scriptul", "godot_save_scene": "Salvează scena", "asset_generate": "Generează resursa", "task_update": "Actualizează pașii"}
 	if name != "task_update": chat.activity(str(titles.get(name, name)) + (" · finalizat" if result.get("ok", false) else " · eșuat"), name + "\n" + _redact(JSON.stringify(result)).left(12000))
+	_record_event(name, args, result)
+
+func _record_event(name: String, args: Dictionary, result: Dictionary) -> void:
 	journal.append({"turn_id": current_turn, "time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": Common.parse_json(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
 	if journal.size() > 1000: journal = journal.slice(-1000)
 	Common.atomic_json(project_directory.path_join("journal.json"), journal)
+	_refresh_journal()
 
 func _refresh_journal() -> void:
-	if not lists.has("journal"): return
-	lists["journal"].clear()
-	for entry in journal.slice(-100): lists["journal"].add_item(str(entry["time"]) + " · " + str(entry["tool"]) + " · " + str(entry["result"]).left(220))
+	if journal_console == null: return
+	var query = journal_filter.text.strip_edges().to_lower() if journal_filter != null else ""
+	var lines = []
+	var length = 0
+	var entries = journal.slice(-1000)
+	entries.reverse()
+	for entry in entries:
+		var text = "[%s] %s\n  %s\n  %s" % [entry.get("time", ""), entry.get("tool", "agent"), JSON.stringify(entry.get("arguments", {})), entry.get("result", "")]
+		if query.is_empty() or query in text.to_lower():
+			if length + text.length() > 512000:
+				lines.append("[… jurnal afișat parțial · folosește filtrul …]")
+				break
+			lines.append(_redact(text))
+			length += text.length()
+	lines.reverse()
+	var scroll = journal_console.scroll_vertical
+	journal_console.text = "\n\n".join(lines)
+	journal_console.scroll_vertical = journal_console.get_line_count() if journal_follow != null and journal_follow.button_pressed else scroll
 
 func _finish_chat(message: String) -> void:
+	var completed = message in ["Finalizat.", "Sarcină încheiată."] and planner.phase not in ["planning", "executing", "verifying", "blocked", "paused"]
 	_close_unanswered_calls()
 	planner.pause()
 	if message in ["Finalizat.", "Sarcină încheiată."]:
@@ -994,6 +1327,7 @@ func _finish_chat(message: String) -> void:
 			chat.finish_stream(transcript, saved)
 	_persist_history()
 	_refresh_lists()
+	if completed and queued.is_empty(): _play_completion()
 	_status(message + (" · %s mesaje în coadă" % queued.size() if not queued.is_empty() else ""))
 	if not queued.is_empty() and not queue_paused: _run_next.call_deferred()
 
@@ -1494,6 +1828,7 @@ func _run_next() -> void:
 
 func _chat_action(name: String, args: Dictionary) -> void:
 	match name:
+		"expand": _expand_workspace()
 		"send": _send_or_queue()
 		"stop": _stop()
 		"settings": open_settings(str(args.get("section", "")))
@@ -1539,7 +1874,6 @@ func _chat_action(name: String, args: Dictionary) -> void:
 		"apply_plan":
 			if busy: return
 			mode_picker.select(0)
-			full_control.button_pressed = true
 			_send_or_queue("Aplică planul propus anterior, verificând mai întâi starea actuală a proiectului.")
 		"changes": _show_changes(str(args.get("turn", "")))
 
@@ -1585,9 +1919,9 @@ func _search_settings(query: String) -> void:
 			var section = "general"
 			for key in section_tabs:
 				if section_tabs[key] == index: section = key
-			settings_navigation.add_item(str(page.name), chat.section_icon(section))
+			settings_navigation.add_item(settings_tabs.get_tab_title(index), chat.section_icon(section))
 			settings_navigation.set_item_metadata(settings_navigation.item_count - 1, index)
-			settings_category.add_icon_item(chat.section_icon(section), str(page.name))
+			settings_category.add_icon_item(chat.section_icon(section), settings_tabs.get_tab_title(index))
 			settings_category.set_item_metadata(settings_category.item_count - 1, index)
 	if not query.is_empty() and settings_navigation.item_count:
 		_select_settings(int(settings_navigation.get_item_metadata(0)))
@@ -1664,20 +1998,35 @@ func _save_preferences() -> void:
 			elif control is OptionButton: prefs[prefix + key] = control.selected
 			elif control is CheckBox: prefs[prefix + key] = control.button_pressed
 	config["preferences"] = prefs
-	prefs["reduce_motion"] = forms["general"]["reduce_motion"].button_pressed
-	chat.motion_enabled = not prefs["reduce_motion"]
-	var settings = EditorInterface.get_editor_settings()
-	settings.set_setting("ai_assistant/general/max_agent_steps", clampi(int(forms["general"]["max_steps"].text), 1, 100))
-	settings.set_setting("ai_assistant/general/enabled", forms["general"]["enabled"].button_pressed)
 	_save_config()
 	_status("Preferințe salvate.")
 
-func _save_memories() -> void:
-	if Common.atomic_json(project_directory.path_join("memories.json"), {"text": _redact(memory_editor.text).left(32000)}) == OK: _status("Memoriile proiectului au fost salvate.")
+func _load_memories() -> void:
+	var path = Common.project_path(Workspace.MEMORY_PATH)
+	var exists = not path.is_empty() and FileAccess.file_exists(path)
+	var text = FileAccess.get_file_as_string(path) if exists else ""
+	memory_hash = text.sha256_text() if exists else ""
+	memory_editor.text = text if exists else str(Common.read_json(project_directory.path_join("memories.json"), {}).get("text", ""))
+
+func _save_memories() -> Dictionary:
+	var path = Common.project_path(Workspace.MEMORY_PATH)
+	if path.is_empty(): return Common.failure("AGENT.md nu este accesibil.")
+	var current = FileAccess.get_file_as_string(path).sha256_text() if FileAccess.file_exists(path) else ""
+	if current != memory_hash:
+		_status("AGENT.md modificat între timp. Reîncarcă înainte de salvare.")
+		return Common.failure("AGENT.md modificat între timp.", "memory_conflict")
+	var text = _redact(memory_editor.text).left(32000)
+	var result = tools.execute("godot_write_file", {"path": path, "text": text}, 2, true)
+	if result.get("ok", false):
+		memory_hash = text.sha256_text()
+		memory_editor.text = text
+		_status("AGENT.md salvat.")
+	else: _status(str(result.get("error", "Salvare nereușită.")))
+	return result
 
 func _reference_context() -> String:
 	var output = ""
-	var paths = ["res://AGENTS.md"]
+	var paths = ["res://AGENTS.md", Workspace.MEMORY_PATH]
 	for reference in active_references:
 		var path = str(reference)
 		if not Common.project_path(path).is_empty():
@@ -1699,7 +2048,7 @@ func _reference_context() -> String:
 			var file = FileAccess.open(safe, FileAccess.READ)
 			if file != null and file.get_length() <= 1024 * 1024: output += "\n<reference path=" + str(path) + ">\n" + _redact(file.get_as_text().left(16000)) + "\n</reference>"
 	var memories = str(Common.read_json(project_directory.path_join("memories.json"), {}).get("text", ""))
-	return output + "\nProject memories:\n" + _redact(memories)
+	return output if FileAccess.file_exists(Workspace.MEMORY_PATH) else output + "\nLegacy project memories:\n" + _redact(memories)
 
 func _composer_hints() -> void:
 	chat.reference_label.text = " · ".join(pending_references) + (" · %s imagini" % pending_attachments.size() if not pending_attachments.is_empty() else "")
@@ -1866,13 +2215,14 @@ func _compact() -> void:
 	_finish_chat("Context compactat; mesajele originale rămân în istoric." if result.get("ok", false) else str(result.get("error", "Compactare nereușită.")))
 
 func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
+	if profile_picker.selected >= 0 and model_picker.selected >= 0:
+		if str(profile.get("id", "")) != str(_current_profile().get("id", "")) or model != str(model_picker.get_selected_metadata()): return
 	var input = int(usage.get("usedTokens", usage.get("input_tokens", usage.get("prompt_tokens", usage.get("inputTokens", usage.get("promptTokenCount", 0))))))
 	var output = int(usage.get("output_tokens", usage.get("completion_tokens", usage.get("outputTokens", usage.get("candidatesTokenCount", 0)))))
 	var limit = int(usage.get("contextWindowTokens", 0))
 	for item in profile.get("models", []):
-		if item["id"] == model: limit = int(item.get("context", 0))
-	chat.context_label.show()
-	chat.context_label.text = "Context: %s%s · ieșire %s tokeni" % [("≈" if usage.get("estimated", false) else "") + str(input) if input else "—", (" / %s" % limit) if limit else "", str(output) if output else "—"]
+		if item["id"] == model and int(item.get("context", 0)) > 0: limit = int(item["context"])
+	chat.set_context(input, limit, output, bool(usage.get("estimated", false)))
 
 func _agent_definitions() -> Array:
 	return [Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Planner.definition(), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
@@ -1903,8 +2253,7 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 			return result
 		"memory_write":
 			memory_editor.text = _redact(str(args.get("text", ""))).left(32000)
-			_save_memories()
-			return Common.success("Memorie actualizată.")
+			return _save_memories()
 	return Common.failure("Instrument necunoscut.")
 
 func _show_changes(turn: String) -> void:
@@ -1948,4 +2297,6 @@ func _end_conversation_jobs() -> void:
 	queued.clear()
 	tasks.clear()
 	if planner != null: planner.reset()
-	if chat != null: chat.tasks_label.text = ""
+	if chat != null:
+		chat.tasks_label.text = ""
+		chat.set_context(0, 0)

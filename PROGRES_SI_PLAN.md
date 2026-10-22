@@ -19,6 +19,11 @@ drept funcție validată cu un serviciu real.
   Este livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`. Versiunea
   `12794c4` a fost înlocuită atomic; în Download rămâne un singur APK al fork-ului.
 
+**Etapa curentă este numai în surse:** control YOLO, indicator de context,
+dock stânga/dreapta, sunete, Integrări, Skills, consola de jurnal și AGENT.MD.
+La cererea utilizatorului nu se regenerează APK-ul și nu se pornește workflow-ul
+Android. Installerul `9a019f6` din Download rămâne neschimbat.
+
 ## Implementări existente
 
 ### Integrarea în editor și interfața
@@ -50,7 +55,7 @@ drept funcție validată cu un serviciu real.
 - Controale compacte în composer: înălțime de 32 unități, iconuri de 16 unități,
   text de 12 unități și margini reduse. Selectorul ocupă lățimea textului, până
   la 150 unități; reasoning-ul până la 104. Valorile se adaptează scalei editorului.
-- **57 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
+- **61 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
   Icons, logo llama.cpp din repository-ul ggml-org și acțiuni Lucide. Acestea
   înlocuiesc aproximările desenate anterior. Sunt încorporate local, fără acces
   la internet la afișare. Sursele, reviziile fixe, hash-urile și licențele sunt în
@@ -60,8 +65,8 @@ drept funcție validată cu un serviciu real.
   asociat. Installerul nou se verifică înainte de înlocuire; celelalte aplicații
   și fișiere ale utilizatorului nu sunt șterse. Regula este în `AGENTS.md`, iar
   livrarea verificată este automatizată în `misc/scripts/deliver_ai_android.py`.
-- Setări separate pentru furnizori, abonamente, generare, MCP, automatizări,
-  jurnal, agent, voce și testarea jocului. Navigarea se adaptează ferestrelor
+- Setări pentru control, furnizori, abonamente, generare, MCP, Integrări,
+  Jurnal, AGENT.MD, voce și testarea jocului. Navigarea se adaptează ferestrelor
   înguste. Există preferință pentru reducerea animațiilor.
 
 ### Furnizori, conturi și date
@@ -91,10 +96,10 @@ drept funcție validată cu un serviciu real.
 - Salvarea progresului înainte de execuție și după rezultate; o eroare de
   salvare oprește operațiile următoare. Apelurile întrerupte sunt închise explicit
   în istoric, fără reluarea automată a unor modificări neconfirmate.
-- Două moduri vizibile: **Auto** (implicit) și **Plan**. Confirmarea fiecărei
-  modificări este o preferință separată; valorile vechi sunt migrate. Auto poate
-  modifica proiectul cu permisiunea sesiunii activată; Plan rămâne doar pentru
-  citire. Editările de scenă folosesc Undo; fișierele au recuperare.
+- Două moduri vizibile: **Auto** (implicit) și **Plan**. Meniul de lucru conține
+  numai aceste opțiuni. General controlează **YOLO**, implicit dezactivat: Auto
+  cere confirmarea operațiilor de modificare/externe, iar YOLO activ le permite
+  automat. Plan rămâne doar pentru citire. Editările de scenă folosesc Undo; fișierele au recuperare.
 - Auto cere modelului să aleagă planificarea după complexitate, incertitudine și
   dependențe. `task_update` acceptă pași structurați și faze de planificare,
   execuție, verificare, finalizare sau blocaj. Planificarea blochează scrierile,
@@ -102,7 +107,7 @@ drept funcție validată cu un serviciu real.
   păstrează progresul întrerupt. Un plan propus nu declanșează execuția.
 - Planul se afișează într-un card pliabil din conversație, cu un singur pas în
   lucru, stări distincte și restaurare din istoric. **Aplică planul** trece în
-  Auto; preferința de confirmare rămâne activă dacă a fost aleasă.
+  Auto și păstrează preferința YOLO.
 - Textul conversației are titluri, liste, citate, cod inline, tabele și linkuri
   HTTP(S) validate, fără interpretarea HTML/BBCode din răspunsuri. Blocurile de
   cod și identitatea furnizorului au o prezentare compactă.
@@ -163,8 +168,62 @@ Implementat în surse și inclus în APK-ul `588bef1`:
 Catalogul are acum **49 tipuri de unelte definite**: 35 pentru editor, 4 pentru
 generare, 5 pentru sarcini/subagenți, 3 pentru Playtest și 2 pentru descoperire.
 Uneltele MCP descoperite se adaugă dinamic; nu toate cele 49 sunt expuse simultan
-în fiecare rol sau mod. Modulul încorporează acum **17 scripturi**, inclusiv
+în fiecare rol sau mod. Sursele curente încorporează **19 scripturi**, inclusiv
 datele SVG pentru iconuri.
+
+## Etapa control și Integrări — numai în surse
+
+- Indicator separat de context în bara de jos: inel, procent și detalii la hover.
+  Folosește consumul/capacitatea cunoscută a modelului ales; lipsa limitei arată
+  „—”, fără procent inventat. Se resetează între modele și conversații.
+- General conține YOLO, poziția chatului și sunetele. Preferințele se salvează
+  imediat. Limitele tehnice și activarea asistentului au dispărut din interfață.
+  Meniul Auto/Plan nu mai conține permisiuni, context sau extindere duplicată.
+- Poziție Centru / Stânga / Dreapta prin `EditorDock`; se mută același panel,
+  cu aceeași conversație. Mutarea este refuzată în timpul lucrului sau dictării.
+  Extinderea de sus mută temporar dock-ul în centru și îl restaurează la
+  restrângere, fără schimbarea preferinței salvate.
+- Sunet scurt original, sintetizat în PCM, cu volum moderat și previzualizare;
+  opțiunea este implicit oprită. Nu sună pentru eșec, anulare sau plan neterminat.
+- Integrări are Conexiuni, Skills și Sarcini. GitHub oferă citire repository,
+  branches, issues, PR-uri și fișiere, plus creare issue la cererea utilizatorului.
+  Tokenul rămâne în vault; repository-ul și activarea sunt salvate per proiect.
+- Blender CLI este numai pentru Windows/Linux: executabil configurabil, test de
+  versiune, script Python din proiect, fundal fără shell, ieșire limitată,
+  anulare/timeout și coduri reale de eroare. Nu este instalat în APK/Android.
+  Legăturile MCP și generare duc la paginile funcționale existente.
+- Skills sunt fișiere `res://.godot_ai/skills/<id>/SKILL.md`, cu manager de creare,
+  editare, activare/dezactivare și ștergere cu recuperare. Agentul are
+  `skill_list`, `skill_read`, `skill_save`; actualizările verifică hash-ul,
+  iar Plan/confirmările sunt respectate. Instrucțiunile nu se execută automat.
+- AGENT.MD editează `res://AGENT.md`, inclus în context, cu migrare la salvare din
+  memoria privată veche, reîncărcare și protecție împotriva suprascrierii unui
+  fișier modificat între timp. `AGENTS.md` existent rămâne separat și păstrat.
+- Jurnalul este consolă cronologică pentru cereri, unelte, rezultate și finalizare,
+  cu filtru, Live și copiere. Datele sunt redactate; afișarea este limitată pentru
+  a menține editorul responsiv.
+
+Catalogul maxim ajunge la **55 tipuri de unelte** pe desktop (54 pe Android),
+prin cele 3 unelte de skills și integrările opționale GitHub/Blender. Nu toate
+sunt expuse simultan. Există 19 scripturi și 61 SVG-uri upstream în surse.
+
+Verificări deja încheiate: 187 aserțiuni funcționale, fără erori, incluzând Blender
+real 4.3.2 în Debian ARM64: script → GLB → import în Godot, erori Python, anulare
+și timeout. Adaptorul nativ GitHub a citit efectiv repository-ul public
+`godotengine/godot` fără autentificare; crearea issue a fost testată doar cu server
+simulat, fără publicare reală. C++ a trecut verificarea de sintaxă și tipuri.
+Regresia finală a trecut **172 verificări în fiecare dintre cinci configurații**
+(desktop, narrow, wide, phone_landscape, phone_compact), fără erori și cu ieșire
+normală. Capturile finale pentru General, Integrări, Skills, AGENT.MD, consola
+de jurnal, context și dock-uri au fost inspectate vizual. Încorporarea celor
+**19 scripturi** și hash-urile celor **61 SVG-uri** au fost verificate.
+
+Nu s-a compilat un APK nou. Puntea C++ de dock nu a fost executată într-un fork
+recompilat în această etapă; fixture-ul folosește dock-urile reale Godot prin
+pluginul de test. Windows, Android fizic și sunetul pe hardware rămân de validat.
+Dovezi: `.ai-qa/control-settings-runtime-complete.log`,
+`.ai-qa/control-settings-complete/`, `.ai-qa/github-read-live.json` și
+`.ai-qa/control-settings-verification.json`.
 
 ## Etapa Auto/Plan și lizibilitate — livrată în APK `9a019f6`
 
@@ -190,6 +249,7 @@ local și în CI, cu runtimes simulate. Dovezi: `.ai-qa/auto-plan-final/`,
 
 | Etapă | Dovezi | Limite |
 | --- | --- | --- |
+| Control și Integrări (numai surse) | 187 aserțiuni, 172 × 5 verificări în editorul upstream; C++ verificat static; 19 scripturi și 61 SVG-uri verificate; Blender real → GLB → Godot și GitHub public native HTTP | APK neschimbat; C++ dock nou neexecutat într-un fork recompilat, Windows/Android/audio hardware nevalidate |
 | APK `9a019f6` — Auto/Plan și lizibilitate | [Workflow `39740297032`](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032) reușit: 167 aserțiuni, 142 × 5 verificări upstream, 152 × 5 verificări native, 3 teste de livrare, 9 teste companion + build, C++ și 17 surse încorporate verificate | Livrat atomic în Download; fără teste fizice Android sau furnizori reali |
 | APK `12794c4` (istoric) | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
 | APK `588bef1` (istoric) | Workflow `39725331751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
@@ -323,6 +383,13 @@ Certificatul de dezvoltare a rămas neschimbat:
   SHA-256 și unicul installer au fost reverificate; solicitată reindexarea
   Android, fără confirmarea vizibilității în managerul de fișiere. Nu este o
   recompilare. Dovezi: `.ai-qa/download-refresh-9a019f6.json`.
+
+- **22.10.2026:** reorganizare control/Integrări/Skills/Jurnal/AGENT.MD,
+  indicator permanent de context și dock-uri. Numai surse, fără recompilare APK,
+  conform cererii utilizatorului. Final: 187 aserțiuni și 172 × 5 verificări
+  upstream, fără erori; Blender real și citire GitHub public verificate. C++
+  verificat static, 19 surse și 61 SVG-uri verificate. Commit păstrat local pentru
+  a evita declanșarea workflow-ului Android; limitele sunt în etapa curentă.
 
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).

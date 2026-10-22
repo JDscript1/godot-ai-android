@@ -49,7 +49,13 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
-        if location.path.endswith("/models"):
+        if location.path == "/repos/fixture/project":
+            self.reply({"full_name": "fixture/project", "default_branch": "main", "private": False})
+        elif location.path == "/repos/fixture/project/contents/script.gd":
+            self.reply({"type": "file", "path": "script.gd", "size": 13, "sha": "fixture-sha", "encoding": "base64", "content": base64.b64encode(b"extends Node\n").decode()})
+        elif location.path in ["/repos/fixture/project/issues", "/repos/fixture/project/pulls", "/repos/fixture/project/branches"]:
+            self.reply([{"name": "main", "number": 3, "title": "Fixture issue", "state": "open", "body": "not copied into list"}])
+        elif location.path.endswith("/models"):
             self.reply({"data": [{"id": "fixture-code", "name": "Fixture coding model", "context_window": 8192, "effort": {"supported_levels": ["high", "max"]}}]})
         elif location.path == "/object_info":
             self.reply({"FixturePrompt": {}, "SaveImage": {}, "SaveGLB": {}})
@@ -66,7 +72,9 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         location = urllib.parse.urlparse(self.path)
-        if location.path == "/mcp":
+        if location.path == "/repos/fixture/project/issues":
+            self.reply({"number": 4, "title": payload["title"], "state": "open", "html_url": "https://github.com/fixture/project/issues/4"}, 201)
+        elif location.path == "/mcp":
             method = payload.get("method")
             if method == "notifications/initialized":
                 self.reply(b"", 202)

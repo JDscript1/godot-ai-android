@@ -21,6 +21,9 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto/Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+Current source changes add [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md).
+They have not been packaged in a new APK; the download above remains `9a019f6`.
+
 # Godot Engine
 
 <p align="center">

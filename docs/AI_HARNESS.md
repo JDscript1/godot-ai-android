@@ -72,8 +72,9 @@ completion. Request, retry, step, and dispatched-tool counts are separate.
 ## Auto and Plan
 
 The chat offers two user modes. Auto carries out the task; Plan inspects and
-publishes a proposal without project mutations. Confirmation is an independent
-preference, not a third mode. Existing low-level permission IDs remain internal.
+publishes a proposal without project mutations. General controls automatic permissions through YOLO; with YOLO off, each
+mutation/external operation requests confirmation. The mode menu contains only
+Auto and Plan. Applying a plan retains the YOLO preference. Existing low-level permission IDs remain internal.
 The active turn freezes its mode, and queued messages retain their selection.
 
 `planner.gd` owns a per-turn state machine and upgrades the existing `task_update`
@@ -112,8 +113,8 @@ harness cannot independently prove arbitrary project correctness.
   integral JSON numbers, bounds, enums, patterns, local references, and basic
   combinators. Unsupported constraints or external references fail explicitly.
   `format` is annotation-only; this is not a complete JSON Schema implementation.
-- Only tools in the current run's registry can reach the dispatcher. Plan and
-  sessions with writes disabled therefore cannot gain a mutation tool by naming it in a model reply.
+- Only tools in the current run's registry can reach the dispatcher. Plan cannot gain a mutation tool by naming it in a model reply. Auto with YOLO
+  off still requires explicit approval before dispatching modifying/external tools.
   The existing editor permission checks still run before an actual operation.
 - A response must have matching assistant/tool-call data, dictionary arguments,
   nonempty unique call IDs, and at most 64 calls. A reused ID with a different
@@ -146,7 +147,10 @@ file recovery, generation jobs, and MCP discovery remain host services. Automati
 token-budget compaction and autonomous restart of interrupted turns are not
 introduced by this change.
 
-## Verification
+See [control, integrations and project skills](AI_INTEGRATIONS.md) for the newer
+source-only changes. These were not added to the delivered APK below.
+
+## Verification of delivered APK `9a019f6`
 
 Results on 2026-10-22. The runtime and upstream-editor rows used the upstream
 Godot 4.7.2 Linux ARM64 editor locally; the native bridge row used the fork's

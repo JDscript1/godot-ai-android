@@ -16,13 +16,15 @@ var provider_picker: OptionButton
 var model_picker: OptionButton
 var mode_picker: OptionButton
 var effort_picker: OptionButton
-var full_control: CheckBox
-var confirm_changes: CheckBox
 var mode_buttons: Array = []
 var plan_cards: Dictionary = {}
 var send_button: Button
 var status: Label
 var context_label: Label
+var context_indicator: HBoxContainer
+var context_gauge: Control
+var context_ratio = -1.0
+var context_key = ""
 var reference_label: Label
 var tasks_label: Label
 var model_button: Button
@@ -184,13 +186,30 @@ func _ready() -> void:
 	icon_button(composer_controls, "Attach", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
 	options_button = button(composer_controls, "Auto", _open_options)
 	options_button.icon = _icon("Agent")
-	options_button.tooltip_text = "Mod de lucru și permisiuni"
+	options_button.tooltip_text = "Mod de lucru"
 	options_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
 	options_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	options_button.clip_text = false
 	controls_spacer = Control.new()
 	controls_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	composer_controls.add_child(controls_spacer)
+	context_indicator = HBoxContainer.new()
+	context_indicator.name = "ContextFilling"
+	context_indicator.alignment = BoxContainer.ALIGNMENT_CENTER
+	composer_controls.add_child(context_indicator)
+	context_gauge = Control.new()
+	context_gauge.custom_minimum_size = Vector2(18, 18) * EditorInterface.get_editor_scale()
+	context_gauge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	context_indicator.add_child(context_gauge)
+	context_gauge.draw.connect(func() -> void:
+		var scale = EditorInterface.get_editor_scale()
+		var gauge_center = context_gauge.size / 2
+		context_gauge.draw_arc(gauge_center, 6 * scale, -PI / 2, 3 * PI / 2, 40, Color("41485c"), 2 * scale, true)
+		if context_ratio > 0:
+			context_gauge.draw_arc(gauge_center, 6 * scale, -PI / 2, -PI / 2 + TAU * context_ratio, 40, Color("edb56b") if context_ratio >= 0.8 else Color("aa8be8"), 2 * scale, true))
+	context_label = label(context_indicator, "—")
+	context_label.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+	set_context(0, 0)
 	voice_button = icon_button(composer_controls, "Microphone", "Dictare", func() -> void: action.emit("voice", {}))
 	send_button = icon_button(composer_controls, "ArrowUp", "Trimite mesajul", func() -> void: action.emit("send", {}))
 	send_button.add_theme_stylebox_override("normal", style(Color("7650c5")))
@@ -228,29 +247,7 @@ func _ready() -> void:
 		choice.toggle_mode = true
 		choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		mode_buttons.append(choice)
-	var hint = label(options, "Auto planifică și execută. Plan pregătește propunerea.")
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	effort_picker.item_selected.connect(func(_index: int) -> void: sync_selection())
-	var permissions = VBoxContainer.new()
-	var advanced = button(options, "Permisiuni și context", func() -> void:
-		permissions.visible = not permissions.visible
-		_open_options.call_deferred())
-	advanced.icon = _icon("Settings")
-	options.add_child(permissions)
-	permissions.hide()
-	full_control = CheckBox.new()
-	full_control.text = "Permite modificări în această sesiune"
-	full_control.button_pressed = true
-	full_control.tooltip_text = "Auto poate modifica proiectul. Plan rămâne doar pentru citire."
-	permissions.add_child(full_control)
-	confirm_changes = CheckBox.new()
-	confirm_changes.text = "Confirmă fiecare modificare"
-	permissions.add_child(confirm_changes)
-	context_label = label(permissions, "Context: —")
-	context_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	button(options, "Extinde / restrânge chatul", func() -> void:
-		EditorInterface.set_distraction_free_mode(not EditorInterface.is_distraction_free_mode_enabled())
-		runtime_options.hide())
 	status = label(root_column, "")
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.add_theme_color_override("font_color", Color("b4bdd1"))
@@ -540,6 +537,10 @@ func _open_reasoning() -> void:
 	_show_drawer("reasoning")
 
 func sync_selection() -> void:
+	var key = str(provider_picker.get_selected_metadata()) + ":" + str(model_picker.get_selected_metadata()) if provider_picker.selected >= 0 and model_picker.selected >= 0 else ""
+	if key != context_key:
+		context_key = key
+		set_context(0, 0)
 	var selection = _current_selection()
 	var profile: Dictionary = {}
 	for entry in catalog:
@@ -946,10 +947,10 @@ func provider_icon(profile: Dictionary) -> Texture2D:
 	return _icon("Provider_" + issuer)
 
 func section_icon(section: String) -> Texture2D:
-	return _icon({"general": "Settings", "providers": "Providers", "accounts": "Accounts", "generation": "Generation", "mcp": "MCP", "automations": "Automations", "journal": "Journal", "agent": "Agent", "voice": "Microphone", "playtesting": "Play"}.get(section, "Settings"))
+	return _icon({"general": "Settings", "providers": "Providers", "accounts": "Accounts", "generation": "Generation", "mcp": "MCP", "integrations": "Integrations", "journal": "Journal", "agent": "File", "voice": "Microphone", "playtesting": "Play"}.get(section, "Settings"))
 
 func _toggle_expanded() -> void:
-	EditorInterface.set_distraction_free_mode(not EditorInterface.is_distraction_free_mode_enabled())
+	action.emit("expand", {})
 
 func show_status(message: String, working: bool = false) -> void:
 	status_revision += 1
@@ -982,9 +983,18 @@ func show_attachments(images: Array, references: Array) -> void:
 					chip.add_theme_constant_override("icon_max_width", int(28 * EditorInterface.get_editor_scale()))
 	attachment_chips.visible = attachment_chips.get_child_count() > 0
 
+func set_context(used: int, limit: int, output: int = 0, estimated: bool = false) -> void:
+	context_ratio = clampf(float(used) / limit, 0, 1) if limit > 0 and used > 0 else -1.0
+	context_label.text = ("≈" if estimated else "") + str(roundi(context_ratio * 100)) + "%" if context_ratio >= 0 else "—"
+	var detail = "Context: " + (str(used) if used > 0 else "necunoscut") + (" / %s tokeni" % limit if limit > 0 else " · limită necunoscută")
+	if output > 0: detail += "\nIeșire: %s tokeni" % output
+	if estimated: detail += "\nValoare estimată"
+	for control in [context_indicator, context_label, context_gauge]: control.tooltip_text = detail
+	context_gauge.queue_redraw()
+
 func _open_options() -> void:
 	_close_drawer()
-	var wanted = Vector2i(330, 270) * EditorInterface.get_editor_scale()
+	var wanted = Vector2i(240, 84) * EditorInterface.get_editor_scale()
 	wanted.y = maxi(wanted.y, int(runtime_options.get_child(0).get_combined_minimum_size().y + 24 * EditorInterface.get_editor_scale()))
 	var window = get_window()
 	runtime_options.size = Vector2i(mini(wanted.x, window.size.x - 32), mini(wanted.y, window.size.y - 32))

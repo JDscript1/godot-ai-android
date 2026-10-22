@@ -18,7 +18,7 @@ BRANDS = {
     'kimi': 'kimi-color', 'mistral': 'mistral-color', 'groq': 'groq', 'xai': 'grok',
     'zai': 'zai', 'minimax': 'minimax-color', 'nvidia': 'nvidia-color',
     'siliconflow': 'siliconcloud-color', 'ollama': 'ollama', 'lmstudio': 'lmstudio',
-    'copilot': 'githubcopilot',
+    'copilot': 'githubcopilot', 'github': 'github',
 }
 ACTIONS = {
     'Add': 'plus', 'ArrowUp': 'arrow-up', 'Stop': 'square', 'Microphone': 'mic',
@@ -31,6 +31,7 @@ ACTIONS = {
     'MCP': 'plug', 'Generation': 'image', 'Automations': 'zap', 'Journal': 'notebook-text',
     'Play': 'play', 'Favorite': 'star', 'Rename': 'pencil', 'Archive': 'archive',
     'Export': 'upload', 'Delete': 'trash', 'File': 'file', 'Provider_custom': 'code-xml',
+    'Skills': 'book-open-check', 'Integrations': 'puzzle', 'Sound': 'volume-2',
 }
 
 
