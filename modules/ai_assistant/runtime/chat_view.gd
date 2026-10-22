@@ -1065,6 +1065,7 @@ func _file_card(parent: Node, id: String) -> Control:
 		_compact_button(entry)
 		if spec[2] == "file_pin":
 			entry.toggle_mode = true
+			entry.set_meta("file_pin_id", id)
 			entry.set_pressed_no_signal(item.get("pinned", false))
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
 	var gesture = {"pressed": false, "start": Vector2.ZERO, "delta": Vector2.ZERO, "mentioned": false, "started": 0}
@@ -1153,3 +1154,8 @@ func _file_long_press(card: Control, id: String, gesture: Dictionary, started: i
 	var origin = card.get_global_rect().position + Vector2(get_window().position)
 	popup.position = Vector2i(origin)
 	popup.popup()
+
+func sync_file_pins(id: String) -> void:
+	var item = file_registry.describe(id, file_scope)
+	for button in thread.find_children("*", "Button", true, false):
+		if button.get_meta("file_pin_id", "") == id: button.set_pressed_no_signal(item.get("pinned", false))

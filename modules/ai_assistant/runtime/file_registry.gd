@@ -222,11 +222,14 @@ func search(args: Dictionary, scope: String, cancel: Dictionary = {}) -> Diction
 
 func pin(id: String, scope: String, enabled: bool) -> Error:
 	if describe(id, scope).is_empty(): return ERR_UNAUTHORIZED
-	var scopes: Array = entries[id].get("pinned_scopes", [])
+	var previous: Array = entries[id].get("pinned_scopes", []).duplicate()
+	var scopes = previous.duplicate()
 	if enabled and scope not in scopes: scopes.append(scope)
 	elif not enabled: scopes.erase(scope)
 	entries[id]["pinned_scopes"] = scopes
-	return _save()
+	var error = _save()
+	if error != OK: entries[id]["pinned_scopes"] = previous
+	return error
 
 func catalog(scope: String, pinned_only: bool = false) -> Array:
 	var result = []

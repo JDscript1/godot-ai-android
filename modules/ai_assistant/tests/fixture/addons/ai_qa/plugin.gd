@@ -121,6 +121,10 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 10, "Build all settings forms")
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "files":
+		await _file_chat_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "dock":
 		await _configuration_screenshots(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -833,6 +837,12 @@ func _file_chat_tests() -> void:
 	var card = panel.chat.thread.find_child("File_" + id, true, false)
 	_check(card != null and card.mouse_filter == Control.MOUSE_FILTER_PASS, "File cards preserve vertical chat scrolling until a horizontal gesture is accepted")
 	_check(card != null and card.find_children("*", "TextureRect", true, false).size() == 1, "Assistant file cards show actual image thumbnails")
+	panel.chat.append_message("assistant", "Aceeași referință", {"id": "qa-file-second", "files": [id]})
+	panel._chat_action("file_pin", {"id": id})
+	var pins = panel.chat.thread.find_children("*", "Button", true, false).filter(func(button: Button) -> bool: return button.get_meta("file_pin_id", "") == id)
+	_check(pins.size() == 2 and pins.all(func(button: Button) -> bool: return button.button_pressed), "Pinning one card synchronizes every visible copy of that file")
+	panel._chat_action("file_pin", {"id": id})
+	_check(pins.all(func(button: Button) -> bool: return not button.button_pressed) and not panel.file_registry.describe(id, scope).get("pinned", true), "Unpinning clears card indicators and conversation context together")
 	panel.composer.text = "Verifică aici"
 	panel._chat_action("file_mention", {"id": id})
 	var chips = panel.chat.attachment_chips.get_child_count()

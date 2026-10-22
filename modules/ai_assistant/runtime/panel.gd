@@ -2018,7 +2018,9 @@ func _chat_action(name: String, args: Dictionary) -> void:
 		"file_unmention": pending_files.erase(str(args["id"])); _composer_hints()
 		"file_pin":
 			var item = file_registry.describe(str(args["id"]), str(conversations.index["active"]))
-			if not item.is_empty(): file_registry.pin(str(args["id"]), str(conversations.index["active"]), not item.get("pinned", false))
+			if not item.is_empty():
+				if file_registry.pin(str(args["id"]), str(conversations.index["active"]), not item.get("pinned", false)) != OK: _status("Referința nu a putut fi fixată.")
+				chat.sync_file_pins(str(args["id"]))
 		"file_compare":
 			if compare_file.is_empty():
 				compare_file = str(args["id"])

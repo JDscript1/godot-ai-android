@@ -528,3 +528,10 @@ QA vizual și adaptorul Store sunt în lucru. APK-ul din Download rămâne db534
   model: Din catalog / Permite imagini / Doar text. Numele modelului nu este
   folosit pentru a presupune vision. 294 aserțiuni runtime fără eșecuri în
   `.ai-qa/files-capabilities-unit.log`; verificarea formularului este separată.
+
+- **Formular și carduri:** 231 verificări în configurația phone_compact fără
+  eșecuri (`.ai-qa/files-vision-ui/`), inclusiv persistența politicii de imagini
+  pentru fiecare model. Fixarea/eliberarea unei referințe sincronizează toate
+  cardurile aceluiași fișier; la eroare de salvare se păstrează starea anterioară.
+  Scenariul izolat pentru fișiere: 39 verificări fără eșecuri
+  (`.ai-qa/files-pin-sync/`).
