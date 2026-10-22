@@ -35,6 +35,10 @@ separate device verification.
 
 ## Integrations
 
+Integrations contains GitHub, desktop Blender CLI, Skills and saved tasks.
+MCP servers and image/3D generation have their own settings pages. The duplicate
+Services card and its shortcuts have been removed in source after APK `db5343b`.
+
 GitHub and Blender configuration is stored per project in the editor's private
 `projects/<hash>/integrations.json`. GitHub tokens use the existing encrypted
 vault/Android Keystore and never enter that JSON, model instructions or logs.
@@ -55,8 +59,7 @@ Changing repositories in one project does not configure another project.
   bounded output, supports Stop/timeout and reports nonzero/Python exit status
   as failure. Scripts have Blender's desktop filesystem access. Android has no
   Blender CLI control or tool, and the APK never installs Blender.
-- Existing MCP and image/3D generation pages are linked from Integrations.
-  Existing manually launched saved tasks remain under Integrations → Sarcini.
+- Existing manually launched saved tasks remain under Integrations → Sarcini.
   This adds no autonomous scheduler.
 
 The adapters follow [GitHub repository contents](https://docs.github.com/en/rest/repos/contents),

@@ -613,10 +613,6 @@ func _build_integrations(parent: Node) -> void:
 		_button(row, "Salvează", _save_connections)
 		_button(row, "Verifică", _verify_blender)
 		b["status"] = _label(blender, "Neconectat")
-	var links = _integration_card(connections, "Servicii", "MCP")
-	var link_row = _row(links)
-	_button(link_row, "Servere MCP", func() -> void: open_settings("mcp"))
-	_button(link_row, "Generare 2D / 3D", func() -> void: open_settings("generation"))
 	var skills = VBoxContainer.new()
 	skills.name = "Skills"
 	tabs.add_child(skills)

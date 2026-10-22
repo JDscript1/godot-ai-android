@@ -21,6 +21,10 @@ drept funcție validată cu un serviciu real.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
 
+**Ajustare ulterioară numai în surse:** eliminat cardul Servicii și scurtăturile
+MCP / Generare 2D/3D din Integrări. APK-ul `db5343b` nu include încă această
+curățare.
+
 ## Implementări existente
 
 ### Integrarea în editor și interfața
@@ -188,7 +192,8 @@ datele SVG pentru iconuri.
 - Blender CLI este numai pentru Windows/Linux: executabil configurabil, test de
   versiune, script Python din proiect, fundal fără shell, ieșire limitată,
   anulare/timeout și coduri reale de eroare. Nu este instalat în APK/Android.
-  Legăturile MCP și generare duc la paginile funcționale existente.
+  MCP și generarea au pagini proprii; scurtăturile duplicate din Integrări au
+  fost eliminate în surse după livrarea APK-ului `db5343b`.
 - Skills sunt fișiere `res://.godot_ai/skills/<id>/SKILL.md`, cu manager de creare,
   editare, activare/dezactivare și ștergere cu recuperare. Agentul are
   `skill_list`, `skill_read`, `skill_save`; actualizările verifică hash-ul,
@@ -434,3 +439,11 @@ compacte și adaptoarele Meshy/Tripo/OpenAI; compilarea APK este autorizată din
   scanare media a fost trimis; afișarea în managerul Android de fișiere rămâne
   verificabilă pe dispozitiv. A fost schimbat doar ajutorul de livrare, fără
   schimbarea surselor încorporate în APK-ul deja verificat.
+
+- **22.10.2026 — curățare Integrări:** eliminat cardul „Servicii”, inclusiv
+  „Servere MCP” și „Generare 2D / 3D”. Integrări păstrează GitHub, Blender CLI pe
+  desktop, Skills și Sarcini; MCP și Generare au paginile lor. Verificare în
+  editor Godot upstream, configurația phone_landscape: **178 verificări, zero
+  erori**, captură inspectată vizual. Dovezi: `.ai-qa/integrations-without-services/`
+  și `.ai-qa/integrations-without-services.log`. Modificare numai în surse,
+  fără recompilare sau înlocuire APK în această iterație.
