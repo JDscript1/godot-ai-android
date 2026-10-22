@@ -21,6 +21,19 @@ class FixtureVault:
 		return true
 	func erase(name: String) -> bool: return values.erase(name)
 
+class FixtureProvider:
+	extends RefCounted
+	var requests = 0
+	var call_id = "fixture-native-write"
+	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
+		requests += 1
+		var calls = []
+		if requests == 1: calls = [{"id": call_id + "-describe", "name": "tool_describe", "arguments": {"name": "godot_create_node"}}]
+		if requests == 2: calls = [{"id": call_id, "name": "godot_create_node", "arguments": {"type": "Node3D", "name": "HarnessProbe"}}]
+		var text = "" if requests <= 2 else "Verificat în editor."
+		if not text.is_empty(): delta.call(text)
+		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": "stop"}
+
 func _enter_tree() -> void:
 	if OS.get_environment("GODOT_AI_QA_SOURCE").is_empty(): return
 	_run.call_deferred()
@@ -36,8 +49,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "transport": "Transport", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "chat_view": "ChatView", "agent_jobs": "AgentJobs", "speech": "Speech"}
-	for name in ["common", "transport", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "chat_view", "agent_jobs", "speech", "panel"]:
+	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -68,6 +81,8 @@ func _run() -> void:
 		scene.name = "AITestRoot"
 		EditorInterface.add_root_node(scene)
 	await get_tree().process_frame
+	await _harness_editor_tests(scene)
+	await _code_tool_tests()
 	var toolset = panel.tools
 	var created = toolset.execute("godot_create_node", {"type": "Node3D", "name": "AIProbe"}, 2, true)
 	_check(created.get("ok", false), "Create scene node")
@@ -155,6 +170,7 @@ func _run() -> void:
 		image = panel.chat.runtime_options.get_texture().get_image()
 		if image != null and not image.is_empty(): image.save_png(output.path_join("chat-options.png"))
 		panel.chat.runtime_options.hide()
+		await _drawer_screenshots(output)
 	print("Godot AI editor: %s checks, %s failures" % [checks, failures.size()])
 	if not output.is_empty():
 		var file = FileAccess.open(output.path_join("editor-report.json"), FileAccess.WRITE)
@@ -211,6 +227,83 @@ func _native_runtime_tests() -> void:
 func _fixture_approval(name: String, results: Dictionary, operation_cancel: Dictionary = {}) -> void:
 	results[name] = await panel._authorize({"name": name, "risk": "write"}, {}, operation_cancel)
 
+func _harness_editor_tests(scene: Node) -> void:
+	var original_service = panel.providers
+	var original_profiles: Array = panel.config["providers"]
+	panel.config["providers"] = [{"id": "native-harness", "name": "Fixture native", "issuer": "custom", "kind": "chat", "models": [{"id": "fixture"}]}]
+	panel._refresh_profiles()
+	panel._choose({"profile": "native-harness", "model": "fixture"})
+	panel._new_conversation()
+	var service = FixtureProvider.new()
+	panel.providers = service
+	panel.mode_picker.select(2)
+	panel.full_control.button_pressed = true
+	await panel._start_chat("Create the fixture node and verify the tool result")
+	_check(not panel.busy and panel.harness.state == "completed" and service.requests == 3 and scene.get_node_or_null("HarnessProbe") != null, "Native harness discovers a tool, connects chat/model and edits the scene")
+	_check(panel.history.size() == 6 and panel.history[2].get("role") == "tool" and panel.history[-1].get("content") == "Verificat în editor.", "Harness preserves discovery, tool turn and streamed assistant message")
+	var snapshot: Dictionary = embedded["common"].read_json(panel.project_directory.path_join("runs").path_join(panel.current_turn + ".json"), {})
+	_check(snapshot.get("status") == "completed" and snapshot.get("tool_calls") == 1, "Harness saves its settled run in private project storage")
+	panel.tools.execute("godot_undo", {}, 2, true)
+	_check(scene.get_node_or_null("HarnessProbe") == null, "Harness scene mutation remains compatible with native Undo")
+	panel._new_conversation()
+	service.requests = 0
+	service.call_id = "fixture-analysis-write"
+	panel.mode_picker.select(0)
+	panel.full_control.button_pressed = false
+	await panel._start_chat("Inspect without modifying")
+	_check(not panel.busy and scene.get_node_or_null("HarnessProbe") == null and "tool_unavailable" in str(panel.history[2].get("content", "")), "Analysis mode excludes mutation tools even when the model requests one")
+	panel._new_conversation()
+	panel.providers = original_service
+	panel.config["providers"] = original_profiles
+	panel._refresh_profiles()
+
+func _code_tool_tests() -> void:
+	print("AI code tools: patch, recovery and diagnostics")
+	var path = "res://ai_patch_probe.gd"
+	var source = "extends Node\nvar patch_value = 1 # română 🐦\n"
+	var created = panel.tools.execute("godot_write_file", {"path": path, "text": source}, 2, true)
+	_check(created.get("ok", false), "Create an isolated patch fixture with normal file recovery")
+	var read = panel.tools.execute("godot_read_range", {"path": path, "start_line": 2, "end_line": 2}, 0, false)
+	_check(read.get("ok", false) and read["result"]["lines"][0]["line"] == 2 and read["result"]["sha256"] == source.sha256_text(), "Read ranges return exact source hashes and line numbers")
+	var edits = [{"old_text": "patch_value = 1", "new_text": "patch_value = 2"}]
+	var args = {"path": path, "expected_sha256": source.sha256_text(), "edits": edits}
+	var before_count = panel.tools.file_changes.size()
+	var preview = panel.tools.execute("godot_apply_patch", args, 2, true)
+	_check(preview.get("ok", false) and preview["result"]["dry_run"] and FileAccess.get_file_as_string(path) == source and panel.tools.file_changes.size() == before_count, "Patch preview changes neither file bytes nor recovery history")
+	args["dry_run"] = false
+	var applied = panel.tools.execute("godot_apply_patch", args, 2, true)
+	_check(applied.get("ok", false) and FileAccess.get_file_as_string(path) == source.replace("value = 1", "value = 2"), "Apply a version-checked exact patch in the real editor")
+	var stale = panel.tools.execute("godot_apply_patch", args, 2, true)
+	_check(stale.get("code") == "patch_conflict" and FileAccess.get_file_as_string(path) == source.replace("value = 1", "value = 2"), "A stale patch cannot overwrite a newer file")
+	var restored = panel.tools.execute("godot_restore_file", {"index": applied.get("result", {}).get("recovery_index", -1)}, 2, true)
+	_check(restored.get("ok", false) and FileAccess.get_file_as_string(path) == source, "Patch recovery restores the exact original file")
+	var matches = panel.tools.execute("godot_search_code", {"path": path, "query": "patch_value", "limit": 1}, 0, false)
+	_check(matches.get("ok", false) and matches["result"]["matches"].size() == 1 and matches["result"]["matches"][0]["line"] == 2 and matches["result"]["matches"][0]["column"] == 5, "Code search reports the real matching file, line and column")
+	_check(panel.tools.execute("godot_apply_patch", args, 0, true).get("code") == "permission_denied", "Analysis mode cannot apply patches")
+	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
+	EditorInterface.edit_script(load(path))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var script_editor = EditorInterface.get_script_editor()
+	var code = script_editor.get_current_editor().get_base_editor()
+	var original_text = str(code.text)
+	code.text = original_text + "\n# unsaved manual change\n"
+	var dirty = panel.tools.execute("godot_apply_patch", args, 2, true)
+	_check(dirty.get("code") == "unsaved_changes" and FileAccess.get_file_as_string(path) == source, "Patch refuses an open script with unsaved user edits")
+	code.text = source
+	script_editor.save_all_scripts()
+	var diagnostics = panel.tools.execute("godot_script_diagnostics", {"path": path}, 0, false)
+	if panel.plugin.has_method("script_diagnostics"):
+		_check(diagnostics.get("ok", false) and diagnostics["result"]["valid"] and diagnostics["result"]["sha256"] == source.sha256_text(), "Native parser validates the saved GDScript and reports its hash")
+		var invalid = panel.tools.execute("godot_script_diagnostics", {"path": path, "text": "extends Node\nfunc broken(:\n"}, 0, false)
+		_check(invalid.get("ok", false) and not invalid["result"]["valid"] and invalid["result"]["diagnostics"].any(func(item: Dictionary) -> bool: return item.get("severity") == "error" and item.get("line", 0) >= 2), "Native parser returns structured diagnostics for an invalid draft")
+		_check(FileAccess.get_file_as_string(path) == source, "Diagnosing a draft does not save it over the project script")
+	else:
+		_check(diagnostics.get("code") == "native_bridge_unavailable", "Upstream editor explicitly reports the missing native diagnostics bridge")
+	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
+
 func _chat_workflow_tests() -> void:
 	panel.config["providers"] = [
 		{"id": "qa-cloud", "name": "Fixture cloud", "issuer": "deepseek", "kind": "chat", "models": [{"id": "qa-code", "efforts": ["high"]}]},
@@ -233,9 +326,47 @@ func _chat_workflow_tests() -> void:
 	_check(panel.history.is_empty() and panel.conversations.select(original) and panel.conversations.load_active().size() == 1, "New conversation keeps the previous transcript")
 	panel.history = panel.conversations.load_active()
 	panel._new_conversation()
+	var original_selection = panel._selection().duplicate()
+	panel.chat.model_button.pressed.emit()
 	panel.chat.picker_search.text = "Fixture local"
-	panel.chat._filter_models()
-	_check(panel.chat.picker_list.item_count == 2 and panel.chat.picker_list.get_item_text(0).contains("locale"), "Search model selector within local provider group")
+	panel.chat.picker_search.text_changed.emit(panel.chat.picker_search.text)
+	_check(panel.chat.picker.visible and panel.chat.drawer_stage == "providers" and panel.chat.picker_list.item_count == 2 and panel.chat.picker_list.get_item_text(0).contains("locale"), "Composer opens searchable provider groups in a bottom drawer")
+	_tap_drawer("profile", "qa-local")
+	_check(panel.chat.drawer_stage == "models" and panel.chat.picker_search.text.is_empty() and panel.chat.picker_list.item_count == 1, "Selecting a provider shows only its own models and clears the provider search")
+	_tap_drawer("model", "qa-local-code")
+	_check(panel.chat.drawer_stage == "reasoning" and panel.chat.picker_list.item_count == 1 and panel.chat.drawer_hint.text.contains("Nu sunt disponibile"), "Model without declared reasoning levels offers only automatic reasoning")
+	_check(panel._selection() == original_selection, "Provider and model changes remain pending until reasoning is chosen")
+	panel.chat._close_drawer()
+	_check(panel._selection() == original_selection, "Closing the drawer discards a pending model change")
+	panel.chat.model_button.pressed.emit()
+	_tap_drawer("profile", "qa-cloud")
+	panel.chat.picker_search.text = "qa-local-code"
+	panel.chat.picker_search.text_changed.emit(panel.chat.picker_search.text)
+	_check(panel.chat.picker_list.get_item_metadata(0) == null, "Model search cannot leak results from a different provider")
+	panel.chat.picker_search.text = "qa-code"
+	panel.chat.picker_search.text_changed.emit(panel.chat.picker_search.text)
+	_tap_drawer("model", "qa-code")
+	_check(panel.chat.picker_list.item_count == 2 and panel.chat.picker_list.get_item_metadata(1).get("effort") == "high", "Reasoning drawer uses the selected model's provider-declared levels")
+	panel.chat.drawer_back.pressed.emit()
+	_check(panel.chat.drawer_stage == "models", "Reasoning drawer can return to model selection")
+	_tap_drawer("model", "qa-code")
+	_tap_drawer("effort", "high")
+	_check(not panel.chat.picker.visible and panel._selection() == {"profile": "qa-cloud", "model": "qa-code", "effort": "high"} and panel.chat.reasoning_button.text == "Ridicat", "Reasoning choice applies provider, model and effort together and updates composer chips")
+	panel.chat.reasoning_button.pressed.emit()
+	_check(panel.chat.drawer_stage == "reasoning", "Reasoning chip reopens the current model's reasoning drawer directly")
+	var escape = InputEventKey.new()
+	escape.pressed = true
+	escape.keycode = KEY_ESCAPE
+	panel.chat._input(escape)
+	_check(not panel.chat.picker.visible and panel._selection()["effort"] == "high", "Escape closes reasoning without changing the selection")
+	var fingerprints = {}
+	for entry in embedded["providers"].CATALOG:
+		var texture = panel.chat.provider_icon({"issuer": entry["id"]})
+		_check(texture != null and not texture.get_image().is_empty(), "Provider icon renders: " + str(entry["id"]))
+		if entry["id"] != "qwen-cn": fingerprints[texture.get_image().get_data().hex_encode().sha256_text()] = true
+	_check(fingerprints.size() == embedded["providers"].CATALOG.size() - 1, "Each provider identity has a distinct vector emblem; Qwen regions share the same identity")
+	for service in ["Claude", "Kimi", "GitHub Copilot"]:
+		_check(panel.chat.provider_icon({"kind": "companion", "name": service}) != panel.chat._icon("Accounts"), "Subscription retains its provider emblem: " + service)
 	panel.mode_picker.select(1)
 	panel.full_control.button_pressed = true
 	panel.cancel = {"cancelled": false}
@@ -259,14 +390,26 @@ func _chat_workflow_tests() -> void:
 	panel._render_history()
 
 func _layout_tests() -> void:
-	_check(panel.chat.model_button.get_global_rect().end.y < panel.composer.get_global_rect().position.y, "Model selector stays in the header above the conversation")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(panel.chat.compose_panel.get_global_rect().encloses(panel.chat.model_button.get_global_rect()) and panel.chat.model_button.get_global_rect().position.y >= panel.composer.get_global_rect().end.y, "Compact model selector stays below the input inside the composer")
+	_check(not panel.chat.model_button.get_global_rect().intersects(panel.chat.reasoning_button.get_global_rect()), "Model and reasoning chips do not overlap")
 	_check(not panel.effort_picker.is_visible_in_tree() and not panel.full_control.is_visible_in_tree(), "Advanced agent controls stay out of the composer")
 	var mode_button = panel.chat.options_button
 	var mode_text_width = mode_button.get_theme_font("font").get_string_size(mode_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_button.get_theme_font_size("font_size")).x
-	_check(mode_button.size.x >= mode_text_width + mode_button.get_theme_stylebox("normal").get_minimum_size().x, "Current mode label fits without clipping")
+	_check(mode_button.size.x >= mode_text_width + mode_button.get_theme_stylebox("normal").get_minimum_size().x + mode_button.icon.get_width() - 2, "Current mode icon and label fit without clipping")
+	panel.chat._open_picker()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	print("AI drawer bounds: workspace=", panel.chat.root_column.get_global_rect(), " sheet=", panel.chat.drawer.get_global_rect(), " minimum=", panel.chat.drawer.get_combined_minimum_size())
+	_check(panel.chat.root_column.get_global_rect().encloses(panel.chat.drawer.get_global_rect()), "Bottom drawer stays entirely inside the chat workspace")
+	_check(panel.chat.drawer.get_global_rect().encloses(panel.chat.picker_list.get_global_rect()), "Drawer list fits inside the sheet and scrolls independently")
+	panel.chat._close_drawer()
 	_check(not panel.chat.stop_button.is_visible_in_tree(), "Idle chat hides Stop")
 	panel.chat.set_working(true)
 	_check(panel.chat.stop_button.is_visible_in_tree(), "Running chat shows Stop")
+	await get_tree().process_frame
+	_check(panel.chat.compose_panel.get_global_rect().encloses(panel.chat.stop_button.get_global_rect()) and panel.chat.compose_panel.get_global_rect().encloses(panel.chat.send_button.get_global_rect()), "Stop and send remain inside the composer while work is running")
 	panel.chat.set_working(false)
 	panel.speech.transcribing = true
 	await get_tree().process_frame
@@ -304,6 +447,44 @@ func _layout_tests() -> void:
 	panel._layout_settings()
 	print("AI editor UI scale: ", EditorInterface.get_editor_scale())
 	panel.settings_window.hide()
+
+func _tap_drawer(key: String, value: String) -> void:
+	for index in range(panel.chat.picker_list.item_count):
+		var metadata: Variant = panel.chat.picker_list.get_item_metadata(index)
+		if metadata is Dictionary and metadata.get(key) == value:
+			panel.chat.picker_list.item_selected.emit(index)
+			return
+	_check(false, "Drawer item is available: " + key + "=" + value)
+
+func _drawer_screenshots(output: String) -> void:
+	panel.config["providers"][0]["models"] = [
+		{"id": "fixture-code", "name": "Coding · model de probă", "efforts": ["low", "medium", "high", "max"]},
+		{"id": "fixture-fast", "name": "Chat rapid · model de probă"}]
+	panel.config["providers"].append({"id": "visual-openai", "name": "OpenAI · API", "issuer": "openai", "kind": "responses", "models": [{"id": "fixture-openai"}]})
+	panel.config["providers"].append({"id": "visual-ollama", "name": "Ollama · local", "issuer": "ollama", "kind": "chat", "models": [{"id": "fixture-local"}]})
+	panel.config["providers"].append({"id": "visual-lmstudio", "name": "LM Studio · local", "issuer": "lmstudio", "kind": "chat", "models": [{"id": "fixture-studio"}]})
+	panel.account_profiles = [{"id": "visual-subscription", "name": "ChatGPT · abonament", "kind": "siwc", "models": [{"id": "fixture-account"}]}]
+	panel._refresh_profiles()
+	panel._choose({"profile": "visual-provider", "model": "fixture-code", "effort": "high"})
+	await get_tree().process_frame
+	panel.chat._open_picker()
+	await get_tree().create_timer(0.2).timeout
+	var image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+	image.save_png(output.path_join("drawer-providers.png"))
+	_tap_drawer("profile", "visual-provider")
+	await get_tree().create_timer(0.2).timeout
+	print("AI model rows: list=", panel.chat.picker_list.size, " scroll max/page=", panel.chat.picker_list.get_v_scroll_bar().max_value, "/", panel.chat.picker_list.get_v_scroll_bar().page)
+	_check(not panel.chat.picker_list.get_v_scroll_bar().visible, "Short model lists include row padding and need no unnecessary scrollbar")
+	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+	image.save_png(output.path_join("drawer-models.png"))
+	_tap_drawer("model", "fixture-code")
+	await get_tree().create_timer(0.2).timeout
+	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+	image.save_png(output.path_join("drawer-reasoning.png"))
+	_tap_drawer("effort", "high")
+	await get_tree().create_timer(0.2).timeout
+	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+	image.save_png(output.path_join("composer-selector.png"))
 
 func _populated_chat_tests() -> void:
 	var scale = EditorInterface.get_editor_scale()

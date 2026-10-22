@@ -1,7 +1,7 @@
 """Embed editor scripts; they never depend on, or get copied into, a game project."""
 from pathlib import Path
 
-SCRIPT_BINDINGS = {'common': 'Common', 'transport': 'Transport', 'providers': 'Providers', 'editor_tools': 'Tools', 'mcp': 'MCP', 'assets': 'Assets', 'accounts': 'Accounts', 'conversations': 'Conversations', 'chat_view': 'ChatView', 'agent_jobs': 'AgentJobs', 'speech': 'Speech', 'panel': 'Panel'}
+SCRIPT_BINDINGS = {'common': 'Common', 'transport': 'Transport', 'tool_registry': 'ToolRegistry', 'providers': 'Providers', 'editor_tools': 'Tools', 'mcp': 'MCP', 'assets': 'Assets', 'accounts': 'Accounts', 'conversations': 'Conversations', 'chat_view': 'ChatView', 'harness': 'Harness', 'agent_jobs': 'AgentJobs', 'speech': 'Speech', 'panel': 'Panel'}
 SCRIPT_NAMES = list(SCRIPT_BINDINGS)
 
 

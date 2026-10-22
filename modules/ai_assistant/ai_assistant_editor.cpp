@@ -153,7 +153,64 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
 	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
+	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
 	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantEditorPlugin::open_settings, DEFVAL(String()));
+}
+
+Dictionary AIAssistantEditorPlugin::script_diagnostics(const String &p_source, const String &p_path) {
+	Dictionary response;
+	if (p_source.utf8().length() > 1024 * 1024 || !p_path.begins_with("res://") || p_path.get_extension() != "gd") {
+		response["ok"] = false;
+		response["code"] = "invalid_arguments";
+		response["error"] = "Expected a project GDScript path and at most 1 MB of source.";
+		return response;
+	}
+	List<ScriptLanguage::ScriptError> errors;
+	List<ScriptLanguage::Warning> warnings;
+	List<String> functions;
+	const bool valid = GDScriptLanguage::get_singleton()->validate(p_source, p_path, &functions, &errors, &warnings);
+	Array diagnostics;
+	for (const ScriptLanguage::ScriptError &error : errors) {
+		if (diagnostics.size() >= 200) {
+			break;
+		}
+		Dictionary entry;
+		entry["severity"] = "error";
+		entry["path"] = error.path;
+		entry["line"] = error.line;
+		entry["column"] = error.column;
+		entry["message"] = error.message;
+		diagnostics.push_back(entry);
+	}
+	for (const ScriptLanguage::Warning &warning : warnings) {
+		if (diagnostics.size() >= 200) {
+			break;
+		}
+		Dictionary entry;
+		entry["severity"] = "warning";
+		entry["path"] = p_path;
+		entry["line"] = warning.start_line;
+		entry["end_line"] = warning.end_line;
+		entry["code"] = warning.string_code;
+		entry["message"] = warning.message;
+		diagnostics.push_back(entry);
+	}
+	Array found_functions;
+	for (const String &function : functions) {
+		if (found_functions.size() >= 200) {
+			break;
+		}
+		found_functions.push_back(function);
+	}
+	Dictionary result;
+	result["path"] = p_path;
+	result["valid"] = valid;
+	result["diagnostics"] = diagnostics;
+	result["functions"] = found_functions;
+	result["truncated"] = errors.size() + warnings.size() > diagnostics.size() || functions.size() > found_functions.size();
+	response["ok"] = true;
+	response["result"] = result;
+	return response;
 }
 
 int64_t AIAssistantEditorPlugin::runtime_request(const String &p_command, const Dictionary &p_arguments) {

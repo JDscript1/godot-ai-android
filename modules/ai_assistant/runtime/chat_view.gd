@@ -21,9 +21,26 @@ var context_label: Label
 var reference_label: Label
 var tasks_label: Label
 var model_button: Button
-var picker: AcceptDialog
+var picker: Control
+var drawer: PanelContainer
+var drawer_title: Label
+var drawer_hint: Label
+var drawer_step: Label
+var drawer_icon: TextureRect
+var drawer_back: Button
+var drawer_stage = "providers"
+var drawer_profile = ""
+var pending_selection: Dictionary = {}
+var drawer_return_focus: Control
+var drawer_layout_pending = false
 var picker_search: LineEdit
 var picker_list: ItemList
+var reasoning_button: Button
+var selection_row: HBoxContainer
+var composer_controls: HBoxContainer
+var compose_column: VBoxContainer
+var controls_spacer: Control
+var voice_button: Button
 var catalog: Array = []
 var follow_bottom = true
 var loaded = 50
@@ -62,7 +79,7 @@ func _ready() -> void:
 	sidebar = VBoxContainer.new()
 	sidebar.custom_minimum_size.x = 220 * EditorInterface.get_editor_scale()
 	add_child(sidebar)
-	button(sidebar, "＋ Conversație nouă", func() -> void: action.emit("new", {}))
+	button(sidebar, "Conversație nouă", func() -> void: action.emit("new", {})).icon = _icon("Add")
 	search = LineEdit.new()
 	search.placeholder_text = "Caută conversații…"
 	sidebar.add_child(search)
@@ -77,8 +94,8 @@ func _ready() -> void:
 	chats.item_selected.connect(func(index: int) -> void: action.emit("open", {"id": chats.get_item_metadata(index)}))
 	var history_actions = HFlowContainer.new()
 	sidebar.add_child(history_actions)
-	for pair in [["☆", "favorite"], ["✎", "rename"], ["Arhivează", "archive"], ["Export", "export"], ["Șterge", "delete"]]:
-		button(history_actions, pair[0], func() -> void: action.emit(pair[1], {}))
+	for entry in [["Favorite", "Favorite", "favorite"], ["Rename", "Redenumește", "rename"], ["Archive", "Arhivează", "archive"], ["Export", "Exportă", "export"], ["Delete", "Șterge", "delete"]]:
+		icon_button(history_actions, entry[0], entry[1], func() -> void: action.emit(entry[2], {}))
 	root_column = VBoxContainer.new()
 	root_column.add_theme_constant_override("separation", int(6 * EditorInterface.get_editor_scale()))
 	root_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -89,12 +106,6 @@ func _ready() -> void:
 	title = label(header, "Conversație nouă")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	title.hide()
-	model_button = button(header, "Conectează un furnizor", _open_picker)
-	model_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	model_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	model_button.clip_text = true
-	model_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {}))
 	expand_button = icon_button(header, "Expand", "Extinde / restrânge chatul", _toggle_expanded)
 	icon_button(header, "Settings", "Setări", func() -> void: action.emit("settings", {}))
@@ -126,7 +137,7 @@ func _ready() -> void:
 	compose_style.set_border_width_all(1)
 	compose_panel.add_theme_stylebox_override("panel", compose_style)
 	root_column.add_child(compose_panel)
-	var compose_column = VBoxContainer.new()
+	compose_column = VBoxContainer.new()
 	compose_panel.add_child(compose_column)
 	attachment_chips = HFlowContainer.new()
 	attachment_chips.hide()
@@ -146,23 +157,44 @@ func _ready() -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ENTER and not event.shift_pressed and not OS.has_feature("android"):
 			composer.accept_event()
 			action.emit("send", {}))
-	var controls = HBoxContainer.new()
-	compose_column.add_child(controls)
-	icon_button(controls, "Add", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
-	options_button = button(controls, "Analiză ▾", _open_options)
+	selection_row = HBoxContainer.new()
+	compose_column.add_child(selection_row)
+	model_button = button(selection_row, "Alege un model", _open_picker)
+	model_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	model_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	model_button.clip_text = true
+	model_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	model_button.icon = _icon("Models")
+	model_button.tooltip_text = "Alege furnizorul și modelul"
+	model_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
+	reasoning_button = button(selection_row, "Auto", _open_reasoning)
+	reasoning_button.icon = _icon("Reasoning")
+	reasoning_button.clip_text = true
+	reasoning_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	reasoning_button.custom_maximum_size.x = 150 * EditorInterface.get_editor_scale()
+	reasoning_button.tooltip_text = "Nivel de raționament"
+	reasoning_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
+	composer_controls = HBoxContainer.new()
+	compose_column.add_child(composer_controls)
+	icon_button(composer_controls, "Attach", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
+	options_button = button(composer_controls, "Analiză", _open_options)
+	options_button.icon = _icon("Inspect")
+	options_button.tooltip_text = "Mod de lucru și permisiuni"
+	options_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
 	options_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	options_button.clip_text = false
-	var spacer = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controls.add_child(spacer)
-	icon_button(controls, "Microphone", "Dictare", func() -> void: action.emit("voice", {}))
-	send_button = icon_button(controls, "ArrowUp", "Trimite mesajul", func() -> void: action.emit("send", {}))
+	controls_spacer = Control.new()
+	controls_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	composer_controls.add_child(controls_spacer)
+	voice_button = icon_button(composer_controls, "Microphone", "Dictare", func() -> void: action.emit("voice", {}))
+	send_button = icon_button(composer_controls, "ArrowUp", "Trimite mesajul", func() -> void: action.emit("send", {}))
 	send_button.add_theme_stylebox_override("normal", style(Color("7650c5")))
-	stop_button = icon_button(controls, "Stop", "Oprește agentul", func() -> void: action.emit("stop", {}))
+	stop_button = icon_button(composer_controls, "Stop", "Oprește agentul", func() -> void: action.emit("stop", {}))
 	stop_button.hide()
 	provider_picker = OptionButton.new()
 	model_picker = OptionButton.new()
-	for hidden in [provider_picker, model_picker]:
+	effort_picker = OptionButton.new()
+	for hidden in [provider_picker, model_picker, effort_picker]:
 		hidden.hide()
 		add_child(hidden)
 	runtime_options = PopupPanel.new()
@@ -174,11 +206,9 @@ func _ready() -> void:
 	runtime_options.add_child(options)
 	label(options, "Mod de lucru")
 	mode_picker = OptionButton.new()
-	for mode in Common.MODES: mode_picker.add_item(mode)
+	for index in range(Common.MODES.size()): mode_picker.add_icon_item(_icon(["Inspect", "Confirm", "Agent", "Plan"][index]), Common.MODES[index])
 	options.add_child(mode_picker)
-	label(options, "Nivel de raționament")
-	effort_picker = OptionButton.new()
-	options.add_child(effort_picker)
+	effort_picker.item_selected.connect(func(_index: int) -> void: sync_selection())
 	full_control = CheckBox.new()
 	full_control.text = "Permite modificări în această sesiune"
 	full_control.tooltip_text = "Necesar pentru Confirmare și Autonom. Analiza și Planul rămân doar pentru citire."
@@ -192,22 +222,10 @@ func _ready() -> void:
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.add_theme_color_override("font_color", Color("b4bdd1"))
 	status.hide()
-	picker = AcceptDialog.new()
-	picker.title = "Furnizori și modele"
-	add_child(picker)
-	var body = VBoxContainer.new()
-	picker.add_child(body)
-	picker_search = LineEdit.new()
-	picker_search.placeholder_text = "Caută serviciu, profil sau model…"
-	body.add_child(picker_search)
-	picker_search.text_changed.connect(func(_text: String) -> void: _filter_models())
-	picker_list = ItemList.new()
-	picker_list.custom_minimum_size = Vector2(260, 300)
-	body.add_child(picker_list)
-	picker_list.item_activated.connect(_pick_model)
-	picker.confirmed.connect(func() -> void:
-		var selected = picker_list.get_selected_items()
-		if not selected.is_empty(): _pick_model(selected[0]))
+	_build_drawer()
+	visibility_changed.connect(func() -> void:
+		if not is_visible_in_tree() and picker.visible: _close_drawer())
+	root_column.resized.connect(func() -> void: _layout_composer.call_deferred())
 	resized.connect(_resize)
 	_resize()
 
@@ -216,6 +234,20 @@ func _resize() -> void:
 	var scale = EditorInterface.get_editor_scale()
 	sidebar.visible = size.x / scale >= 900
 	_size_messages.call_deferred()
+	_layout_composer.call_deferred()
+	_layout_drawer.call_deferred()
+
+func _layout_composer() -> void:
+	if selection_row == null: return
+	var inline = root_column.size.x >= 620 * EditorInterface.get_editor_scale()
+	var target: Node = composer_controls if inline else compose_column
+	if selection_row.get_parent() != target:
+		selection_row.reparent(target, false)
+		target.move_child(selection_row, 1 if inline else 2)
+	selection_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	controls_spacer.visible = not inline
+	voice_button.visible = not stop_button.visible or root_column.size.x >= 380 * EditorInterface.get_editor_scale()
+	_layout_drawer()
 
 func _size_messages() -> void:
 	if thread == null or scroll == null: return
@@ -255,6 +287,10 @@ func _apply_theme() -> void:
 	skin.set_stylebox("panel", "PopupPanel", style(Color("191e2c"), 16))
 	skin.set_stylebox("selected", "ItemList", style(Color("393150"), 8))
 	var plain = StyleBoxEmpty.new()
+	var focus = style(Color.TRANSPARENT, 8)
+	focus.border_color = Color("9b80d1")
+	focus.set_border_width_all(1)
+	for type in ["Button", "OptionButton", "LineEdit", "ItemList"]: skin.set_stylebox("focus", type, focus)
 	skin.set_stylebox("normal", "RichTextLabel", plain)
 	skin.set_stylebox("focus", "RichTextLabel", plain)
 	skin.set_stylebox("normal", "CodeEdit", style(Color("0d1320"), 8))
@@ -276,41 +312,242 @@ func label(parent: Node, text: String) -> Label:
 	return control
 
 func _open_picker() -> void:
-	if catalog.is_empty():
-		action.emit("settings", {"section": "providers"})
-		return
+	pending_selection.clear()
+	drawer_profile = ""
+	_show_drawer("providers")
+
+func _build_drawer() -> void:
+	# A native control overlay stays inside the chat, including embedded Android editors.
+	picker = Control.new()
+	picker.name = "ModelDrawer"
+	picker.set_as_top_level(true)
+	picker.z_index = 10
+	add_child(picker)
+	picker.hide()
+	var scrim = ColorRect.new()
+	scrim.color = Color(0.025, 0.035, 0.06, 0.72)
+	scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	picker.add_child(scrim)
+	scrim.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT: _close_drawer())
+	drawer = PanelContainer.new()
+	var surface = style(Color("1b2030"), 20)
+	surface.border_color = Color("514369")
+	surface.set_border_width_all(1)
+	drawer.add_theme_stylebox_override("panel", surface)
+	picker.add_child(drawer)
+	drawer.minimum_size_changed.connect(_queue_drawer_layout)
+	var body = VBoxContainer.new()
+	body.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
+	drawer.add_child(body)
+	var handle = ColorRect.new()
+	handle.color = Color("625771")
+	handle.custom_minimum_size = Vector2(32, 3) * EditorInterface.get_editor_scale()
+	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	handle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(handle)
+	var header = HBoxContainer.new()
+	body.add_child(header)
+	drawer_icon = TextureRect.new()
+	drawer_icon.custom_minimum_size = Vector2(24, 24) * EditorInterface.get_editor_scale()
+	drawer_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	drawer_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	header.add_child(drawer_icon)
+	drawer_title = label(header, "Furnizori")
+	drawer_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	drawer_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	drawer_title.add_theme_font_size_override("font_size", int(18 * EditorInterface.get_editor_scale()))
+	icon_button(header, "Close", "Închide fără a schimba modelul", _close_drawer)
+	drawer_step = label(body, "")
+	drawer_step.add_theme_color_override("font_color", Color("b5a4d9"))
+	picker_search = LineEdit.new()
+	picker_search.custom_minimum_size.y = 44 * EditorInterface.get_editor_scale()
+	picker_search.right_icon = _icon("Search")
+	body.add_child(picker_search)
+	picker_search.text_changed.connect(func(_text: String) -> void: _filter_models())
+	drawer_hint = label(body, "")
+	drawer_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	drawer_hint.add_theme_color_override("font_color", Color("aab5cb"))
+	picker_list = ItemList.new()
+	picker_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	picker_list.custom_minimum_size.y = 88 * EditorInterface.get_editor_scale()
+	picker_list.fixed_icon_size = Vector2i(24, 24) * EditorInterface.get_editor_scale()
+	picker_list.add_theme_constant_override("icon_margin", int(12 * EditorInterface.get_editor_scale()))
+	picker_list.add_theme_constant_override("v_separation", int(20 * EditorInterface.get_editor_scale()))
+	body.add_child(picker_list)
+	# One tap advances. No double-click/confirmation is needed on touchscreens.
+	picker_list.item_selected.connect(_pick_model)
+	var footer = HBoxContainer.new()
+	body.add_child(footer)
+	drawer_back = button(footer, "Înapoi", _drawer_back)
+	drawer_back.icon = _icon("Back")
+	var spacer = Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer.add_child(spacer)
+	var manage = button(footer, "Furnizori", func() -> void:
+		_close_drawer()
+		action.emit("settings", {"section": "providers"}))
+	manage.icon = _icon("Settings")
+	manage.tooltip_text = "Adaugă un furnizor sau actualizează modelele"
+
+func _show_drawer(stage: String) -> void:
+	runtime_options.hide()
+	if not picker.visible:
+		drawer_return_focus = get_viewport().gui_get_focus_owner()
+		picker.show()
+	drawer_stage = stage
+	picker_search.text = ""
+	picker_search.visible = stage != "reasoning"
+	drawer_back.visible = stage != "providers"
+	drawer_step.text = {"providers": "1 / 3 · Furnizor", "models": "2 / 3 · Model", "reasoning": "3 / 3 · Reasoning"}[stage]
+	var profile = _drawer_profile_data()
+	drawer_title.text = {"providers": "Alege furnizorul", "models": str(profile.get("name", "Modele")), "reasoning": "Nivel de raționament"}[stage]
+	drawer_icon.texture = _icon("Providers") if stage == "providers" else (provider_icon(profile) if stage == "models" else _icon("Reasoning"))
+	picker_search.placeholder_text = "Caută un furnizor sau profil…" if stage == "providers" else "Caută un model la acest furnizor…"
+	var model = _model_data(profile, str(pending_selection.get("model", "")))
+	drawer_hint.text = "API, abonamente și modele locale, în grupuri separate." if stage == "providers" else ("Alege modelul, apoi nivelul de reasoning." if stage == "models" else str(profile.get("name", "")) + " · " + str(model.get("name", model.get("id", ""))))
 	_filter_models()
-	picker.popup_centered_clamped(Vector2i(640, 470), 0.92)
-	picker_search.grab_focus()
+	_layout_drawer()
+	_queue_drawer_layout()
+	picker_list.grab_focus()
+
+func _queue_drawer_layout() -> void:
+	if drawer_layout_pending: return
+	drawer_layout_pending = true
+	_layout_drawer.call_deferred()
+
+func _layout_drawer() -> void:
+	drawer_layout_pending = false
+	if picker == null or not picker.visible: return
+	var scale = EditorInterface.get_editor_scale()
+	picker.global_position = root_column.global_position
+	picker.size = root_column.size
+	var compact = picker.size.y < 340 * scale
+	drawer_step.visible = not compact
+	drawer_hint.visible = picker.size.y >= 360 * scale
+	picker_list.custom_minimum_size.y = (44 if compact else 88) * scale
+	var body: VBoxContainer = drawer.get_child(0)
+	var separation = int((4 if compact else 8) * scale)
+	if body.get_theme_constant("separation") != separation: body.add_theme_constant_override("separation", separation)
+	body.get_child(0).visible = not compact
+	var list_padding = picker_list.get_theme_stylebox("panel").get_minimum_size().y
+	var font_height = picker_list.get_theme_font("font").get_height(picker_list.get_theme_font_size("font_size"))
+	var row_height = ceilf(maxf(picker_list.fixed_icon_size.y, font_height)) + picker_list.get_theme_constant("v_separation") + 1
+	var content_height = drawer.get_combined_minimum_size().y + maxf(0, mini(picker_list.item_count, 7) * row_height + list_padding - picker_list.custom_minimum_size.y)
+	var wanted = Vector2(minf(560 * scale, picker.size.x - 16 * scale), minf(minf(510 * scale, content_height), picker.size.y - 16 * scale))
+	drawer.size = wanted
+	drawer.position = Vector2((picker.size.x - drawer.size.x) / 2, picker.size.y - drawer.size.y - 8 * scale)
+
+func _close_drawer() -> void:
+	if picker == null or not picker.visible: return
+	picker.hide()
+	pending_selection.clear()
+	if is_instance_valid(drawer_return_focus) and drawer_return_focus.is_visible_in_tree(): drawer_return_focus.grab_focus()
+
+func _input(event: InputEvent) -> void:
+	if picker != null and picker.visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_close_drawer()
+		get_viewport().set_input_as_handled()
+
+func _drawer_back() -> void:
+	_show_drawer("models" if drawer_stage == "reasoning" else "providers")
+
+func _drawer_profile_data() -> Dictionary:
+	for profile in catalog:
+		if str(profile["id"]) == drawer_profile: return profile
+	return {}
+
+func _model_data(profile: Dictionary, id: String) -> Dictionary:
+	for model in profile.get("models", []):
+		if str(model["id"]) == id: return model
+	return {}
+
+func _current_selection() -> Dictionary:
+	return {"profile": provider_picker.get_item_metadata(provider_picker.selected) if provider_picker.selected >= 0 else "", "model": model_picker.get_item_metadata(model_picker.selected) if model_picker.selected >= 0 else "", "effort": effort_picker.get_item_metadata(effort_picker.selected) if effort_picker.selected >= 0 else ""}
+
+func _open_reasoning() -> void:
+	pending_selection = _current_selection()
+	if str(pending_selection["model"]).is_empty():
+		_open_picker()
+		return
+	drawer_profile = str(pending_selection["profile"])
+	_show_drawer("reasoning")
+
+func sync_selection() -> void:
+	var selection = _current_selection()
+	var profile: Dictionary = {}
+	for entry in catalog:
+		if entry["id"] == selection["profile"]: profile = entry
+	var model = _model_data(profile, str(selection["model"]))
+	model_button.text = str(model.get("name", model.get("id", "Alege un model"))) + "  ▾"
+	model_button.icon = provider_icon(profile)
+	model_button.tooltip_text = (str(profile.get("name", "Furnizor")) + " · " + str(selection["model"]) + "\nSchimbă furnizorul sau modelul") if not model.is_empty() else "Adaugă un furnizor și alege un model"
+	reasoning_button.text = effort_label(str(selection["effort"]))
+	var font = reasoning_button.get_theme_font("font")
+	var text_width = font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, reasoning_button.get_theme_font_size("font_size")).x
+	reasoning_button.custom_minimum_size.x = minf(150 * EditorInterface.get_editor_scale(), text_width + 58 * EditorInterface.get_editor_scale())
+	reasoning_button.tooltip_text = "Reasoning · " + reasoning_button.text
+	reasoning_button.disabled = model.is_empty()
+
+func effort_label(effort: String) -> String:
+	return str({"": "Auto", "none": "Fără", "minimal": "Minim", "low": "Redus", "medium": "Mediu", "high": "Ridicat", "xhigh": "Foarte ridicat", "max": "Maxim"}.get(effort, effort))
 
 func _filter_models() -> void:
 	picker_list.clear()
 	var query = picker_search.text.to_lower()
-	for group in ["API cloud", "Abonamente", "Modele locale"]:
-		var heading = false
-		for profile in catalog:
-			var category = "Abonamente" if profile.get("kind") in ["siwc", "companion"] else ("Modele locale" if profile.get("issuer") in ["ollama", "lmstudio", "llamacpp"] else "API cloud")
-			if category != group: continue
-			for model in profile.get("models", []):
-				var text = str(profile["name"]) + " · " + str(model.get("name", model["id"]))
-				if not query.is_empty() and not query in (text + " " + str(model["id"])).to_lower(): continue
+	if drawer_stage == "providers":
+		for group in ["API cloud", "Abonamente", "Modele locale"]:
+			var heading = false
+			for profile in catalog:
+				var category = "Abonamente" if profile.get("kind") in ["siwc", "companion"] else ("Modele locale" if profile.get("issuer") in ["ollama", "lmstudio", "llamacpp"] else "API cloud")
+				if category != group or (not query.is_empty() and not query in (str(profile["name"]) + " " + str(profile.get("issuer", ""))).to_lower()): continue
 				if not heading:
-					picker_list.add_item("── " + group + " ──")
-					picker_list.set_item_disabled(picker_list.item_count - 1, true)
+					label_once(group)
+					picker_list.set_item_icon(picker_list.item_count - 1, _icon({"API cloud": "Cloud", "Abonamente": "Accounts", "Modele locale": "Local"}[group]))
 					heading = true
-				picker_list.add_item(text)
-				picker_list.set_item_metadata(picker_list.item_count - 1, {"profile": profile["id"], "model": model["id"]})
-	if picker_list.item_count == 0: label_once("Adaugă un profil și actualizează modelele din Setări → Furnizori.")
+				var count = profile.get("models", []).size()
+				picker_list.add_item(str(profile["name"]) + " · %s %s" % [count, "model" if count == 1 else "modele"], provider_icon(profile))
+				picker_list.set_item_metadata(picker_list.item_count - 1, {"profile": profile["id"]})
+	elif drawer_stage == "models":
+		var current = _current_selection()
+		for model in _drawer_profile_data().get("models", []):
+			var text = str(model.get("name", model["id"]))
+			if not query.is_empty() and not query in (text + " " + str(model["id"])).to_lower(): continue
+			var active = current["profile"] == drawer_profile and current["model"] == model["id"]
+			picker_list.add_item(text, _icon("Check" if active else "Models"))
+			picker_list.set_item_tooltip(picker_list.item_count - 1, str(model["id"]))
+			picker_list.set_item_metadata(picker_list.item_count - 1, {"profile": drawer_profile, "model": model["id"]})
+	else:
+		var efforts: Array = _model_data(_drawer_profile_data(), str(pending_selection.get("model", ""))).get("efforts", [])
+		var current = _current_selection()
+		var selected_effort = str(current["effort"]) if current["profile"] == pending_selection.get("profile") and current["model"] == pending_selection.get("model") else ""
+		picker_list.add_item("Automat · lasă furnizorul să decidă", _icon("Check" if selected_effort.is_empty() else "Auto"))
+		picker_list.set_item_metadata(0, {"effort": ""})
+		for effort in efforts:
+			if str(effort).is_empty(): continue
+			picker_list.add_item(effort_label(str(effort)), _icon("Check" if selected_effort == str(effort) else "Reasoning"))
+			picker_list.set_item_metadata(picker_list.item_count - 1, {"effort": str(effort)})
+		if efforts.is_empty(): drawer_hint.text += "\nNu sunt disponibile niveluri configurabile pentru acest model."
+	if picker_list.item_count == 0: label_once("Niciun rezultat. Verifică filtrele sau catalogul din Setări.")
 
 func label_once(text: String) -> void:
 	picker_list.add_item(text)
 	picker_list.set_item_disabled(picker_list.item_count - 1, true)
 
 func _pick_model(index: int) -> void:
+	if index < 0 or index >= picker_list.item_count: return
 	var selected: Variant = picker_list.get_item_metadata(index)
 	if not selected is Dictionary: return
-	action.emit("model", selected)
-	picker.hide()
+	if drawer_stage == "providers":
+		drawer_profile = str(selected["profile"])
+		_show_drawer("models")
+	elif drawer_stage == "models":
+		pending_selection = selected.duplicate()
+		_show_drawer("reasoning")
+	else:
+		pending_selection["effort"] = selected["effort"]
+		action.emit("model", pending_selection.duplicate())
+		_close_drawer()
 
 func refresh_history(entries: Array, active: String) -> void:
 	chats.clear()
@@ -545,12 +782,79 @@ func icon_button(parent: Node, icon_name: String, hint: String, callback: Callab
 
 func _icon(name: String) -> Texture2D:
 	if icon_cache.has(name): return icon_cache[name]
-	var paths = {"Add": "M12 5v14M5 12h14", "ArrowUp": "m6 12 6-6 6 6M12 6v13", "Stop": "M6 6h12v12H6Z", "Microphone": "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0ZM6 10v1a6 6 0 0 0 12 0v-1M12 17v4M8 21h8", "Menu": "M4 6h16M4 12h16M4 18h16", "Settings": "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z", "Expand": "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5", "Copy": "M8 8h12v12H8ZM16 4H4v12", "Retry": "M4 11a8 8 0 1 1 2 7M4 4v7h7", "More": "M5 11h1v2H5ZM11 11h1v2h-1ZM17 11h1v2h-1Z", "Changes": "M8 3H4v18h16V7l-4-4H8ZM8 11h8M8 15h8M12 8v6", "Close": "m6 6 12 12M18 6 6 18"}
+	# Original vector symbols, rasterized at the editor scale; no font glyphs or network assets.
+	var paths = {
+		"Add": "M12 5v14M5 12h14", "ArrowUp": "m6 12 6-6 6 6M12 6v13", "Stop": "M6 6h12v12H6Z",
+		"Microphone": "M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0ZM6 10v1a6 6 0 0 0 12 0v-1M12 17v4M8 21h8",
+		"Menu": "M4 6h16M4 12h16M4 18h16", "Settings": "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z",
+		"Expand": "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5", "Copy": "M8 8h12v12H8ZM16 4H4v12",
+		"Retry": "M4 11a8 8 0 1 1 2 7M4 4v7h7", "More": "M5 11h1v2H5ZM11 11h1v2h-1ZM17 11h1v2h-1Z",
+		"Changes": "M8 3H4v18h16V7l-4-4H8ZM8 11h8M8 15h8M12 8v6", "Close": "m6 6 12 12M18 6 6 18",
+		"Back": "m10 5-7 7 7 7M3 12h18", "Check": "m5 12 4 4L19 6", "Search": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14m5 12 6 6",
+		"Attach": "m9 13 7-7a3 3 0 0 1 4 4L10 20a5 5 0 0 1-7-7L13 3M7 15l9-9",
+		"Models": "m12 3 9 5-9 5-9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5",
+		"Reasoning": "M9 4a3 3 0 0 0-5 3 4 4 0 0 0-1 7 3 3 0 0 0 6 5V4Zm6 0a3 3 0 0 1 5 3 4 4 0 0 1 1 7 3 3 0 0 1-6 5V4ZM6 9l3 2m6 2 3-3M6 16h3m6 0h3",
+		"Auto": "m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z",
+		"Providers": "M4 4h6v6H4Zm10 0h6v6h-6ZM4 14h6v6H4Zm10 0h6v6h-6Z",
+		"Cloud": "M6 18a5 5 0 0 1-1-10 7 7 0 0 1 13-1 5.5 5.5 0 0 1 0 11H6Z",
+		"Accounts": "M9 3h6v5l-3 3-3-3ZM4 8H2v13h20V8h-2M7 16h10",
+		"Local": "M3 4h18v13H3Zm5 17h8m-4-4v4M6 8h6M6 12h3",
+		"Inspect": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14m5 12 6 6M7 10h6m-3-3v6",
+		"Confirm": "m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Zm-4 9 3 3 5-6",
+		"Agent": "M7 6h10l4 6-4 6H7l-4-6Zm5-3v3m-4 5v2m8-2v2M9 18v3m6-3v3",
+		"Plan": "M9 5h12M9 12h12M9 19h12M3 4h2v2H3Zm0 7h2v2H3Zm0 7h2v2H3Z",
+		"MCP": "M8 3v5m8-5v5M5 8h14v4a7 7 0 0 1-14 0Zm7 11v3",
+		"Generation": "M3 4h18v16H3Zm0 12 5-5 4 4 3-3 6 6M15 7h2v2h-2Z",
+		"Automations": "m13 2-9 12h7l-1 8 10-12h-7Z", "Journal": "M5 3h14v18H5ZM8 7h8M8 11h8M8 15h5",
+		"Play": "m8 4 13 8-13 8Z", "Favorite": "m12 3 3 6 6 1-4 5 1 6-6-3-6 3 1-6-4-5 6-1Z",
+		"Rename": "m4 16 12-12 4 4L8 20H4Zm9-9 4 4", "Archive": "M3 3h18v5H3Zm2 5v13h14V8M9 12h6",
+		"Export": "M4 12v8h16v-8M12 15V3m-5 5 5-5 5 5", "Delete": "M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7",
+		"File": "M5 3h9l5 5v13H5Zm9 0v6h5M8 13h8m-8 4h6",
+		"Provider_openai": "m12 3 7 4v10l-7 4-7-4V7Zm0 0v8l7 6M5 7l7 4-7 6m7-6v10m0-10 7-4",
+		"Provider_anthropic": "m3 19 6-14 6 14M6 13h6M16 5l5 14",
+		"Provider_gemini": "M12 2c0 6-4 10-10 10 6 0 10 4 10 10 0-6 4-10 10-10-6 0-10-4-10-10Z",
+		"Provider_deepseek": "M3 10c4 0 4 4 9 4 4 0 6-3 6-6l4-3-1 7c-1 6-6 8-11 6-4-1-6-4-7-8Zm7 1 2-5 3 4m-3 4h1",
+		"Provider_openrouter": "M3 12h8m-4-5 5 5-5 5m5-5 5-7h4m-9 7 5 7h4m-2-16 2 2-2 2m0 10 2 2-2 2",
+		"Provider_qwen": "m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Zm0 6-4 7h8Z",
+		"Provider_kimi": "M5 4v16M19 4l-9 8 9 8M5 12h5",
+		"Provider_copilot": "M4 8h16v11H4ZM6 8l2-4h8l2 4M7 11h3v3H7Zm7 0h3v3h-3ZM9 17h6M2 11v5m20-5v5",
+		"Provider_mistral": "M3 20V4l9 10 9-10v16M7 20v-8m10 0v8M3 4h4m10 0h4",
+		"Provider_groq": "M17 8a7 7 0 1 0-5 11h5v-8h-5m5 4 4 5",
+		"Provider_xai": "M4 4l16 16M20 4 4 20m8-9 8-7M4 20l8-8",
+		"Provider_zai": "M4 5h16L4 19h16M8 9h8m-8 6h8",
+		"Provider_minimax": "M3 18V6l6 9 3-5 3 5 6-9v12",
+		"Provider_nvidia": "M2 12c5-8 15-8 20 0-5 8-15 8-20 0Zm6 0a4 4 0 1 0 8 0 4 4 0 1 0-8 0m4-2v4",
+		"Provider_siliconflow": "m12 3 8 5v8l-8 5-8-5V8Zm-8 5 8 4 8-4m-8 4v9m-4-11 8 6",
+		"Provider_ollama": "M6 11 7 2l4 7h2l4-7 1 9c3 4 1 10-6 10S3 15 6 11Zm3 3h1m4 0h1m-5 3h4",
+		"Provider_lmstudio": "M3 3v18h18M7 15V6l5 6 5-6v9M7 17h12",
+		"Provider_llamacpp": "M4 5h5v7h7V5h4v15h-4v-4H9v4H4Zm8 2h1m-1-4h1",
+		"Provider_custom": "M8 5H5v14h3m8-14h3v14h-3m-3-9-2 14"
+	}
+	var colors = {"openai": "83d6bd", "anthropic": "e3b497", "gemini": "94b5ff", "deepseek": "84aaff", "openrouter": "c7b4ff", "qwen": "b6a0ff", "kimi": "90c8ff", "mistral": "ffbd75", "groq": "ff927e", "xai": "e7eaf4", "zai": "90c7d3", "minimax": "ffacc8", "nvidia": "b1de75", "siliconflow": "baacff", "ollama": "e3e7ee", "lmstudio": "b5a0ff", "llamacpp": "e6d0ac", "custom": "a7b7ce"}
+	var color = str(colors.get(name.trim_prefix("Provider_"), "dce1ef"))
 	var image = Image.new()
-	var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 24 24"><path d="%s" fill="none" stroke="#dce1ef" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' % [int(24 * EditorInterface.get_editor_scale()), int(24 * EditorInterface.get_editor_scale()), paths.get(name, paths["More"])]
+	var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 24 24"><path d="%s" fill="none" stroke="#%s" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' % [int(24 * EditorInterface.get_editor_scale()), int(24 * EditorInterface.get_editor_scale()), paths.get(name, paths["More"]), color]
 	image.load_svg_from_string(svg)
 	icon_cache[name] = ImageTexture.create_from_image(image)
 	return icon_cache[name]
+
+func provider_icon(profile: Dictionary) -> Texture2D:
+	var issuer = str(profile.get("issuer", "custom"))
+	if issuer == "qwen-cn": issuer = "qwen"
+	if profile.get("kind") == "siwc": issuer = "openai"
+	if profile.get("kind") == "companion":
+		var service = (str(profile.get("account", "")) + " " + str(profile.get("name", ""))).to_lower()
+		if "claude" in service: issuer = "anthropic"
+		elif "gemini" in service: issuer = "gemini"
+		elif "chatgpt" in service or "codex" in service: issuer = "openai"
+		elif "kimi" in service: issuer = "kimi"
+		elif "copilot" in service: return _icon("Provider_copilot")
+		else: return _icon("Accounts")
+	if not issuer in ["openai", "anthropic", "gemini", "deepseek", "openrouter", "qwen", "kimi", "mistral", "groq", "xai", "zai", "minimax", "nvidia", "siliconflow", "ollama", "lmstudio", "llamacpp"]: issuer = "custom"
+	return _icon("Provider_" + issuer)
+
+func section_icon(section: String) -> Texture2D:
+	return _icon({"general": "Settings", "providers": "Providers", "accounts": "Accounts", "generation": "Generation", "mcp": "MCP", "automations": "Automations", "journal": "Journal", "agent": "Agent", "voice": "Microphone", "playtesting": "Play"}.get(section, "Settings"))
 
 func _toggle_expanded() -> void:
 	EditorInterface.set_distraction_free_mode(not EditorInterface.is_distraction_free_mode_enabled())
@@ -587,6 +891,7 @@ func show_attachments(images: Array, references: Array) -> void:
 	attachment_chips.visible = attachment_chips.get_child_count() > 0
 
 func _open_options() -> void:
+	_close_drawer()
 	var wanted = Vector2i(330, 270) * EditorInterface.get_editor_scale()
 	var window = get_window()
 	runtime_options.size = Vector2i(mini(wanted.x, window.size.x - 32), mini(wanted.y, window.size.y - 32))
@@ -595,9 +900,12 @@ func _open_options() -> void:
 	runtime_options.popup()
 
 func set_working(working: bool) -> void:
-	if stop_button != null: stop_button.visible = working
+	if stop_button != null and stop_button.visible != working:
+		stop_button.visible = working
+		_layout_composer()
 	if options_button != null and mode_picker != null and mode_picker.selected >= 0:
-		options_button.text = ["Analiză", "Confirmă", "Autonom", "Plan"][mode_picker.selected] + " ▾"
+		options_button.text = ["Analiză", "Confirmă", "Autonom", "Plan"][mode_picker.selected]
+		options_button.icon = _icon(["Inspect", "Confirm", "Agent", "Plan"][mode_picker.selected])
 
 func show_welcome() -> void:
 	thread.alignment = BoxContainer.ALIGNMENT_CENTER

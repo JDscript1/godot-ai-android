@@ -78,7 +78,8 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
                 result = {"tools": [{"name": name, "description": "Fixture", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": True}}]}
                 if name == "first": result["nextCursor"] = "next-page"
             else:
-                result = {"content": [{"type": "text", "text": "real fixture tool result"}]}
+                failed = payload.get("params", {}).get("arguments", {}).get("fail", False)
+                result = {"content": [{"type": "text", "text": "fixture tool execution failed" if failed else "real fixture tool result"}], "isError": failed}
             self.reply({"jsonrpc": "2.0", "id": payload["id"], "result": result}, headers={"Mcp-Session-Id": "fixture-session"})
         elif location.path == "/prompt":
             self.reply({"prompt_id": "fixture-job", "number": 0})

@@ -3,6 +3,7 @@ extends RefCounted
 static var Common: GDScript
 static var Providers: GDScript
 static var Accounts: GDScript
+static var Harness: GDScript
 var owner: Node
 var jobs = {}
 var playtest_busy = false
@@ -68,22 +69,16 @@ func _run(job: Dictionary) -> void:
 	else:
 		var service = Providers.new(owner, owner.vault)
 		var maximum = clampi(int(owner.config.get("preferences", {}).get("play_steps", 30)), 1, 100) if job["kind"] == "Playtest" else 12
-		for step in range(maximum):
-			if job["cancel"].get("cancelled", false): break
-			job["steps"] = step + 1
-			if owner.current_turn == job["parent"]: owner.chat.tasks_label.text = "%s · pas %s · %s" % [job["kind"], step + 1, job["task"]]
-			var response = await service.complete(job["profile"], messages, definitions, str(job["model"]), "", job["cancel"])
-			if not response.get("ok", false):
-				_finish(job, "cancelled" if job["cancel"].get("cancelled", false) else "failed", str(response.get("error")))
-				break
-			messages.append(response["message"])
-			if response["calls"].is_empty():
-				_finish(job, "completed", str(response["message"].get("content", "")))
-				break
-			for call in response["calls"]:
-				if job["cancel"].get("cancelled", false): break
-				var result = await execute(job, str(call["name"]), call["arguments"])
-				messages.append({"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": owner._redact(JSON.stringify(result.get("result", result))).left(22000), "attachments": result.get("images", [])})
+		var core = Harness.new(owner)
+		core.event.connect(func(value: Dictionary) -> void:
+			if value.get("kind") != "request_started": return
+			job["steps"] = value["step"]
+			if owner.current_turn == job["parent"]: owner.chat.tasks_label.text = "%s · pas %s · %s" % [job["kind"], job["steps"], job["task"]])
+		var complete = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
+			return await service.complete(job["profile"], context, catalog, str(job["model"]), "", stopping, delta)
+		var dispatch = func(name: String, args: Dictionary) -> Dictionary: return await execute(job, name, args)
+		var result = await core.run({"id": job["id"], "messages": messages, "tools": definitions, "cancel": job["cancel"], "max_steps": maximum, "deferred_tools": true}, {"complete": complete, "execute": dispatch, "redact": owner._redact})
+		_finish(job, "completed" if result.get("ok", false) else ("blocked" if result.get("status") == "limited" else str(result.get("status", "failed"))), str(result.get("text", "")) if result.get("ok", false) else str(result.get("message", result.get("error", "Cererea a eșuat."))))
 	if job["kind"] == "Playtest":
 		await runtime("release", {}, {})
 		if started_game and job["cancel"].get("cancelled", false): EditorInterface.stop_playing_scene()

@@ -15,6 +15,40 @@ class FakeVault:
 	func read(name: String) -> String: return str(values.get(name, ""))
 	func erase(name: String) -> bool: return values.erase(name)
 
+class HarnessHost:
+	extends RefCounted
+	var replies: Array = []
+	var contexts: Array = []
+	var catalogs: Array = []
+	var executed: Array = []
+	var checkpoints: Array = []
+	var token = {}
+	var stop_after_tool = false
+	var tool_result = {"ok": true, "result": "fixture-secret"}
+	var fail_checkpoint_status = ""
+	var reenter: RefCounted
+	var reentry_result = {}
+
+	func complete(context: Array, _tools: Array, _cancel: Dictionary, delta: Callable) -> Dictionary:
+		if reenter != null: reentry_result = await reenter.run({}, hooks())
+		contexts.append(context.duplicate(true))
+		catalogs.append(_tools.duplicate(true))
+		if replies.is_empty(): return {"ok": false, "code": "fixture_exhausted", "error": "No fixture response"}
+		var reply: Dictionary = replies.pop_front()
+		if reply.has("_delta"): delta.call(str(reply["_delta"]))
+		return reply
+
+	func execute(name: String, arguments: Dictionary) -> Dictionary:
+		executed.append({"name": name, "arguments": arguments})
+		if stop_after_tool: token["cancelled"] = true
+		return tool_result
+
+	func checkpoint(snapshot: Dictionary) -> bool:
+		checkpoints.append(snapshot.duplicate(true))
+		return snapshot.get("status") != fail_checkpoint_status
+	func redact(value: String) -> String: return value.replace("fixture-secret", "[redacted]")
+	func hooks() -> Dictionary: return {"complete": complete, "execute": execute, "checkpoint": checkpoint, "redact": redact}
+
 func _initialize() -> void:
 	_run.call_deferred()
 
@@ -32,7 +66,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "transport", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "chat_view", "agent_jobs", "speech", "panel"]:
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -41,7 +75,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "transport": "Transport", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "chat_view": "ChatView", "agent_jobs": "AgentJobs", "speech": "Speech"}
+		var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -100,9 +134,11 @@ func _run() -> void:
 	check(panel.history[-1].get("tool_call_id") == "interrupted" and "cancelled" in str(panel.history[-1].get("content", "")), "Interrupted tool loops can be resumed")
 	panel.free()
 	_new_feature_tests()
+	_tool_registry_tests()
 	var node = Node.new()
 	root.add_child(node)
 	var transport = scripts["transport"].new(node)
+	await _harness_tests(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
 	if not mock_url.is_empty(): await _network_tests(node)
@@ -110,6 +146,177 @@ func _run() -> void:
 	await process_frame
 	print("Godot AI: %s assertions, %s failures" % [assertions, failures])
 	quit(0 if failures == 0 else 1)
+
+func _agent_response(text: String = "", calls: Array = [], finish: String = "stop") -> Dictionary:
+	return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": finish}
+
+func _tool_registry_tests() -> void:
+	var registry_script = scripts["tool_registry"]
+	var tools = scripts["editor_tools"].new()
+	var registry = registry_script.new(tools.definitions(), true)
+	var names = registry.active_definitions().map(func(item: Dictionary) -> String: return item["name"])
+	check("tool_search" in names and "godot_read_range" in names and not "godot_apply_patch" in names, "Deferred registry starts with discovery and a small inspection set")
+	var found = registry.discover("tool_search", {"query": "godot_apply_patch", "limit": 1})
+	check(found.get("result", {}).get("tools", [{}])[0].get("name") == "godot_apply_patch" and registry.loaded.has("godot_apply_patch"), "Search returns the exact schema and activates a specialized tool")
+	var reads = tools.definitions().filter(func(item: Dictionary) -> bool: return item["risk"] == "read")
+	var read_registry = registry_script.new(reads, true)
+	check(not read_registry.discover("tool_describe", {"name": "godot_apply_patch"}).get("ok", false), "Discovery cannot expose a tool excluded by the session mode")
+	check(not registry_script.new([reads[0], reads[0]]).error.is_empty(), "Duplicate tool definitions are rejected")
+	var schema = {"parameters": {"type": "object", "properties": {"items": {"type": "array", "items": {"$ref": "#/$defs/item"}, "minItems": 1}}, "$defs": {"item": {"type": "object", "properties": {"count": {"type": "integer", "minimum": 1}, "name": {"type": "string", "enum": ["allowed"]}}, "required": ["count", "name"], "additionalProperties": false}}, "required": ["items"], "additionalProperties": false}}
+	check(registry_script.validate(schema, {"items": [{"count": 2.0, "name": "allowed"}]}).get("ok", false), "Nested schemas and local references accept integral JSON numbers")
+	for invalid in [{"items": [{"count": 1.5, "name": "allowed"}]}, {"items": [{"count": 0, "name": "allowed"}]}, {"items": [{"count": 1, "name": "other"}]}, {"items": [{"count": 1, "name": "allowed", "extra": true}]}, {"items": []}, {}]:
+		check(not registry_script.validate(schema, invalid).get("ok", false), "Reject invalid nested tool arguments: " + JSON.stringify(invalid))
+	check(registry_script.validate({"parameters": {"not": {"if": {}}}}, {}).get("code") == "unsupported_schema", "Unsupported constraints cannot be hidden inside schema negation")
+	check(registry_script.validate({"parameters": {"not": {"$ref": "https://example.test/schema"}}}, {}).get("code") == "unsupported_schema", "External schema references fail explicitly without fetching anything")
+	check(not tools.validate("godot_restore_file", {"index": 1.5}).get("ok", false), "All native tool calls reject fractional integer arguments")
+	var source = "extends Node\r\nvar value = 1 # română 🐦\r\n"
+	var patch = scripts["editor_tools"].prepare_patch(source, [{"old_text": "value = 1", "new_text": "value = 2"}])
+	check(patch.get("ok", false) and patch["result"]["text"] == source.replace("value = 1", "value = 2") and patch["result"]["changes"][0]["line"] == 2, "Exact patches preserve UTF-8 and CRLF and report line numbers")
+	check(not scripts["editor_tools"].prepare_patch("aaa", [{"old_text": "aa", "new_text": "b"}]).get("ok", false), "Overlapping repeated patch anchors are ambiguous")
+	check(not scripts["editor_tools"].prepare_patch(source, [{"old_text": "value = 1", "new_text": "value = 2"}, {"old_text": "missing", "new_text": "x"}]).get("ok", false), "A later invalid edit rejects the entire patch before writing")
+	var mcp = scripts["mcp"]
+	var error = mcp.normalize_result({"isError": true, "content": [{"type": "text", "text": "Fixture execution failed"}]})
+	check(not error.get("ok", true) and error.get("code") == "mcp_tool_error", "MCP isError is an execution failure rather than a successful RPC")
+	check(mcp.normalize_result({"isError": true, "content": [{"type": "text", "text": "Bad input"}]}, {"type": "object", "required": ["answer"]}).get("code") == "mcp_tool_error", "MCP execution failures do not need the success output schema")
+	var image = Image.create_empty(2, 2, false, Image.FORMAT_RGBA8)
+	image.fill(Color.RED)
+	var encoded = Marshalls.raw_to_base64(image.save_png_to_buffer())
+	var result = mcp.normalize_result({"content": [{"type": "text", "text": "Fixture frame"}, {"type": "image", "mimeType": "image/png", "data": encoded}], "structuredContent": {"count": 2}}, {"type": "object", "properties": {"count": {"type": "integer"}}, "required": ["count"]})
+	check(result.get("ok", false) and result.get("images", []).size() == 1 and not "data" in result["result"]["content"][1] and result["result"]["structuredContent"]["count"] == 2, "MCP preserves structured data and separates validated image attachments")
+	check(not mcp.normalize_result({"content": [], "structuredContent": {"count": "bad"}}, {"type": "object", "properties": {"count": {"type": "integer"}}}).get("ok", false), "MCP output schemas reject mismatched structured results")
+	check(mcp.normalize_result({"content": [{"type": "audio"}]}).get("code") == "unsupported_mcp_content", "Unsupported MCP content is reported explicitly")
+
+func _harness_tests(node: Node) -> void:
+	var core = scripts["harness"].new(node)
+	var definitions = [scripts["common"].tool("write_fixture", "Fixture", {}, [], "write")]
+	var call = {"id": "one", "name": "write_fixture", "arguments": {}}
+	var deferred = HarnessHost.new()
+	deferred.replies = [_agent_response("", [{"id": "discover", "name": "tool_describe", "arguments": {"name": "write_fixture"}}]), _agent_response("", [call]), _agent_response("Done")]
+	var discovered = await core.run({"tools": definitions, "deferred_tools": true}, deferred.hooks())
+	check(discovered.get("ok", false) and deferred.executed.size() == 1 and deferred.catalogs[0].size() == 2 and deferred.catalogs[1].any(func(item: Dictionary) -> bool: return item["name"] == "write_fixture"), "Harness loads discovered definitions on the next provider request")
+	deferred = HarnessHost.new()
+	deferred.replies = [_agent_response("", [call]), _agent_response("Unavailable until discovery")]
+	var unloaded_messages = []
+	await core.run({"tools": definitions, "deferred_tools": true, "messages": unloaded_messages}, deferred.hooks())
+	check(deferred.executed.is_empty() and "tool_not_loaded" in str(unloaded_messages[1].get("content")), "Guessing an undeclared tool name cannot bypass deferred discovery")
+	var host = HarnessHost.new()
+	host.replies = [{"ok": false, "status": 429, "headers": {"Retry-After": "0"}, "error": "Temporary"}, _agent_response("", [call]), _agent_response("Verified fixture-secret")]
+	var messages = [{"role": "user", "content": "Inspect and edit"}]
+	var events = []
+	core.event.connect(func(value: Dictionary) -> void: events.append(value))
+	var outcome = await core.run({"messages": messages, "tools": definitions, "retry_delay_ms": 0}, host.hooks())
+	check(outcome.get("status") == "completed" and outcome.get("requests") == 3 and outcome.get("retries") == 1 and outcome.get("steps") == 2, "Native harness retries rate limits and completes a tool turn")
+	check(host.executed.size() == 1 and messages.size() == 4 and host.contexts[-1][-1].get("role") == "tool", "Native harness passes tool results back to the model")
+	check(not "fixture-secret" in JSON.stringify(messages) and not "fixture-secret" in JSON.stringify(events), "Harness transcripts and events redact credentials")
+	check(host.checkpoints.any(func(value: Dictionary) -> bool: return value.get("status") == "waiting_tool") and host.checkpoints[-1].get("status") == "completed", "Harness checkpoints before side effects and after settlement")
+
+	# Simulate resuming a persisted conversation whose provider repeats its call ID.
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [call]), _agent_response("Previously applied")]
+	outcome = await core.run({"messages": messages, "tools": definitions}, host.hooks())
+	check(outcome.get("ok", false) and host.executed.is_empty(), "Resume reuses recorded tool results without replaying project writes")
+	var changed = call.duplicate(true)
+	changed["arguments"] = {"unexpected": true}
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [changed])]
+	outcome = await core.run({"messages": messages, "tools": definitions}, host.hooks())
+	check(outcome.get("code") == "invalid_response" and host.executed.is_empty(), "Conflicting reused IDs are rejected before any execution")
+
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [call, call])]
+	outcome = await core.run({"tools": definitions}, host.hooks())
+	check(outcome.get("code") == "invalid_response" and host.executed.is_empty(), "Duplicate IDs in one model response cannot duplicate writes")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [{"id": "unknown", "name": "hidden_tool", "arguments": {}}]), _agent_response("Unavailable")]
+	messages = []
+	outcome = await core.run({"messages": messages, "tools": definitions}, host.hooks())
+	check(host.executed.is_empty() and "tool_unavailable" in str(messages[1].get("content")), "Tools outside the active registry never reach the executor")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [call]), _agent_response("Unavailable")]
+	var blocked_messages = [_agent_response("", [call])["message"], {"role": "tool", "tool_call_id": "one", "content": "{\"ok\":true}"}]
+	outcome = await core.run({"messages": blocked_messages, "tools": []}, host.hooks())
+	check(host.executed.is_empty() and outcome.get("tool_calls") == 0 and "tool_unavailable" in str(blocked_messages[-2].get("content", "")), "A recorded result does not bypass the current tool registry")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [{"id": "bad", "name": "write_fixture", "arguments": "invalid"}])]
+	outcome = await core.run({"tools": definitions}, host.hooks())
+	check(outcome.get("code") == "invalid_response" and host.executed.is_empty(), "Malformed model arguments cannot reach the executor")
+
+	host = HarnessHost.new()
+	host.stop_after_tool = true
+	host.token = {"cancelled": false}
+	var next = call.duplicate(true)
+	next["id"] = "two"
+	host.replies = [_agent_response("", [call, next])]
+	messages = []
+	outcome = await core.run({"messages": messages, "tools": definitions, "cancel": host.token}, host.hooks())
+	check(outcome.get("status") == "cancelled" and host.executed.size() == 1, "Stop between batch tools prevents the remaining side effect")
+	check(messages.size() == 3 and messages[-1].get("tool_call_id") == "two" and "cancelled" in str(messages[-1].get("content")), "Cancellation closes every pending call for a valid next turn")
+	host = HarnessHost.new()
+	outcome = await core.run({"cancel": {"cancelled": true}}, host.hooks())
+	check(outcome.get("status") == "cancelled" and host.contexts.is_empty(), "Pre-cancelled harness never contacts a model")
+	host = HarnessHost.new()
+	host.token = {"cancelled": false}
+	host.replies = [{"ok": false, "status": 503, "error": "Temporary"}]
+	var stopping = host.token
+	var stop_retry = func(value: Dictionary) -> void:
+		if value.get("kind") == "retry": stopping["cancelled"] = true
+	core.event.connect(stop_retry)
+	outcome = await core.run({"cancel": stopping}, host.hooks())
+	core.event.disconnect(stop_retry)
+	check(outcome.get("status") == "cancelled" and host.contexts.size() == 1, "Stop interrupts retry backoff before another request")
+
+	host = HarnessHost.new()
+	host.replies = [{"ok": false, "code": "incomplete_stream", "error": "Interrupted", "_delta": "Partial"}]
+	outcome = await core.run({}, host.hooks())
+	check(outcome.get("status") == "failed" and host.contexts.size() == 1, "A visible partial response is never silently regenerated by retry")
+	host = HarnessHost.new()
+	host.replies = [{"ok": false, "status": 401, "error": "Invalid credentials"}]
+	outcome = await core.run({}, host.hooks())
+	check(host.contexts.size() == 1 and outcome.get("status") == "failed", "Authentication errors are not retried")
+	host = HarnessHost.new()
+	host.replies = [{"ok": false, "status": 503, "error": "Temporary"}, {"ok": false, "status": 503, "error": "Temporary"}, {"ok": false, "status": 503, "error": "Temporary"}]
+	outcome = await core.run({"retry_delay_ms": 0}, host.hooks())
+	check(outcome.get("status") == "failed" and host.contexts.size() == 3 and outcome.get("retries") == 2, "Transient failures stop at the retry budget")
+	host = HarnessHost.new()
+	host.reenter = core
+	host.replies = [_agent_response("Original turn")]
+	outcome = await core.run({}, host.hooks())
+	check(outcome.get("ok", false) and host.reentry_result.get("code") == "busy" and outcome.get("text") == "Original turn", "A concurrent turn cannot overwrite an active harness session")
+	host.reenter = null
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [call])]
+	outcome = await core.run({"tools": definitions, "max_steps": 1}, host.hooks())
+	check(outcome.get("status") == "limited" and outcome.get("code") == "step_limit" and not outcome.get("ok", true), "Step exhaustion is distinct from completion")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("Partial answer", [], "length")]
+	outcome = await core.run({}, host.hooks())
+	check(outcome.get("status") == "limited" and outcome.get("code") == "output_limit", "Output exhaustion is distinct from completion")
+	host = HarnessHost.new()
+	host.fail_checkpoint_status = "waiting_tool"
+	host.replies = [_agent_response("", [call])]
+	messages = []
+	outcome = await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	check(outcome.get("code") == "checkpoint_failed" and host.executed.is_empty() and messages.size() == 2 and "checkpoint_failed" in str(messages[-1].get("content", "")), "Failed durable checkpoint stops the write and closes its call")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": true, "result": "x".repeat(30000)}
+	host.replies = [_agent_response("", [call]), _agent_response("Done")]
+	messages = []
+	outcome = await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	var bounded: Variant = JSON.parse_string(str(messages[1]["content"]))
+	check(outcome.get("ok", false) and bounded is Dictionary and bounded.get("truncated", false) and str(messages[1]["content"]).length() <= 24000, "Large tool results remain bounded valid JSON")
+	host = HarnessHost.new()
+	var encoded = Marshalls.raw_to_base64(Image.create_empty(2, 2, false, Image.FORMAT_RGBA8).save_png_to_buffer())
+	host.tool_result = {"ok": true, "result": {"text": "Frame"}, "images": [{"name": "frame.png", "mimeType": "image/png", "data": encoded}]}
+	host.replies = [_agent_response("", [call]), _agent_response("Observed")]
+	messages = []
+	outcome = await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	check(outcome.get("ok", false) and messages[1].get("attachments", []).size() == 1 and not encoded in str(messages[1]["content"]), "Tool images reach the model as attachments without base64 in its text context")
+
+	var repaired = scripts["harness"].repair_messages([_agent_response("", [call])["message"]])
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [call]), _agent_response("Inspect first")]
+	outcome = await core.run({"tools": definitions, "messages": repaired}, host.hooks())
+	check(outcome.get("ok", false) and host.executed.is_empty(), "An interrupted persisted write is not automatically executed again")
 
 func _network_tests(node: Node) -> void:
 	var vault = FakeVault.new()
@@ -120,6 +327,16 @@ func _network_tests(node: Node) -> void:
 	var wrong_host = await adapter.list_models({"id": "oauth-record", "kind": "siwc", "url": mock_url + "/v1", "allow_http": true})
 	check(wrong_host.get("code") == "credential_type_mismatch", "ChatGPT credentials are bound to the official OpenAI endpoint")
 	var profile = {"id": "fixture", "kind": "chat", "url": mock_url + "/v1", "allow_http": true}
+	var core = scripts["harness"].new(node)
+	var direct_messages = [{"role": "user", "content": "Inspect through the native harness"}]
+	var direct_complete = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
+		return await adapter.complete(profile, context, catalog, "fixture", "", stopping, delta)
+	var direct_tools = []
+	var dispatch = func(name: String, args: Dictionary) -> Dictionary:
+		direct_tools.append(name)
+		return scripts["common"].success(args)
+	var direct = await core.run({"messages": direct_messages, "tools": [scripts["common"].tool("godot_project", "Inspect", {}, [])]}, {"complete": direct_complete, "execute": dispatch})
+	check(direct.get("ok", false) and direct_tools == ["godot_project"] and direct.get("steps") == 2 and direct_messages[-1].get("content") == "Verificat: română 🐦", "Own harness performs a real HTTP model/tool/result loop without a companion")
 	var listed = await adapter.list_models(profile)
 	check(listed.get("ok", false) and listed.get("result", []).size() == 1, "Real HTTP model discovery")
 	check(listed.get("result", [{}])[0].get("efforts", []) == ["high", "max"], "Use provider-declared reasoning efforts")
@@ -165,6 +382,8 @@ func _network_tests(node: Node) -> void:
 		check(denied.get("code") == "permission_denied", "Untrusted MCP read annotations do not grant access")
 		var called = await mcp.call_tool(name, {}, 2, true, {})
 		check(called.get("ok", false) and "real fixture tool result" in JSON.stringify(called), "MCP real HTTP tool execution")
+		var failed = await mcp.call_tool(name, {"fail": true}, 2, true, {})
+		check(not failed.get("ok", true) and failed.get("code") == "mcp_tool_error", "Real MCP HTTP execution errors propagate through the normalized result")
 	var assets = scripts["assets"].new(node, vault)
 	var scratch = OS.get_user_data_dir().path_join("ai_test_generation")
 	assets.configure(scratch)

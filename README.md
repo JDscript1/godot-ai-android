@@ -1,8 +1,9 @@
 # Godot AI · Android editor fork
 
-Personal Android editor fork based on **Godot 4.7.2**, with an editor-only AI module,
-direct cloud/local providers, MCP, generation profiles and an optional personal
-subscription companion. Open the **AI Assistant** tab next to **Asset Store**, or
+Personal Android editor fork based on **Godot 4.7.2**, with an editor-only AI module
+and its own built-in agent harness. It supports direct cloud/local providers,
+MCP, generation profiles and an optional personal subscription companion.
+Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
 [Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934/artifacts/12395887189)
@@ -10,7 +11,14 @@ subscription companion. Open the **AI Assistant** tab next to **Asset Store**, o
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
-are tracked separately from automated checks. The original engine documentation follows.
+are tracked separately from automated checks.
+
+[Implementări, verificări și planul proiectului](PROGRES_SI_PLAN.md) este
+documentul de progres actualizat după fiecare etapă importantă.
+
+The [built-in harness](docs/AI_HARNESS.md) runs direct API agent sessions inside
+Godot without Termux, a console, or an external agent runtime. The linked APK
+predates this source change; its tested version remains identified above.
 
 # Godot Engine
 

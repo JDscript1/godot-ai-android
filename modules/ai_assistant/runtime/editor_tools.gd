@@ -2,6 +2,7 @@
 extends RefCounted
 
 static var Common: GDScript
+static var ToolRegistry: GDScript
 var plugin: EditorPlugin
 var panel: Node
 var handles: Dictionary = {}
@@ -10,6 +11,7 @@ var file_changes: Array = []
 var backup_directory = ""
 var turn_id = ""
 var scene_changes = {}
+var scan_pending = false
 
 func _init(editor_plugin: EditorPlugin = null, owner_panel: Node = null) -> void:
 	plugin = editor_plugin
@@ -24,6 +26,10 @@ func definitions() -> Array:
 		Common.tool("godot_project", "Inspect project, edited scene and selected nodes. Returns object handles for further discovery.", {}, []),
 		Common.tool("godot_files", "List project files; optional name/content search. Paths are relative to res://.", {"path": string, "query": string, "content": {"type": "boolean"}}, []),
 		Common.tool("godot_read_file", "Read a project text file.", {"path": string}, ["path"]),
+		Common.tool("godot_read_range", "Read a bounded range of a UTF-8 project file with one-based line numbers and its SHA-256 for a later patch.", {"path": string, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}, ["path"]),
+		Common.tool("godot_search_code", "Search literal text in project text files. Returns paths, one-based lines and bounded excerpts; no shell or regex needed.", {"path": string, "query": {"type": "string", "minLength": 1}, "case_sensitive": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, ["query"]),
+		Common.tool("godot_apply_patch", "Preview or apply sequential exact replacements in a UTF-8 file. Supply the expected_sha256 from godot_read_range. Every old_text must match exactly once. dry_run defaults to true; applying saves a recovery copy. Save any open script edits first.", {"path": string, "expected_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}, "edits": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object", "properties": {"old_text": {"type": "string", "minLength": 1}, "new_text": string}, "required": ["old_text", "new_text"], "additionalProperties": false}}, "dry_run": {"type": "boolean"}}, ["path", "expected_sha256", "edits"], "write"),
+		Common.tool("godot_script_diagnostics", "Validate GDScript through the native Godot parser/analyzer without instantiating the script. Returns valid, errors, warnings and source hash. Optional text validates a draft instead of the saved file. Requires the rebuilt native editor bridge.", {"path": string, "text": string}, ["path"]),
 		Common.tool("godot_write_file", "Write a project text file with a recoverable previous version.", {"path": string, "text": string}, ["path", "text"], "write"),
 		Common.tool("godot_delete_file", "Remove a project file, retaining a recovery copy.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_restore_file", "Restore a prior file change using its journal index.", {"index": integer}, ["index"], "write"),
@@ -57,15 +63,8 @@ func definitions() -> Array:
 func validate(name: String, args: Dictionary) -> Dictionary:
 	for definition in definitions():
 		if definition["name"] != name: continue
-		var specification: Dictionary = definition["parameters"]
-		for required in specification["required"]:
-			if not args.has(required): return Common.failure("Argument obligatoriu: " + str(required), "invalid_arguments")
-		for key in args:
-			if not specification["properties"].has(key): return Common.failure("Argument necunoscut: " + str(key), "invalid_arguments")
-			var type = str(specification["properties"][key].get("type", ""))
-			var value: Variant = args[key]
-			if (type == "string" and not value is String) or (type == "array" and not value is Array) or (type == "boolean" and not value is bool) or (type in ["number", "integer"] and not (value is int or value is float)):
-				return Common.failure("Tip invalid pentru " + str(key), "invalid_arguments")
+		var validation = ToolRegistry.validate(definition, args)
+		if not validation.get("ok", false): return validation
 		return Common.success(definition["risk"])
 	return Common.failure("Instrument necunoscut: " + name, "unknown_tool")
 
@@ -81,6 +80,10 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			for node in EditorInterface.get_selection().get_selected_nodes(): selected.append(_encode(node))
 			return Common.success({"name": ProjectSettings.get_setting("application/config/name", ""), "version": Engine.get_version_info(), "root": _encode(root), "editor": _encode(EditorInterface), "filesystem": _encode(EditorInterface.get_resource_filesystem()), "selection": selected, "running": EditorInterface.is_playing_scene()})
 		"godot_files": return _files(args)
+		"godot_read_range": return _read_range(args)
+		"godot_search_code": return _search_code(args)
+		"godot_apply_patch": return _apply_patch(args)
+		"godot_script_diagnostics": return _script_diagnostics(args)
 		"godot_read_file":
 			var path = Common.project_path(str(args["path"]))
 			if path.is_empty() or not FileAccess.file_exists(path): return Common.failure("Fișier de proiect inexistent sau cale nepermisă.")
@@ -375,6 +378,154 @@ func _files(args: Dictionary) -> Dictionary:
 			if output.size() >= 400: break
 	return Common.success(output)
 
+func _read_text(path: String) -> Dictionary:
+	if Common.project_path(path).is_empty(): return Common.failure("Cale de proiect nepermisă.", "invalid_path")
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file == null or file.get_length() > 1024 * 1024: return Common.failure("Fișier inexistent sau mai mare de 1 MB.", "invalid_file")
+	var bytes = file.get_buffer(file.get_length())
+	if bytes.has(0): return Common.failure("Fișierul trebuie să fie text UTF-8 fără caractere NUL.", "invalid_file")
+	var text = bytes.get_string_from_utf8()
+	if text.to_utf8_buffer() != bytes: return Common.failure("Fișierul trebuie să fie text UTF-8.", "invalid_file")
+	return Common.success({"text": text, "sha256": text.sha256_text()})
+
+func _read_range(args: Dictionary) -> Dictionary:
+	var path = Common.project_path(str(args["path"]))
+	var read = _read_text(path)
+	if not read.get("ok", false): return read
+	var lines = str(read["result"]["text"]).split("\n")
+	var start = int(args.get("start_line", 1))
+	var end = int(args.get("end_line", start + 119))
+	if end < start or start > lines.size(): return Common.failure("Interval de linii invalid.", "invalid_arguments")
+	end = mini(end, mini(lines.size(), start + 199))
+	var output = []
+	var count = 0
+	for index in range(start - 1, end):
+		var text = str(lines[index]).trim_suffix("\r").left(2000)
+		if count + text.length() > 20000: break
+		output.append({"line": index + 1, "text": text, "truncated": lines[index].length() > 2000})
+		count += text.length()
+	return Common.success({"path": path, "sha256": read["result"]["sha256"], "lines": output, "total_lines": lines.size(), "next_line": start + output.size() if start + output.size() <= lines.size() else -1})
+
+func _search_code(args: Dictionary) -> Dictionary:
+	var start = Common.project_path(str(args.get("path", "res://")))
+	if start.is_empty(): return Common.failure("Cale invalidă.", "invalid_path")
+	var query = str(args["query"])
+	var sensitive = bool(args.get("case_sensitive", false))
+	if not sensitive: query = query.to_lower()
+	var limit = clampi(int(args.get("limit", 40)), 1, 100)
+	var queue = [start]
+	var output = []
+	var visited = 0
+	var scanned_bytes = 0
+	while not queue.is_empty() and visited < 2000 and scanned_bytes < 4 * 1024 * 1024 and output.size() < limit:
+		var path: String = queue.pop_front()
+		visited += 1
+		if FileAccess.file_exists(path):
+			if path.get_extension() not in ["gd", "tscn", "tres", "gdshader", "json", "cfg", "godot", "txt", "md"]: continue
+			var read = _read_text(path)
+			if not read.get("ok", false): continue
+			var lines = str(read["result"]["text"]).split("\n")
+			scanned_bytes += str(read["result"]["text"]).to_utf8_buffer().size()
+			for index in range(lines.size()):
+				var line = str(lines[index]).trim_suffix("\r")
+				var found = (line if sensitive else line.to_lower()).find(query)
+				if found >= 0:
+					var excerpt_start = maxi(0, found - 120)
+					output.append({"path": path, "line": index + 1, "column": found + 1, "text": line.substr(excerpt_start, 400), "excerpt_column": excerpt_start + 1})
+				if output.size() >= limit: break
+			continue
+		var directory = DirAccess.open(path)
+		if directory == null: continue
+		for folder in directory.get_directories():
+			if not folder.begins_with(".") and not directory.is_link(folder): queue.append(path.path_join(folder))
+		for filename in directory.get_files():
+			if not filename.begins_with(".") and not directory.is_link(filename): queue.append(path.path_join(filename))
+	return Common.success({"matches": output, "truncated": not queue.is_empty() or output.size() >= limit, "visited": visited, "scanned_bytes": scanned_bytes})
+
+static func prepare_patch(text: String, edits: Array) -> Dictionary:
+	if edits.is_empty() or edits.size() > 20: return Common.failure("Un patch trebuie să conțină între 1 și 20 modificări.", "invalid_arguments")
+	var updated = text
+	var changes = []
+	for edit in edits:
+		if not edit is Dictionary or not edit.get("old_text") is String or not edit.get("new_text") is String: return Common.failure("Modificare de patch invalidă.", "invalid_arguments")
+		var before = str(edit["old_text"])
+		var after = str(edit["new_text"])
+		var index = updated.find(before)
+		if before.is_empty() or index < 0 or updated.find(before, index + 1) >= 0: return Common.failure("Textul vechi trebuie să apară exact o dată. Citește un context mai precis.", "patch_conflict")
+		changes.append({"line": updated.left(index).count("\n") + 1, "before": before.left(800), "after": after.left(800), "preview_truncated": before.length() > 800 or after.length() > 800})
+		updated = updated.left(index) + after + updated.substr(index + before.length())
+		if updated.to_utf8_buffer().size() > 1024 * 1024: return Common.failure("Rezultatul patch-ului depășește 1 MB.", "invalid_arguments")
+	return Common.success({"text": updated, "before_sha256": text.sha256_text(), "after_sha256": updated.sha256_text(), "changes": changes, "changed": text != updated})
+
+func _apply_patch(args: Dictionary) -> Dictionary:
+	var path = Common.project_path(str(args["path"]))
+	if path == "res://project.godot": return Common.failure("Pentru setări folosește godot_set_setting.", "invalid_path")
+	var read = _read_text(path)
+	if not read.get("ok", false): return read
+	if str(read["result"]["sha256"]) != str(args["expected_sha256"]).to_lower(): return Common.failure("Fișierul s-a schimbat. Citește-l din nou înainte de patch.", "patch_conflict")
+	var source = str(read["result"]["text"])
+	if _dirty_script(path, source): return Common.failure("Scriptul are modificări nesalvate în editor. Salvează-le înainte de patch.", "unsaved_changes")
+	var patch = prepare_patch(source, args["edits"])
+	if not patch.get("ok", false): return patch
+	var info: Dictionary = patch["result"]
+	var text = str(info["text"])
+	info.erase("text")
+	info["path"] = path
+	info["dry_run"] = bool(args.get("dry_run", true))
+	if info["dry_run"] or not info["changed"]: return Common.success(info)
+	var recovery = _snapshot(path)
+	if recovery < 0: return Common.failure("Copia de recuperare nu a putut fi salvată.", "recovery_failed")
+	var temporary = path + ".ai-" + Common.uid() + ".tmp"
+	var file = FileAccess.open(temporary, FileAccess.WRITE)
+	if file == null: return Common.failure("Nu pot pregăti fișierul modificat.", "write_failed")
+	file.store_string(text)
+	file.flush()
+	var write_error = file.get_error()
+	file.close()
+	if write_error != OK or FileAccess.get_sha256(temporary) != info["after_sha256"]:
+		DirAccess.remove_absolute(temporary)
+		return Common.failure("Scrierea patch-ului nu a putut fi verificată.", "write_failed")
+	if FileAccess.get_sha256(path) != info["before_sha256"]:
+		DirAccess.remove_absolute(temporary)
+		return Common.failure("Fișierul s-a schimbat în timpul pregătirii patch-ului.", "patch_conflict")
+	var error = DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary), ProjectSettings.globalize_path(path))
+	if error != OK:
+		DirAccess.remove_absolute(temporary)
+		return Common.failure(error_string(error), "write_failed")
+	file_changes[recovery]["after_sha"] = info["after_sha256"]
+	info["recovery_index"] = recovery
+	var saved = Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)
+	_request_scan()
+	if saved != OK: return {"ok": false, "code": "journal_failed", "error": "Patch aplicat, dar jurnalul nu a putut fi actualizat. Verifică fișierul și copia de recuperare.", "result": info}
+	return Common.success(info)
+
+func _dirty_script(path: String, disk: String) -> bool:
+	var editor = EditorInterface.get_script_editor()
+	var scripts = editor.get_open_scripts()
+	var controls = editor.get_open_script_editors()
+	for index in range(scripts.size()):
+		if scripts[index].resource_path != path: continue
+		if scripts.size() != controls.size(): return true
+		var control = controls[index].get_base_editor()
+		if control is TextEdit: return control.text.replace("\r\n", "\n") != disk.replace("\r\n", "\n")
+	return false
+
+func _script_diagnostics(args: Dictionary) -> Dictionary:
+	var path = Common.project_path(str(args["path"]))
+	if path.is_empty() or path.get_extension() != "gd": return Common.failure("Alege un script GDScript din proiect.", "invalid_path")
+	var text = str(args.get("text", ""))
+	if not args.has("text"):
+		var read = _read_text(path)
+		if not read.get("ok", false): return read
+		text = str(read["result"]["text"])
+	if text.to_utf8_buffer().size() > 1024 * 1024: return Common.failure("Scriptul depășește 1 MB.", "invalid_file")
+	if plugin == null or not plugin.has_method("script_diagnostics"): return Common.failure("Diagnosticarea structurată necesită editorul nativ recompilat cu această versiune.", "native_bridge_unavailable")
+	var result: Dictionary = plugin.script_diagnostics(text, path)
+	if result.get("ok", false):
+		result["result"]["sha256"] = text.sha256_text()
+		result["result"]["source"] = "draft" if args.has("text") else "disk"
+	return result
+
 func _snapshot(path: String) -> int:
 	var entry = {"turn_id": turn_id, "path": path, "existed": FileAccess.file_exists(path), "backup": "", "time": Time.get_datetime_string_from_system(true)}
 	if entry["existed"]:
@@ -383,8 +534,11 @@ func _snapshot(path: String) -> int:
 		DirAccess.make_dir_recursive_absolute(backup_directory)
 		entry["backup"] = backup_directory.path_join(Common.uid() + ".bak")
 		if DirAccess.copy_absolute(ProjectSettings.globalize_path(path), str(entry["backup"])) != OK: return -1
+	entry["after_sha"] = FileAccess.get_sha256(str(entry["backup"])) if entry["existed"] else "missing"
 	file_changes.append(entry)
-	Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)
+	if Common.atomic_json(backup_directory.path_join("journal.json"), file_changes) != OK:
+		file_changes.pop_back()
+		return -1
 	return file_changes.size() - 1
 
 func _file_change(operation: String, args: Dictionary) -> Dictionary:
@@ -403,7 +557,7 @@ func _file_change(operation: String, args: Dictionary) -> Dictionary:
 		file.close()
 	file_changes[index]["after_sha"] = FileAccess.get_sha256(path) if FileAccess.file_exists(path) else "missing"
 	Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)
-	EditorInterface.get_resource_filesystem().scan()
+	_request_scan()
 	return Common.success({"path": path, "recovery_index": index})
 
 func _restore(index: int) -> Dictionary:
@@ -416,8 +570,26 @@ func _restore(index: int) -> Dictionary:
 	var error = OK
 	if change["existed"]: error = DirAccess.copy_absolute(str(change["backup"]), ProjectSettings.globalize_path(path))
 	elif FileAccess.file_exists(path): error = DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	EditorInterface.get_resource_filesystem().scan()
+	_request_scan()
 	return Common.success(path) if error == OK else Common.failure(error_string(error))
+
+func _request_scan() -> void:
+	if scan_pending: return
+	scan_pending = true
+	_scan_when_ready.call_deferred()
+
+func _scan_when_ready() -> void:
+	if not is_instance_valid(panel) or not panel.is_inside_tree():
+		scan_pending = false
+		return
+	var filesystem = EditorInterface.get_resource_filesystem()
+	while filesystem.is_scanning():
+		if not is_instance_valid(panel) or not panel.is_inside_tree():
+			scan_pending = false
+			return
+		await panel.get_tree().process_frame
+	filesystem.scan()
+	scan_pending = false
 
 func _settings(name: String, args: Dictionary) -> Dictionary:
 	var settings: Object = EditorInterface.get_editor_settings() if args.get("scope", "project") == "editor" else ProjectSettings

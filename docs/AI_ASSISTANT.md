@@ -51,6 +51,24 @@ shared ComfyUI server is never globally interrupted on behalf of another job.
 
 ## Architecture
 
+The Romanian [project progress record](../PROGRES_SI_PLAN.md) tracks implemented
+work, verification, the delivered APK, and the remaining plan. It is updated at
+each substantial AI development/build/delivery milestone.
+
+The [built-in agent harness](AI_HARNESS.md) runs direct-provider turns inside
+Godot, including independent child sessions. Its model/tool loop does not require
+Termux, a console, an external agent SDK, or the optional companion. It owns
+streaming events, bounded model retries, cancellation, result deduplication, and
+checkpoint handling. The model endpoint itself remains a separately configured
+cloud or local service. Companion-backed subscriptions and MCP stdio retain their
+existing optional external hosts.
+
+Direct runs discover specialized tools through `tool_search`/`tool_describe`.
+Coding tools include bounded line reads/search, version-checked exact patches
+with preview/recovery, and a native GDScript diagnostics bridge. MCP results
+preserve structured data and model images and expose execution errors. See the
+[harness contract](AI_HARNESS.md) for supported schemas and bridge requirements.
+
 `modules/ai_assistant` contains the C++ editor plugin, global settings inspector,
 secret-store bridge and embedded GDScript services. Scripts are injected into the
 editor in dependency order and are not installed into `res://` on disk. No project
@@ -67,6 +85,9 @@ The companion's selected upstream files and hashes are recorded in
 Original Godot Agent/Hydra-Go-3D worktrees were not edited.
 
 ## Verification
+
+The 2026-10-22 harness source is tested separately from the previously delivered
+APK listed below. See [the harness contract and verification scope](AI_HARNESS.md).
 
 Run the embedded-runtime tests with an upstream or forked 4.7.2 editor binary:
 
@@ -192,12 +213,22 @@ It refuses restoration when file hashes or native scene Undo history changed
 subsequently. Generic method calls, external operations and arbitrary setting
 changes are not reversible checkpoints.
 
-The compact header contains provider/model selection, history, new conversation,
-expanded workspace and settings. User messages form small right-aligned bubbles;
+The compact header contains the conversation title, history, new conversation,
+expanded workspace and settings. Model selection lives beside the message input.
+It opens a bottom drawer inside the chat: provider groups → that provider's
+models → reasoning. Search filters providers or the selected provider's models.
+The choice is applied only after selecting reasoning; Back, outside click and
+Escape allow cancellation. A separate reasoning chip reopens the current model's
+levels. Only catalog-declared levels are offered, with automatic as the default;
+models without declared levels offer automatic alone. Selection stays attached
+to queued messages. Wide composers place the chips inline; narrow ones give
+them their own row above the action buttons.
+
+User messages form small right-aligned bubbles;
 assistant messages use the main reading column. The composer starts at one line
 and grows to a bounded height. Image and project references appear as removable
 chips, with image thumbnails. Empty task/reference rows reserve no space.
-Stop appears only while working. The mode menu contains reasoning, session write
+Stop appears only while working. The mode menu contains session write
 permission and context usage. Empty conversations show one welcome prompt.
 
 Streaming updates the existing message blocks at a bounded rate. Fenced code has
@@ -206,13 +237,18 @@ completion. Finishing a response preserves its widgets and layout. Message actio
 use compact icons and a secondary menu. The Changes view highlights actual old
 and new file contents in red and green and retains conflict-aware restoration.
 Operations appear in expandable activity groups with details hidden initially.
-Graphite surfaces, violet accents and monochrome vector icons are shared across
-chat and settings. New live messages use a short opacity transition; General has
+Graphite surfaces, violet accents and vector icons are shared across chat and
+settings. Provider identities use distinct colored original emblems (Qwen regions
+share one identity), with a generic symbol for custom endpoints. These are app
+symbols, not downloaded official brand logos. Drawers, reasoning, work modes,
+settings categories, history and attachments have dedicated action icons.
+Textures are generated locally at editor scale and cached. New live messages use
+a short opacity transition; General has
 a reduce-motion preference. History loading does not animate each old message.
 
 Settings navigation measures category names using the actual font size. Narrow
 windows use a category dropdown instead of shortening the left-side labels.
-Provider profiles use a compact selector, monogram and connection badge. A saved
+Provider profiles use a compact selector, provider emblem and connection badge. A saved
 profile or manual model is shown as unverified until a catalog request succeeds;
 the last successful verification is stored with the profile. API keys, Save and
 Verify actions stay in the basic form. Profile name, URL, HTTP and manual model
