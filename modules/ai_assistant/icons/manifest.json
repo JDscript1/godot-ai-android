@@ -319,6 +319,61 @@
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/volume-2.svg",
     "sha256": "fb404f9c128a0579de67b399177631e5edb3502fdc247ceb30e8b15754b46071"
   },
+  "Preview3D": {
+    "file": "lucide/box.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/box.svg",
+    "sha256": "511862693d914d2bf1947c9ccc513595f2a256541f5dd4f6f9ac8383cd41ac4f"
+  },
+  "Crop": {
+    "file": "lucide/crop.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/crop.svg",
+    "sha256": "9229f7832445ee0caa15eecd6323397a3ebb5c9a124f923212605ad3529d64b8"
+  },
+  "ArrowRight": {
+    "file": "lucide/arrow-right.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/arrow-right.svg",
+    "sha256": "288397fdb73bb4f783cf9eabb726ff47357df1d4e3f1201dd748090579f108b9"
+  },
+  "Annotate": {
+    "file": "lucide/move-up-right.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/move-up-right.svg",
+    "sha256": "cb984560f973a1a4ad84daa50a3fbc2f1bc597c0bd61e38d9662f3f2cf28f617"
+  },
+  "Grid": {
+    "file": "lucide/grid-3x3.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/grid-3x3.svg",
+    "sha256": "6c24155397cf0e751c05931bae68e67e4fe0fd58baeb7b29e9f80c90ed1d5194"
+  },
+  "Light": {
+    "file": "lucide/sun.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/sun.svg",
+    "sha256": "a3955c8b0425fcc5c9ba12d2bdd77fe53b2cd5dd05e7742a56f342e996fb2ef8"
+  },
+  "Wireframe": {
+    "file": "lucide/boxes.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/boxes.svg",
+    "sha256": "7e301f6c38337389f5a96675d14cb9d8ef8a613329e99c3dfcf7c635bdd1faae"
+  },
+  "Reset": {
+    "file": "lucide/rotate-ccw.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/rotate-ccw.svg",
+    "sha256": "622685386ab4017eabfde01cd74550a20b1924df233b353f73b6b155371f2afd"
+  },
+  "Compare": {
+    "file": "lucide/columns-2.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/columns-2.svg",
+    "sha256": "bddf3348a9c82d111a060d118299c90755b1ae8411bd16ea1d5ddb83c5f98a27"
+  },
+  "Pin": {
+    "file": "lucide/pin.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/pin.svg",
+    "sha256": "55e8e5e04bcb671179fc1dd589abf09cf6a1e71301ff14eb739419cfab6011e7"
+  },
+  "Animation": {
+    "file": "lucide/clapperboard.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/clapperboard.svg",
+    "sha256": "e4d78946cda7812f13c431c68b6d4d0077a92217c7f468667a203f237e247d7e"
+  },
   "Provider_llamacpp": {
     "file": "ggml/llama1-icon-transparent.svg",
     "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/e3797b184d428c7a019362612b76971f60af6670/media/llama1-icon-transparent.svg",

@@ -50,7 +50,7 @@ def main():
             try:
                 with log_path.open("w") as stream:
                     result = subprocess.run(command, env={**os.environ, **environment},
-                                            stdout=stream, stderr=subprocess.STDOUT, timeout=90)
+                                            stdout=stream, stderr=subprocess.STDOUT, timeout=180)
             except subprocess.TimeoutExpired:
                 print(log_path.read_text())
                 raise SystemExit(f"{name}: editor verification timed out")

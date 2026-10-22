@@ -66,7 +66,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "panel"]:
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -75,7 +75,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations"}
+		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -135,9 +135,11 @@ func _run() -> void:
 	panel.free()
 	_new_feature_tests()
 	_tool_registry_tests()
+	_diff_tests()
 	var node = Node.new()
 	root.add_child(node)
 	var transport = scripts["transport"].new(node)
+	await _file_registry_tests(node)
 	_planning_tests(node)
 	await _harness_tests(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
@@ -146,6 +148,7 @@ func _run() -> void:
 		await _network_tests(node)
 		await _cloud_generation_tests(node)
 		await _integration_tests(node)
+		await _store_tests(node)
 	node.queue_free()
 	await process_frame
 	print("Godot AI: %s assertions, %s failures" % [assertions, failures])
@@ -616,3 +619,96 @@ func _cloud_generation_tests(node: Node) -> void:
 	vault.erase("fixture-tripo")
 	check((await assets.submit(profile, "bird", "", {})).get("code") == "missing_credentials", "Cloud generation requires this profile's own API key")
 	DirAccess.remove_absolute(reference)
+
+func _file_registry_tests(node: Node) -> void:
+	var registry = scripts["file_registry"].new(node)
+	var scratch = OS.get_user_data_dir().path_join("file-registry-" + scripts["common"].uid())
+	registry.configure(scratch)
+	var sources = scratch.path_join("sources")
+	DirAccess.make_dir_recursive_absolute(sources)
+	registry.permit(sources, true)
+	var source = sources.path_join("screenshot-a.png")
+	var image = Image.create(40, 20, false, Image.FORMAT_RGBA8)
+	image.fill(Color.RED)
+	image.save_png(source)
+	for extension in ["jpg", "webp"]:
+		var output_path = sources.path_join("dimension-probe." + extension)
+		if extension == "jpg": image.save_jpg(output_path)
+		else: image.save_webp(output_path)
+		check(scripts["file_registry"].image_dimensions(output_path) == Vector2i(40, 20), "Image budget preflight reads native dimensions before decoding: " + extension)
+		DirAccess.remove_absolute(output_path)
+	var registered = registry.register_file(source, "conversation-a")
+	check(registered.get("ok", false), "File registry captures an accessible image revision")
+	if not registered.get("ok", false): return
+	var id = str(registered["result"]["id"])
+	check(registry.describe(id, "conversation-b").is_empty(), "A file ID cannot leak across unrelated conversations")
+	check(registry.image_attachment(id, "conversation-a").get("mimeType") == "image/png", "Selected file snapshots provide actual image pixels for vision")
+	image.fill(Color.BLUE)
+	image.save_png(source)
+	var original = Image.load_from_file(registry.describe(id, "conversation-a")["path"])
+	check(original.get_pixel(1, 1) == Color.RED, "A file mention retains the captured version when its source changes")
+	var updated = registry.register_file(source, "conversation-a")
+	check(updated.get("result", {}).get("id") != id, "A changed source creates a separate stable revision ID")
+	check(registry.register_file(source, "conversation-a").get("result", {}).get("id") == updated["result"]["id"], "Repeated registration reuses the same file revision")
+	check(registry.pin(id, "conversation-a", true) == OK and registry.catalog("conversation-b", true).is_empty(), "Pinned references remain conversation scoped")
+	var recovery = scripts["file_registry"].new(node)
+	recovery.configure(scratch)
+	check(recovery.allowed(sources.path_join("new-file.png")) and recovery.catalog("conversation-a", true).size() == 1, "Folder grants and pinned file references survive restart")
+	check(not recovery.describe(id, "conversation-a").is_empty(), "File references and snapshots survive registry restart")
+	var searched = await registry.search({"path": sources, "kind": "image", "limit": 2}, "conversation-a")
+	check(searched.get("files", []).size() == 1 and searched.get("result", [])[0].get("name") == "screenshot-a.png", "Native file search returns actual matching preview cards")
+	check((await registry.search({}, "conversation-a", {"cancelled": true})).get("code") == "cancelled", "File discovery can be cancelled before reading storage")
+	check(not registry.allowed("/not-authorized/secret.png") and not registry.allowed(sources.path_join(".git/config")), "Storage discovery rejects ungranted and hidden private roots")
+	var model_path = sources.path_join("model.gltf")
+	var buffer_path = sources.path_join("mesh.bin")
+	var buffer = FileAccess.open(buffer_path, FileAccess.WRITE)
+	buffer.store_string("before"); buffer.close()
+	scripts["common"].atomic_json(model_path, {"asset": {"version": "2.0"}, "buffers": [{"uri": "mesh.bin", "byteLength": 6}]})
+	var first_model = registry.register_file(model_path, "conversation-a")
+	buffer = FileAccess.open(buffer_path, FileAccess.WRITE)
+	buffer.store_string("after!"); buffer.close()
+	var second_model = registry.register_file(model_path, "conversation-a")
+	check(first_model.get("ok", false) and second_model.get("ok", false) and first_model["result"]["id"] != second_model["result"]["id"], "glTF dependency edits create a new revision even when the JSON is unchanged")
+	check(FileAccess.get_file_as_string(str(first_model["result"]["path"]).get_base_dir().path_join("mesh.bin")) == "before", "Earlier glTF buffer snapshots remain immutable")
+	var json = FileAccess.get_file_as_string(registry.directory.path_join("index.json"))
+	check(not "base64" in json and not "data:image" in json and FileAccess.file_exists(registered["result"]["preview"]), "Registry persists metadata and thumbnails without duplicating binary blobs in JSON")
+	for definition in scripts["file_registry"].definitions(): check(scripts["tool_registry"].new([definition]).error.is_empty(), "File tool schema is discoverable: " + str(definition["name"]))
+
+func _diff_tests() -> void:
+	var diff = scripts["diff"]
+	for sample in [["a\nb\nc\n", "a\nB\nc\nd\n", 2, 1], ["", "one\ntwo\n", 2, 0], ["one\ntwo\n", "", 0, 2], ["same\n", "same\n", 0, 0], ["line\n", "line", 1, 1], ["a\nb\na\n", "a\na\n", 0, 1]]:
+		var compared = diff.compare(sample[0], sample[1])
+		check(compared.get("exact", false) and compared.get("added") == sample[2] and compared.get("removed") == sample[3], "Exact line diff counts insertions/deletions: " + str(sample))
+		var reconstructed = []
+		for op in compared.get("operations", []):
+			if op[0] != "-": reconstructed.append(op[1])
+		check(reconstructed == diff.lines(sample[1]), "Applying diff operations reconstructs the actual updated file")
+	var unified = diff.unified("player.gd", diff.compare("a\nb\nc\n", "a\nB\nc\n"))
+	check("@@ -1,3 +1,3 @@" in unified and "-b\n+B" in unified and not "-a" in unified, "Unified diff retains unchanged context instead of deleting the entire original")
+	check(not diff.compare("a\n".repeat(20001), "b\n").get("exact", true), "Oversized diffs report a bound instead of fabricated line totals")
+
+func _store_tests(node: Node) -> void:
+	var service = scripts["store"].new(node)
+	service.api_url = mock_url + "/store"
+	service.test_http = true
+	var result = await service.search("fixture", 1, {})
+	check(result.get("ok", false) and result.get("store_items", []).size() == 1 and result["store_items"][0]["id"] == "fixture-addon", "Store search uses the editor v1 schema and actual query parameter")
+	result = await service.describe("fixture-addon", {})
+	check(result.get("ok", false) and result["result"]["releases"].size() == 1 and result["result"]["releases"][0]["version"] == "1.0", "Store filters incompatible releases before offering installation")
+	check(not (await service.describe("../outside", {})).get("ok", false), "Store IDs cannot inject paths")
+	var transport = scripts["transport"].new(node)
+	result = await transport.request(mock_url + "/store/redirect", HTTPClient.METHOD_GET, ["Authorization: Bearer must-not-follow"], null, {"allow_http": true, "follow_redirects": true})
+	check(result.get("ok", false) and result.get("bytes", PackedByteArray()).size() > 0, "Redirected downloads never forward credentials to the artifact host")
+	result = await transport.request(mock_url + "/store/loop", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "follow_redirects": true})
+	check(not result.get("ok", false), "Download redirect loops stop at a finite limit")
+	var path = OS.get_user_data_dir().path_join("store-zip-test.zip")
+	for filename in ["../escape.gd", "addons/fixture/plugin.cfg"]:
+		var writer = ZIPPacker.new()
+		writer.open(path)
+		writer.start_file(filename)
+		writer.write_file("fixture".to_utf8_buffer())
+		writer.close_file()
+		writer.close()
+		var inspected = scripts["store"].zip_manifest(path)
+		check(inspected.get("ok", false) == (not filename.begins_with("..")), "ZIP preflight validates paths before extraction: " + filename)
+	for definition in scripts["store"].definitions(): check(scripts["tool_registry"].new([definition]).error.is_empty(), "Store tool schema is discoverable: " + str(definition["name"]))

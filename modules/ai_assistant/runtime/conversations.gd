@@ -65,6 +65,9 @@ func save(messages: Array, selection: Dictionary = {}) -> Error:
 		for attachment_index in range(originals.size()):
 			var attachment: Dictionary = originals[attachment_index]
 			if attachment.has("data"):
+				if attachment.has("file_id"):
+					copies[attachment_index].erase("data")
+					continue
 				if not attachment.has("cache_id"): attachment["cache_id"] = Common.uid()
 				var id = str(attachment["cache_id"])
 				if not id.is_valid_filename(): return ERR_INVALID_DATA

@@ -34,7 +34,7 @@ func set_chat_placement(index: int) -> void:
 		fixture_dock = EditorDock.new()
 		fixture_dock.title = "AI Assistant QA"
 		fixture_dock.default_slot = EditorDock.DOCK_SLOT_LEFT_UR if index == 1 else EditorDock.DOCK_SLOT_RIGHT_UL
-		panel.custom_minimum_size = Vector2(280, 200) * EditorInterface.get_editor_scale()
+		panel.custom_minimum_size = Vector2(240, 200) * EditorInterface.get_editor_scale()
 		fixture_dock.add_child(panel)
 		add_dock(fixture_dock)
 		fixture_dock.make_visible()
@@ -101,8 +101,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations"}
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "panel"]:
+	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -124,6 +124,9 @@ func _run() -> void:
 	await _chat_workflow_tests()
 	await _layout_tests()
 	await _control_settings_tests()
+	await _file_chat_tests()
+	await _model_and_control_tests()
+	await _store_install_tests()
 	await get_tree().process_frame
 	_check(panel.chat.thread.size.x >= minf(740 * EditorInterface.get_editor_scale(), panel.chat.scroll.size.x - 40 * EditorInterface.get_editor_scale()), "Chat column uses the available readable width")
 	_check(panel.chat.thread.size.x <= 760 * EditorInterface.get_editor_scale() + 1, "Chat column stays within 760 logical pixels")
@@ -346,6 +349,7 @@ func _code_tool_tests() -> void:
 	var args = {"path": path, "expected_sha256": source.sha256_text(), "edits": edits}
 	var before_count = panel.tools.file_changes.size()
 	var preview = panel.tools.execute("godot_apply_patch", args, 2, true)
+	_check(preview.get("result", {}).get("change_preview", [{}])[0].get("state") == "Propus", "Dry-run diff is explicitly proposed rather than applied")
 	_check(preview.get("ok", false) and preview["result"]["dry_run"] and FileAccess.get_file_as_string(path) == source and panel.tools.file_changes.size() == before_count, "Patch preview changes neither file bytes nor recovery history")
 	args["dry_run"] = false
 	var applied = panel.tools.execute("godot_apply_patch", args, 2, true)
@@ -360,7 +364,7 @@ func _code_tool_tests() -> void:
 	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	await get_tree().process_frame
-	EditorInterface.edit_script(load(path))
+	EditorInterface.edit_script.call_deferred(load(path))
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var script_editor = EditorInterface.get_script_editor()
@@ -370,7 +374,9 @@ func _code_tool_tests() -> void:
 	var dirty = panel.tools.execute("godot_apply_patch", args, 2, true)
 	_check(dirty.get("code") == "unsaved_changes" and FileAccess.get_file_as_string(path) == source, "Patch refuses an open script with unsaved user edits")
 	code.text = source
-	script_editor.save_all_scripts()
+	script_editor.save_all_scripts.call_deferred()
+	await get_tree().create_timer(0.15).timeout
+	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	var diagnostics = panel.tools.execute("godot_script_diagnostics", {"path": path}, 0, false)
 	if panel.plugin.has_method("script_diagnostics"):
 		_check(diagnostics.get("ok", false) and diagnostics["result"]["valid"] and diagnostics["result"]["sha256"] == source.sha256_text(), "Native parser validates the saved GDScript and reports its hash")
@@ -644,6 +650,7 @@ func _configuration_screenshots(output: String) -> void:
 		panel._set_placement(index)
 		await get_tree().create_timer(0.3).timeout
 		var docked = panel.get_parent() is EditorDock
+		_check(panel.chat.get_global_rect().end.x <= panel.get_viewport().get_visible_rect().end.x + 1 and panel.chat.send_button.get_global_rect().end.x <= panel.get_viewport().get_visible_rect().end.x + 1, "Dock and Send stay inside the usable editor width: " + str(index))
 		_check(docked == (index != 0) and panel.is_visible_in_tree(), "Chat placement is active and visible: " + str(index))
 		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(["dock-center.png", "dock-left.png", "dock-right.png"][index]))
 		if index != 0:
@@ -707,8 +714,8 @@ func _populated_chat_tests() -> void:
 	var additions = false
 	var deletions = false
 	for index in range(diff.get_line_count()):
-		if diff.get_line(index) == "+ speed = 12": additions = diff.get_line_background_color(index).g > diff.get_line_background_color(index).r
-		if diff.get_line(index) == "- speed = 5": deletions = diff.get_line_background_color(index).r > diff.get_line_background_color(index).g
+		if diff.get_line(index) == "+speed = 12": additions = diff.get_line_background_color(index).g > diff.get_line_background_color(index).r
+		if diff.get_line(index) == "-speed = 5": deletions = diff.get_line_background_color(index).r > diff.get_line_background_color(index).g
 	_check(additions and deletions, "Changes show actual before and after content with distinct colors")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty(): changes.get_texture().get_image().save_png(output.path_join("changes.png"))
@@ -791,3 +798,201 @@ func _populated_chat_tests() -> void:
 	panel.chat.follow_bottom = false
 	panel.chat.scroll.scroll_vertical = 0
 	await get_tree().create_timer(0.2).timeout
+
+func _file_chat_tests() -> void:
+	var scope = str(panel.conversations.index["active"])
+	var image = Image.create(80, 40, false, Image.FORMAT_RGBA8)
+	image.fill(Color.RED)
+	var path = panel.file_registry.directory.path_join("qa-image.png")
+	panel.file_registry.permit(path)
+	image.save_png(path)
+	var registered = panel.file_registry.register_file(path, scope)
+	_check(registered.get("ok", false), "File registration succeeds in the real editor")
+	if not registered.get("ok", false): return
+	var id = str(registered["result"]["id"])
+	panel.chat.append_message("assistant", "Captura găsită", {"id": "qa-file", "files": [id]})
+	var card = panel.chat.thread.find_child("File_" + id, true, false)
+	_check(card != null and card.mouse_filter == Control.MOUSE_FILTER_PASS, "File cards preserve vertical chat scrolling until a horizontal gesture is accepted")
+	_check(card != null and card.find_children("*", "TextureRect", true, false).size() == 1, "Assistant file cards show actual image thumbnails")
+	panel.composer.text = "Verifică aici"
+	panel._chat_action("file_mention", {"id": id})
+	var chips = panel.chat.attachment_chips.get_child_count()
+	panel._composer_hints()
+	_check(panel.pending_files == [id] and panel.composer.text == "Verifică aici" and panel.chat.attachment_chips.get_child_count() == chips, "Mentioning a file preserves the draft and repeated hints do not duplicate chips")
+	var touch = InputEventScreenTouch.new()
+	touch.pressed = true
+	touch.position = Vector2(10, 10)
+	card.gui_input.emit(touch)
+	panel.pending_files.clear()
+	var drag = InputEventScreenDrag.new()
+	drag.position = Vector2(160, 14)
+	drag.relative = Vector2(150, 4)
+	card.gui_input.emit(drag)
+	_check(panel.pending_files == [id], "Swiping a discovered card right references the exact file")
+	panel._open_file(id)
+	await get_tree().process_frame
+	_check(panel.media_view.visible and panel.media_view.canvases.size() == 1 and panel.media_view.canvases[0].image.get_width() == 80, "Opening a card displays its real captured image in the viewer")
+	panel.media_view.canvases[0].selection = Rect2(2, 2, 10, 6)
+	var crop = panel.media_view.canvases[0].exported(true)
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty():
+		panel.media_view.get_texture().get_image().save_png(output.path_join("viewer-image.png"))
+		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("file-mentions.png"))
+	_check(crop.get_width() == 10 and crop.get_height() == 6 and crop.get_pixel(0, 0) == Color.RED, "Crop exports the selected original pixels without modifying the source")
+	panel.media_view.hide()
+	panel._open_file(id, id)
+	_check(panel.media_view.canvases.size() == 2, "Comparison opens both exact image revisions")
+	panel.media_view.canvases[0].pose_changed.emit({"zoom": 2.0, "offset": Vector2(0.1, 0.2)})
+	_check(panel.media_view.canvases[1].zoom == 2.0, "Image comparison shares zoom and normalized pan")
+	panel.media_view.hide()
+	_check(panel.composer.text == "Verifică aici" and panel.pending_files == [id], "Closing the viewer preserves conversation draft and references")
+	panel.busy = true
+	panel._chat_action("file_send", {"id": id})
+	_check(panel.queued.size() == 1 and panel.queued[0]["selection"]["files"] == [id], "Direct reference sending retains stable file IDs in queued messages")
+	panel.busy = false
+	panel.queued.clear()
+	panel.pending_files.clear()
+	panel.composer.clear()
+	panel._composer_hints()
+	panel.chat.clear_messages()
+	panel.media_view.queue_free()
+	panel.media_view = null
+	await get_tree().process_frame
+	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+
+func _model_and_control_tests() -> void:
+	var scene = Node3D.new()
+	var mesh = MeshInstance3D.new()
+	mesh.mesh = BoxMesh.new()
+	scene.add_child(mesh)
+	mesh.owner = scene
+	var document = GLTFDocument.new()
+	var state = GLTFState.new()
+	var path = panel.file_registry.directory.path_join("qa-cube.glb")
+	panel.file_registry.permit(path)
+	var exported = document.append_from_scene(scene, state) == OK and document.write_to_filesystem(state, path) == OK
+	scene.free()
+	_check(exported, "Build an actual GLB fixture for the shared native renderer")
+	var registered = panel.file_registry.register_file(path, str(panel.conversations.index["active"]))
+	_check(registered.get("ok", false), "Register a GLB snapshot for the current conversation")
+	if registered.get("ok", false):
+		var id = str(registered["result"]["id"])
+		panel._open_file(id)
+		await get_tree().process_frame
+		_check(panel.media_view.model_views.size() == 1, "Opening a 3D card launches the shared interactive GLB viewer")
+		if not panel.media_view.model_views.is_empty():
+			var model = panel.media_view.model_views[0]
+			_check(model.information.get("triangles", 0) == 12 and model.information.get("meshes", 0) == 1, "3D metadata counts actual rendered cube geometry")
+			var pixels = await model.capture()
+			_check(pixels != null and pixels.get_width() >= 128 and pixels.get_pixel(pixels.get_width() / 2, pixels.get_height() / 2).is_equal_approx(pixels.get_pixel(0, 0)) == false, "Interactive 3D preview renders actual geometry rather than a flat placeholder")
+			var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+			if not output.is_empty(): panel.media_view.get_texture().get_image().save_png(output.path_join("viewer-3d.png"))
+			var original_yaw = model.yaw
+			model._orbit(Vector2(20, 10))
+			_check(model.yaw != original_yaw, "3D orbit responds to gesture displacement")
+		panel.media_view.hide()
+		await get_tree().process_frame
+		_check(panel.media_view.model_views.is_empty(), "Closing the viewer releases its active 3D scenes")
+		var observed = await panel._observe_file(id)
+		_check(observed.get("ok", false) and observed.get("result", {}).get("metadata", {}).get("triangles", 0) == 12 and not panel.media_view.visible, "Agent 3D inspection runs offscreen without opening the user viewer")
+		var thumbnail = panel.file_registry.entries[id].get("preview", "")
+		_check(FileAccess.file_exists(thumbnail) and Image.load_from_file(thumbnail).get_width() == 512, "Offscreen 3D inspection caches a real 512px preview")
+		if not thumbnail.is_empty():
+			var pixels = Image.load_from_file(thumbnail)
+			_check(pixels.get_pixel(256, 256).is_equal_approx(pixels.get_pixel(0, 0)) == false, "Background 3D capture contains the rendered model")
+		panel.media_view.queue_free()
+		panel.media_view = null
+	# A separate real editor window supplies a target outside the assistant UI.
+	var window = Window.new()
+	window.title = "AI input fixture"
+	window.size = Vector2i(320, 180)
+	EditorInterface.get_base_control().add_child(window)
+	var box = VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	window.add_child(box)
+	var clicked = {"value": false}
+	var button = Button.new()
+	button.text = "Editor fixture button"
+	button.pressed.connect(func() -> void: clicked["value"] = true)
+	box.add_child(button)
+	var edit = LineEdit.new()
+	box.add_child(edit)
+	var secret = LineEdit.new()
+	secret.secret = true
+	secret.text = "fixture-secret"
+	box.add_child(secret)
+	window.popup_centered()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var handle = panel.tools._encode(button)["handle"]
+	var capture = await panel.editor_control.capture({"target": "control", "handle": handle}, {})
+	_check(capture.get("ok", false) and not capture.get("images", []).is_empty(), "Editor capture returns actual control pixels and a fresh frame ID")
+	if capture.get("ok", false):
+		var args = {"frame": capture["result"]["frame"], "action": "click", "x": 0.5, "y": 0.5}
+		var result = await panel.editor_control.input(args, {})
+		_check(result.get("ok", false) and clicked["value"] and panel.editor_control.held.is_empty(), "Coordinate input clicks the actual editor button and releases it")
+		_check((await panel.editor_control.input(args, {})).get("code") == "stale_frame", "A consumed frame cannot operate the editor twice without re-observation")
+	capture = await panel.editor_control.capture({"target": "control", "handle": handle}, {})
+	window.size += Vector2i(20, 0)
+	await get_tree().process_frame
+	_check((await panel.editor_control.input({"frame": capture["result"]["frame"], "action": "click"}, {})).get("code") == "stale_frame", "Window layout changes invalidate previously captured coordinates")
+	edit.grab_focus()
+	capture = await panel.editor_control.capture({"target": "control", "handle": panel.tools._encode(edit)["handle"]}, {})
+	var typed = await panel.editor_control.input({"frame": capture["result"]["frame"], "action": "text", "text": "test română"}, {})
+	_check(typed.get("ok", false) and edit.text == "test română", "Editor text input inserts at the focused field caret")
+	secret.grab_focus()
+	capture = await panel.editor_control.capture({"target": "control", "handle": panel.tools._encode(secret)["handle"]}, {})
+	var bytes = Marshalls.base64_to_raw(capture.get("images", [{}])[0].get("data", ""))
+	var masked = Image.new()
+	masked.load_png_from_buffer(bytes)
+	_check(masked.get_pixel(masked.get_width() / 2, masked.get_height() / 2).is_equal_approx(Color("141a29")), "Secret fields are masked in editor captures")
+	_check(not (await panel.editor_control.input({"frame": capture["result"]["frame"], "action": "text", "text": "forbidden"}, {})).get("ok", false) and secret.text == "fixture-secret", "Agent text input cannot modify a secret field")
+	capture = await panel.editor_control.capture({"target": "control", "handle": handle}, {})
+	var touch = InputEventScreenTouch.new()
+	touch.pressed = true
+	touch.position = button.get_global_rect().get_center()
+	panel.editor_control._hold(window, touch)
+	panel.editor_control.user_input(InputEventKey.new())
+	_check(panel.editor_control.held.is_empty() and panel.editor_control.frames.is_empty(), "Manual takeover releases held inputs and invalidates coordinates")
+	panel.editor_control._hold(window, touch)
+	panel.editor_control.release()
+	_check(panel.editor_control.held.is_empty(), "Stop releases all synthetic touch/key states")
+	window.hide()
+	window.queue_free()
+	panel.editor_control.release()
+	await get_tree().process_frame
+	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+
+func _store_install_tests() -> void:
+	var archive_path = panel.store.directory.path_join("qa-addon.zip")
+	var pack = ZIPPacker.new()
+	pack.open(archive_path)
+	var contents = {"fixture-root/addons/ai_test_store/plugin.cfg": "[plugin]\nname=\"AI QA addon\"\ndescription=\"Isolated installation fixture\"\nauthor=\"QA\"\nversion=\"1.0\"\nscript=\"plugin.gd\"\n", "fixture-root/addons/ai_test_store/plugin.gd": "@tool\nextends EditorPlugin\n", "fixture-root/addons/ai_test_store/empty.txt": ""}
+	for name in contents:
+		pack.start_file(name)
+		pack.write_file(str(contents[name]).to_utf8_buffer())
+		pack.close_file()
+	pack.close()
+	var result = await panel.store.install_zip(archive_path, {"id": "qa-addon", "name": "QA addon"}, "1.0", {})
+	_check(result.get("ok", false) and FileAccess.get_file_as_string("res://addons/ai_test_store/plugin.gd") == contents["fixture-root/addons/ai_test_store/plugin.gd"], "Store installation extracts actual approved addon files" + (" through the native Godot installer" if native else " in the upstream fixture"))
+	if not result.get("ok", false): return
+	var installation = str(result["result"]["installation"])
+	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	_check(panel.store.enable_plugin("ai_test_store", true).get("ok", false) and EditorInterface.is_plugin_enabled("ai_test_store"), "Installed addon enables through the real EditorInterface")
+	_check(not panel.store.remove(installation).get("ok", false), "Store removal requires disabling the active addon first")
+	panel.store.enable_plugin("ai_test_store", false)
+	var duplicate = await panel.store.install_zip(archive_path, {"id": "qa-addon"}, "1.0", {})
+	_check(duplicate.get("code") == "install_conflict", "Store installation refuses to overwrite existing addon files")
+	var source = "res://addons/ai_test_store/plugin.gd"
+	var output = FileAccess.open(source, FileAccess.WRITE)
+	output.store_string("# manual change\n" + contents["fixture-root/addons/ai_test_store/plugin.gd"])
+	output.close()
+	_check(panel.store.remove(installation).get("code") == "install_conflict" and FileAccess.file_exists(source), "Uninstallation preserves manually changed addon files")
+	output = FileAccess.open(source, FileAccess.WRITE)
+	output.store_string(contents["fixture-root/addons/ai_test_store/plugin.gd"])
+	output.close()
+	await get_tree().process_frame
+	var removed = panel.store.remove(installation)
+	if native: _check(removed.get("ok", false) and not FileAccess.file_exists(source), "Unmodified tracked addon uninstalls after being disabled")
+	else: _check(removed.get("code") == "native_bridge_unavailable" and FileAccess.file_exists(source), "Upstream editor reports the native cache-removal bridge requirement without deleting live scripts")
+	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame

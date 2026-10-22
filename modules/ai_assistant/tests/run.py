@@ -49,6 +49,19 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/store/search/query/":
+            valid = urllib.parse.parse_qs(location.query).get("query") == ["fixture"]
+            self.reply({"count": 1, "hits": [{"asset": {"slug": "fixture-addon", "name": "Fixture addon", "publisher": {"name": "Fixture publisher", "slug": "fixture"}, "license_type": "MIT"}}]} if valid else {"error": "query missing"}, 200 if valid else 400)
+            return
+        if location.path == "/store/assets/fixture-addon":
+            self.reply({"slug": "fixture-addon", "name": "Fixture addon", "publisher": {"name": "Fixture publisher", "slug": "fixture"}, "license_type": "MIT"})
+            return
+        if location.path == "/store/releases/fixture/fixture-addon/":
+            self.reply([{"version": "1.0", "stable": True, "min_godot_version": "4.0", "max_godot_version": "4.99", "download_url": f"http://127.0.0.1:{self.server.server_port}/store/redirect"}, {"version": "2.0", "stable": True, "min_godot_version": "9.0"}])
+            return
+        if location.path in ["/store/redirect", "/store/loop"]:
+            self.reply(b"", 302, headers={"Location": "/artifact/image.png" if location.path.endswith("redirect") else "/store/loop"})
+            return
         if location.path.startswith(("/meshy/", "/tripo/", "/openai_image/")):
             if self.headers.get("Authorization") != "Bearer generation-fixture-key":
                 self.reply({"error": "missing fixture authorization"}, 401)

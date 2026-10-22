@@ -3,6 +3,7 @@ extends RefCounted
 
 static var Common: GDScript
 static var ToolRegistry: GDScript
+static var Diff: GDScript
 var plugin: EditorPlugin
 var panel: Node
 var handles: Dictionary = {}
@@ -107,7 +108,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			if node == null: return Common.failure("Clasa nu este un Node instanțiabil.")
 			node.name = str(args["name"])
 			var undo = plugin.get_undo_redo()
-			_begin_scene_change()
+			_begin_scene_change("Creează nod: " + str(node.name))
 			undo.create_action("AI: create " + str(node.name))
 			undo.add_do_method(parent, "add_child", node, true)
 			undo.add_do_property(node, "owner", root)
@@ -123,7 +124,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var parent = node.get_parent()
 			var index = node.get_index()
 			var undo = plugin.get_undo_redo()
-			_begin_scene_change()
+			_begin_scene_change("Șterge nod: " + str(node.name))
 			undo.create_action("AI: remove " + str(node.name))
 			undo.add_do_method(parent, "remove_child", node)
 			undo.add_undo_method(parent, "add_child", node)
@@ -142,7 +143,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			if script == null or str(script.get_instance_base_type()).is_empty() or not node.is_class(script.get_instance_base_type()): return Common.failure("Scriptul nu poate fi atașat acestui tip de nod. Verifică baza scriptului și erorile de parsare.")
 			if script.reload(true) != OK: return Common.failure("Scriptul conține erori de parsare.")
 			var undo = plugin.get_undo_redo()
-			_begin_scene_change()
+			_begin_scene_change("Atașează script")
 			undo.create_action("AI: attach script")
 			undo.add_do_property(node, "script", script)
 			undo.add_undo_property(node, "script", node.get_script())
@@ -159,7 +160,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var callable = Callable(target, method)
 			if source.is_connected(signal_name, callable): return Common.success("Conexiunea există deja.")
 			var undo = plugin.get_undo_redo()
-			_begin_scene_change()
+			_begin_scene_change("Conectează semnal")
 			undo.create_action("AI: connect signal")
 			undo.add_do_method(source, "connect", signal_name, callable, CONNECT_PERSIST)
 			undo.add_undo_method(source, "disconnect", signal_name, callable)
@@ -338,7 +339,7 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 	if property in ["script", "owner", "scene_file_path"] or property.begins_with("_"): return Common.failure("Proprietatea necesită o operație dedicată.")
 	var value: Variant = _decode(args.get("value"))
 	var undo = plugin.get_undo_redo()
-	_begin_scene_change()
+	_begin_scene_change("Proprietate: " + property)
 	undo.create_action("AI: set " + property)
 	undo.add_do_property(object, property, value)
 	undo.add_undo_property(object, property, object.get(property))
@@ -472,6 +473,9 @@ func _apply_patch(args: Dictionary) -> Dictionary:
 	info.erase("text")
 	info["path"] = path
 	info["dry_run"] = bool(args.get("dry_run", true))
+	if info["dry_run"]:
+		var compared = Diff.compare(source, text)
+		info["change_preview"] = [{"path": path, "state": "Propus", "exact": compared["exact"], "added": compared.get("added", 0), "removed": compared.get("removed", 0), "diff": Diff.unified(path, compared), "first_line": compared.get("first_line", 1)}]
 	if info["dry_run"] or not info["changed"]: return Common.success(info)
 	var recovery = _snapshot(path)
 	if recovery < 0: return Common.failure("Copia de recuperare nu a putut fi salvată.", "recovery_failed")
@@ -622,6 +626,11 @@ func _ui_tree(node: Node, filter: String, output: Array, depth: int) -> void:
 		if filter.is_empty() or filter in (str(node.name) + " " + text).to_lower():
 			var item: Dictionary = _encode(node)
 			item["text"] = text.left(500)
+			var rect: Rect2 = node.get_global_rect()
+			item["rect"] = [rect.position.x, rect.position.y, rect.size.x, rect.size.y]
+			item["window"] = _encode(node.get_window())
+			if node is BaseButton: item["enabled"] = not node.disabled
+			elif node is LineEdit or node is TextEdit: item["editable"] = node.editable and not (node is LineEdit and node.secret)
 			output.append(item)
 	for child in node.get_children(): _ui_tree(child, filter, output, depth + 1)
 
@@ -668,12 +677,13 @@ func _scene_history() -> UndoRedo:
 	var manager = plugin.get_undo_redo()
 	return manager.get_history_undo_redo(manager.get_object_history_id(root))
 
-func _begin_scene_change() -> void:
+func _begin_scene_change(label: String = "Modifică scena") -> void:
 	if turn_id.is_empty(): return
 	var history = _scene_history()
 	if history == null: return
-	if not scene_changes.has(turn_id): scene_changes[turn_id] = {"history": weakref(history), "before": history.get_version(), "after": history.get_version(), "count": 0, "conflict": false}
+	if not scene_changes.has(turn_id): scene_changes[turn_id] = {"history": weakref(history), "before": history.get_version(), "after": history.get_version(), "count": 0, "conflict": false, "operations": []}
 	var change: Dictionary = scene_changes[turn_id]
+	change["pending_label"] = label
 	if change["after"] != history.get_version(): change["conflict"] = true
 
 func _end_scene_change() -> void:
@@ -682,18 +692,51 @@ func _end_scene_change() -> void:
 	var history = _scene_history()
 	change["after"] = history.get_version()
 	change["count"] += 1
+	change["operations"].append(change.get("pending_label", "Modifică scena"))
+
+func change_summary(id: String) -> Array:
+	var initial = {}
+	var latest = {}
+	for change in file_changes:
+		if change.get("turn_id") == id:
+			if not initial.has(change["path"]): initial[change["path"]] = change
+			latest[change["path"]] = change
+	var summary = []
+	for path in initial:
+		var change: Dictionary = initial[path]
+		var before_path = str(change.get("backup", ""))
+		var safe = Common.project_path(str(path))
+		if safe.is_empty(): continue
+		var before_sha = FileAccess.get_sha256(before_path) if change.get("existed", false) else "missing"
+		var after_sha = FileAccess.get_sha256(safe) if FileAccess.file_exists(safe) else "missing"
+		var state = "Restaurat" if before_sha == after_sha else ("Conflict" if latest[path].get("after_sha", after_sha) != after_sha else "Aplicat")
+		var length = 0
+		for file_path in [before_path, safe]:
+			var input = FileAccess.open(file_path, FileAccess.READ) if not file_path.is_empty() else null
+			if input != null: length += input.get_length(); input.close()
+		var result = {"exact": false, "reason": "Fișier mare"}
+		if length <= 2 * 1024 * 1024:
+			var before = FileAccess.get_file_as_bytes(before_path) if change.get("existed", false) else PackedByteArray()
+			var after = FileAccess.get_file_as_bytes(safe) if FileAccess.file_exists(safe) else PackedByteArray()
+			var binary = 0 in before or 0 in after
+			result = {"exact": false, "reason": "Fișier binar"} if binary else Diff.compare(before.get_string_from_utf8(), after.get_string_from_utf8())
+		var item = {"path": path, "state": state, "exact": result["exact"], "added": result.get("added", 0), "removed": result.get("removed", 0), "diff": Diff.unified(path, result), "first_line": result.get("first_line", 1), "before_sha256": before_sha, "after_sha256": after_sha}
+		summary.append(item)
+	if scene_changes.has(id):
+		var change: Dictionary = scene_changes[id]
+		var history: UndoRedo = change["history"].get_ref()
+		var state = "Aplicat"
+		if history == null or change["conflict"]: state = "Conflict"
+		elif history.get_version() == change["before"]: state = "Restaurat"
+		elif history.get_version() != change["after"]: state = "Conflict"
+		summary.append({"kind": "scene", "path": "Scenă · Undo", "state": state, "exact": false, "operations": change["count"], "diff": "Scenă · " + state + "\n" + "\n".join(change.get("operations", []))})
+
+	return summary
 
 func diff_turn(id: String) -> String:
 	var output = ""
-	for change in file_changes:
-		if change.get("turn_id") != id: continue
-		output += "--- " + str(change["path"]) + " (înainte)\n+++ " + str(change["path"]) + " (acum)\n"
-		var before = FileAccess.get_file_as_string(str(change["backup"])) if change.get("existed", false) else ""
-		var path = Common.project_path(str(change["path"]))
-		var after = FileAccess.get_file_as_string(path) if not path.is_empty() and FileAccess.file_exists(path) else ""
-		for line in before.left(12000).split("\n"): output += "- " + line + "\n"
-		for line in after.left(12000).split("\n"): output += "+ " + line + "\n"
-	return output + "\nOperațiile de scenă cu Undo sunt restaurate doar dacă istoricul nu a fost modificat manual. Apelurile generice și operațiile externe pot avea efecte fără Undo."
+	for item in change_summary(id): output += str(item["diff"]) + "\n"
+	return output + "\nRestaurarea verifică editările manuale și istoricul Undo al scenei."
 
 func restore_turn(id: String) -> Dictionary:
 	var latest = {}

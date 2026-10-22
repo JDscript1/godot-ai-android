@@ -108,7 +108,7 @@ bool EditorAssetInstaller::_is_item_checked(const String &p_source_path) const {
 	return file_item_map.has(p_source_path) && (file_item_map[p_source_path]->is_checked(0) || file_item_map[p_source_path]->is_indeterminate(0));
 }
 
-void EditorAssetInstaller::open_asset(const String &p_path, bool p_autoskip_toplevel) {
+void EditorAssetInstaller::open_asset(const String &p_path, bool p_autoskip_toplevel, bool p_popup) {
 	package_path = p_path;
 	asset_files.clear();
 
@@ -165,7 +165,9 @@ void EditorAssetInstaller::open_asset(const String &p_path, bool p_autoskip_topl
 	_rebuild_source_tree();
 	_rebuild_destination_tree();
 
-	popup_centered_clamped(Size2(620, 640) * EDSCALE);
+	if (p_popup) {
+		popup_centered_clamped(Size2(620, 640) * EDSCALE);
+	}
 }
 
 void EditorAssetInstaller::_update_file_mappings() {
@@ -582,16 +584,22 @@ void EditorAssetInstaller::_install_asset() {
 			}
 			msg += "\n" + failed_files[i];
 		}
-		if (EditorNode::get_singleton() != nullptr) {
+		if (!agent_install && EditorNode::get_singleton() != nullptr) {
 			EditorNode::get_singleton()->show_warning(msg);
 		}
 	} else {
-		if (EditorNode::get_singleton() != nullptr) {
+		if (!agent_install && EditorNode::get_singleton() != nullptr) {
 			EditorNode::get_singleton()->show_warning(vformat(TTR("Asset \"%s\" installed successfully!"), asset_name), TTRC("Success!"));
 		}
 	}
 
 	EditorFileSystem::get_singleton()->scan_changes();
+}
+
+void EditorAssetInstaller::install_approved_asset() {
+	agent_install = true;
+	_install_asset();
+	agent_install = false;
 }
 
 void EditorAssetInstaller::set_asset_name(const String &p_asset_name) {

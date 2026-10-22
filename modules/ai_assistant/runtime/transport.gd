@@ -134,8 +134,24 @@ func request(url: String, method: int = HTTPClient.METHOD_GET, headers: PackedSt
 	if is_sse: decoder.flush(receive)
 	if final_status not in [HTTPClient.STATUS_CONNECTED, HTTPClient.STATUS_DISCONNECTED]:
 		return Common.failure("Fluxul HTTP a fost întrerupt.", "interrupted")
-	var text = bytes.get_string_from_utf8() if file == null else ""
+	var textual = content_type.is_empty() or "json" in content_type or content_type.begins_with("text/")
+	var text = bytes.get_string_from_utf8() if file == null and textual else ""
 	var result = {"ok": status >= 200 and status < 300, "status": status, "headers": response_headers, "json": Common.parse_json(text), "text": text, "events": events, "bytes": bytes, "saved_path": save_path}
+	if status in [301, 302, 303, 307, 308] and method == HTTPClient.METHOD_GET and options.get("follow_redirects", false):
+		var destination = ""
+		for key in response_headers:
+			if str(key).to_lower() == "location": destination = str(response_headers[key])
+		if destination.begins_with("//"):
+			destination = str(location["scheme"]) + ":" + destination
+		elif destination.begins_with("/"):
+			destination = str(location["scheme"]) + "://" + str(location["host"]) + ":" + str(location["port"]) + destination
+		if destination.is_empty() or int(options.get("redirect_count", 0)) >= 3: return Common.failure("Redirect invalid sau prea multe redirecturi.")
+		var parsed = Common.parse_url(destination, bool(options.get("allow_http", false)))
+		if not parsed.get("ok", false) or (location["scheme"] == "https" and parsed.get("scheme") != "https"): return Common.failure("Redirect nesigur.")
+		var next_options = options.duplicate()
+		next_options["redirect_count"] = int(options.get("redirect_count", 0)) + 1
+		# Never forward provider/account credentials to a redirected host.
+		return await request(destination, method, PackedStringArray(), null, next_options)
 	if not result["ok"]: result["error"] = "HTTP %s: %s" % [status, text.left(1000)]
 	return result
 

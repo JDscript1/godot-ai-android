@@ -9,6 +9,7 @@
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "editor/asset_library/editor_asset_installer.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
@@ -17,6 +18,8 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+
+#include "modules/gdscript/gdscript_cache.h"
 
 #ifdef ANDROID_ENABLED
 #include "platform/android/jni_utils.h"
@@ -161,6 +164,9 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
+	ClassDB::bind_method(D_METHOD("prepare_script_removal", "paths"), &AIAssistantEditorPlugin::prepare_script_removal);
+	ClassDB::bind_method(D_METHOD("push_editor_input", "viewport", "event"), &AIAssistantEditorPlugin::push_editor_input);
+	ClassDB::bind_method(D_METHOD("install_asset_archive", "path", "title"), &AIAssistantEditorPlugin::install_asset_archive);
 	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantEditorPlugin::open_settings, DEFVAL(String()));
 }
 
@@ -306,7 +312,7 @@ void AIAssistantEditorPlugin::set_chat_placement(int p_placement) {
 		chat_dock->set_title("AI Assistant");
 		chat_dock->set_layout_key("GodotAIAssistant");
 		chat_dock->set_default_slot(p_placement == 1 ? EditorDock::DOCK_SLOT_LEFT_UR : EditorDock::DOCK_SLOT_RIGHT_UL);
-		panel->set_custom_minimum_size(Size2(280, 200) * EDSCALE);
+		panel->set_custom_minimum_size(Size2(240, 200) * EDSCALE);
 		chat_dock->add_child(panel);
 		add_dock(chat_dock);
 		chat_dock->make_visible();
@@ -393,5 +399,34 @@ AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
 			panel->get_parent()->remove_child(panel);
 		}
 		memdelete(panel);
+	}
+}
+
+void AIAssistantEditorPlugin::install_asset_archive(const String &p_path, const String &p_title) {
+	const String base = EditorPaths::get_singleton()->get_config_dir().path_join("ai_assistant/projects");
+	ERR_FAIL_COND(!p_path.simplify_path().begins_with(base + "/") || p_path.get_extension() != "zip" || !FileAccess::exists(p_path));
+	EditorAssetInstaller *installer = memnew(EditorAssetInstaller);
+	panel->add_child(installer);
+	installer->set_asset_name(p_title);
+	installer->open_asset(p_path, false, false);
+	installer->install_approved_asset();
+	installer->queue_free();
+}
+
+void AIAssistantEditorPlugin::push_editor_input(Viewport *p_viewport, const Ref<InputEvent> &p_event) {
+	ERR_FAIL_NULL(p_viewport);
+	ERR_FAIL_COND(!p_viewport->is_inside_tree() || p_event.is_null());
+	p_viewport->push_editor_input(p_event);
+}
+
+void AIAssistantEditorPlugin::prepare_script_removal(const PackedStringArray &p_paths) {
+	for (const String &path : p_paths) {
+		ERR_CONTINUE(!path.begins_with("res://addons/") || path.simplify_path() != path || path.get_extension() != "gd");
+		Error error = OK;
+		Ref<GDScript> script = GDScriptCache::get_full_script(path, error);
+		GDScriptCache::remove_script(path);
+		if (script.is_valid()) {
+			script->set_path("");
+		}
 	}
 }

@@ -3,6 +3,8 @@ extends HBoxContainer
 static var Common: GDScript
 static var Icons: GDScript
 static var Markdown: GDScript
+var file_registry: RefCounted
+var file_scope = ""
 signal action(name: String, args: Dictionary)
 var sidebar: VBoxContainer
 var chats: ItemList
@@ -18,6 +20,7 @@ var mode_picker: OptionButton
 var effort_picker: OptionButton
 var mode_buttons: Array = []
 var plan_cards: Dictionary = {}
+var change_cards: Dictionary = {}
 var send_button: Button
 var status: Label
 var context_label: Label
@@ -109,13 +112,15 @@ func _ready() -> void:
 	add_child(root_column)
 	var header = HBoxContainer.new()
 	root_column.add_child(header)
-	icon_button(header, "Menu", "Istoricul conversațiilor", func() -> void: sidebar.visible = not sidebar.visible)
+	var history_button = icon_button(header, "Menu", "Istoricul conversațiilor", func() -> void: sidebar.visible = not sidebar.visible)
+	_compact_button(history_button)
 	title = label(header, "Conversație nouă")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {}))
+	_compact_button(icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {})))
 	expand_button = icon_button(header, "Expand", "Extinde / restrânge chatul", _toggle_expanded)
-	icon_button(header, "Settings", "Setări", func() -> void: action.emit("settings", {}))
+	_compact_button(expand_button)
+	_compact_button(icon_button(header, "Settings", "Setări", func() -> void: action.emit("settings", {})))
 	scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -622,6 +627,7 @@ func refresh_history(entries: Array, active: String) -> void:
 		if entry["id"] == active: chats.select(chats.item_count - 1)
 
 func clear_messages() -> void:
+	change_cards.clear()
 	plan_cards.clear()
 	message_records.clear()
 	streaming_dirty.clear()
@@ -738,6 +744,7 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 				picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 				picture.custom_minimum_size.y = 180
 				column.add_child(picture)
+	for file_id in metadata.get("files", []): _file_card(column, str(file_id))
 	if role == "assistant": _message_actions(record)
 	activity_group = null
 	if motion_enabled and not restoring and is_visible_in_tree():
@@ -757,7 +764,7 @@ func _size_user(record: Dictionary) -> void:
 	for line in str(record["text"]).split("\n"):
 		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, get_theme_font_size("font_size", "Label")).x)
 	var wanted = minf(maxf(64 * scale, width + 30 * scale), available * 0.74)
-	if not record["metadata"].get("attachments", []).is_empty(): wanted = minf(320 * scale, available * 0.74)
+	if not record["metadata"].get("attachments", []).is_empty() or not record["metadata"].get("files", []).is_empty(): wanted = minf(320 * scale, available * 0.74)
 	record["card"].custom_minimum_size.x = wanted
 	record["card"].custom_maximum_size.x = wanted
 
@@ -962,8 +969,8 @@ func show_status(message: String, working: bool = false) -> void:
 	await get_tree().create_timer(4.0).timeout
 	if revision == status_revision: status.hide()
 
-func show_attachments(images: Array, references: Array) -> void:
-	var signature = JSON.stringify(images.map(func(item: Dictionary) -> String: return str(item.get("name", "")) + str(str(item.get("data", "")).length()))) + JSON.stringify(references)
+func show_attachments(images: Array, references: Array, file_ids: Array = []) -> void:
+	var signature = JSON.stringify(images.map(func(item: Dictionary) -> String: return str(item.get("name", "")) + str(str(item.get("data", "")).length()))) + JSON.stringify(references) + JSON.stringify(file_ids) + file_scope
 	if signature == attachment_signature: return
 	attachment_signature = signature
 	for child in attachment_chips.get_children():
@@ -981,6 +988,7 @@ func show_attachments(images: Array, references: Array) -> void:
 				if preview.load_png_from_buffer(Marshalls.base64_to_raw(item["data"])) == OK:
 					chip.icon = ImageTexture.create_from_image(preview)
 					chip.add_theme_constant_override("icon_max_width", int(28 * EditorInterface.get_editor_scale()))
+	show_file_mentions(file_ids)
 	attachment_chips.visible = attachment_chips.get_child_count() > 0
 
 func set_context(used: int, limit: int, output: int = 0, estimated: bool = false) -> void:
@@ -1023,3 +1031,125 @@ func show_welcome() -> void:
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", Color("abb5c9"))
+
+func _file_card(parent: Node, id: String) -> Control:
+	if file_registry == null: return null
+	var item = file_registry.describe(id, file_scope)
+	if item.is_empty(): return null
+	var card = PanelContainer.new()
+	card.name = "File_" + id
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", style(Color("202638"), 10))
+	parent.add_child(card)
+	var column = VBoxContainer.new()
+	card.add_child(column)
+	if not str(item.get("preview", "")).is_empty() and FileAccess.file_exists(item["preview"]):
+		var texture = ImageTexture.create_from_image(Image.load_from_file(item["preview"]))
+		var picture = TextureRect.new()
+		picture.texture = texture
+		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		picture.custom_minimum_size.y = 130 * EditorInterface.get_editor_scale()
+		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		column.add_child(picture)
+	var heading = label(column, str(item["name"]))
+	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	heading.tooltip_text = str(item["source"])
+	var origin = label(column, "%s · %s · %s" % [str(item["kind"]).to_upper(), String.humanize_size(int(item["bytes"])), Time.get_datetime_string_from_unix_time(int(item["modified"])).replace("T", " ")])
+	origin.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+	origin.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	var actions = HBoxContainer.new()
+	column.add_child(actions)
+	for spec in [["Inspect", "Deschide", "file_open"], ["Attach", "Menționează", "file_mention"], ["ArrowUp", "Trimite referința", "file_send"], ["Pin", "Fixează / eliberează", "file_pin"], ["Compare", "Compară", "file_compare"]]:
+		var entry = icon_button(actions, spec[0], spec[1], func() -> void: action.emit(spec[2], {"id": id}))
+		_compact_button(entry)
+		if spec[2] == "file_pin":
+			entry.toggle_mode = true
+			entry.set_pressed_no_signal(item.get("pinned", false))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var gesture = {"pressed": false, "start": Vector2.ZERO, "delta": Vector2.ZERO, "mentioned": false, "started": 0}
+	card.gui_input.connect(func(event: InputEvent) -> void:
+		if event.device == -1: return
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event is InputEventMouseButton and event.button_index != MOUSE_BUTTON_LEFT: return
+			if event.pressed:
+				gesture["pressed"] = true
+				gesture["start"] = event.position
+				gesture["delta"] = Vector2.ZERO
+				gesture["mentioned"] = false
+				gesture["started"] = Time.get_ticks_msec()
+				_file_long_press(card, id, gesture, gesture["started"])
+			elif gesture["pressed"]:
+				gesture["pressed"] = false
+				if not gesture["mentioned"] and Vector2(gesture["delta"]).length() < 10: action.emit("file_open", {"id": id})
+		elif gesture["pressed"] and (event is InputEventScreenDrag or event is InputEventMouseMotion):
+			gesture["delta"] = event.position - Vector2(gesture["start"])
+			var delta: Vector2 = gesture["delta"]
+			if not gesture["mentioned"] and delta.x > 48 * EditorInterface.get_editor_scale() and delta.x > absf(delta.y) * 2:
+				gesture["mentioned"] = true
+				action.emit("file_mention", {"id": id})
+				card.accept_event()
+				card.self_modulate = Color("c1a8f2")
+				card.create_tween().tween_property(card, "self_modulate", Color.WHITE, 0.25))
+	return card
+
+func show_file_mentions(ids: Array) -> void:
+	for id in ids:
+		if file_registry == null: continue
+		var item = file_registry.describe(str(id), file_scope)
+		if item.is_empty(): continue
+		var chip = button(attachment_chips, str(item["name"]).left(22) + " ×", func() -> void: action.emit("file_unmention", {"id": id}))
+		_compact_button(chip)
+		chip.tooltip_text = str(item["source"]) + " · referință trimisă la următorul mesaj"
+		chip.icon = _icon("Models" if item["kind"] == "mesh" else ("Generation" if item["kind"] == "image" else "File"))
+	attachment_chips.visible = attachment_chips.get_child_count() > 0
+
+func show_changes(turn: String, changes: Array) -> void:
+	if changes.is_empty(): return
+	if not change_cards.has(turn) or not is_instance_valid(change_cards[turn]):
+		var card = VBoxContainer.new()
+		thread.add_child(card)
+		change_cards[turn] = card
+	var card: VBoxContainer = change_cards[turn]
+	for child in card.get_children(): card.remove_child(child); child.queue_free()
+	var heading = label(card, ("Propunere · " if turn.ends_with("-proposal") else "Modificări · ") + str(changes.size()))
+	heading.add_theme_font_size_override("font_size", int(12 * EditorInterface.get_editor_scale()))
+	for item in changes:
+		var counts = "%s operații Undo" % item.get("operations", 0) if item.get("kind") == "scene" else ("+%s  −%s" % [item.get("added", 0), item.get("removed", 0)] if item.get("exact", false) else "binar / mare")
+		var row = button(card, str(item["path"]).trim_prefix("res://") + "    " + counts + "    " + str(item["state"]), func() -> void: action.emit("changes", {"turn": turn, "path": item["path"]}))
+		_compact_button(row)
+		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		row.clip_text = true
+		row.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+
+func show_store(items: Array) -> void:
+	for item in items:
+		var card = VBoxContainer.new()
+		thread.add_child(card)
+		var title = label(card, str(item.get("name", "Addon")))
+		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label(card, str(item.get("publisher", "")) + " · " + str(item.get("license", "")))
+		var actions = HFlowContainer.new()
+		card.add_child(actions)
+		var id = str(item["id"])
+		var inspect = button(actions, "Detalii", func() -> void: action.emit("store_request", {"text": "Inspectează addonul Store cu ID " + JSON.stringify(id) + " și arată versiunile compatibile."}))
+		_compact_button(inspect)
+		for release in item.get("releases", []).slice(0, 3):
+			var version = str(release.get("version", ""))
+			var install = button(actions, "Instalează " + version, func() -> void: action.emit("store_request", {"text": "Instalează addonul Store cu ID " + JSON.stringify(id) + " versiunea " + JSON.stringify(version) + ". Verifică rezultatul înainte de activare."}))
+			_compact_button(install)
+
+func _file_long_press(card: Control, id: String, gesture: Dictionary, started: int) -> void:
+	await get_tree().create_timer(0.55).timeout
+	if not is_instance_valid(card) or not gesture["pressed"] or gesture["started"] != started or Vector2(gesture["delta"]).length() > 10 or gesture["mentioned"]: return
+	gesture["mentioned"] = true
+	var popup = PopupMenu.new()
+	popup.theme = theme
+	add_child(popup)
+	var entries = [["Deschide", "file_open"], ["Menționează", "file_mention"], ["Trimite referința", "file_send"], ["Fixează / eliberează", "file_pin"], ["Compară", "file_compare"]]
+	for entry in entries: popup.add_item(entry[0])
+	popup.id_pressed.connect(func(index: int) -> void: action.emit(entries[index][1], {"id": id}))
+	popup.popup_hide.connect(popup.queue_free)
+	var origin = card.get_global_rect().position + Vector2(get_window().position)
+	popup.position = Vector2i(origin)
+	popup.popup()

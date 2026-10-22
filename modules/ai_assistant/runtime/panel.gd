@@ -18,6 +18,19 @@ static var AgentJobs: GDScript
 static var Speech: GDScript
 static var Workspace: GDScript
 static var Integrations: GDScript
+static var FileRegistry: GDScript
+static var MediaView: GDScript
+static var ModelPreview: GDScript
+static var EditorControl: GDScript
+static var Store: GDScript
+var store: RefCounted
+var editor_control: RefCounted
+var model_rendering = false
+var file_registry: RefCounted
+var pending_files: Array = []
+var active_files: Array = []
+var media_view: Window
+var compare_file = ""
 
 var plugin: EditorPlugin
 var vault: RefCounted
@@ -127,12 +140,17 @@ func _ready() -> void:
 	journal = Common.read_json(project_directory.path_join("journal.json"), [])
 	providers = Providers.new(self, vault)
 	tools = Tools.new(plugin, self)
+	editor_control = EditorControl.new(self, tools)
+	store = Store.new(self, tools)
+	store.configure(project_directory)
 	tools.backup_directory = project_directory.path_join("recovery")
 	tools.file_changes = Common.read_json(tools.backup_directory.path_join("journal.json"), [])
 	mcp = MCP.new(self, vault)
 	assets = Assets.new(self, vault)
 	assets.configure(project_directory.path_join("generated"))
 	accounts = Accounts.new(self, vault)
+	file_registry = FileRegistry.new(self)
+	file_registry.configure(project_directory)
 	workspace = Workspace.new(self, project_directory)
 	integrations = Integrations.new(self, vault)
 	var editor_settings = EditorInterface.get_editor_settings()
@@ -156,13 +174,19 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	cancel["cancelled"] = true
+	if editor_control != null: editor_control.release()
 	if agent_jobs != null: agent_jobs.stop()
+	pending_files.clear()
+	compare_file = ""
+	if media_view != null: media_view.hide()
 	if speech != null: speech.stop()
 	if integrations != null: integrations.stop()
 	if approval_pending: approval_decided.emit(false)
 
 func _build_chat() -> void:
 	chat = ChatView.new()
+	chat.file_registry = file_registry
+	chat.file_scope = str(conversations.index["active"])
 	chat.action.connect(_chat_action)
 	add_child(chat)
 	profile_picker = chat.provider_picker
@@ -1098,6 +1122,7 @@ func _new_conversation() -> void:
 	history = []
 	chat.set_context(0, 0)
 	pending_attachments.clear()
+	pending_files.clear()
 	pending_references.clear()
 	compact_summary = ""
 	compact_through = 0
@@ -1115,6 +1140,7 @@ func _persist_history() -> bool:
 
 func _stop() -> void:
 	cancel["cancelled"] = true
+	if editor_control != null: editor_control.release()
 	queue_paused = true
 	agent_jobs.stop()
 	speech.stop()
@@ -1155,12 +1181,15 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	planner.reset(current_turn, _mode() == 3)
 	tools.turn_id = current_turn
 	current_origin = {"origin_label": str(profile["name"]) + " · " + str(selection.get("model", model_picker.get_item_metadata(model_picker.selected))), "profile_id": profile["id"], "model_id": selection.get("model", model_picker.get_item_metadata(model_picker.selected)), "turn_id": current_turn, "plan": _mode() == 3}
+	active_files = selection.get("files", pending_files).duplicate()
+	pending_files.clear()
 	active_attachments = selection.get("attachments", pending_attachments).duplicate(true)
 	active_references = selection.get("references", pending_references).duplicate(true)
 	pending_attachments.clear()
+	pending_files.clear()
 	pending_references.clear()
 	_refresh_secrets()
-	var user_message = {"id": Common.uid(), "role": "user", "content": _redact(text.strip_edges()), "attachments": active_attachments, "turn_id": current_turn}
+	var user_message = {"id": Common.uid(), "role": "user", "content": _redact(text.strip_edges()), "attachments": active_attachments, "files": active_files, "turn_id": current_turn}
 	if history.is_empty():
 		chat.clear_messages()
 		chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
@@ -1169,7 +1198,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	transcript = chat.append_message("user", str(user_message["content"]), user_message)
 	composer.clear()
 	_status("Pregătesc contextul și instrumentele…")
-	active_definitions = tools.definitions() + assets.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)), bool(integration_settings.get("blender_enabled", false)))
+	active_definitions = tools.definitions() + assets.definitions() + FileRegistry.definitions() + EditorControl.definitions() + Store.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)), bool(integration_settings.get("blender_enabled", false)))
 	mcp.tool_index.clear()
 	for server in config["mcp"]:
 		if cancel.get("cancelled", false): break
@@ -1223,6 +1252,9 @@ func _harness_event(value: Dictionary) -> void:
 			if not harness_streaming and not str(message.get("content", "")).is_empty(): _display("assistant", str(message["content"]))
 			if is_instance_valid(transcript) and (harness_streaming or not str(message.get("content", "")).is_empty()): chat.finish_stream(transcript, message)
 		"tool_result":
+			_show_change_preview(value.get("result", {}), str(value["id"]))
+			if not value.get("result", {}).get("store_items", []).is_empty(): chat.show_store(value["result"]["store_items"])
+			if not value.get("result", {}).get("files", []).is_empty(): _show_files(value["result"]["files"], str(value["id"]))
 			if value.get("replayed", false):
 				chat.activity("Rezultat recuperat · " + str(value["name"]), "Operația nu a fost executată din nou.\n" + JSON.stringify(value["result"]).left(12000))
 			elif not value.get("executed", false): _audit(str(value["name"]), value.get("arguments", {}), value["result"])
@@ -1248,7 +1280,39 @@ func _context_messages() -> Array:
 	var start = maxi(compact_through, history.size() - history_limit)
 	start = clampi(start, 0, history.size())
 	while start > compact_through and start < history.size() and history[start].get("role") != "user": start -= 1
-	return [{"role": "system", "content": instructions}] + history.slice(start)
+	instructions += "\nUse storage_search when the user mentions recent screenshots or files outside the project. Show matching preview cards, then use file_observe for the exact referenced ID. File cards are local previews; do not claim to have visually inspected a file unless image pixels were returned."
+	instructions += "\nPinned files: " + JSON.stringify(file_registry.catalog(str(conversations.index["active"]), true).map(func(item: Dictionary) -> Dictionary: return {"id": item["id"], "name": item["name"], "kind": item["kind"], "sha256": item["sha256"]}))
+	var context = history.slice(start).duplicate(true)
+	var newest = context.duplicate()
+	newest.reverse()
+	var image_budget = 4
+	var image_ids = {}
+	for message in newest:
+		var retained = []
+		for attachment in message.get("attachments", []):
+			if attachment.has("file_id") and not attachment.has("data"): attachment.merge(file_registry.image_attachment(str(attachment["file_id"]), str(conversations.index["active"])), true)
+			if not attachment.has("data"): continue
+			var key = str(attachment.get("file_id", attachment.get("name", "")))
+			if _vision_enabled() and image_budget > 0 and not image_ids.has(key):
+				retained.append(attachment)
+				image_ids[key] = true
+				image_budget -= 1
+		if retained.is_empty(): message.erase("attachments")
+		else: message["attachments"] = retained
+		var descriptions = []
+		for id in message.get("files", []):
+			var item = file_registry.describe(str(id), str(conversations.index["active"]))
+			if item.is_empty(): continue
+			descriptions.append({"id": id, "name": item["name"], "kind": item["kind"], "sha256": item["sha256"], "parent_id": item.get("parent_id", ""), "region": item.get("region", [])})
+			if item["kind"] == "image" and _vision_enabled() and image_budget > 0 and not image_ids.has(id):
+				var attachment = file_registry.image_attachment(str(id), str(conversations.index["active"]))
+				if not attachment.is_empty():
+					if not message.has("attachments"): message["attachments"] = []
+					message["attachments"].append(attachment)
+					image_ids[id] = true
+					image_budget -= 1
+		if not descriptions.is_empty(): message["content"] = str(message.get("content", "")) + "\nReferenced files: " + JSON.stringify(descriptions)
+	return [{"role": "system", "content": instructions}] + context
 
 func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	var definition = {}
@@ -1272,6 +1336,23 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	var result: Dictionary
 	if name.begins_with("agent_") or name.begins_with("playtest_") or name in ["task_update", "memory_write"]:
 		result = await _agent_call(name, args)
+	elif name == "store_search": result = await store.search(str(args["query"]), int(args.get("page", 1)), cancel)
+	elif name == "store_describe": result = await store.describe(str(args["id"]), cancel)
+	elif name == "store_install": result = await store.install(str(args["id"]), str(args["version"]), cancel)
+	elif name == "plugin_enable": result = store.enable_plugin(str(args["name"]), bool(args["enabled"]))
+	elif name == "store_remove": result = store.remove(str(args["installation"]))
+	elif name == "editor_capture":
+		result = await editor_control.capture(args, cancel)
+
+	elif name == "editor_input": result = await editor_control.input(args, cancel)
+	elif name == "file_catalog": result = Common.success(file_registry.catalog(str(conversations.index["active"]), bool(args.get("pinned_only", false))))
+	elif name == "storage_search": result = await file_registry.search(args, str(conversations.index["active"]), cancel)
+	elif name == "file_show":
+		var valid_ids = []
+		for id in args["ids"]:
+			if not file_registry.describe(str(id), str(conversations.index["active"])).is_empty(): valid_ids.append(id)
+		result = {"ok": not valid_ids.is_empty(), "files": valid_ids, "result": "Fișiere afișate."}
+	elif name == "file_observe": result = await _observe_file(str(args["id"]))
 	elif name.begins_with("skill_"):
 		match name:
 			"skill_list": result = Common.success(workspace.catalog())
@@ -1295,7 +1376,28 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		else: result = await assets.refresh(str(args["job"]), profile, cancel)
 	elif name == "asset_import": result = assets.import_job(str(args.get("job", "")), str(args.get("directory", "res://ai_assets")))
 	else: result = tools.execute(name, args, _permission_mode(), true)
+	if result.get("ok", false) and not result.get("images", []).is_empty() and not result.has("files") and name not in ["file_observe"]:
+		_register_result_images(result)
+	if result.get("ok", false) and name in ["asset_status", "asset_wait", "asset_import"]:
+		var job = assets.find_job(str(args.get("job", "")))
+		var ids = result.get("files", [])
+		for output in [job.get("file", "")]:
+			var path = str(output)
+			if path.is_empty() or not FileAccess.file_exists(path): continue
+			file_registry.permit(path)
+			var registered = file_registry.register_file(path, str(conversations.index["active"]))
+			if registered.get("ok", false) and registered["result"]["id"] not in ids: ids.append(registered["result"]["id"])
+		if not ids.is_empty(): result["files"] = ids
+	if result.get("ok", false) and name in ["storage_search", "file_show", "asset_status", "asset_wait", "asset_import"]:
+		var rendered = 0
+		for id in result.get("files", []):
+			var item = file_registry.describe(str(id), str(conversations.index["active"]))
+			if item.get("kind") == "mesh" and str(item.get("preview", "")).is_empty() and rendered < 2:
+				await _observe_model(item)
+				rendered += 1
+	if not _vision_enabled(): result.erase("images")
 	_audit(name, args, result)
+	if name.begins_with("godot_") and definition.get("risk") == "write" and result.get("ok", false): _update_changes()
 	_refresh_lists()
 	return result
 
@@ -1335,6 +1437,7 @@ func _refresh_journal() -> void:
 func _finish_chat(message: String) -> void:
 	var completed = message in ["Finalizat.", "Sarcină încheiată."] and planner.phase not in ["planning", "executing", "verifying", "blocked", "paused"]
 	_close_unanswered_calls()
+	_update_changes()
 	planner.pause()
 	if message in ["Finalizat.", "Sarcină încheiată."]:
 		if planner.phase == "blocked": message = "Sarcină blocată · " + planner.explanation
@@ -1778,7 +1881,11 @@ func _delete_automation() -> void:
 	_clear_form("automation")
 	_save_config()
 
+func _input(event: InputEvent) -> void:
+	if editor_control != null: editor_control.user_input(event)
+
 func _process(_delta: float) -> void:
+	if editor_control != null: editor_control.poll()
 	if chat != null:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
 		if busy: chat._follow()
@@ -1809,10 +1916,12 @@ func _choose(selection: Dictionary) -> void:
 func _refresh_conversations() -> void:
 	if chat == null or conversations == null: return
 	var active = str(conversations.index["active"])
+	chat.file_scope = active
 	chat.title.text = str(conversations.item(active).get("title", "Chat"))
 	chat.refresh_history(conversations.listing(chat.search.text, chat.archived.button_pressed), active)
 
 func _render_history() -> void:
+	chat.file_scope = str(conversations.index["active"])
 	chat.restoring = true
 	chat.clear_messages()
 	chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
@@ -1821,9 +1930,15 @@ func _render_history() -> void:
 	if history.is_empty():
 		chat.show_welcome()
 	for message in history.slice(maxi(0, history.size() - chat.loaded)):
-		if message.get("role") in ["user", "assistant"] and (not str(message.get("content", "")).is_empty() or not message.get("attachments", []).is_empty()):
+		if message.get("role") in ["user", "assistant"] and (not str(message.get("content", "")).is_empty() or not message.get("attachments", []).is_empty() or not message.get("files", []).is_empty()):
 			transcript = chat.append_message(str(message["role"]), _redact(str(message.get("content", ""))), message)
-		elif message.get("role") == "tool" and message.get("tool_name") != "task_update": chat.activity(str(message.get("tool_name", "Operație")), _redact(str(message.get("content", ""))))
+		elif message.get("role") == "tool" and message.get("tool_name") != "task_update":
+			var restored_result: Variant = Common.parse_json(str(message.get("content", "")))
+			if restored_result is Dictionary: _show_change_preview(restored_result, str(message.get("tool_call_id", message.get("id", ""))))
+			if restored_result is Dictionary and not restored_result.get("store_items", []).is_empty(): chat.show_store(restored_result["store_items"])
+			elif restored_result is Dictionary and not restored_result.get("files", []).is_empty(): _show_files(restored_result["files"], str(message.get("tool_call_id", message.get("id", ""))))
+			else: chat.activity(str(message.get("tool_name", "Operație")), _redact(str(message.get("content", ""))))
+		if message.get("changes") is Array: chat.show_changes(str(message.get("turn_id", "")), message["changes"])
 		if message.get("plan_snapshot") is Dictionary: chat.show_plan(message["plan_snapshot"])
 		elif message.get("tool_name") == "task_update":
 			var result: Variant = Common.parse_json(str(message.get("content", "")))
@@ -1834,14 +1949,18 @@ func _render_history() -> void:
 func _send_or_queue(text: String = "") -> void:
 	if text.is_empty(): text = composer.text
 	if _slash(text): return
-	if text.strip_edges().is_empty(): return
+	if text.strip_edges().is_empty():
+		if pending_files.is_empty(): return
+		text = "Analizează fișierele menționate."
 	var selection = _selection()
+	selection["files"] = pending_files.duplicate()
 	selection["attachments"] = pending_attachments.duplicate(true)
 	selection["references"] = pending_references.duplicate(true)
 	if busy:
 		queued.append({"text": text, "selection": selection})
 		composer.clear()
 		pending_attachments.clear()
+		pending_files.clear()
 		pending_references.clear()
 		_status("Mesaj în coadă · " + str(_profile_by_id(str(selection["profile"])).get("name", "")))
 	else: _start_chat(text, selection)
@@ -1854,6 +1973,36 @@ func _run_next() -> void:
 
 func _chat_action(name: String, args: Dictionary) -> void:
 	match name:
+		"store_request": _send_or_queue(str(args["text"]))
+		"file_open": _open_file(str(args["id"]))
+		"file_mention", "file_send":
+			var id = str(args["id"])
+			if not file_registry.describe(id, str(conversations.index["active"])).is_empty() and id not in pending_files and pending_files.size() < 6: pending_files.append(id)
+			_composer_hints()
+			composer.grab_focus()
+			if name == "file_send": _send_or_queue(composer.text if not composer.text.strip_edges().is_empty() else "Analizează fișierul menționat.")
+		"file_unmention": pending_files.erase(str(args["id"])); _composer_hints()
+		"file_pin":
+			var item = file_registry.describe(str(args["id"]), str(conversations.index["active"]))
+			if not item.is_empty(): file_registry.pin(str(args["id"]), str(conversations.index["active"]), not item.get("pinned", false))
+		"file_compare":
+			if compare_file.is_empty():
+				compare_file = str(args["id"])
+				_status("Alege Compară pe al doilea fișier.")
+			else: _open_file(str(args["id"]), compare_file); compare_file = ""
+		"file_region":
+			var parent = file_registry.describe(str(args["id"]), str(conversations.index["active"]))
+			var path = file_registry.directory.path_join(str(parent.get("name", "imagine")).get_basename() + "-zona-" + Common.uid().left(8) + ".png")
+			if args["image"].save_png(path) == OK:
+				file_registry.permit(path)
+				var registered = file_registry.register_file(path, str(conversations.index["active"]))
+				if registered.get("ok", false):
+					var entry: Dictionary = file_registry.entries[registered["result"]["id"]]
+					entry["parent_id"] = args["id"]
+					entry["region"] = args.get("region", [])
+					file_registry._save()
+					_chat_action("file_mention", {"id": registered["result"]["id"]})
+
 		"expand": _expand_workspace()
 		"send": _send_or_queue()
 		"stop": _stop()
@@ -1891,8 +2040,20 @@ func _chat_action(name: String, args: Dictionary) -> void:
 			if busy: return
 			_persist_history()
 			_end_conversation_jobs()
+			var previous_scope = str(conversations.index["active"])
 			conversations.fork_at(str(args["message"]))
 			history = conversations.load_active()
+			var ids = []
+			for message in history:
+				ids.append_array(message.get("files", []))
+				if message.get("role") == "tool":
+					var result: Variant = Common.parse_json(str(message.get("content", "")))
+					if result is Dictionary: ids.append_array(result.get("files", []))
+			for id in ids:
+				if not file_registry.describe(str(id), previous_scope).is_empty():
+					var scopes: Array = file_registry.entries[id]["scopes"]
+					if conversations.index["active"] not in scopes: scopes.append(conversations.index["active"])
+			file_registry._save()
 			_load_summary()
 			_render_history()
 			_refresh_conversations()
@@ -1901,7 +2062,7 @@ func _chat_action(name: String, args: Dictionary) -> void:
 			if busy: return
 			mode_picker.select(0)
 			_send_or_queue("Aplică planul propus anterior, verificând mai întâi starea actuală a proiectului.")
-		"changes": _show_changes(str(args.get("turn", "")))
+		"changes": _show_changes(str(args.get("turn", "")), str(args.get("path", "")))
 
 func _history_action(action: String) -> void:
 	if busy: return
@@ -2078,7 +2239,7 @@ func _reference_context() -> String:
 
 func _composer_hints() -> void:
 	chat.reference_label.text = " · ".join(pending_references) + (" · %s imagini" % pending_attachments.size() if not pending_attachments.is_empty() else "")
-	chat.show_attachments(pending_attachments, pending_references)
+	chat.show_attachments(pending_attachments, pending_references, pending_files)
 	var text = composer.text
 	if text.ends_with("@") or text.ends_with("$") or text == "/": _reference_picker("files" if text.ends_with("@") else ("nodes" if text.ends_with("$") else "commands"))
 
@@ -2146,29 +2307,14 @@ func _node_references(node: Node, root: Node, output: Array) -> void:
 func _pick_attachment() -> void:
 	var picker = EditorFileDialog.new()
 	picker.access = EditorFileDialog.ACCESS_FILESYSTEM
-	picker.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
-	picker.filters = PackedStringArray(["*.png,*.jpg,*.jpeg,*.webp ; Imagine", "*.gd,*.tscn,*.tres,*.txt,*.md,*.json ; Fișier de proiect"])
-	picker.file_selected.connect(func(path: String) -> void:
-		if path.get_extension().to_lower() in ["png", "jpg", "jpeg", "webp"]:
-			if pending_attachments.size() >= 4:
-				_status("Poți atașa maximum patru imagini pe mesaj.")
-			else:
-				var file = FileAccess.open(path, FileAccess.READ)
-				if file == null or file.get_length() > 32 * 1024 * 1024:
-					_status("Imaginea nu poate fi citită sau depășește 32 MB.")
-				else:
-					var image = Image.new()
-					if image.load(path) == OK:
-						while image.get_width() > 1536 or image.get_height() > 1536: image.resize(maxi(1, image.get_width() / 2), maxi(1, image.get_height() / 2))
-						var bytes = image.save_png_to_buffer()
-						while bytes.size() > 2 * 1024 * 1024 and image.get_width() > 256:
-							image.resize(maxi(1, image.get_width() / 2), maxi(1, image.get_height() / 2))
-							bytes = image.save_png_to_buffer()
-						if bytes.size() <= 2 * 1024 * 1024: pending_attachments.append({"name": path.get_file(), "mimeType": "image/png", "data": Marshalls.raw_to_base64(bytes)})
-		else:
-			var relative = ProjectSettings.localize_path(path)
-			if not Common.project_path(relative).is_empty(): pending_references.append(relative)
-			else: _status("Fișierele text se atașează din proiectul curent.")
+	picker.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILES
+	picker.files_selected.connect(func(paths: PackedStringArray) -> void:
+		for path in paths:
+			if pending_files.size() >= 6: break
+			file_registry.permit(path)
+			var result = file_registry.register_file(path, str(conversations.index["active"]))
+			if result.get("ok", false): pending_files.append(result["result"]["id"])
+			else: _status(str(result.get("error", "Fișier indisponibil.")))
 		_composer_hints()
 		picker.queue_free())
 	picker.canceled.connect(picker.queue_free)
@@ -2283,7 +2429,7 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 			return _save_memories()
 	return Common.failure("Instrument necunoscut.")
 
-func _show_changes(turn: String) -> void:
+func _show_changes(turn: String, path: String = "") -> void:
 	var dialog = AcceptDialog.new()
 	dialog.title = "Modificările execuției"
 	var body = VBoxContainer.new()
@@ -2292,18 +2438,35 @@ func _show_changes(turn: String) -> void:
 	var text = CodeEdit.new()
 	text.editable = false
 	text.custom_minimum_size = Vector2(260, 280) * EditorInterface.get_editor_scale()
-	text.text = _redact(tools.diff_turn(turn))
+	var saved_changes: Array = Common.read_json(project_directory.path_join("runs").path_join(turn + "-changes.json"), [])
+	if saved_changes.is_empty(): saved_changes = tools.change_summary(turn)
+	if not path.is_empty(): saved_changes = saved_changes.filter(func(item: Dictionary) -> bool: return item["path"] == path)
+	text.text = _redact("\n".join(saved_changes.map(func(item: Dictionary) -> String: return str(item.get("diff", "")))) if not saved_changes.is_empty() else tools.diff_turn(turn))
 	text.gutters_draw_line_numbers = true
 	for index in range(text.get_line_count()):
 		var line = text.get_line(index)
-		if line.begins_with("+ "): text.set_line_background_color(index, Color("203f32"))
-		elif line.begins_with("- "): text.set_line_background_color(index, Color("462c38"))
+		if line.begins_with("+") and not line.begins_with("+++"): text.set_line_background_color(index, Color("203f32"))
+		elif line.begins_with("-") and not line.begins_with("---"): text.set_line_background_color(index, Color("462c38"))
 	body.add_child(text)
-	_button(body, "Restaurează modificările acestei execuții", func() -> void:
+	if not path.is_empty() and path.ends_with(".gd") and FileAccess.file_exists(Common.project_path(path)):
+		_button(body, "Deschide scriptul", func() -> void:
+			dialog.hide()
+			EditorInterface.edit_script.call_deferred(load(path), int(saved_changes[0].get("first_line", 1)) if not saved_changes.is_empty() else 1, 1))
+	var restore = _button(body, "Restaurează modificările acestei execuții", func() -> void:
 		if busy: return
 		var result = tools.restore_turn(turn)
+		var changes = tools.change_summary(turn)
+		Common.atomic_json(project_directory.path_join("runs").path_join(turn + "-changes.json"), changes)
+		chat.show_changes(turn, changes)
+		for message in history:
+			if message.get("turn_id") == turn and message.has("changes"): message["changes"] = changes
+		_persist_history()
 		_status(JSON.stringify(result))
 		dialog.hide())
+	restore.visible = not turn.ends_with("-proposal")
+	if saved_changes.any(func(item: Dictionary) -> bool: return item.get("kind") == "scene") and not tools.scene_changes.has(turn):
+		restore.disabled = true
+		restore.tooltip_text = "Istoricul Undo al scenei aparține sesiunii anterioare. Fișierele au copii de recuperare separate."
 	dialog.confirmed.connect(dialog.queue_free)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)
@@ -2319,6 +2482,9 @@ func _notification(what: int) -> void:
 
 func _end_conversation_jobs() -> void:
 	if agent_jobs != null: agent_jobs.stop()
+	pending_files.clear()
+	compare_file = ""
+	if media_view != null: media_view.hide()
 	if speech != null: speech.stop()
 	current_turn = ""
 	queued.clear()
@@ -2327,3 +2493,103 @@ func _end_conversation_jobs() -> void:
 	if chat != null:
 		chat.tasks_label.text = ""
 		chat.set_context(0, 0)
+
+func _vision_enabled() -> bool:
+	for model in _current_profile().get("models", []):
+		if model.get("id") == current_origin.get("model_id", model_picker.get_item_metadata(model_picker.selected) if model_picker.selected >= 0 else ""): return bool(model.get("capabilities", {}).get("vision", false))
+	return false
+
+func _show_files(ids: Array, call_id: String) -> void:
+	for record in chat.message_records:
+		if record.get("metadata", {}).get("id") == "files-" + call_id: return
+	chat.file_scope = str(conversations.index["active"])
+	chat.append_message("assistant", "", {"id": "files-" + call_id, "files": ids, "origin_label": "Fișiere"})
+
+func _observe_file(id: String) -> Dictionary:
+	var scope = str(conversations.index["active"])
+	var item = file_registry.describe(id, scope)
+	if item.is_empty() or not item.get("available", false): return Common.failure("Referință inexistentă în conversația curentă.")
+	if item["kind"] == "image":
+		if not _vision_enabled(): return Common.success({"file": item, "vision": false, "note": "Modelul curent nu declară vision. Imaginea este afișată utilizatorului, nu analizată vizual."})
+		var attachment = file_registry.image_attachment(id, scope)
+		return {"ok": not attachment.is_empty(), "result": {"id": id, "sha256": item["sha256"]}, "images": [attachment] if not attachment.is_empty() else []}
+	if item["kind"] == "mesh": return await _observe_model(item)
+	if item["kind"] == "text": return Common.success({"file": item, "text": _redact(FileAccess.get_file_as_string(item["path"]).left(16000))})
+	return Common.success(item)
+
+func _open_file(id: String, compare: String = "") -> void:
+	if media_view != null:
+		remove_child(media_view)
+		media_view.queue_free()
+	media_view = MediaView.new()
+	media_view.theme = chat.theme
+	add_child(media_view)
+	var ids = file_registry.catalog(str(conversations.index["active"])).map(func(item: Dictionary) -> String: return item["id"])
+	media_view.setup(file_registry, str(conversations.index["active"]), ids, id, compare)
+	media_view.action.connect(_chat_action)
+	media_view.popup(Rect2i(get_window().position, get_window().size))
+
+func _update_changes() -> void:
+	if current_turn.is_empty() or tools == null: return
+	var changes = tools.change_summary(current_turn)
+	if changes.is_empty(): return
+	Common.atomic_json(project_directory.path_join("runs").path_join(current_turn + "-changes.json"), changes)
+	chat.show_changes(current_turn, changes)
+	if not history.is_empty(): history[-1]["changes"] = changes
+
+func _observe_model(item: Dictionary) -> Dictionary:
+	if model_rendering: return Common.failure("Un preview 3D este deja în lucru.", "preview_busy")
+	var cached_images = []
+	var cached_complete = true
+	for angle in ["front", "side", "top"]:
+		var path = file_registry.directory.path_join(str(item["sha256"]) + "-" + angle + ".png")
+		if not FileAccess.file_exists(path): cached_complete = false; break
+		if _vision_enabled(): cached_images.append({"name": str(item["name"]) + " · " + angle, "mimeType": "image/png", "data": Marshalls.raw_to_base64(FileAccess.get_file_as_bytes(path))})
+	if cached_complete and file_registry.entries[item["id"]].has("model_metadata"):
+		return {"ok": true, "result": {"file_id": item["id"], "metadata": file_registry.entries[item["id"]]["model_metadata"], "vision": _vision_enabled(), "cached": true}, "images": cached_images}
+	model_rendering = true
+	var view = ModelPreview.new()
+	view.hide()
+	add_child(view)
+	var loaded = view.load_file(str(item["path"]))
+	var images = []
+	if loaded.get("ok", false):
+		file_registry.entries[item["id"]]["model_metadata"] = loaded["result"]
+		for angle in ["front", "side", "top"]:
+			if cancel.get("cancelled", false): break
+			view.preset(angle)
+			var image = await view.capture()
+			if image != null and not image.is_empty():
+				var path = file_registry.directory.path_join(str(item["sha256"]) + "-" + angle + ".png")
+				image.save_png(path)
+				if angle == "front": file_registry.entries[item["id"]]["preview"] = path
+				if _vision_enabled(): images.append({"name": str(item["name"]) + " · " + angle, "mimeType": "image/png", "data": Marshalls.raw_to_base64(image.save_png_to_buffer())})
+		file_registry._save()
+	remove_child(view)
+	view.queue_free()
+	model_rendering = false
+	if cancel.get("cancelled", false): return Common.failure("Preview oprit.", "cancelled")
+	return {"ok": loaded.get("ok", false), "result": {"file_id": item["id"], "metadata": loaded.get("result", {}), "vision": _vision_enabled()}, "images": images, "error": loaded.get("error", "")}
+
+func _register_result_images(result: Dictionary) -> void:
+	var ids = []
+	for image in result.get("images", []):
+		if image.get("mimeType") != "image/png" or not image.has("data"): continue
+		var path = file_registry.directory.path_join(Common.uid() + "-" + str(image.get("name", "capture.png")).get_file())
+		var output = FileAccess.open(path, FileAccess.WRITE)
+		if output == null: continue
+		output.store_buffer(Marshalls.base64_to_raw(image["data"]))
+		output.close()
+		file_registry.permit(path)
+		var registered = file_registry.register_file(path, str(conversations.index["active"]))
+		if registered.get("ok", false):
+			ids.append(registered["result"]["id"])
+			image["file_id"] = registered["result"]["id"]
+	if not ids.is_empty(): result["files"] = ids
+
+func _show_change_preview(result: Dictionary, call_id: String) -> void:
+	var preview: Array = result.get("result", {}).get("change_preview", []) if result.get("result") is Dictionary else []
+	if preview.is_empty(): return
+	var id = call_id.sha256_text().left(32) + "-proposal"
+	Common.atomic_json(project_directory.path_join("runs").path_join(id + "-changes.json"), preview)
+	chat.show_changes(id, preview)

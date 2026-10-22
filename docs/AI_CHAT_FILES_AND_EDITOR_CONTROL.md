@@ -1,10 +1,44 @@
 # Fișiere în chat, preview și control vizual al editorului
 
-Data: 22.10.2026. **Specificație propusă; funcțiile noi de mai jos nu sunt încă
-implementate sau incluse în APK.** Documentul separă baza existentă de cerințe,
-îmbunătățiri și criterii de livrare. Nu adaugă o pagină duplicată în Integrări.
+Data: 22.10.2026. **Implementare în surse; validarea și livrarea sunt urmărite
+separat în PROGRES_SI_PLAN.md.** Documentul păstrează cerințele aprobate și
+limitele implementării. Nu adaugă o pagină duplicată în Integrări.
 
-## Baza verificată în sursele actuale
+## Implementarea acestei etape
+
+| Componentă | Implementare |
+| --- | --- |
+| Fișiere | `file_registry.gd`: versiuni după SHA, dependențe glTF, scope pe conversație, căutare, catalog și pin |
+| Chat | Carduri cu miniaturi, swipe și apăsare lungă, mențiuni, trimitere/coadă, restaurare și ramificare |
+| Imagini | `media_view.gd`: galerie, pinch zoom/pan, crop/săgeți și comparație cu zoom comun |
+| 3D | `model_preview.gd`: GLB/glTF, orbită/pan/zoom, materiale/wireframe, grilă/lumină/animație, trei vederi offscreen cached |
+| Editor | `editor_control.gd`: captură de fereastră/control/viewport, frame unic, layout/expirare, input și preluare manuală |
+| Punte nativă | Inputul editorului actualizează hover-ul din coordonatele capturate; API-ul existent `Viewport.push_input` rămâne compatibil |
+| Store | `store.gd`: protocol v1, versiuni compatibile, preflight ZIP, staging, instalator nativ, activare și manifest pentru dezinstalare |
+| Modificări | `diff.gd`: Myers limitat, hunks și totaluri reale; propuneri dry-run separate, scene cu operații Undo |
+
+Runtime-ul direct rămâne în Godot; nu cere Termux, Python, Node sau shell pe
+telefon. Fișierele alese explicit și folderele accesibile sunt citite prin
+FileAccess/DirAccess. APK-ul are deja permisiunea de acces general la stocare;
+utilizatorul trebuie să o acorde în Android. Integrarea dedicată MediaStore și
+persistența URI-urilor SAF nu sunt implementate în această etapă.
+
+Limite explicite: 6 fișiere/mesaj, 4 imagini în context, 512 MB cache local,
+128 MB/fișier (100 MB pentru GLB), 32 MB/imagine, 24 megapixeli pentru preview. Preview-ul 3D
+acceptă cel mult 5.000 noduri, un milion de triunghiuri și aproximativ 256 MB
+pentru texturi. Importul nativ GLTFDocument este sincron; Stop este verificat
+înainte/după import și între randări. Nu promitem anularea importului la mijloc.
+Scenelor inactive li se eliberează resursele la închiderea viewerului.
+
+Backend-ul de captură operează Godot, inclusiv ferestrele sale; MediaProjection,
+controlul altor aplicații, OBJ/FBX și conversia .blend sunt extensii separate.
+Pachetele Store cu binare native sunt refuzate până la validarea platformei.
+Dezinstalarea folosește și puntea nativă pentru cache-ul GDScript;
+editorul upstream raportează explicit lipsa acesteia. Catalogul public Store a răspuns HTTP 403 în verificarea locală; protocolul și
+instalarea sunt testate cu fixture, fără a pretinde succes pe un addon public.
+
+## Baza existentă înainte de această etapă
+
 
 - `runtime/chat_view.gd`: miniaturi PNG în mesajele cu attachments și chip-uri
   pentru imaginile/referințele pregătite de utilizator. Miniaturile nu deschid
@@ -170,7 +204,7 @@ hud.tscn      +12  −2      Aplicat
    din 22.10 arată decupare în dreapta, care nu trebuie propagată în noile viewers.
 10. Alternative la gesturi și suport pentru atingere, tastatură și mouse.
 
-## Ordine propusă și criterii de acceptare
+## Ordine de implementare și criterii de acceptare
 
 1. Registru atașamente + căutare locală + carduri. La „am făcut două screenshot-uri”,
    apar cele două rezultate corecte cu miniaturi și sursă verificabilă.

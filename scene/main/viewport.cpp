@@ -3486,6 +3486,15 @@ void Viewport::_drop_mouse_over(Control *p_until_control) {
 	gui.sending_mouse_enter_exit_notifications = false;
 }
 
+void Viewport::push_editor_input(RequiredParam<InputEvent> rp_event) {
+	ERR_MAIN_THREAD_GUARD;
+	ERR_FAIL_COND(!Engine::get_singleton()->is_editor_hint());
+	const bool previous = editor_input_active;
+	editor_input_active = true;
+	push_input(rp_event, true);
+	editor_input_active = previous;
+}
+
 void Viewport::push_input(RequiredParam<InputEvent> rp_event, bool p_local_coords) {
 	ERR_MAIN_THREAD_GUARD;
 	ERR_FAIL_COND(!is_inside_tree());
@@ -3520,7 +3529,11 @@ void Viewport::push_input(RequiredParam<InputEvent> rp_event, bool p_local_coord
 
 	Ref<InputEventMouse> me = ev;
 	if (me.is_valid()) {
-		_update_mouse_over(me);
+		if (editor_input_active && Engine::get_singleton()->is_editor_hint()) {
+			_update_mouse_over(me->get_position());
+		} else {
+			_update_mouse_over(me);
+		}
 	}
 
 	if (is_embedding_subwindows() && _sub_windows_forward_input(ev)) {

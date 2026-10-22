@@ -26,6 +26,10 @@ plus [native Meshy, Tripo and image generation](docs/AI_GENERATION.md).
 Automated generation checks use HTTP fixtures; paid-provider and physical Android
 validation remain separate.
 
+[Chat file previews, visual editor control and Store tools](docs/AI_CHAT_FILES_AND_EDITOR_CONTROL.md)
+are implemented in the current source tree; build/device evidence is tracked in
+the progress document.
+
 # Godot Engine
 
 <p align="center">

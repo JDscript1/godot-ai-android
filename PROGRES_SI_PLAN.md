@@ -456,3 +456,53 @@ compacte și adaptoarele Meshy/Tripo/OpenAI; compilarea APK este autorizată din
   dar preview-ul universal și statisticile reale +/− nu sunt implementate.
   Consultate documentațiile Android/Godot. Este o propunere documentată, fără
   schimbări de runtime, teste noi sau recompilare APK în această etapă.
+
+## Fișiere în chat și control vizual — implementare în curs, 22.10.2026
+
+- În surse: registru cu versiuni imutabile și acces separat pe conversație,
+  căutare nativă în proiect/stocare autorizată, carduri cu miniaturi și mențiuni
+  prin swipe, referințe în mesajele puse în coadă, viewer de imagini cu zoom,
+  decupare și adnotări. Originalele sunt păstrate.
+- Renderer GLB/glTF comun pentru viewer și inspecție în fundal; capturi și
+  input în editor cu frame ID, limită de timp și eliberarea inputurilor la Stop.
+  În curs de verificare randarea 3D și controlul efectiv al interfeței.
+- Diff cu linii reale adăugate/șterse, hunks și carduri per execuție; ZIP Store
+  pregătit separat, fără suprascriere, cu verificarea fișierelor instalate.
+- Verificare intermediară: `.ai-qa/store-compile2.log`, 269 aserțiuni fără erori.
+  Testele vizuale noi au expus un crash al editorului upstream la trecerea spre
+  editorul scripturilor; investigația este în curs. Această etapă nu este încă
+  declarată validată în editor sau inclusă într-un APK nou.
+- Limite de platformă: capturile/controlul vizează Godot, nu alte aplicații;
+  MediaProjection Android necesită integrare separată și acordul sistemului.
+  Preview 3D v1: GLB/glTF. Addonurile cu binare native necesită verificare
+  specifică platformei. Providerii fără vision primesc metadate, fără afirmații
+  de analiză vizuală a imaginii.
+
+Jurnal: 22.10.2026 — implementare autorizată pe etape; verificările runtime trec,
+QA vizual și adaptorul Store sunt în lucru. APK-ul din Download rămâne db5343b.
+
+- **22.10.2026 — consolidare în surse:** modulele noi sunt încorporate în
+  runtime (25 scripturi). Referințele glTF includ hash-urile dependențelor;
+  pin/catalog și ramurile păstrează izolarea conversațiilor. Viewerul permite
+  comparație și eliberează scenele la închidere. Imaginile sunt trimise numai
+  modelelor cu vision declarat, cu buget comun de patru imagini în context.
+- Adăugate 11 SVG-uri Lucide originale pentru preview/crop/adnotare/comparație,
+  total 76, cu surse fixate, hash-uri și licențe. Headerul și dock-ul au controale
+  compacte; păstrat HBox în composer după izolarea crash-ului HFlow upstream.
+- Captura solicită explicit randarea, inclusiv în low-processor mode. Puntea
+  nativă rutează hover-ul după coordonatele capturate, fără a modifica semnătura
+  publică `Viewport.push_input`. Click-ul din fixture upstream folosește touch;
+  verificarea mouse-ului nativ necesită recompilarea fork-ului.
+- Store urmărește fișierele proprii, refuză conflictele/editările nesalvate și
+  detașează resursele cached la ștergere, conform fluxului nativ Godot. Catalogul
+  public a răspuns HTTP 403 local; verificarea REST folosește fixture HTTP.
+  Nu este declarată verificare cu un addon public sau cu un furnizor vision real.
+
+- **Verificări înainte de compilare:** 290 aserțiuni runtime fără erori
+  (`.ai-qa/files-frozen-runtime.log`); 223 verificări în editor upstream desktop
+  fără erori (`.ai-qa/files-private-fixtures/desktop/`), cu imagini și GLB reale,
+  comparație, input, capturi mascate și fluxul Store disponibil upstream.
+  C++ syntax verificat pentru modul, Viewport și instalator; 25 scripturi
+  încorporate și 76 hash-uri SVG, plus trei teste de livrare și regresia mtime.
+  Verificările pe cinci dimensiuni continuă în `.ai-qa/files-release-render/`.
+  Compilarea fork-ului și APK-ului urmează; nu sunt încă declarate livrate.

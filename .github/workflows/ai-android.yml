@@ -6,6 +6,8 @@ on:
     branches: ["ai/android-assistant"]
     paths:
       - "editor/editor_node.cpp"
+      - "editor/asset_library/editor_asset_installer.*"
+      - "scene/main/viewport.*"
       - "modules/ai_assistant/**"
       - "platform/android/java/editor/**"
       - "tools/ai-companion/**"

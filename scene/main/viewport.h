@@ -434,6 +434,7 @@ private:
 	void _refresh_texture_repeat_cache() const;
 
 	bool disable_input = false;
+	bool editor_input_active = false;
 	bool disable_input_override = false;
 
 	void _gui_call_input(Control *p_control, const Ref<InputEvent> &p_input);
@@ -631,6 +632,7 @@ public:
 	void _push_text_input(const String &p_text, bool p_emit_text_changed_signal = false);
 	void push_text_input(const String &p_text);
 	void push_input(RequiredParam<InputEvent> rp_event, bool p_local_coords = false);
+	void push_editor_input(RequiredParam<InputEvent> rp_event);
 #ifndef DISABLE_DEPRECATED
 	void push_unhandled_input(RequiredParam<InputEvent> rp_event, bool p_local_coords = false);
 #endif // DISABLE_DEPRECATED

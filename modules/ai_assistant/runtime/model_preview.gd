@@ -1,0 +1,227 @@
+@tool
+extends SubViewportContainer
+## One native renderer for interactive and offscreen inspection.
+static var Common: GDScript
+signal pose_changed(pose: Dictionary)
+var viewport: SubViewport
+var world: Node3D
+var pivot: Node3D
+var camera: Camera3D
+var environment: Environment
+var information: Dictionary = {}
+var yaw = 0.7
+var pitch = 0.35
+var distance = 3.0
+var radius = 1.0
+var target = Vector3.ZERO
+var touches = {}
+var dragging = false
+var players: Array = []
+var active_animation = -1
+var grid: MeshInstance3D
+
+func _ready() -> void:
+	stretch = false
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	viewport = SubViewport.new()
+	viewport.size = Vector2i(512, 512)
+	viewport.own_world_3d = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	add_child(viewport)
+	stretch = true
+	world = Node3D.new()
+	viewport.add_child(world)
+	camera = Camera3D.new()
+	world.add_child(camera)
+	var sun = DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-45, -30, 0)
+	world.add_child(sun)
+	var holder = WorldEnvironment.new()
+	environment = Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color("182030")
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color("b2bdd0")
+	environment.ambient_light_energy = 0.7
+	holder.environment = environment
+	world.add_child(holder)
+	visibility_changed.connect(func() -> void:
+		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE if is_visible_in_tree() else SubViewport.UPDATE_DISABLED
+		if not is_visible_in_tree():
+			for player in players: player.pause())
+
+func load_file(path: String) -> Dictionary:
+	if path.get_extension().to_lower() not in ["glb", "gltf"]: return Common.failure("Preview 3D disponibil pentru GLB/glTF.")
+	var document = GLTFDocument.new()
+	var state = GLTFState.new()
+	if document.append_from_file(path, state) != OK: return Common.failure("Modelul nu poate fi încărcat de Godot.")
+	var scene = document.generate_scene(state)
+	if scene == null: return Common.failure("Modelul nu conține o scenă validă.")
+	var queue = [scene]
+	var bounds = AABB()
+	var meshes = 0
+	var triangles = 0
+	var nodes = 0
+	var materials = {}
+	var textures = {}
+	var texture_bytes = 0
+	var animation_names = []
+	while not queue.is_empty():
+		var node: Node = queue.pop_front()
+		nodes += 1
+		if nodes > 5000:
+			scene.free()
+			return Common.failure("Model prea complex pentru preview mobil.")
+		if node is ImporterMeshInstance3D:
+			var converted = MeshInstance3D.new()
+			converted.name = node.name
+			converted.transform = node.transform
+			converted.skin = node.skin
+			converted.skeleton = node.skeleton_path
+			converted.mesh = node.mesh.get_mesh() if node.mesh != null else null
+			node.replace_by(converted)
+			node.free()
+			node = converted
+		if node.get_script() != null: node.set_script(null)
+		if node is AnimationPlayer:
+			node.stop()
+			players.append(node)
+			animation_names.append_array(Array(node.get_animation_list()))
+		if node is MeshInstance3D and node.mesh != null:
+			var transform = Transform3D.IDENTITY
+			var walk: Node = node
+			while walk is Node3D:
+				transform = walk.transform * transform
+				if walk == scene: break
+				walk = walk.get_parent()
+			var box: AABB = transform * node.get_aabb()
+			bounds = box if meshes == 0 else bounds.merge(box)
+			meshes += 1
+			for index in range(node.mesh.get_surface_count()):
+				if node.mesh.surface_get_primitive_type(index) == Mesh.PRIMITIVE_TRIANGLES: triangles += (node.mesh.surface_get_array_index_len(index) if node.mesh.surface_get_array_index_len(index) > 0 else node.mesh.surface_get_array_len(index)) / 3
+				var material = node.get_active_material(index)
+				if material != null: materials[material.get_instance_id()] = true
+				if material is BaseMaterial3D:
+					for slot in range(BaseMaterial3D.TEXTURE_MAX):
+						var texture = material.get_texture(slot)
+						if texture != null and not textures.has(texture.get_instance_id()):
+							textures[texture.get_instance_id()] = [texture.get_width(), texture.get_height()]
+							texture_bytes += texture.get_width() * texture.get_height() * 4
+		if triangles > 1000000 or texture_bytes > 256 * 1024 * 1024:
+			scene.free()
+			players.clear()
+			return Common.failure("Model prea complex pentru bugetul de preview mobil.", "preview_too_complex")
+		queue.append_array(node.get_children())
+	if meshes == 0:
+		scene.free()
+		return Common.failure("Model fără geometrie vizibilă.")
+	if pivot != null: world.remove_child(pivot); pivot.queue_free()
+	pivot = Node3D.new()
+	world.add_child(pivot)
+	pivot.add_child(scene)
+	pivot.position = -bounds.get_center()
+	radius = maxf(bounds.size.length() * 0.5, 0.01)
+	distance = radius * 3
+	camera.near = maxf(radius / 1000, 0.001)
+	camera.far = maxf(radius * 100, 100)
+	information = {"meshes": meshes, "triangles": triangles, "materials": materials.size(), "nodes": nodes, "bounds": {"center": Common.json_safe(bounds.get_center()), "size": Common.json_safe(bounds.size)}, "textures": textures.size(), "texture_dimensions": textures.values(), "animations": animation_names}
+	_make_grid()
+	_update_camera()
+	return Common.success(information)
+
+func _make_grid() -> void:
+	if grid != null: world.remove_child(grid); grid.queue_free()
+	grid = MeshInstance3D.new()
+	var mesh = ImmediateMesh.new()
+	var material = StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color("38475b")
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
+	for index in range(-5, 6):
+		mesh.surface_add_vertex(Vector3(index * radius / 2, -radius, -2.5 * radius))
+		mesh.surface_add_vertex(Vector3(index * radius / 2, -radius, 2.5 * radius))
+		mesh.surface_add_vertex(Vector3(-2.5 * radius, -radius, index * radius / 2))
+		mesh.surface_add_vertex(Vector3(2.5 * radius, -radius, index * radius / 2))
+	mesh.surface_end()
+	grid.mesh = mesh
+	world.add_child(grid)
+
+func pose() -> Dictionary: return {"yaw": yaw, "pitch": pitch, "distance_ratio": distance / radius, "target": target / radius}
+
+func set_pose(value: Dictionary) -> void:
+	yaw = float(value.get("yaw", yaw))
+	pitch = float(value.get("pitch", pitch))
+	distance = float(value.get("distance_ratio", 3)) * radius
+	target = value.get("target", Vector3.ZERO) * radius
+	_update_camera()
+
+func preset(name: String) -> void:
+	yaw = 0 if name in ["front", "top"] else (PI / 2 if name == "side" else 0.7)
+	pitch = 1.55 if name == "top" else (0.0 if name in ["front", "side"] else 0.35)
+	distance = radius * 3
+	target = Vector3.ZERO
+	_update_camera()
+	pose_changed.emit(pose())
+
+func command(name: String) -> void:
+	match name:
+		"wireframe": viewport.debug_draw = Viewport.DEBUG_DRAW_DISABLED if viewport.debug_draw == Viewport.DEBUG_DRAW_WIREFRAME else Viewport.DEBUG_DRAW_WIREFRAME
+		"grid": grid.visible = not grid.visible
+		"light": environment.ambient_light_energy = 1.2 if environment.ambient_light_energy < 1 else 0.7
+		"animation":
+			if players.is_empty(): return
+			var player: AnimationPlayer = players[0]
+			var available = player.get_animation_list()
+			if available.is_empty(): return
+			active_animation = posmod(active_animation + 1, available.size())
+			player.play(available[active_animation])
+		_: preset(name)
+
+func _update_camera() -> void:
+	if camera == null: return
+	camera.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * distance
+	camera.look_at(target)
+
+func _gui_input(event: InputEvent) -> void:
+	if event.device == -1: return
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT: dragging = event.pressed
+		elif event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]: distance *= 0.85 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.15
+	elif event is InputEventMouseMotion and dragging: _orbit(event.relative)
+	elif event is InputEventScreenTouch:
+		if event.pressed: touches[event.index] = event.position
+		else: touches.erase(event.index)
+	elif event is InputEventScreenDrag and touches.has(event.index):
+		var previous: Array = touches.values()
+		touches[event.index] = event.position
+		var after: Array = touches.values()
+		if after.size() == 2:
+			var old = Vector2(previous[0]).distance_to(previous[1])
+			var now = Vector2(after[0]).distance_to(after[1])
+			if now > 1: distance *= old / now
+			target += (-camera.global_basis.x * event.relative.x + camera.global_basis.y * event.relative.y) * radius / 300
+		else: _orbit(event.relative)
+	distance = clampf(distance, radius * 0.2, radius * 30)
+	_update_camera()
+	pose_changed.emit(pose())
+	accept_event()
+
+func _orbit(relative: Vector2) -> void:
+	yaw -= relative.x * 0.008
+	pitch = clampf(pitch + relative.y * 0.008, -1.55, 1.55)
+
+func capture() -> Image:
+	if not is_visible_in_tree():
+		stretch = false
+		viewport.size = Vector2i(512, 512)
+	await get_tree().process_frame
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	# Editor low-processor mode may not draw a hidden viewport without a request.
+	RenderingServer.force_draw(false)
+	var result = viewport.get_texture().get_image()
+	if is_visible_in_tree(): viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	else: viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if result != null and not result.is_empty() and result.get_size() != Vector2i(512, 512): result.resize(512, 512)
+	return result

@@ -91,6 +91,7 @@ class EditorAssetInstaller : public ConfirmationDialog {
 	bool _fix_conflicted_indeterminate_state(TreeItem *p_item, int p_column);
 	bool _is_item_checked(const String &p_source_path) const;
 
+	bool agent_install = false;
 	void _install_asset();
 	virtual void ok_pressed() override;
 
@@ -98,7 +99,8 @@ protected:
 	void _notification(int p_what);
 
 public:
-	void open_asset(const String &p_path, bool p_autoskip_toplevel = false);
+	void open_asset(const String &p_path, bool p_autoskip_toplevel = false, bool p_popup = true);
+	void install_approved_asset();
 
 	void set_asset_name(const String &p_asset_name);
 	String get_asset_name() const;

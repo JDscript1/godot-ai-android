@@ -244,7 +244,7 @@ static func validate_artifact(path: String, kind: String) -> Dictionary:
 		if file.get_length() < 20 or file.get_32() != 0x46546C67 or file.get_32() != 2: return Common.failure("Rezultatul nu este GLB 2.0 valid.")
 		if file.get_32() != file.get_length(): return Common.failure("GLB trunchiat.")
 		var length = file.get_32()
-		if file.get_32() != 0x4E4F534A or length > file.get_length() - 20: return Common.failure("GLB fără document JSON valid.")
+		if file.get_32() != 0x4E4F534A or length > file.get_length() - 20 or length > 8 * 1024 * 1024: return Common.failure("GLB fără document JSON valid.")
 		var document: Variant = Common.parse_json(file.get_buffer(length).get_string_from_utf8())
 		if not document is Dictionary or str(document.get("asset", {}).get("version", "")) != "2.0": return Common.failure("Document glTF invalid.")
 		for image in document.get("images", []):

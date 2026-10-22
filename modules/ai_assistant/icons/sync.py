@@ -33,6 +33,9 @@ ACTIONS = {
     'Play': 'play', 'Favorite': 'star', 'Rename': 'pencil', 'Archive': 'archive',
     'Export': 'upload', 'Delete': 'trash', 'File': 'file', 'Provider_custom': 'code-xml',
     'Chat': 'message-circle', 'Skills': 'book-open-check', 'Integrations': 'puzzle', 'Sound': 'volume-2',
+    'Preview3D': 'box', 'Crop': 'crop', 'ArrowRight': 'arrow-right', 'Annotate': 'move-up-right',
+    'Grid': 'grid-3x3', 'Light': 'sun', 'Wireframe': 'boxes', 'Reset': 'rotate-ccw',
+    'Compare': 'columns-2', 'Pin': 'pin', 'Animation': 'clapperboard',
 }
 
 
@@ -40,6 +43,10 @@ def download(entry):
     key, source, path = entry
     repo, revision = REVISIONS[source]
     url = f'https://raw.githubusercontent.com/{repo}/{revision}/{path}'
+    asset = ROOT / source / Path(path).name
+    previous = json.loads((ROOT / 'manifest.json').read_text()).get(key, {})
+    if asset.exists() and previous.get('url') == url and previous.get('sha256') == hashlib.sha256(asset.read_bytes()).hexdigest():
+        return key, asset, url, asset.read_bytes()
     try:
         with urllib.request.urlopen(url, timeout=45) as response:
             data = response.read()

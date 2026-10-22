@@ -60,6 +60,9 @@ public:
 	Dictionary runtime_poll(int64_t p_id);
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
 	Dictionary script_diagnostics(const String &p_source, const String &p_path);
+	void prepare_script_removal(const PackedStringArray &p_paths);
+	void push_editor_input(Viewport *p_viewport, const Ref<InputEvent> &p_event);
+	void install_asset_archive(const String &p_path, const String &p_title);
 	void open_settings(const String &p_section = String());
 	AIAssistantEditorPlugin();
 	~AIAssistantEditorPlugin();
