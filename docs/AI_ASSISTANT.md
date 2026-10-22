@@ -101,10 +101,10 @@ Evidence must be distinguished:
 | --- | --- |
 | Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 97 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
 | Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 9 tests passed with deterministic runtimes, including independent child sessions, attachments and context usage; TypeScript build passed |
-| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 51 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers readable settings categories, compact navigation, separate account views, clean composer and visible voice cancellation. Godot may enforce a larger minimum editor window on the narrow display |
-| Native fork main screen, desktop vault, game screenshot/input/watchdog and internal-script scene saves | 59 checks in each of the five configurations passed using the fork compiled from `605654d`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39646652993) |
-| Android C++/Kotlin integration and APK | [Build 605654d passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39646652993), including signature, persistent signing identity, phone package and ARM64 library checks; all 12 embedded script sources were matched to the downloaded native library |
-| Physical Android UI | The user supplied two Android screenshots showing the original AI screen and settings open; category clipping was reproduced at 150% scale. The revised APK still needs a device check |
+| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 74 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback and workspace expansion. Godot may enforce a larger minimum editor window on the narrow display |
+| Native fork main screen, desktop vault, game screenshot/input/watchdog and internal-script scene saves | 82 checks in each of the five configurations passed using the fork compiled from `e98ddb7`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934) |
+| Android C++/Kotlin integration and APK | [Build e98ddb7 passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934), including signature, persistent signing identity, phone package and ARM64 library checks; all 12 embedded script sources were matched to the downloaded native library |
+| Physical Android UI | The user supplied screenshots of prior Android versions, including a real conversation and provider settings. The current visual redesign still needs device verification |
 | Android touch, Keystore, microphone and suspend/resume | Full device verification pending; desktop rendering does not establish these |
 | ChatGPT, Claude, Copilot and Kimi account logins | User-authorized live account checks required |
 | Runware and local ComfyUI image/GLB generation | Live configured-provider checks required |
@@ -115,12 +115,12 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The tested APK source is `605654dd4bc498f232d35516a8b84704f468dac9`.
-Download its `Godot-AI-Android-arm64-605654dd4bc498f232d35516a8b84704f468dac9`
-[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39646652993/artifacts/12367282842)
-from the build above. The APK is 144,813,361 bytes; its SHA-256 is
-`8a41eac64efbd2eab878f5c49204dffe3d45c64c7d3d94f16ea90f762f28a685`.
-The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-605654d-debug.apk`,
+The tested APK source is `e98ddb7948011f309c43aa106db021c9e4bc0300`.
+Download its `Godot-AI-Android-arm64-e98ddb7948011f309c43aa106db021c9e4bc0300`
+[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39707618934/artifacts/12395887189)
+from the build above. The APK is 144,829,745 bytes; its SHA-256 is
+`9063d311384e365a3b502dc95ca6a103a4fbaffd37cb4b605030a9bc7d6053be`.
+The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-e98ddb7-debug.apk`,
 with a matching `.sha256` file. Its signature, checksum, package, ABI, Android
 voice declarations/classes and exact embedded AI sources were checked locally.
 The persistent development certificate SHA-256 is
