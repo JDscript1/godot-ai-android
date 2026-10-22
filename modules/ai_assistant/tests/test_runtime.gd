@@ -66,7 +66,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -75,7 +75,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
+		var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -138,6 +138,7 @@ func _run() -> void:
 	var node = Node.new()
 	root.add_child(node)
 	var transport = scripts["transport"].new(node)
+	_planning_tests(node)
 	await _harness_tests(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
@@ -149,6 +150,36 @@ func _run() -> void:
 
 func _agent_response(text: String = "", calls: Array = [], finish: String = "stop") -> Dictionary:
 	return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": finish}
+
+func _planning_tests(node: Node) -> void:
+	var plan = scripts["planner"].new()
+	plan.reset("plan-test")
+	check(plan.can_write() and not plan.needs_continuation(), "A simple Auto task does not require a plan or extra requests")
+	var steps = [{"step": "Inspect", "status": "in_progress"}, {"step": "Verify", "status": "pending"}]
+	check(scripts["tool_registry"].validate(scripts["planner"].definition(), {"tasks": steps, "phase": "planning"}).get("ok", false), "Structured plans use the common tool schema validator")
+	check(plan.update({"tasks": steps, "phase": "planning"}).get("ok", false) and not plan.can_write() and plan.needs_continuation(), "Auto planning is inspect-only and remains an unfinished task")
+	plan.update({"tasks": steps, "phase": "executing"})
+	check(plan.can_write() and plan.needs_continuation(), "Explicit execution phase permits Auto to apply the plan")
+	check(not plan.update({"tasks": steps, "phase": "completed"}).get("ok", true) and plan.phase == "executing", "A plan cannot finish with pending steps and failed updates are atomic")
+	check(not plan.update({"tasks": [{"step": "A", "status": "in_progress"}, {"step": "B", "status": "in_progress"}]}).get("ok", true), "Only one plan step can be in progress")
+	plan.update({"tasks": steps, "phase": "blocked", "explanation": "Need project input"})
+	check(not plan.can_write() and not plan.needs_continuation(), "A blocked plan stops automatic continuation and writes")
+	plan.update({"tasks": steps, "phase": "executing"})
+	plan.pause()
+	check(plan.phase == "paused" and plan.steps[1]["status"] == "pending", "Stopping a plan does not mark unfinished steps completed")
+	plan.reset("proposal", true)
+	check(not plan.update({"tasks": steps, "phase": "executing"}, true).get("ok", true), "Manual Plan cannot switch itself into execution")
+	check(plan.update({"tasks": steps, "phase": "completed"}, true).get("ok", false) and not plan.can_write() and not plan.needs_continuation(), "A completed proposal retains pending implementation steps without executing them")
+	plan.reset()
+	check(plan.update({"tasks": ["Legacy checklist"]}).get("ok", false) and plan.steps[0]["status"] == "pending", "Legacy checklist strings remain readable without inventing completed steps")
+	var rich = RichTextLabel.new()
+	node.add_child(rich)
+	scripts["markdown"].render(rich, "## Titlu\n\n**Bold** și `cod`\n- Element\n> Citat\n[b]literal[/b]\n[x](javascript:alert(1))")
+	var rendered = rich.get_parsed_text()
+	check("Titlu" in rendered and "•  Element" in rendered and not "**Bold**" in rendered and "[b]literal[/b]" in rendered and "javascript:alert" in rendered, "Markdown formats text while keeping BBCode, HTML and unsupported links literal")
+	scripts["markdown"].render(rich, "| Nume | Valoare |\n| --- | --- |\n| Nod | 12 |")
+	check("Nume" in rich.get_parsed_text() and "12" in rich.get_parsed_text() and not "---" in rich.get_parsed_text(), "Markdown tables render as structured native cells")
+	rich.queue_free()
 
 func _tool_registry_tests() -> void:
 	var registry_script = scripts["tool_registry"]
@@ -317,6 +348,22 @@ func _harness_tests(node: Node) -> void:
 	host.replies = [_agent_response("", [call]), _agent_response("Inspect first")]
 	outcome = await core.run({"tools": definitions, "messages": repaired}, host.hooks())
 	check(outcome.get("ok", false) and host.executed.is_empty(), "An interrupted persisted write is not automatically executed again")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("Plan ready"), _agent_response("Implemented and verified")]
+	var pending = {"yes": true}
+	var hooks = host.hooks()
+	hooks["needs_continuation"] = func() -> bool:
+		var result: bool = pending["yes"]
+		pending["yes"] = false
+		return result
+	outcome = await core.run({}, hooks)
+	check(outcome.get("ok", false) and host.contexts.size() == 2 and outcome.get("text") == "Implemented and verified", "An unfinished Auto plan continues after an intermediate answer instead of ending the task")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("Still planning"), _agent_response("Still planning")]
+	hooks = host.hooks()
+	hooks["needs_continuation"] = func() -> bool: return true
+	outcome = await core.run({"max_steps": 2}, hooks)
+	check(outcome.get("code") == "step_limit" and host.contexts.size() == 2, "Plan continuation respects the harness step budget")
 
 func _network_tests(node: Node) -> void:
 	var vault = FakeVault.new()

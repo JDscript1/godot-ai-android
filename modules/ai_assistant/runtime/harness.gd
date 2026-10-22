@@ -88,6 +88,9 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			var finish = str(response.get("finish", ""))
 			if finish in ["length", "MAX_TOKENS", "max_tokens"]:
 				return _finish("limited", "Răspuns oprit la limita modelului.", "output_limit", last_text)
+			if _hooks.get("needs_continuation", Callable()).is_valid() and _hooks["needs_continuation"].call():
+				event.emit({"kind": "plan_continuation", "step": step + 1})
+				continue
 			return _finish("completed", "Finalizat.", "", last_text)
 		for call in calls:
 			var result: Dictionary

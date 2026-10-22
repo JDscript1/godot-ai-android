@@ -49,7 +49,7 @@ drept funcție validată cu un serviciu real.
   detalii complete în tooltip. Listele sertarului se derulează separat.
 - Controale compacte în composer: înălțime de 32 unități, iconuri de 16 unități,
   text de 12 unități și margini reduse. Selectorul ocupă lățimea textului, până
-  la 220 unități; reasoning-ul până la 112. Valorile se adaptează scalei editorului.
+  la 150 unități; reasoning-ul până la 104. Valorile se adaptează scalei editorului.
 - **57 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
   Icons, logo llama.cpp din repository-ul ggml-org și acțiuni Lucide. Acestea
   înlocuiesc aproximările desenate anterior. Sunt încorporate local, fără acces
@@ -91,8 +91,21 @@ drept funcție validată cu un serviciu real.
 - Salvarea progresului înainte de execuție și după rezultate; o eroare de
   salvare oprește operațiile următoare. Apelurile întrerupte sunt închise explicit
   în istoric, fără reluarea automată a unor modificări neconfirmate.
-- Modurile Analiză, Plan, Cu confirmare și Autonom folosesc permisiunile native.
-  Editările de scenă folosesc Undo unde este posibil; fișierele au recuperare.
+- Două moduri vizibile: **Auto** (implicit) și **Plan**. Confirmarea fiecărei
+  modificări este o preferință separată; valorile vechi sunt migrate. Auto poate
+  modifica proiectul cu permisiunea sesiunii activată; Plan rămâne doar pentru
+  citire. Editările de scenă folosesc Undo; fișierele au recuperare.
+- Auto cere modelului să aleagă planificarea după complexitate, incertitudine și
+  dependențe. `task_update` acceptă pași structurați și faze de planificare,
+  execuție, verificare, finalizare sau blocaj. Planificarea blochează scrierile,
+  iar pașii neîncheiați continuă în bucla limitată a harness-ului. Stop și limitele
+  păstrează progresul întrerupt. Un plan propus nu declanșează execuția.
+- Planul se afișează într-un card pliabil din conversație, cu un singur pas în
+  lucru, stări distincte și restaurare din istoric. **Aplică planul** trece în
+  Auto; preferința de confirmare rămâne activă dacă a fost aleasă.
+- Textul conversației are titluri, liste, citate, cod inline, tabele și linkuri
+  HTTP(S) validate, fără interpretarea HTML/BBCode din răspunsuri. Blocurile de
+  cod și identitatea furnizorului au o prezentare compactă.
 
 ### Unelte și integrarea jocului
 
@@ -150,13 +163,30 @@ Implementat în surse și inclus în APK-ul `588bef1`:
 Catalogul are acum **49 tipuri de unelte definite**: 35 pentru editor, 4 pentru
 generare, 5 pentru sarcini/subagenți, 3 pentru Playtest și 2 pentru descoperire.
 Uneltele MCP descoperite se adaugă dinamic; nu toate cele 49 sunt expuse simultan
-în fiecare rol sau mod. Modulul încorporează acum **15 scripturi**, inclusiv
+în fiecare rol sau mod. Modulul încorporează acum **17 scripturi**, inclusiv
 datele SVG pentru iconuri.
+
+## Etapa Auto/Plan și lizibilitate — verificare locală încheiată
+
+Selectorul de model este redus la maximum 150 unități logice, reasoning la 104.
+Auto planifică intern când modelul consideră necesar, apoi continuă execuția;
+această fază internă nu schimbă selecția utilizatorului în modul Plan. Plan este
+alegerea explicită pentru inspectare și propuneri. Nu există clasificator local
+care să garanteze dificultatea sau calitatea deciziilor unui furnizor real.
+
+Au trecut **167 verificări funcționale**, zero erori, și **3 teste de livrare**.
+Regresia de editor a trecut **142 verificări în fiecare dintre cinci configurații**,
+fără erori și cu ieșire normală. Au fost inspectate capturile de chat formatat,
+plan și opțiuni Auto/Plan. Verificarea C++ și încorporarea celor 17 surse au trecut.
+Editorul nativ recompilat și noul APK urmează; installerul `12794c4` rămâne ultima
+livrare verificată până atunci. Dovezi: `.ai-qa/auto-plan-final/`,
+`.ai-qa/auto-plan-embedding.json` și `.ai-qa/auto-plan-verification.json`.
 
 ## Dovezi de verificare
 
 | Etapă | Dovezi | Limite |
 | --- | --- | --- |
+| Auto/Plan și lizibilitate (surse curente) | 167 aserțiuni, 142 × 5 verificări upstream, 3 teste de livrare, C++ și 17 surse încorporate verificate | APK nou și execuție în editorul nativ recompilat în curs; modele reale nevalidate |
 | APK `12794c4` | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
 | APK `588bef1` (istoric) | Workflow `39725331751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
 | APK `e98ddb7` (istoric) | Workflow `39707618934`; semnătură, pachet, ARM64 și surse încorporate verificate | Înlocuit la 22.10.2026 de APK-ul `588bef1` |
@@ -268,6 +298,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   local. Înlocuire atomică în Download și eliminarea installerului `588bef1`.
   Dovezi: `.ai-qa/delivery-12794c4.json`, `.ai-qa/compact-authentic-icons-final/`
   și `.ai-qa/compact-icons-native-ci/.ai-qa/native-rendered/`.
+
+- **22.10.2026:** implementate Auto/Plan, plan structurat cu faze și continuare
+  limitată, migrarea preferințelor, selector mai scurt, Markdown nativ și carduri
+  de progres. Verificare funcțională locală: 167 aserțiuni, zero erori; APK nou
+  încă nelivrat la această etapă.
 
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).

@@ -34,6 +34,29 @@ class FixtureProvider:
 		if not text.is_empty(): delta.call(text)
 		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": "stop"}
 
+class FixturePlanningProvider:
+	extends RefCounted
+	var requests = 0
+	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
+		requests += 1
+		var name = ""
+		var args = {}
+		var phase = {1: "planning", 5: "executing", 7: "verifying", 9: "completed"}.get(requests, "")
+		if not phase.is_empty():
+			name = "task_update"
+			args = {"phase": phase, "tasks": [{"step": "Pregătește nodul scenei", "status": "completed" if requests >= 7 else ("in_progress" if requests == 5 else "pending")}, {"step": "Verifică structura scenei", "status": "completed" if requests == 9 else ("in_progress" if requests == 7 else "pending")}], "explanation": "Două etape dependente; verific scena înainte de finalizare."}
+		if requests == 3:
+			name = "tool_describe"
+			args = {"name": "godot_create_node"}
+		if requests in [4, 6]:
+			name = "godot_create_node"
+			args = {"type": "Node3D", "name": "PlannedProbe"}
+		if requests == 8: name = "godot_scene_tree"
+		var calls = [] if name.is_empty() else [{"id": "planning-" + str(requests), "name": name, "arguments": args}]
+		var text = ("Plan pregătit." if requests == 2 else "Implementat și verificat.") if name.is_empty() else ""
+		if not text.is_empty(): delta.call(text)
+		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": "stop"}
+
 func _enter_tree() -> void:
 	if OS.get_environment("GODOT_AI_QA_SOURCE").is_empty(): return
 	_run.call_deferred()
@@ -49,8 +72,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
-	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
+	var bindings = {"common": "Common", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech"}
+	for name in ["common", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "chat_view", "harness", "agent_jobs", "speech", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -171,6 +194,7 @@ func _run() -> void:
 		if image != null and not image.is_empty(): image.save_png(output.path_join("chat-options.png"))
 		panel.chat.runtime_options.hide()
 		await _drawer_screenshots(output)
+		await _plan_and_markdown_screenshots(output)
 	print("Godot AI editor: %s checks, %s failures" % [checks, failures.size()])
 	if not output.is_empty():
 		var file = FileAccess.open(output.path_join("editor-report.json"), FileAccess.WRITE)
@@ -236,7 +260,7 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel._new_conversation()
 	var service = FixtureProvider.new()
 	panel.providers = service
-	panel.mode_picker.select(2)
+	panel.mode_picker.select(0)
 	panel.full_control.button_pressed = true
 	await panel._start_chat("Create the fixture node and verify the tool result")
 	_check(not panel.busy and panel.harness.state == "completed" and service.requests == 3 and scene.get_node_or_null("HarnessProbe") != null, "Native harness discovers a tool, connects chat/model and edits the scene")
@@ -248,10 +272,28 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel._new_conversation()
 	service.requests = 0
 	service.call_id = "fixture-analysis-write"
-	panel.mode_picker.select(0)
+	panel.mode_picker.select(1)
+	panel.chat.confirm_changes.button_pressed = false
 	panel.full_control.button_pressed = false
 	await panel._start_chat("Inspect without modifying")
 	_check(not panel.busy and scene.get_node_or_null("HarnessProbe") == null and "tool_unavailable" in str(panel.history[2].get("content", "")), "Analysis mode excludes mutation tools even when the model requests one")
+	panel._new_conversation()
+	panel.mode_picker.select(0)
+	panel.full_control.button_pressed = true
+	panel.chat.confirm_changes.button_pressed = false
+	var planning_service = FixturePlanningProvider.new()
+	panel.providers = planning_service
+	await panel._start_chat("Pregătește un plan, creează nodul și verifică rezultatul")
+	_check(panel.mode_picker.item_count == 2 and panel.mode_picker.get_item_text(0) == "Auto" and panel.mode_picker.get_item_text(1) == "Plan", "Only Auto and Plan are exposed as work modes")
+	_check(planning_service.requests == 10 and panel.harness.state == "completed" and scene.get_node_or_null("PlannedProbe") != null, "Auto continues a proposed execution plan and completes real scene edits")
+	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_create_node" and "plan_read_only" in str(item.get("content", ""))), "Planning blocks project writes before the explicit execution phase")
+	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_scene_tree" and "PlannedProbe" in str(item.get("content", ""))), "The verification phase inspects the actual modified scene")
+	_check(panel.planner.phase == "completed" and panel.history[-1].get("plan_snapshot", {}).get("phase") == "completed", "Completed plan state is saved with the conversation")
+	panel._render_history()
+	_check(panel.chat.plan_cards.size() == 1 and panel.chat.plan_cards[panel.current_turn]["toggle"].text.contains("2/2"), "Conversation restore shows one updated plan card with completed steps")
+	panel.mode_picker.select(1)
+	_check(not await panel._authorize({"name": "godot_create_node", "risk": "write"}, {}), "Manual Plan refuses writes even when session writes are enabled")
+	panel.tools.execute("godot_undo", {}, 2, true)
 	panel._new_conversation()
 	panel.providers = original_service
 	panel.config["providers"] = original_profiles
@@ -351,7 +393,7 @@ func _chat_workflow_tests() -> void:
 	_check(panel.chat.drawer_stage == "models", "Reasoning drawer can return to model selection")
 	_tap_drawer("model", "qa-code")
 	_tap_drawer("effort", "high")
-	_check(not panel.chat.picker.visible and panel._selection() == {"profile": "qa-cloud", "model": "qa-code", "effort": "high"} and panel.chat.reasoning_button.text == "Ridicat", "Reasoning choice applies provider, model and effort together and updates composer chips")
+	_check(not panel.chat.picker.visible and panel._selection() == {"profile": "qa-cloud", "model": "qa-code", "effort": "high", "ui_mode": 0} and panel.chat.reasoning_button.text == "Ridicat", "Reasoning choice applies provider, model and effort together and updates composer chips")
 	panel.chat.reasoning_button.pressed.emit()
 	_check(panel.chat.drawer_stage == "reasoning", "Reasoning chip reopens the current model's reasoning drawer directly")
 	var escape = InputEventKey.new()
@@ -367,7 +409,8 @@ func _chat_workflow_tests() -> void:
 	_check(fingerprints.size() == embedded["providers"].CATALOG.size() - 1, "Each provider identity has a distinct vector emblem; Qwen regions share the same identity")
 	for service in ["Claude", "Kimi", "GitHub Copilot"]:
 		_check(panel.chat.provider_icon({"kind": "companion", "name": service}) != panel.chat._icon("Accounts"), "Subscription retains its provider emblem: " + service)
-	panel.mode_picker.select(1)
+	panel.mode_picker.select(0)
+	panel.chat.confirm_changes.button_pressed = true
 	panel.full_control.button_pressed = true
 	panel.cancel = {"cancelled": false}
 	var decisions = {}
@@ -382,7 +425,8 @@ func _chat_workflow_tests() -> void:
 	panel._decide(false)
 	await get_tree().process_frame
 	_check(decisions.get("second") == false, "Second concurrent operation can be independently denied")
-	panel.mode_picker.select(0)
+	panel.mode_picker.select(1)
+	panel.chat.confirm_changes.button_pressed = false
 	panel.full_control.button_pressed = false
 	panel.config["providers"] = []
 	panel._status("Configurează un furnizor din Setări pentru a începe.")
@@ -399,7 +443,7 @@ func _layout_tests() -> void:
 	var mode_text_width = mode_button.get_theme_font("font").get_string_size(mode_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_button.get_theme_font_size("font_size")).x
 	_check(mode_button.size.x >= mode_text_width + mode_button.get_theme_stylebox("normal").get_minimum_size().x + mode_button.get_theme_constant("icon_max_width") - 2, "Current mode icon and label fit without clipping")
 	var scale = EditorInterface.get_editor_scale()
-	_check(panel.chat.model_button.size.x <= 220 * scale + 1 and panel.chat.reasoning_button.size.x <= 112 * scale + 1, "Composer selection chips keep compact bounded widths")
+	_check(panel.chat.model_button.size.x <= 150 * scale + 1 and panel.chat.reasoning_button.size.x <= 112 * scale + 1, "Composer selection chips keep compact bounded widths")
 	_check(panel.chat.model_button.size.y <= 32 * scale + 2 and panel.chat.send_button.size.y <= 32 * scale + 2 and panel.chat.options_button.size.y <= 32 * scale + 2, "Composer controls use the compact 32 pixel height")
 	panel.chat._open_picker()
 	await get_tree().process_frame
@@ -450,6 +494,21 @@ func _layout_tests() -> void:
 	panel._layout_settings()
 	print("AI editor UI scale: ", EditorInterface.get_editor_scale())
 	panel.settings_window.hide()
+
+func _plan_and_markdown_screenshots(output: String) -> void:
+	panel.mode_picker.select(0)
+	panel.chat.show_plan({"turn": "visual-plan", "phase": "verifying", "intent": "execute", "steps": [{"step": "Inspectează scena și scripturile", "status": "completed"}, {"step": "Aplică modificările în proiect", "status": "completed"}, {"step": "Verifică rezultatul și importurile", "status": "in_progress"}], "explanation": "Sarcină cu mai multe etape; verific rezultatul înainte de finalizare."})
+	panel.chat.append_message("assistant", "## Modificările sunt pregătite\n\nAm organizat scena și am păstrat setările existente.\n\n- Nodul **Player** folosește `CharacterBody3D`.\n- Mișcarea rămâne configurabilă din Inspector.\n\n> Urmează verificarea rezultatului în editor.\n\n| Element | Stare |\n| --- | --- |\n| Scenă | Pregătită |\n| Script | Verificat |\n\n[Documentația proiectului](https://docs.godotengine.org/)", {"id": "visual-formatted", "origin_label": "Godot AI · Auto", "profile_id": "visual-provider"})
+	panel.chat.follow_bottom = true
+	await get_tree().create_timer(0.2).timeout
+	panel.chat._follow()
+	await get_tree().create_timer(0.25).timeout
+	_check(panel.chat.size.x <= panel.size.x + 2, "Formatted tables and plan steps stay inside the chat width")
+	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("formatted-chat.png"))
+	panel.chat.plan_cards["visual-plan"]["node"].get_parent().move_child(panel.chat.plan_cards["visual-plan"]["node"], panel.chat.thread.get_child_count() - 1)
+	panel.chat._follow()
+	await get_tree().create_timer(0.2).timeout
+	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("structured-plan.png"))
 
 func _tap_drawer(key: String, value: String) -> void:
 	for index in range(panel.chat.picker_list.item_count):
@@ -546,7 +605,7 @@ func _populated_chat_tests() -> void:
 	var body_id = assistant["body"].get_instance_id()
 	var before = assistant["card"].size.y
 	_check(assistant["blocks"].size() == 3 and assistant["blocks"][1]["editor"].text == source, "Streaming renders highlighted fenced code before completion")
-	var copy: Button = assistant["blocks"][1]["node"].get_child(0).get_child(1)
+	var copy: Button = assistant["blocks"][1]["copy"]
 	copy.pressed.emit()
 	_check(DisplayServer.clipboard_get() == source, "Code copy preserves source without Markdown fences")
 	var completed = {"id": "visual-answer", "role": "assistant", "content": answer, "origin_label": "DeepSeek · Model de probă", "turn_id": "visual-turn"}

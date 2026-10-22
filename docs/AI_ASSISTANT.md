@@ -33,10 +33,19 @@ No inference runtime or generation model is installed automatically.
 
 ## Execution and recovery
 
-Analysis is the initial mode. Both confirmation and autonomous modes require
-enabling **Permite modificări în această sesiune**. Confirmation mode displays
-each modifying/external operation before dispatch. Turning permission off also
-gates generic object calls and external MCP calls.
+The chat exposes **Auto** and **Plan**, with Auto as the default. Auto can inspect,
+plan, execute and verify; Plan permits inspection and proposals only. The mode
+menu contains **Permite modificări în această sesiune** (enabled initially in
+Auto) and the independent **Confirmă fiecare modificare** preference. Turning
+permission off blocks project writes and external operations. Confirmation shows
+each modifying/external operation before dispatch. Legacy defaults migrate to
+the two-mode interface and preserve the old confirmation preference.
+
+For complex work the model publishes structured task steps through `task_update`.
+Planning is read-only; the model must publish the executing phase before writes.
+Auto continues unfinished execution plans within its step budget. A plan-only
+request remains a proposal. This is model-directed task planning, not a local
+complexity classifier or a guarantee of a provider's coding quality.
 
 Scene/property edits use Godot Undo where supported. File replacements retain
 recovery copies and journal indices. Generic method calls may have effects that
@@ -120,10 +129,10 @@ Evidence must be distinguished:
 
 | Area | Current verification |
 | --- | --- |
-| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 150 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
+| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 167 automated assertions passed locally with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
 | Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 9 tests passed with deterministic runtimes, including independent child sessions, attachments and context usage; TypeScript build passed |
-| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 132 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback, workspace expansion and the provider/model/reasoning drawer with atomic selection and cancellation. Godot may enforce a larger minimum editor window on the narrow display |
-| Native fork main screen, desktop vault, game screenshot/input/watchdog, internal-script scene saves and native GDScript diagnostics | 142 checks in each of the five configurations passed using the fork compiled from `12794c4`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322) |
+| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 142 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback, workspace expansion and the provider/model/reasoning drawer with atomic selection and cancellation. Godot may enforce a larger minimum editor window on the narrow display |
+| Native fork main screen, desktop vault, game screenshot/input/watchdog, internal-script scene saves and native GDScript diagnostics | Previous delivered `12794c4`: 142 checks per configuration; native Auto/Plan rebuild pending. Earlier [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322) |
 | Android C++/Kotlin integration and APK | [Build 12794c4 passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322), including signature, persistent signing identity, phone package and ARM64 library checks; all 15 embedded script sources were matched byte for byte against the downloaded native library |
 | Physical Android UI | The user supplied screenshots of prior Android versions, including a real conversation and provider settings. The current visual redesign still needs device verification |
 | Android touch, Keystore, microphone and suspend/resume | Full device verification pending; desktop rendering does not establish these |
@@ -197,8 +206,9 @@ provider-reported usage when available. `/compact` writes a continuation summary
 while preserving the original conversation.
 
 Plan mode permits inspection and presents an Apply plan button, which switches
-to confirmation mode. Messages sent during a turn enter a queue with their own
-provider/model selection. Stop pauses the queue; `/resume` continues it and
+to Auto and enables session writes. The confirmation preference remains in effect.
+Messages sent during a turn enter a queue with their own provider/model/reasoning
+and Auto/Plan selection; the active turn keeps its original mode. Stop pauses the queue; `/resume` continues it and
 `/steer <instructions>` interrupts the current turn before using the new request.
 AGENTS.md guidance and editable project memories are included in context.
 
@@ -231,6 +241,14 @@ chips, with image thumbnails. Empty task/reference rows reserve no space.
 Stop appears only while working. The mode menu contains session write
 permission and context usage. Empty conversations show one welcome prompt.
 
+Assistant messages have compact provider identities and native Markdown for
+headings, emphasis, inline code, lists, quotes, tables and validated HTTP(S) links.
+Model text is never interpreted as BBCode or HTML. Fenced code sits in a rounded
+panel with a compact copy action. Message actions use 32-unit controls. Structured
+plans appear as collapsible cards in the conversation, showing pending/current/
+completed steps and distinct proposal, verification, blocked or paused states.
+A completed proposal does not falsely mark implementation steps as completed.
+
 Streaming updates the existing message blocks at a bounded rate. Fenced code has
 syntax colors, its language and a copy action during streaming as well as after
 completion. Finishing a response preserves its widgets and layout. Message actions
@@ -244,7 +262,7 @@ hashes and full licenses are kept in `modules/ai_assistant/icons/`. The artwork
 is embedded in the native module, rendered at editor scale and cached offline.
 Qwen regions share their brand mark; custom endpoints have a generic code icon.
 Composer controls use 32 logical pixels in height, 16 pixel icons, 12 pixel text
-and reduced padding. Model/reasoning chips fit their labels, bounded at 220/112
+and reduced padding. Model/reasoning chips fit their labels, bounded at 150/104
 logical pixels, instead of stretching across the composer. New live messages use
 a short opacity transition; General has
 a reduce-motion preference. History loading does not animate each old message.

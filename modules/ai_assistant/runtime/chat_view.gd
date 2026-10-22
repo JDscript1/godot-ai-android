@@ -2,6 +2,7 @@
 extends HBoxContainer
 static var Common: GDScript
 static var Icons: GDScript
+static var Markdown: GDScript
 signal action(name: String, args: Dictionary)
 var sidebar: VBoxContainer
 var chats: ItemList
@@ -16,6 +17,9 @@ var model_picker: OptionButton
 var mode_picker: OptionButton
 var effort_picker: OptionButton
 var full_control: CheckBox
+var confirm_changes: CheckBox
+var mode_buttons: Array = []
+var plan_cards: Dictionary = {}
 var send_button: Button
 var status: Label
 var context_label: Label
@@ -178,8 +182,8 @@ func _ready() -> void:
 	composer_controls = HBoxContainer.new()
 	compose_column.add_child(composer_controls)
 	icon_button(composer_controls, "Attach", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
-	options_button = button(composer_controls, "Analiză", _open_options)
-	options_button.icon = _icon("Inspect")
+	options_button = button(composer_controls, "Auto", _open_options)
+	options_button.icon = _icon("Agent")
 	options_button.tooltip_text = "Mod de lucru și permisiuni"
 	options_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
 	options_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -210,14 +214,39 @@ func _ready() -> void:
 	runtime_options.add_child(options)
 	label(options, "Mod de lucru")
 	mode_picker = OptionButton.new()
-	for index in range(Common.MODES.size()): mode_picker.add_icon_item(_icon(["Inspect", "Confirm", "Agent", "Plan"][index]), Common.MODES[index])
+	for index in range(Common.MODES.size()): mode_picker.add_icon_item(_icon(["Agent", "Plan"][index]), Common.MODES[index], 2 + index)
+	mode_picker.hide()
 	options.add_child(mode_picker)
+	var choices = HBoxContainer.new()
+	options.add_child(choices)
+	for index in range(2):
+		var choice = button(choices, Common.MODES[index], func() -> void:
+			mode_picker.select(index)
+			mode_picker.item_selected.emit(index)
+			runtime_options.hide())
+		choice.icon = _icon(["Agent", "Plan"][index])
+		choice.toggle_mode = true
+		choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mode_buttons.append(choice)
+	var hint = label(options, "Auto planifică și execută. Plan pregătește propunerea.")
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	effort_picker.item_selected.connect(func(_index: int) -> void: sync_selection())
+	var permissions = VBoxContainer.new()
+	var advanced = button(options, "Permisiuni și context", func() -> void:
+		permissions.visible = not permissions.visible
+		_open_options.call_deferred())
+	advanced.icon = _icon("Settings")
+	options.add_child(permissions)
+	permissions.hide()
 	full_control = CheckBox.new()
 	full_control.text = "Permite modificări în această sesiune"
-	full_control.tooltip_text = "Necesar pentru Confirmare și Autonom. Analiza și Planul rămân doar pentru citire."
-	options.add_child(full_control)
-	context_label = label(options, "Context: —")
+	full_control.button_pressed = true
+	full_control.tooltip_text = "Auto poate modifica proiectul. Plan rămâne doar pentru citire."
+	permissions.add_child(full_control)
+	confirm_changes = CheckBox.new()
+	confirm_changes.text = "Confirmă fiecare modificare"
+	permissions.add_child(confirm_changes)
+	context_label = label(permissions, "Context: —")
 	context_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button(options, "Extinde / restrânge chatul", func() -> void:
 		EditorInterface.set_distraction_free_mode(not EditorInterface.is_distraction_free_mode_enabled())
@@ -278,11 +307,11 @@ func _size_selection_chips() -> void:
 	var scale = EditorInterface.get_editor_scale()
 	var font = reasoning_button.get_theme_font("font")
 	var font_size = reasoning_button.get_theme_font_size("font_size")
-	var effort_width = minf(112 * scale, font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
+	var effort_width = minf(104 * scale, font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
 	reasoning_button.custom_minimum_size.x = effort_width
 	reasoning_button.custom_maximum_size.x = effort_width
 	var available = maxf(72 * scale, root_column.size.x - 20 * scale - effort_width)
-	var model_width = minf(minf(220 * scale, available), font.get_string_size(model_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
+	var model_width = minf(minf(150 * scale, available), font.get_string_size(model_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
 	model_button.custom_minimum_size.x = model_width
 	model_button.custom_maximum_size.x = model_width
 
@@ -592,12 +621,67 @@ func refresh_history(entries: Array, active: String) -> void:
 		if entry["id"] == active: chats.select(chats.item_count - 1)
 
 func clear_messages() -> void:
+	plan_cards.clear()
 	message_records.clear()
 	streaming_dirty.clear()
 	activity_group = null
 	for child in thread.get_children():
 		thread.remove_child(child)
 		child.queue_free()
+
+func show_plan(snapshot: Dictionary) -> void:
+	var id = str(snapshot.get("turn", ""))
+	var phase = str(snapshot.get("phase", "planning"))
+	var proposal = snapshot.get("intent") == "propose"
+	var entries: Array = snapshot.get("steps", [])
+	if entries.is_empty(): return
+	if not plan_cards.has(id) or not is_instance_valid(plan_cards[id]["node"]):
+		var panel = PanelContainer.new()
+		var surface = style(Color("1c2030"), 12)
+		surface.border_color = Color("49415d")
+		surface.set_border_width_all(1)
+		panel.add_theme_stylebox_override("panel", surface)
+		thread.add_child(panel)
+		var body = VBoxContainer.new()
+		panel.add_child(body)
+		var rows = VBoxContainer.new()
+		var toggle = button(body, "", func() -> void:
+			rows.visible = not rows.visible
+			panel.set_meta("expanded_by_user", rows.visible))
+		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		toggle.clip_text = true
+		toggle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		toggle.icon = _icon("Plan")
+		_compact_button(toggle)
+		var reason = label(body, "")
+		reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		reason.add_theme_color_override("font_color", Color("aab5c9"))
+		body.add_child(rows)
+		plan_cards[id] = {"node": panel, "toggle": toggle, "rows": rows, "reason": reason}
+	var card: Dictionary = plan_cards[id]
+	for row in card["rows"].get_children():
+		card["rows"].remove_child(row)
+		row.queue_free()
+	var done = 0
+	for index in range(entries.size()):
+		var item: Dictionary = entries[index]
+		var state = str(item.get("status", "pending"))
+		if state == "completed": done += 1
+		var row = HBoxContainer.new()
+		card["rows"].add_child(row)
+		var mark = label(row, "✓" if state == "completed" else ("›" if state == "in_progress" else str(index + 1) + "."))
+		mark.custom_minimum_size.x = 20 * EditorInterface.get_editor_scale()
+		mark.add_theme_color_override("font_color", Color("9cd2ad") if state == "completed" else Color("c1a8f2"))
+		var text = label(row, str(item.get("step", "")))
+		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if state == "pending": text.add_theme_color_override("font_color", Color("aab5c9"))
+	var heading = {"planning": "Pregătește planul", "executing": "Plan în lucru", "verifying": "Verifică rezultatele", "completed": "Plan propus" if proposal else "Plan finalizat", "paused": "Plan întrerupt", "blocked": "Plan blocat"}.get(phase, "Plan")
+	card["toggle"].text = str(heading) + (" · %s pași" % entries.size() if proposal else " · %s/%s" % [done, entries.size()])
+	card["reason"].text = str(snapshot.get("explanation", ""))
+	card["reason"].visible = not card["reason"].text.is_empty()
+	card["rows"].visible = card["node"].get_meta("expanded_by_user", phase != "completed")
+	_follow.call_deferred()
 
 func append_message(role: String, text: String, metadata: Dictionary = {}, rich: bool = true) -> RichTextLabel:
 	var row = HBoxContainer.new()
@@ -617,7 +701,20 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 	column.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
 	card.add_child(column)
 	if role != "user":
-		var heading = label(column, str(metadata.get("origin_label", "Godot AI")))
+		var identity = HBoxContainer.new()
+		column.add_child(identity)
+		var mark = TextureRect.new()
+		mark.custom_minimum_size = Vector2(16, 16) * EditorInterface.get_editor_scale()
+		mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mark.texture = _icon("Agent")
+		for profile in catalog:
+			if profile["id"] == metadata.get("profile_id"): mark.texture = provider_icon(profile)
+		identity.add_child(mark)
+		var heading = label(identity, str(metadata.get("origin_label", "Godot AI")))
+		heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		heading.tooltip_text = heading.text
+		heading.add_theme_font_size_override("font_size", int(12 * EditorInterface.get_editor_scale()))
 		heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		heading.add_theme_color_override("font_color", Color("b5a4d9"))
 	var body = VBoxContainer.new()
@@ -649,20 +746,7 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 	return anchor
 
 func _markdown(target: RichTextLabel, text: String) -> void:
-	# Construct formatting without interpreting model-supplied BBCode or HTML.
-	target.clear()
-	var lines = text.strip_edges().split("\n")
-	for line_index in range(lines.size()):
-		var line = lines[line_index]
-		var heading = line.begins_with("#")
-		if heading: target.push_bold()
-		var pieces = line.trim_prefix("### ").trim_prefix("## ").trim_prefix("# ").split("**")
-		for index in range(pieces.size()):
-			if index % 2: target.push_bold()
-			target.add_text(pieces[index])
-			if index % 2: target.pop()
-		if heading: target.pop()
-		if line_index < lines.size() - 1: target.add_text("\n")
+	Markdown.render(target, text, EditorInterface.get_editor_scale())
 
 func _size_user(record: Dictionary) -> void:
 	var scale = EditorInterface.get_editor_scale()
@@ -683,12 +767,18 @@ func _render_content(record: Dictionary) -> void:
 		var code_block = index % 2 == 1
 		if index >= blocks.size():
 			if code_block:
+				var panel = PanelContainer.new()
+				var surface = style(Color("0d1320"), 12)
+				surface.set_content_margin_all(8 * EditorInterface.get_editor_scale())
+				panel.add_theme_stylebox_override("panel", surface)
+				record["body"].add_child(panel)
 				var box = VBoxContainer.new()
-				record["body"].add_child(box)
+				panel.add_child(box)
 				var header = HBoxContainer.new()
 				box.add_child(header)
 				var language = label(header, "GDScript")
 				language.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				language.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 				language.add_theme_color_override("font_color", Color("9faac0"))
 				var editor = CodeEdit.new()
 				editor.editable = false
@@ -696,6 +786,7 @@ func _render_content(record: Dictionary) -> void:
 				editor.custom_minimum_size.y = 54 * EditorInterface.get_editor_scale()
 				editor.custom_maximum_size.y = 360 * EditorInterface.get_editor_scale()
 				editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				editor.add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
 				var colors = CodeHighlighter.new()
 				for word in ["func", "var", "extends", "if", "else", "return", "class_name", "await", "for", "in", "const", "static", "signal", "true", "false", "null"]: colors.add_keyword_color(word, Color("c4a4fc"))
 				colors.number_color = Color("91c9eb")
@@ -705,21 +796,28 @@ func _render_content(record: Dictionary) -> void:
 				colors.add_color_region("\"", "\"", Color("b4d6a3"))
 				colors.add_color_region("#", "", Color("7e8ba0"), true)
 				editor.syntax_highlighter = colors
-				icon_button(header, "Copy", "Copiază codul", func() -> void: DisplayServer.clipboard_set(editor.text))
+				var copy = icon_button(header, "Copy", "Copiază codul", func() -> void: DisplayServer.clipboard_set(editor.text))
+				_compact_button(copy)
 				box.add_child(editor)
-				blocks.append({"node": box, "editor": editor, "language": language})
+				blocks.append({"node": panel, "editor": editor, "language": language, "copy": copy})
 			else:
 				var text = RichTextLabel.new()
 				text.fit_content = true
 				text.scroll_active = false
 				text.selection_enabled = true
 				text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				text.add_theme_constant_override("line_separation", int(4 * EditorInterface.get_editor_scale()))
+				text.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
+				text.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
+				text.meta_clicked.connect(func(value: Variant) -> void:
+					if Common.parse_url(str(value), true).get("ok", false): OS.shell_open(str(value)))
 				record["body"].add_child(text)
 				blocks.append({"node": text})
 		var block: Dictionary = blocks[index]
 		if code_block:
 			var source = pieces[index]
-			block["language"].text = source.get_slice("\n", 0).strip_edges() if "\n" in source else "Cod"
+			var language = source.get_slice("\n", 0).strip_edges().left(40) if "\n" in source else "Cod"
+			block["language"].text = {"gdscript": "GDScript", "gd": "GDScript", "python": "Python", "json": "JSON", "csharp": "C#", "bash": "Shell", "": "Cod"}.get(language, language)
 			block["editor"].text = (source.substr(source.find("\n") + 1) if "\n" in source else source).trim_suffix("\n")
 		else:
 			_markdown(block["node"], pieces[index])
@@ -760,14 +858,21 @@ func _message_actions(record: Dictionary) -> void:
 	record["actions"] = []
 	for pair in [["Copy", "Copiază răspunsul", "copy"], ["Retry", "Continuă răspunsul", "retry"], ["Changes", "Modificări / Undo", "changes"]]:
 		var control = icon_button(actions, pair[0], pair[1], func() -> void: _message_action(record, pair[2]))
+		_compact_button(control)
 		control.disabled = record["streaming"]
 		record["actions"].append(control)
+	if record["metadata"].get("plan", false):
+		var apply = button(actions, "Aplică planul", func() -> void: _message_action(record, "apply_plan"))
+		apply.icon = _icon("Play")
+		_compact_button(apply)
+		apply.disabled = record["streaming"]
+		record["actions"].append(apply)
 	var more = MenuButton.new()
 	more.icon = _icon("More")
 	more.tooltip_text = "Mai multe acțiuni"
-	more.custom_minimum_size = Vector2(44, 44) * EditorInterface.get_editor_scale()
+	more.custom_minimum_size = Vector2(32, 32) * EditorInterface.get_editor_scale()
+	more.add_theme_constant_override("icon_max_width", int(16 * EditorInterface.get_editor_scale()))
 	more.get_popup().add_item("Ramifică de aici", 0)
-	if record["metadata"].get("plan", false): more.get_popup().add_item("Aplică planul", 1)
 	more.get_popup().id_pressed.connect(func(id: int) -> void: _message_action(record, "fork" if id == 0 else "apply_plan"))
 	more.disabled = record["streaming"]
 	record["actions"].append(more)
@@ -880,6 +985,7 @@ func show_attachments(images: Array, references: Array) -> void:
 func _open_options() -> void:
 	_close_drawer()
 	var wanted = Vector2i(330, 270) * EditorInterface.get_editor_scale()
+	wanted.y = maxi(wanted.y, int(runtime_options.get_child(0).get_combined_minimum_size().y + 24 * EditorInterface.get_editor_scale()))
 	var window = get_window()
 	runtime_options.size = Vector2i(mini(wanted.x, window.size.x - 32), mini(wanted.y, window.size.y - 32))
 	var origin = Vector2i(options_button.get_global_rect().position) + window.position
@@ -891,8 +997,12 @@ func set_working(working: bool) -> void:
 		stop_button.visible = working
 		_layout_composer()
 	if options_button != null and mode_picker != null and mode_picker.selected >= 0:
-		options_button.text = ["Analiză", "Confirmă", "Autonom", "Plan"][mode_picker.selected]
-		options_button.icon = _icon(["Inspect", "Confirm", "Agent", "Plan"][mode_picker.selected])
+		options_button.text = Common.MODES[mode_picker.selected]
+		options_button.icon = _icon(["Agent", "Plan"][mode_picker.selected])
+		mode_picker.disabled = working
+		for index in range(mode_buttons.size()):
+			mode_buttons[index].disabled = working
+			mode_buttons[index].set_pressed_no_signal(index == mode_picker.selected)
 
 func show_welcome() -> void:
 	thread.alignment = BoxContainer.ALIGNMENT_CENTER

@@ -6,8 +6,9 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-This describes the source implementation added on 2026-10-22. The APK built
-from `12794c4` includes it; the previously delivered APK from `e98ddb7` did not.
+The original harness ships in APK `12794c4`. The Auto/Plan extensions described
+below are a subsequent source change; its delivery evidence is tracked in
+[the project progress record](../PROGRES_SI_PLAN.md).
 
 ## Execution boundaries
 
@@ -56,6 +57,7 @@ finalized assistant and tool messages. Hooks are:
 | `context()` | Optionally rebuild project context before each model step |
 | `redact(text)` | Remove known credentials from stored/output data |
 | `checkpoint(snapshot)` | Persist the transcript and run state; `false` stops further execution |
+| `needs_continuation()` | Continue after a tool-free answer while the host has unfinished execution steps, within the same request/step/cancellation limits |
 
 The `event` signal reports state changes, request attempts, streamed text,
 finalized messages, tool starts/results, retries, and settlement. Tool-result
@@ -66,6 +68,37 @@ Outcomes distinguish `completed`, `failed`, `cancelled`, and `limited`.
 `completed` means that the model ended its tool loop; it is not independent
 proof that the user's whole project works. Step and output limits never report
 completion. Request, retry, step, and dispatched-tool counts are separate.
+
+## Auto and Plan
+
+The chat offers two user modes. Auto carries out the task; Plan inspects and
+publishes a proposal without project mutations. Confirmation is an independent
+preference, not a third mode. Existing low-level permission IDs remain internal.
+The active turn freezes its mode, and queued messages retain their selection.
+
+`planner.gd` owns a per-turn state machine and upgrades the existing `task_update`
+tool without adding another tool name. Steps accept legacy strings or structured
+`{step, status}` objects; statuses are pending, in_progress or completed, with at
+most one active step. Phases are planning, executing, verifying, completed and
+blocked. Stopping unfinished execution preserves a paused snapshot. Invalid
+updates leave the previous state unchanged. A completed execution requires all
+steps completed; a completed proposal retains its implementation steps pending.
+
+The model decides whether complexity, uncertainty or dependencies justify a plan.
+Simple requests need no checklist. Planning and proposal phases reject mutations
+at the host dispatcher. Plan mode also filters the tool catalog and enforces
+read-only permissions independently. A model cannot grant itself write permission
+through `task_update`. Auto continues after an intermediate tool-free answer when
+an execution plan is unfinished; blocked plans and proposals do not force another
+request. Step limits still stop the turn and unfinished work remains paused.
+The optional companion path allows at most five such SDK turns and reports
+interruption distinctly. Live subscription continuation has not been tested.
+
+Snapshots are stored in run checkpoints and conversation history. The chat
+restores one collapsible card per turn, rather than repeating task-update logs.
+Displayed steps are concise task progress, not internal reasoning. Completion
+states are model-reported and must be checked against real tool results; the
+harness cannot independently prove arbitrary project correctness.
 
 ## Tools, retries, and recovery
 
@@ -79,8 +112,8 @@ completion. Request, retry, step, and dispatched-tool counts are separate.
   integral JSON numbers, bounds, enums, patterns, local references, and basic
   combinators. Unsupported constraints or external references fail explicitly.
   `format` is annotation-only; this is not a complete JSON Schema implementation.
-- Only tools in the current run's registry can reach the dispatcher. Analysis
-  and Plan therefore cannot gain a mutation tool by naming it in a model reply.
+- Only tools in the current run's registry can reach the dispatcher. Plan and
+  sessions with writes disabled therefore cannot gain a mutation tool by naming it in a model reply.
   The existing editor permission checks still run before an actual operation.
 - A response must have matching assistant/tool-call data, dictionary arguments,
   nonempty unique call IDs, and at most 64 calls. A reused ID with a different
@@ -118,18 +151,18 @@ introduced by this change.
 Results on 2026-10-22. The runtime and upstream-editor rows used the upstream
 Godot 4.7.2 Linux ARM64 editor locally; the native bridge row used the fork's
 desktop editor compiled in CI. The first harness extraction passed 122
-assertions and 80 checks in each of five editor configurations. The final
-source, including tool use and the composer selector, has these results:
+assertions and 80 checks in each of five editor configurations. The current
+Auto/Plan source and earlier delivered native build have these results:
 
 | Scope | Result |
 | --- | --- |
-| Runtime compilation, protocols, registry, and harness behavior | 150 assertions, zero failures |
-| Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 132 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
-| Native diagnostics bridge | 142 checks in each of the same five configurations with the fork compiled from `12794c4` in CI, including valid/invalid draft diagnostics and the unsaved-draft guard |
-| Generated embedding header | All 15 script payloads match their source bytes (including embedded icons); registry precedes its consumers and panel remains last |
+| Runtime compilation, protocols, registry, and harness behavior | 167 assertions, zero failures locally |
+| Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 142 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
+| Native diagnostics bridge | Earlier delivered `12794c4`: 142 checks per configuration. Rebuild and native Auto/Plan execution pending |
+| Generated embedding header | All 17 script payloads match their source bytes (including embedded icons); registry precedes its consumers and panel remains last |
 
 Rendered reports and editor logs are in
-`.ai-qa/compact-authentic-icons-final/<configuration>/`; the earlier tool-use
+`.ai-qa/auto-plan-final/<configuration>/`; the earlier tool-use
 extraction reports remain in `.ai-qa/tool-use-final/<configuration>/`. The
 editor fixture loads the current embedded-service sources in an isolated
 project; the separate CI-native job rebuilds the fork's desktop editor and
@@ -140,9 +173,12 @@ local protocol fixture, plus retry exhaustion, streaming failures, cancellation,
 registry enforcement, replay/conflicting IDs, bounded results, concurrent-turn
 rejection, checkpoint failure, and transcript repair. No live API key is used.
 
-The editor fixture drives `panel._start_chat()` through the actual harness with a
+The editor fixture also checks structured planning, rejection of writes during
+planning, tool-free intermediate answers, real execution, scene verification,
+completed-plan restoration and strict Plan permissions. It drives
+`panel._start_chat()` through the actual harness with a
 deterministic provider. It creates a real scene node, reads the persisted run,
-checks the completed transcript, undoes the scene change, and verifies Analysis
+checks the completed transcript, undoes the scene change, and verifies Plan
 blocks a model-requested mutation. These checks run through the normal chat
 dispatcher, rather than calling only a mock tool executor.
 
