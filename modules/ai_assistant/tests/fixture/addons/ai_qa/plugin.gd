@@ -217,6 +217,12 @@ func _run() -> void:
 		await get_tree().create_timer(0.3).timeout
 		image = panel.settings_window.get_texture().get_image()
 		if image != null and not image.is_empty(): image.save_png(output.path_join("generation.png"))
+		for provider_index in [2, 3, 4]:
+			panel.forms["generation"]["kind"].select(provider_index)
+			panel._generation_fields(provider_index, panel.forms["generation"]["workflow_fields"], true)
+			await get_tree().create_timer(0.2).timeout
+			image = panel.settings_window.get_texture().get_image()
+			if image != null and not image.is_empty(): image.save_png(output.path_join("generation-" + panel.Assets.KINDS[provider_index] + ".png"))
 		panel.settings_window.hide()
 		panel.chat._open_options()
 		await get_tree().create_timer(0.2).timeout
@@ -291,7 +297,7 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel._new_conversation()
 	var service = FixtureProvider.new()
 	panel.providers = service
-	panel.mode_picker.select(0)
+	panel.mode_picker.select(1)
 	panel.full_control.button_pressed = true
 	await panel._start_chat("Create the fixture node and verify the tool result")
 	_check(not panel.busy and panel.harness.state == "completed" and service.requests == 3 and scene.get_node_or_null("HarnessProbe") != null, "Native harness discovers a tool, connects chat/model and edits the scene")
@@ -303,7 +309,7 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel._new_conversation()
 	service.requests = 0
 	service.call_id = "fixture-analysis-write"
-	panel.mode_picker.select(1)
+	panel.mode_picker.select(2)
 	panel.full_control.button_pressed = false
 	await panel._start_chat("Inspect without modifying")
 	_check(not panel.busy and scene.get_node_or_null("HarnessProbe") == null and "tool_unavailable" in str(panel.history[2].get("content", "")), "Analysis mode excludes mutation tools even when the model requests one")
@@ -313,14 +319,14 @@ func _harness_editor_tests(scene: Node) -> void:
 	var planning_service = FixturePlanningProvider.new()
 	panel.providers = planning_service
 	await panel._start_chat("Pregătește un plan, creează nodul și verifică rezultatul")
-	_check(panel.mode_picker.item_count == 2 and panel.mode_picker.get_item_text(0) == "Auto" and panel.mode_picker.get_item_text(1) == "Plan", "Only Auto and Plan are exposed as work modes")
+	_check(panel.mode_picker.item_count == 3 and panel.mode_picker.get_item_text(0) == "Auto" and panel.mode_picker.get_item_text(1) == "Default" and panel.mode_picker.get_item_text(2) == "Plan", "Auto, Default and Plan are exposed as work modes")
 	_check(planning_service.requests == 10 and panel.harness.state == "completed" and scene.get_node_or_null("PlannedProbe") != null, "Auto continues a proposed execution plan and completes real scene edits")
 	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_create_node" and "plan_read_only" in str(item.get("content", ""))), "Planning blocks project writes before the explicit execution phase")
 	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_scene_tree" and "PlannedProbe" in str(item.get("content", ""))), "The verification phase inspects the actual modified scene")
 	_check(panel.planner.phase == "completed" and panel.history[-1].get("plan_snapshot", {}).get("phase") == "completed", "Completed plan state is saved with the conversation")
 	panel._render_history()
 	_check(panel.chat.plan_cards.size() == 1 and panel.chat.plan_cards[panel.current_turn]["toggle"].text.contains("2/2"), "Conversation restore shows one updated plan card with completed steps")
-	panel.mode_picker.select(1)
+	panel.mode_picker.select(2)
 	_check(not await panel._authorize({"name": "godot_create_node", "risk": "write"}, {}), "Manual Plan refuses writes even when session writes are enabled")
 	panel.tools.execute("godot_undo", {}, 2, true)
 	panel._new_conversation()
@@ -422,7 +428,7 @@ func _chat_workflow_tests() -> void:
 	_check(panel.chat.drawer_stage == "models", "Reasoning drawer can return to model selection")
 	_tap_drawer("model", "qa-code")
 	_tap_drawer("effort", "high")
-	_check(not panel.chat.picker.visible and panel._selection() == {"profile": "qa-cloud", "model": "qa-code", "effort": "high", "ui_mode": 0} and panel.chat.reasoning_button.text == "Ridicat", "Reasoning choice applies provider, model and effort together and updates composer chips")
+	_check(not panel.chat.picker.visible and panel._selection() == original_selection.merged({"profile": "qa-cloud", "model": "qa-code", "effort": "high"}, true) and panel.chat.reasoning_button.text == "Ridicat", "Reasoning choice applies provider, model and effort together and updates composer chips")
 	panel.chat.reasoning_button.pressed.emit()
 	_check(panel.chat.drawer_stage == "reasoning", "Reasoning chip reopens the current model's reasoning drawer directly")
 	var escape = InputEventKey.new()
@@ -453,7 +459,7 @@ func _chat_workflow_tests() -> void:
 	panel._decide(false)
 	await get_tree().process_frame
 	_check(decisions.get("second") == false, "Second concurrent operation can be independently denied")
-	panel.mode_picker.select(1)
+	panel.mode_picker.select(2)
 	panel.full_control.button_pressed = false
 	panel.config["providers"] = []
 	panel._status("Configurează un furnizor din Setări pentru a începe.")
@@ -538,6 +544,21 @@ func _plan_and_markdown_screenshots(output: String) -> void:
 	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("structured-plan.png"))
 
 func _control_settings_tests() -> void:
+	_check(panel.Common.work_mode_index({"ui_mode": 1}) == 2 and panel.Common.work_mode_index({"work_mode": "default", "ui_mode": 1}) == 1, "Legacy Plan conversations restore read-only while new Default remains distinct")
+	panel.mode_picker.select(1)
+	_check(panel._mode() == 4 and "DEFAULT MODE" in panel._context_messages()[0]["content"] and "one or two short sentences" in panel._context_messages()[0]["content"], "Default is balanced and simple identity replies are instructed to stay compact")
+	var form = panel.forms["generation"]
+	form["kind"].select(2)
+	panel._generation_fields(2, form["workflow_fields"], true)
+	_check(form["asset_kind"].selected == 1 and form["asset_kind"].disabled and not form["allow_http"].visible and not form["groups"]["url"].visible, "Meshy form enforces GLB and fixed secure endpoint")
+	form["kind"].select(4)
+	panel._generation_fields(4, form["workflow_fields"], true)
+	_check(form["asset_kind"].selected == 0 and form["asset_kind"].disabled and not form["workflow_import"].visible, "OpenAI Images form exposes PNG without unrelated workflow actions")
+	form["kind"].select(3)
+	panel._generation_fields(3, form["workflow_fields"], true)
+	_check(not form["asset_kind"].disabled and form["kind"].item_count == 5, "Tripo supports both image and GLB profiles alongside existing generators")
+	form["kind"].select(0)
+	panel._generation_fields(0, form["workflow_fields"], true)
 	_check(panel.section_tabs.has("integrations") and not panel.section_tabs.has("automations") and panel.settings_tabs.get_tab_title(panel.section_tabs["agent"]) == "AGENT.MD", "Integrations and AGENT.MD replace legacy sections")
 	_check(panel.forms["general"].has("yolo") and panel.forms["general"].has("dock") and panel.forms["general"].has("sounds") and not panel.forms["general"].has("max_steps") and not panel.forms["general"].has("enabled"), "General exposes control preferences without technical runtime settings")
 	_check(not "Permisiuni" in panel._settings_labels(panel.chat.runtime_options) and not "Extinde" in panel._settings_labels(panel.chat.runtime_options), "Work mode menu contains no permissions or duplicate expand action")
@@ -546,7 +567,7 @@ func _control_settings_tests() -> void:
 	_check(panel._permission_mode() == 1, "YOLO off requires individual operation approval")
 	panel.full_control.button_pressed = true
 	_check(panel._permission_mode() == 2 and panel.config["preferences"]["yolo"], "YOLO preference is saved immediately and enables automatic operations")
-	panel.mode_picker.select(1)
+	panel.mode_picker.select(2)
 	_check(panel._permission_mode() == 3, "Plan stays read-only even with YOLO enabled")
 	panel.mode_picker.select(0)
 	panel._set_usage({"usedTokens": 500, "contextWindowTokens": 1000}, {"models": [{"id": "fixture", "context": 0}]}, "fixture")
@@ -566,6 +587,9 @@ func _control_settings_tests() -> void:
 	var definitions = panel.active_definitions
 	panel.active_definitions = panel.Workspace.definitions()
 	panel.planner.reset("skills-fixture")
+	var needs_plan = await panel._execute_call("skill_save", {"id": "unplanned-auto", "description": "Must plan", "instructions": "Do not write yet"})
+	_check(needs_plan.get("code") == "plan_required" and not FileAccess.file_exists("res://.godot_ai/skills/unplanned-auto/SKILL.md"), "Auto enforces a plan before project changes even with YOLO")
+	panel.mode_picker.select(1)
 	var saved = await panel._execute_call("skill_save", {"id": "scene-check", "description": "Verifică o scenă", "instructions": "Inspectează nodurile, rulează verificările și raportează rezultatul."})
 	_check(saved.get("ok", false) and FileAccess.file_exists("res://.godot_ai/skills/scene-check/SKILL.md") and panel.lists["skills"].item_count == 1, "Agent skill creation writes a portable SKILL.md and updates the manager")
 	var read = panel.workspace.read("scene-check")
@@ -577,10 +601,10 @@ func _control_settings_tests() -> void:
 	panel.workspace.set_enabled("scene-check", true)
 	panel._edit_skill(0)
 	_check(panel.forms["skill"]["instructions"].text.begins_with("Inspectează"), "Skill manager edits instructions without duplicating front matter")
-	panel.mode_picker.select(1)
+	panel.mode_picker.select(2)
 	var denied = await panel._execute_call("skill_save", {"id": "forbidden-plan", "description": "Denied", "instructions": "Must not write"})
 	_check(not denied.get("ok", true) and not FileAccess.file_exists("res://.godot_ai/skills/forbidden-plan/SKILL.md"), "Plan cannot create skills through the editor dispatcher")
-	panel.mode_picker.select(0)
+	panel.mode_picker.select(1)
 	var deleted = panel.workspace.remove("scene-check", read["result"]["sha256"])
 	var recovery = panel.tools.execute("godot_restore_file", {"index": deleted.get("result", {}).get("recovery", {}).get("recovery_index", -1)}, 2, true)
 	_check(deleted.get("ok", false) and recovery.get("ok", false) and panel.workspace.read("scene-check").get("ok", false), "Skill deletion retains a working native recovery copy")

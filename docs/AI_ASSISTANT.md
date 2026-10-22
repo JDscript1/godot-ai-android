@@ -15,9 +15,10 @@ opens the same global configuration window.
   IDs remain available for servers without a listing endpoint.
 - **Abonamente:** use **Continue with ChatGPT** for the native SIWC flow. Claude,
   Copilot and Kimi use the optional companion on your own computer/server.
-- **Generare:** configure Runware with your key and model, or an existing ComfyUI
+- **Generare:** choose Runware, Meshy, Tripo, OpenAI Images or an existing ComfyUI
   server. Import a workflow exported in API format, bind its prompt/reference fields
   and output node, then validate the server. PNG and self-contained GLB 2.0 are supported.
+  See [native generation adapters](AI_GENERATION.md) for direct-provider capabilities.
   Runware's public catalog lists model IDs; it does not validate your credentials.
   Its image form supports text-to-image. For 3D, TRELLIS.2 requires a reference image;
   Rodin, Meshy, Tripo and Hunyuan accept text or the supported reference binding.
@@ -29,8 +30,8 @@ opens the same global configuration window.
 - **Integrări:** GitHub, desktop Blender CLI, project Skills and saved tasks.
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current [control and integration changes](AI_INTEGRATIONS.md) are source-only;
-the last delivered APK remains `9a019f6`. No APK was rebuilt for this stage.
+The current control, integration and generation changes are being compiled in
+a new APK. Delivery evidence is recorded in [the project progress document](../PROGRES_SI_PLAN.md).
 
 HTTP is opt-in per local connection. `127.0.0.1` means this Android device; a server
 on your computer needs its reachable LAN address or authenticated HTTPS endpoint.
@@ -38,15 +39,18 @@ No inference runtime or generation model is installed automatically.
 
 ## Execution and recovery
 
-The chat exposes **Auto** and **Plan**, with Auto as the default. The mode menu
-contains only those two choices. General's **YOLO · editări automate** defaults
-to off: Auto asks for each modifying/external operation. Enabling YOLO permits
+The chat exposes **Auto / Default / Plan**. Default is initially selected for
+new configurations; existing Plan conversations retain read-only access. Auto
+requires a concise executing plan before modifying/external operations. Default
+works directly for simple tasks and plans complex ones. The mode menu contains
+only those three choices. General's **YOLO · editări automate** defaults
+to off: Auto and Default ask for each modifying/external operation. Enabling YOLO permits
 automatic operations; Plan remains read-only regardless of YOLO. Applying a plan
 switches to Auto and retains the permission preference. Preferences save immediately.
 
 For complex work the model publishes structured task steps through `task_update`.
 Planning is read-only; the model must publish the executing phase before writes.
-Auto continues unfinished execution plans within its step budget. A plan-only
+Auto and Default continue unfinished execution plans within its step budget. A plan-only
 request remains a proposal. This is model-directed task planning, not a local
 complexity classifier or a guarantee of a provider's coding quality.
 
@@ -214,7 +218,7 @@ while preserving the original conversation.
 Plan mode permits inspection and presents an Apply plan button, which switches
 to Auto. The YOLO/confirmation preference remains in effect.
 Messages sent during a turn enter a queue with their own provider/model/reasoning
-and Auto/Plan selection; the active turn keeps its original mode. Stop pauses the queue; `/resume` continues it and
+and Auto/Default/Plan selection; the active turn keeps its original mode. Stop pauses the queue; `/resume` continues it and
 `/steer <instructions>` interrupts the current turn before using the new request.
 AGENTS.md guidance and editable project memories are included in context.
 
@@ -244,7 +248,7 @@ User messages form small right-aligned bubbles;
 assistant messages use the main reading column. The composer starts at one line
 and grows to a bounded height. Image and project references appear as removable
 chips, with image thumbnails. Empty task/reference rows reserve no space.
-Stop appears only while working. The mode menu contains Auto/Plan only. Context filling has its own ring and
+Stop appears only while working. The mode menu contains Auto/Default/Plan only. Context filling has its own ring and
 percentage in the bottom toolbar; details appear on hover. Empty conversations show one welcome prompt.
 
 Assistant messages have compact provider identities and native Markdown for

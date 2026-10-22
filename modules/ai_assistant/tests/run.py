@@ -49,7 +49,29 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
-        if location.path == "/repos/fixture/project":
+        if location.path.startswith(("/meshy/", "/tripo/", "/openai_image/")):
+            if self.headers.get("Authorization") != "Bearer generation-fixture-key":
+                self.reply({"error": "missing fixture authorization"}, 401)
+                return
+            if location.path.endswith("/balance"):
+                self.reply({"code": 0, "data": {"balance": 100}} if location.path.startswith("/tripo/") else {"balance": 100})
+            elif location.path.endswith("/models"):
+                self.reply({"data": [{"id": "gpt-image-2.5-flare"}, {"id": "fixture-code"}]})
+            else:
+                task = location.path.rsplit("/", 1)[-1]
+                output_url = f"http://127.0.0.1:{self.server.server_port}/artifact/" + ("image.png" if task == "image-task" else "model.glb")
+                if task == "foreign-task": output_url = "https://attacker.example/model.glb"
+                status = "failed" if task == "failed-task" else "success"
+                data = {"status": status, "progress": 100, "output": {"model_url": output_url, "generated_image_url": output_url}, "credits_consumed": 4}
+                self.reply({"code": 0, "data": data} if location.path.startswith("/tripo/") else {"status": "FAILED" if status == "failed" else "SUCCEEDED", "progress": 100, "model_urls": {"glb": output_url}})
+            return
+        if location.path.startswith("/artifact/"):
+            if self.headers.get("Authorization"):
+                self.reply({"error": "credentials sent to CDN"}, 403)
+            else:
+                mesh = location.path.endswith(".glb")
+                self.reply(glb() if mesh else png(), content_type="model/gltf-binary" if mesh else "image/png")
+        elif location.path == "/repos/fixture/project":
             self.reply({"full_name": "fixture/project", "default_branch": "main", "private": False})
         elif location.path == "/repos/fixture/project/contents/script.gd":
             self.reply({"type": "file", "path": "script.gd", "size": 13, "sha": "fixture-sha", "encoding": "base64", "content": base64.b64encode(b"extends Node\n").decode()})
@@ -70,9 +92,30 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             self.reply({"error": "not found"}, 404)
 
     def do_POST(self):
-        payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if self.path == "/tripo/files":
+            valid = self.headers.get("Authorization") == "Bearer generation-fixture-key" and b'name="file"' in raw and png() in raw
+            self.reply({"code": 0, "data": {"file_token": "file_fixture"}} if valid else {"code": 1004, "message": "invalid multipart upload"})
+            return
+        payload = json.loads(raw or b"{}")
         location = urllib.parse.urlparse(self.path)
-        if location.path == "/repos/fixture/project/issues":
+        if location.path.startswith(("/meshy/", "/tripo/", "/openai_image/")):
+            if self.headers.get("Authorization") != "Bearer generation-fixture-key":
+                self.reply({"error": "missing fixture authorization"}, 401)
+                return
+            task = "failed-task" if payload.get("prompt") == "fail" else ("foreign-task" if payload.get("prompt") == "foreign" else "mesh-task")
+            if location.path.startswith("/openai_image/"):
+                valid = payload.get("output_format") == "png" and "response_format" not in payload and payload.get("n") == 1
+                image = b"invalid" if payload.get("prompt") == "invalid" else png()
+                self.reply({"data": [{"b64_json": base64.b64encode(image).decode()}]} if valid else {"error": "wrong image schema"}, 200 if valid else 400)
+            elif location.path.startswith("/meshy/"):
+                valid = payload.get("target_formats") == ["glb"] and (payload.get("mode") == "preview" if "text-to-3d" in location.path else payload.get("image_url", "").startswith("data:image/png;base64,"))
+                self.reply({"result": task} if valid else {"error": "wrong mesh schema"}, 200 if valid else 400)
+            else:
+                if location.path.endswith("text-to-image"): task = "image-task"
+                valid = payload.get("input") == "file_fixture" if location.path.endswith("image-to-model") else bool(payload.get("prompt"))
+                self.reply({"code": 0, "data": {"task_id": task}} if valid else {"code": 1004, "message": "wrong tripo schema"})
+        elif location.path == "/repos/fixture/project/issues":
             self.reply({"number": 4, "title": payload["title"], "state": "open", "html_url": "https://github.com/fixture/project/issues/4"}, 201)
         elif location.path == "/mcp":
             method = payload.get("method")

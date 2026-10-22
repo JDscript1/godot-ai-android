@@ -89,6 +89,21 @@
     "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/github.svg",
     "sha256": "1bd763b5d53ab1618e0afce72aacffc7e93d1249c395f713b3b055c087526625"
   },
+  "Provider_meshy": {
+    "file": "lobe/meshy-color.svg",
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/meshy-color.svg",
+    "sha256": "2e5ae17b98777ed8fc850ab7b9c8f4bfbf2cc1dcb1627dc9695a25056e2cd786"
+  },
+  "Provider_tripo": {
+    "file": "lobe/tripo-color.svg",
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/tripo-color.svg",
+    "sha256": "3c7b94874e10fd41031f9d9554b3d1dfa0f310820d3a3c53463c7d66f45c7a4f"
+  },
+  "Provider_comfyui": {
+    "file": "lobe/comfyui-color.svg",
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/comfyui-color.svg",
+    "sha256": "2f14161b0c6ce1c314b66cac785ac81948bf2b34b784b114e5df09b6797894c6"
+  },
   "Add": {
     "file": "lucide/plus.svg",
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/plus.svg",
@@ -283,6 +298,11 @@
     "file": "lucide/code-xml.svg",
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/code-xml.svg",
     "sha256": "a6d2110227be375be21da7324d3c09262c1bf019d06bdeab356d515342ab7cce"
+  },
+  "Chat": {
+    "file": "lucide/message-circle.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/message-circle.svg",
+    "sha256": "146f39740fe50844394d56ae1f8821937655bcfff3842bf6fe8ffc0bcd324076"
   },
   "Skills": {
     "file": "lucide/book-open-check.svg",

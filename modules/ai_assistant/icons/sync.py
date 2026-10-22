@@ -19,6 +19,7 @@ BRANDS = {
     'zai': 'zai', 'minimax': 'minimax-color', 'nvidia': 'nvidia-color',
     'siliconflow': 'siliconcloud-color', 'ollama': 'ollama', 'lmstudio': 'lmstudio',
     'copilot': 'githubcopilot', 'github': 'github',
+    'meshy': 'meshy-color', 'tripo': 'tripo-color', 'comfyui': 'comfyui-color',
 }
 ACTIONS = {
     'Add': 'plus', 'ArrowUp': 'arrow-up', 'Stop': 'square', 'Microphone': 'mic',
@@ -31,7 +32,7 @@ ACTIONS = {
     'MCP': 'plug', 'Generation': 'image', 'Automations': 'zap', 'Journal': 'notebook-text',
     'Play': 'play', 'Favorite': 'star', 'Rename': 'pencil', 'Archive': 'archive',
     'Export': 'upload', 'Delete': 'trash', 'File': 'file', 'Provider_custom': 'code-xml',
-    'Skills': 'book-open-check', 'Integrations': 'puzzle', 'Sound': 'volume-2',
+    'Chat': 'message-circle', 'Skills': 'book-open-check', 'Integrations': 'puzzle', 'Sound': 'volume-2',
 }
 
 

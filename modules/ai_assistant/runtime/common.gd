@@ -4,7 +4,9 @@ extends RefCounted
 const VERSION = "0.1.0"
 const BUILTIN_PREFIX = "res://__godot_ai_builtin__/"
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
-const MODES = ["Auto", "Plan"]
+const MODES = ["Auto", "Default", "Plan"]
+const MODE_IDS = [2, 4, 3]
+const MODE_ICONS = ["Agent", "Chat", "Plan"]
 
 static func uid() -> String:
 	var bytes = Crypto.new().generate_random_bytes(16)
@@ -145,3 +147,10 @@ static func redact(text: String, secrets: Array) -> String:
 	var expression = RegEx.new()
 	expression.compile("(?i)(Bearer\\s+|(?:api[_-]?key|refresh_token|access_token)[\\\"\\s:=]+)[A-Za-z0-9_.+/=-]{8,}")
 	return expression.sub(output, "$1[secret]", true)
+
+static func work_mode_index(selection: Dictionary) -> int:
+	if selection.has("work_mode"):
+		var index = ["auto", "default", "plan"].find(str(selection["work_mode"]))
+		return index if index >= 0 else 1
+	# Older conversations stored only Auto=0 / Plan=1. Never restore Plan as Default.
+	return 2 if int(selection.get("ui_mode", 0)) in [1, 2, 3] else 0

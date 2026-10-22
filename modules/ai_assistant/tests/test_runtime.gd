@@ -144,6 +144,7 @@ func _run() -> void:
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
 	if not mock_url.is_empty():
 		await _network_tests(node)
+		await _cloud_generation_tests(node)
 		await _integration_tests(node)
 	node.queue_free()
 	await process_frame
@@ -204,7 +205,7 @@ func _integration_tests(node: Node) -> void:
 func _planning_tests(node: Node) -> void:
 	var plan = scripts["planner"].new()
 	plan.reset("plan-test")
-	check(plan.can_write() and not plan.needs_continuation(), "A simple Auto task does not require a plan or extra requests")
+	check(plan.can_write() and not plan.needs_continuation(), "Planner starts idle; the host enforces the selected mode policy")
 	var steps = [{"step": "Inspect", "status": "in_progress"}, {"step": "Verify", "status": "pending"}]
 	check(scripts["tool_registry"].validate(scripts["planner"].definition(), {"tasks": steps, "phase": "planning"}).get("ok", false), "Structured plans use the common tool schema validator")
 	check(plan.update({"tasks": steps, "phase": "planning"}).get("ok", false) and not plan.can_write() and plan.needs_continuation(), "Auto planning is inspect-only and remains an unfinished task")
@@ -559,3 +560,59 @@ func _new_feature_tests() -> void:
 	check(not jobs.spawn("Inspect", "Explore", {"id": "third"}, "m", "", "p").get("ok", false), "Cloud child limit applies across provider profiles")
 	jobs.jobs.erase("two")
 	check(not jobs.spawn("Inspect", "General", {"id": "local", "issuer": "ollama"}, "m", "", "p").get("ok", false), "Local models do not start an extra parallel child")
+
+func _cloud_generation_tests(node: Node) -> void:
+	var script = scripts["assets"]
+	var common = scripts["common"]
+	check(common.work_mode_index({"ui_mode": 1}) == 2 and common.work_mode_index({"work_mode": "default", "ui_mode": 1}) == 1, "Old Plan selections migrate safely and Default has a stable name")
+	var meshy_text = script.cloud_payload({"kind": "meshy", "asset_kind": "mesh", "model": "latest"}, "bird")
+	check(meshy_text.get("result", {}).get("endpoint") == "/openapi/v2/text-to-3d" and meshy_text["result"]["body"]["mode"] == "preview", "Meshy text-to-3D uses preview v2 schema")
+	var meshy_image = script.cloud_payload({"kind": "meshy", "asset_kind": "mesh"}, "bird", "data:image/png;base64,fixture")
+	check(meshy_image["result"]["endpoint"] == "/openapi/v1/image-to-3d" and meshy_image["result"]["body"]["should_texture"], "Meshy image-to-3D requests a textured GLB")
+	var tripo_image = script.cloud_payload({"kind": "tripo", "asset_kind": "image"}, "bird")
+	check(tripo_image["result"]["endpoint"] == "/generation/text-to-image" and tripo_image["result"]["body"]["output_format"] == "png", "Tripo image generation uses v3 and PNG output")
+	check(not script.cloud_payload({"kind": "openai_image", "asset_kind": "image"}, "bird", "reference").get("ok", false), "OpenAI text-image profiles reject unsupported references before HTTP")
+	var vault = FakeVault.new()
+	var assets = script.new(node, vault)
+	assets.test_http = true
+	for provider in ["meshy", "tripo", "openai_image"]: assets.api_urls[provider] = mock_url + "/" + provider
+	var cache = OS.get_user_data_dir().path_join("cloud-generation")
+	assets.configure(cache)
+	var reference = "res://ai_test_reference.png"
+	var transport = scripts["transport"].new(node)
+	await transport.request(mock_url + "/artifact/image.png", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "save_path": reference})
+	for entry in [["meshy", "mesh", ""], ["meshy", "mesh", reference], ["tripo", "mesh", ""], ["tripo", "mesh", reference], ["tripo", "image", ""], ["openai_image", "image", ""]]:
+		var profile = {"id": "fixture-" + entry[0], "kind": entry[0], "asset_kind": entry[1], "model": ""}
+		vault.store(profile["id"], "generation-fixture-key")
+		var catalog = await assets.models(profile, {})
+		check(catalog.get("ok", false) and catalog.get("credential_verified", false) and not catalog.get("result", []).is_empty(), "Provider credential check and model presets: " + str(entry))
+		var submitted = await assets.submit(profile, "bird", entry[2], {})
+		check(submitted.get("ok", false), "Native generation HTTP submission: " + str(entry))
+		if not submitted.get("ok", false): continue
+		var id = str(submitted["result"]["id"])
+		var recovered = script.new(node, vault)
+		recovered.configure(cache)
+		check(not recovered.find_job(id).is_empty(), "Generation jobs survive runtime restart: " + str(entry))
+		var completed = await assets.wait_for_job(id, profile, {}, 1)
+		check(completed.get("ok", false) and completed.get("result", {}).get("status") == "completed", "Cloud download without API-key leakage and artifact validation: " + str(entry))
+		if not completed.get("ok", false): continue
+		var imported = assets.import_job(id, "res://ai_test_assets")
+		check(imported.get("ok", false) and FileAccess.file_exists(str(imported.get("result", {}).get("path", ""))), "Generated PNG/GLB imports into project: " + str(entry))
+		if entry[1] == "mesh":
+			var document = GLTFDocument.new()
+			var state = GLTFState.new()
+			check(document.append_from_file(str(completed["result"]["file"]), state) == OK, "Provider GLB loads through Godot importer: " + str(entry))
+		var wrong = profile.duplicate()
+		wrong["id"] = "wrong-profile"
+		check(not (await assets.refresh(id, wrong, {})).get("ok", false), "Saved generation job refuses a different credential profile")
+	var profile = {"id": "fixture-tripo", "kind": "tripo", "asset_kind": "mesh"}
+	for prompt in ["fail", "foreign"]:
+		var submitted = await assets.submit(profile, prompt, "", {})
+		var outcome = await assets.refresh(str(submitted.get("result", {}).get("id", "")), profile, {})
+		check(not outcome.get("ok", true), "Cloud generation failure or untrusted CDN is rejected: " + prompt)
+	check((await assets.submit(profile, "bird", "", {"cancelled": true})).get("code") == "cancelled", "Pre-cancelled generation cannot submit a paid task")
+	var invalid = await assets.submit({"id": "fixture-openai_image", "kind": "openai_image", "asset_kind": "image"}, "invalid", "", {})
+	check(not invalid.get("ok", true) and assets.jobs[-1].get("status") == "failed", "Invalid base64 image output is recorded as failure without import")
+	vault.erase("fixture-tripo")
+	check((await assets.submit(profile, "bird", "", {})).get("code") == "missing_credentials", "Cloud generation requires this profile's own API key")
+	DirAccess.remove_absolute(reference)

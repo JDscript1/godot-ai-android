@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Explicit task state. Planning never changes the user's selected Auto/Plan mode.
+## Explicit task state. Planning never changes the user's selected Auto/Default/Plan mode.
 static var Common: GDScript
 var phase = "idle"
 var intent = "execute"
@@ -18,7 +18,7 @@ func reset(id: String = "", propose: bool = false) -> void:
 	revision = 0
 
 static func definition() -> Dictionary:
-	return Common.tool("task_update", "Publish or revise a visible task plan. Use for multi-step, uncertain or cross-file work before modifying the project. Update actual step states as you work; at most one in_progress. planning is read-only. Switch to executing before writes, verifying for checks, completed only after finishing. For a plan-only request set intent=propose; mark blocked with explanation if you cannot continue. Simple tasks do not require a plan.", {"tasks": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"anyOf": [{"type": "string"}, Common.schema({"step": Common.string_field(), "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}}, ["step", "status"])]}}, "phase": {"type": "string", "enum": ["planning", "executing", "verifying", "completed", "blocked"]}, "intent": {"type": "string", "enum": ["execute", "propose"]}, "explanation": Common.string_field()}, ["tasks"])
+	return Common.tool("task_update", "Publish or revise a visible task plan. Use for multi-step, uncertain or cross-file work before modifying the project. Update actual step states as you work; at most one in_progress. planning is read-only. Switch to executing before writes, verifying for checks, completed only after finishing. For a plan-only request set intent=propose; mark blocked with explanation if you cannot continue. Default mode allows simple tasks without a plan; Auto requires a short executing plan before any mutation or external operation.", {"tasks": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"anyOf": [{"type": "string"}, Common.schema({"step": Common.string_field(), "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}}, ["step", "status"])]}}, "phase": {"type": "string", "enum": ["planning", "executing", "verifying", "completed", "blocked"]}, "intent": {"type": "string", "enum": ["execute", "propose"]}, "explanation": Common.string_field()}, ["tasks"])
 
 func update(args: Dictionary, propose: bool = false) -> Dictionary:
 	var next_intent = "propose" if propose else str(args.get("intent", intent))

@@ -19,10 +19,10 @@ drept funcție validată cu un serviciu real.
   Este livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`. Versiunea
   `12794c4` a fost înlocuită atomic; în Download rămâne un singur APK al fork-ului.
 
-**Etapa curentă este numai în surse:** control YOLO, indicator de context,
-dock stânga/dreapta, sunete, Integrări, Skills, consola de jurnal și AGENT.MD.
-La cererea utilizatorului nu se regenerează APK-ul și nu se pornește workflow-ul
-Android. Installerul `9a019f6` din Download rămâne neschimbat.
+**Etapa curentă este autorizată pentru compilare și livrare:** control YOLO,
+context, dock-uri, sunete, Integrări, Skills, jurnal, AGENT.MD, Auto / Default / Plan
+și generare nativă Meshy / Tripo / OpenAI Images. Până la verificarea noului APK,
+installerul anterior `9a019f6` rămâne în Download.
 
 ## Implementări existente
 
@@ -55,7 +55,7 @@ Android. Installerul `9a019f6` din Download rămâne neschimbat.
 - Controale compacte în composer: înălțime de 32 unități, iconuri de 16 unități,
   text de 12 unități și margini reduse. Selectorul ocupă lățimea textului, până
   la 150 unități; reasoning-ul până la 104. Valorile se adaptează scalei editorului.
-- **61 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
+- **65 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
   Icons, logo llama.cpp din repository-ul ggml-org și acțiuni Lucide. Acestea
   înlocuiesc aproximările desenate anterior. Sunt încorporate local, fără acces
   la internet la afișare. Sursele, reviziile fixe, hash-urile și licențele sunt în
@@ -96,15 +96,15 @@ Android. Installerul `9a019f6` din Download rămâne neschimbat.
 - Salvarea progresului înainte de execuție și după rezultate; o eroare de
   salvare oprește operațiile următoare. Apelurile întrerupte sunt închise explicit
   în istoric, fără reluarea automată a unor modificări neconfirmate.
-- Două moduri vizibile: **Auto** (implicit) și **Plan**. Meniul de lucru conține
-  numai aceste opțiuni. General controlează **YOLO**, implicit dezactivat: Auto
-  cere confirmarea operațiilor de modificare/externe, iar YOLO activ le permite
-  automat. Plan rămâne doar pentru citire. Editările de scenă folosesc Undo; fișierele au recuperare.
-- Auto cere modelului să aleagă planificarea după complexitate, incertitudine și
-  dependențe. `task_update` acceptă pași structurați și faze de planificare,
-  execuție, verificare, finalizare sau blocaj. Planificarea blochează scrierile,
-  iar pașii neîncheiați continuă în bucla limitată a harness-ului. Stop și limitele
-  păstrează progresul întrerupt. Un plan propus nu declanșează execuția.
+- Trei moduri vizibile: **Auto / Default / Plan**. Default este inițial pentru
+  configurații noi; selecțiile vechi Plan sunt migrate fără a permite scrierea.
+  Auto cere un plan scurt înaintea modificărilor/operațiilor externe, verificat
+  și de dispatcher. Default permite lucrul direct pentru sarcini simple și
+  planifică după complexitate. Plan rămâne doar pentru citire, indiferent de YOLO.
+- YOLO este implicit oprit și controlează confirmările în Auto și Default.
+  `task_update` publică pași și faze; planning și propunerile blochează scrierile,
+  iar faza executing permite modificări. Ambele moduri de execuție continuă
+  planurile neîncheiate în limitele harness-ului. Stop păstrează progresul.
 - Planul se afișează într-un card pliabil din conversație, cu un singur pas în
   lucru, stări distincte și restaurare din istoric. **Aplică planul** trece în
   Auto și păstrează preferința YOLO.
@@ -129,7 +129,7 @@ Android. Installerul `9a019f6` din Download rămâne neschimbat.
 
 ### Generare, voce și automatizări
 
-- Profile Runware și ComfyUI, joburi persistente, polling, descărcare și validare
+- Profile Runware, ComfyUI, Meshy, Tripo și OpenAI Images, joburi persistente, polling, descărcare și validare
   PNG/GLB, previzualizare și import fără suprascrierea fișierelor existente.
 - Catalog public Runware verificat; acesta nu dovedește generare cu credite.
 - Integrare de voce Android și endpoint compatibil Whisper. Verificarea completă
@@ -393,3 +393,28 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).
+
+## Etapa Auto / Default / Plan și generare directă — 22.10.2026
+
+- Auto planifică proactiv și cere `task_update` înaintea primei modificări;
+  Default este echilibrat, Plan este strict read-only. Selecția salvată are nume
+  stabil; vechiul index Plan=1 este migrat la Plan=2, fără escaladare de acces.
+- Promptul comun cere răspunsuri de una-două propoziții pentru saluturi,
+  identitate și întrebări simple, fără liste de funcții sau planuri inutile.
+- Adaptoare native REST: Meshy text→GLB preview și imagine→GLB texturat;
+  Tripo v3 text/imagine→3D și text→PNG; OpenAI Images GPT Image text→PNG.
+  Runware și ComfyUI sunt păstrate. Configurare separată, chei în vault,
+  endpointuri cloud fixe HTTPS și logo-uri originale Meshy/Tripo/ComfyUI.
+- Persistență, polling, upload multipart Tripo, validare PNG/GLB și import
+  fără suprascriere; cheile API nu sunt trimise la CDN. Oprirea urmăririi nu
+  anulează sarcina taxabilă deja acceptată de furnizor. Meshy din text oferă
+  geometria inițială; rafinarea/texturarea în a doua etapă nu este automatizată.
+- Verificări locale: **237 aserțiuni runtime** și **178 × 5 verificări în editor**
+  fără erori; trei teste de livrare, C++ syntax/format, 19 scripturi încorporate
+  exact și 65 SVG-uri cu hash valid. Inspectate capturile pentru cele trei moduri
+  și formularele Meshy/Tripo. Datele APK vor fi înscrise după finalizare.
+- Documentație: `docs/AI_GENERATION.md`; dovezi în `.ai-qa/modes-generation-*`.
+  Testele de generare folosesc fixture HTTP, nu chei plătite reale.
+
+Jurnal: **22.10.2026** — adăugate cele trei moduri, politica Auto, răspunsuri
+compacte și adaptoarele Meshy/Tripo/OpenAI; compilarea APK este autorizată din nou.

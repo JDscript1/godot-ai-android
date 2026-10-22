@@ -45,7 +45,7 @@ Changing repositories in one project does not configure another project.
   `github_read` inspects repository metadata, branches, issues, pull requests and
   file/directory contents. Lists are paginated and bounded; file content includes
   its revision. `github_create_issue` is an external mutation intended for an
-  explicit user request and follows Auto/Plan and YOLO/confirmation rules.
+  explicit user request and follows Auto/Default/Plan and YOLO/confirmation rules.
   It does not implement git clone, commits, push or PR creation.
 - Blender CLI appears only on Windows/Linux, when Blender is already installed.
   Select its executable and verify the version. `blender_run` starts Blender

@@ -69,12 +69,15 @@ Outcomes distinguish `completed`, `failed`, `cancelled`, and `limited`.
 proof that the user's whole project works. Step and output limits never report
 completion. Request, retry, step, and dispatched-tool counts are separate.
 
-## Auto and Plan
+## Auto, Default and Plan
 
-The chat offers two user modes. Auto carries out the task; Plan inspects and
+The chat offers three modes: Auto, Default and Plan. Default is initially selected
+for new configurations. Auto proactively plans implementation and generation;
+the host rejects modifying/external calls until an executing plan exists. Default
+can perform small tasks directly and plans complex work. Plan inspects and
 publishes a proposal without project mutations. General controls automatic permissions through YOLO; with YOLO off, each
 mutation/external operation requests confirmation. The mode menu contains only
-Auto and Plan. Applying a plan retains the YOLO preference. Existing low-level permission IDs remain internal.
+Auto, Default and Plan. Applying a plan retains the YOLO preference. Existing low-level permission IDs remain internal.
 The active turn freezes its mode, and queued messages retain their selection.
 
 `planner.gd` owns a per-turn state machine and upgrades the existing `task_update`
@@ -85,11 +88,14 @@ blocked. Stopping unfinished execution preserves a paused snapshot. Invalid
 updates leave the previous state unchanged. A completed execution requires all
 steps completed; a completed proposal retains its implementation steps pending.
 
-The model decides whether complexity, uncertainty or dependencies justify a plan.
-Simple requests need no checklist. Planning and proposal phases reject mutations
+In Default, the model decides whether complexity, uncertainty or dependencies
+justify a plan. Auto requires a short plan before each task that changes the
+project or calls an external operation. Both modes continue unfinished execution
+plans. Greetings, identity questions and simple factual answers are instructed
+to use one or two sentences without plans or tools. Planning and proposal phases reject mutations
 at the host dispatcher. Plan mode also filters the tool catalog and enforces
 read-only permissions independently. A model cannot grant itself write permission
-through `task_update`. Auto continues after an intermediate tool-free answer when
+through `task_update`. Auto and Default continue after an intermediate tool-free answer when
 an execution plan is unfinished; blocked plans and proposals do not force another
 request. Step limits still stop the turn and unfinished work remains paused.
 The optional companion path allows at most five such SDK turns and reports

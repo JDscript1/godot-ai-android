@@ -22,7 +22,9 @@ includes Auto/Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
 Current source changes add [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md).
-They have not been packaged in a new APK; the download above remains `9a019f6`.
+Auto / Default / Plan and [native Meshy, Tripo and image generation](docs/AI_GENERATION.md)
+are being packaged with them. The link above identifies the preceding APK until
+the new build and delivery verification finish.
 
 # Godot Engine
 

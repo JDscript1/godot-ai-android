@@ -233,17 +233,17 @@ func _ready() -> void:
 	runtime_options.add_child(options)
 	label(options, "Mod de lucru")
 	mode_picker = OptionButton.new()
-	for index in range(Common.MODES.size()): mode_picker.add_icon_item(_icon(["Agent", "Plan"][index]), Common.MODES[index], 2 + index)
+	for index in range(Common.MODES.size()): mode_picker.add_icon_item(_icon(Common.MODE_ICONS[index]), Common.MODES[index], Common.MODE_IDS[index])
 	mode_picker.hide()
 	options.add_child(mode_picker)
 	var choices = HBoxContainer.new()
 	options.add_child(choices)
-	for index in range(2):
+	for index in range(Common.MODES.size()):
 		var choice = button(choices, Common.MODES[index], func() -> void:
 			mode_picker.select(index)
 			mode_picker.item_selected.emit(index)
 			runtime_options.hide())
-		choice.icon = _icon(["Agent", "Plan"][index])
+		choice.icon = _icon(Common.MODE_ICONS[index])
 		choice.toggle_mode = true
 		choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		mode_buttons.append(choice)
@@ -994,7 +994,7 @@ func set_context(used: int, limit: int, output: int = 0, estimated: bool = false
 
 func _open_options() -> void:
 	_close_drawer()
-	var wanted = Vector2i(240, 84) * EditorInterface.get_editor_scale()
+	var wanted = Vector2i(310, 84) * EditorInterface.get_editor_scale()
 	wanted.y = maxi(wanted.y, int(runtime_options.get_child(0).get_combined_minimum_size().y + 24 * EditorInterface.get_editor_scale()))
 	var window = get_window()
 	runtime_options.size = Vector2i(mini(wanted.x, window.size.x - 32), mini(wanted.y, window.size.y - 32))
@@ -1008,7 +1008,7 @@ func set_working(working: bool) -> void:
 		_layout_composer()
 	if options_button != null and mode_picker != null and mode_picker.selected >= 0:
 		options_button.text = Common.MODES[mode_picker.selected]
-		options_button.icon = _icon(["Agent", "Plan"][mode_picker.selected])
+		options_button.icon = _icon(Common.MODE_ICONS[mode_picker.selected])
 		mode_picker.disabled = working
 		for index in range(mode_buttons.size()):
 			mode_buttons[index].disabled = working
