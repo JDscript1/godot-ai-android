@@ -7,7 +7,7 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 This describes the source implementation added on 2026-10-22. The APK built
-from `588bef1` includes it; the previously delivered APK from `e98ddb7` did not.
+from `12794c4` includes it; the previously delivered APK from `e98ddb7` did not.
 
 ## Execution boundaries
 
@@ -123,13 +123,13 @@ source, including tool use and the composer selector, has these results:
 
 | Scope | Result |
 | --- | --- |
-| Runtime compilation, protocols, registry, and harness behavior | 149 assertions, zero failures |
-| Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 129 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
-| Native diagnostics bridge | 139 checks in each of the same five configurations with the fork compiled from `588bef1` in CI, including valid/invalid draft diagnostics and the unsaved-draft guard |
+| Runtime compilation, protocols, registry, and harness behavior | 150 assertions, zero failures |
+| Editor fixture, including discovery, scene edits, patches, recovery and unsaved-buffer protection | 132 checks in each of desktop, narrow, wide, phone_landscape, and phone_compact on upstream Godot; zero failures and normal exits |
+| Native diagnostics bridge | 142 checks in each of the same five configurations with the fork compiled from `12794c4` in CI, including valid/invalid draft diagnostics and the unsaved-draft guard |
 | Generated embedding header | All 15 script payloads match their source bytes (including embedded icons); registry precedes its consumers and panel remains last |
 
 Rendered reports and editor logs are in
-`.ai-qa/composer-drawer-complete/<configuration>/`; the earlier tool-use
+`.ai-qa/compact-authentic-icons-final/<configuration>/`; the earlier tool-use
 extraction reports remain in `.ai-qa/tool-use-final/<configuration>/`. The
 editor fixture loads the current embedded-service sources in an isolated
 project; the separate CI-native job rebuilds the fork's desktop editor and

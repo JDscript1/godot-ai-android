@@ -120,11 +120,11 @@ Evidence must be distinguished:
 
 | Area | Current verification |
 | --- | --- |
-| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 149 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
+| Embedded scripts, URL/path handling, tool modes, HTTP/SSE, multi-turn calls, MCP pagination, ComfyUI PNG/GLB download and real Godot GLB parsing | 150 automated assertions passed locally and in CI with official Godot 4.7.2; includes conversation migration/cache, provider isolation, multimodal requests, WAV conversion and concurrency limits; provider responses are deterministic fixtures |
 | Companion authentication boundary, SDK tool relay, cancellation and stdio MCP | 9 tests passed with deterministic runtimes, including independent child sessions, attachments and context usage; TypeScript build passed |
-| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 129 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback, workspace expansion and the provider/model/reasoning drawer with atomic selection and cancellation. Godot may enforce a larger minimum editor window on the narrow display |
-| Native fork main screen, desktop vault, game screenshot/input/watchdog, internal-script scene saves and native GDScript diagnostics | 139 checks in each of the five configurations passed using the fork compiled from `588bef1`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751) |
-| Android C++/Kotlin integration and APK | [Build 588bef1 passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751), including signature, persistent signing identity, phone package and ARM64 library checks; all 14 embedded script sources passed the local byte-for-byte embedding check |
+| Panel and settings rendering, node/property changes, Undo/Redo, script attachment/calls, scene saving and file recovery | 132 checks passed in five configurations: 1280x900, 480x900, 1920x1080, plus 2048x922 and 1280x900 at 150% editor scale. Covers populated chat, bounded composer growth, streaming widget/layout retention, exact code copy, removable references, grouped operations, real colored differences and recovery, saved-provider states, separate settings feedback, workspace expansion and the provider/model/reasoning drawer with atomic selection and cancellation. Godot may enforce a larger minimum editor window on the narrow display |
+| Native fork main screen, desktop vault, game screenshot/input/watchdog, internal-script scene saves and native GDScript diagnostics | 142 checks in each of the five configurations passed using the fork compiled from `12794c4`; [native build and rendered evidence](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322) |
+| Android C++/Kotlin integration and APK | [Build 12794c4 passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322), including signature, persistent signing identity, phone package and ARM64 library checks; all 15 embedded script sources were matched byte for byte against the downloaded native library |
 | Physical Android UI | The user supplied screenshots of prior Android versions, including a real conversation and provider settings. The current visual redesign still needs device verification |
 | Android touch, Keystore, microphone and suspend/resume | Full device verification pending; desktop rendering does not establish these |
 | ChatGPT, Claude, Copilot and Kimi account logins | User-authorized live account checks required |
@@ -136,15 +136,15 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The tested APK source is `588bef198bf5535e65dea91864c11b2e7d1366bf`.
-Download its `Godot-AI-Android-arm64-588bef198bf5535e65dea91864c11b2e7d1366bf`
-[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39725351751/artifacts/12402693760)
-from the build above. The APK is 144,895,281 bytes; its SHA-256 is
-`e208b1e7894d2153ee2e6677e6a5372cfe16c0691dea845502a8b839c3299a92`.
-The delivered phone copy is `Download/Godot-AI-4.7.2-arm64-588bef1-debug.apk`,
-with a matching `.sha256` file. Its checksum, package and ABI were checked
-locally; CI verified the signature against the persistent development
-certificate. The previous `e98ddb7` installer was removed from Download.
+The tested APK source is `12794c4c81ecb8e88a5ea2e7e011dee4fb76d738`.
+Download its `Godot-AI-Android-arm64-12794c4c81ecb8e88a5ea2e7e011dee4fb76d738`
+[artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322/artifacts/12406686612)
+from the build above. The APK is 144,944,433 bytes; its SHA-256 is
+`ee87843477cdaff55a109508093804883f85f5ab97206537cbf133e9debc5db3`.
+The delivered phone copy is `Download/Godot-AI-Android-arm64-debug.apk`,
+with a matching `.sha256` file. Its checksum, package, ABI, persistent signature
+and all embedded sources were checked locally. The previous `588bef1` installer
+and its checksum were removed from Download.
 The persistent development certificate SHA-256 is
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
 Later documentation-only commits do not change the APK's tested source.
@@ -253,9 +253,9 @@ For each verified delivery, `misc/scripts/deliver_ai_android.py` installs
 `Download/Godot-AI-Android-arm64-debug.apk` atomically and removes superseded
 Godot AI installers and their checksum files from that folder. It verifies the
 workflow revision/result, artifact checksum, signature, package, ABI and every
-embedded script before delivery. Other apps/downloads are preserved. The next
-delivery follows this stable-name policy; the previous installer remains usable
-until a new artifact has passed verification.
+embedded script before delivery. Other apps/downloads are preserved. Delivery uses this stable-name policy; the previous installer remains usable
+until a new artifact has passed verification. Three delivery tests cover failed
+copy protection, verified replacement and scoped cleanup names.
 
 Settings navigation measures category names using the actual font size. Narrow
 windows use a category dropdown instead of shortening the left-side labels.

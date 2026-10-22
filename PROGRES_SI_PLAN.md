@@ -12,11 +12,12 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`588bef1`**
-  (`588bef198bf5535e65dea91864c11b2e7d1366bf`).
-- Ultimul APK livrat este construit din **`588bef1`** și include harness-ul
-  propriu, extinderile de tool use și selectorul mutat în composer. A înlocuit
-  installerul `e98ddb7` în Download la 22.10.2026.
+- Ultimul commit livrat și verificat ca pachet: **`12794c4`**
+  (`12794c4c81ecb8e88a5ea2e7e011dee4fb76d738`).
+- APK-ul include harness-ul, extinderile de tool use, sertarele, controalele
+  compacte și logo-urile upstream. Este livrat cu numele stabil
+  `Godot-AI-Android-arm64-debug.apk`; installerul `588bef1` a fost eliminat
+  din Download după verificarea înlocuitorului.
 
 ## Implementări existente
 
@@ -156,20 +157,21 @@ datele SVG pentru iconuri.
 
 | Etapă | Dovezi | Limite |
 | --- | --- | --- |
-| APK `588bef1` | Workflow `39725351751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
+| APK `12794c4` | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
+| APK `588bef1` (istoric) | Workflow `39725331751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
 | APK `e98ddb7` (istoric) | Workflow `39707618934`; semnătură, pachet, ARM64 și surse încorporate verificate | Înlocuit la 22.10.2026 de APK-ul `588bef1` |
 | Interfață și punte nativă anterioare | Rapoarte documentate în `docs/AI_ASSISTANT.md` | Randarea desktop nu dovedește comportamentul fizic Android |
 | Harness propriu, prima etapă | 122 verificări funcționale, zero erori; 80 verificări în editor în fiecare dintre cinci configurații, zero erori; 13 surse încorporate verificate byte cu byte | Godot upstream ARM64, fixture izolat |
-| Extinderi tool use | **149 verificări funcționale**, zero erori; **91 verificări în editor în fiecare dintre cinci configurații**, zero erori; 14 scripturi verificate byte cu byte | Puntea nativă a fost compilată și executată în jobul native-editor al workflow-ului `39725351751` (**139 verificări × 5**, zero erori) |
+| Extinderi tool use | **149 verificări funcționale**, zero erori; **91 verificări în editor în fiecare dintre cinci configurații**, zero erori; 14 scripturi verificate byte cu byte | Puntea nativă a fost compilată și executată în jobul native-editor al workflow-ului `39725331751` (**139 verificări × 5**, zero erori) |
 | Selector și sertare în composer | **149 verificări funcționale**, zero erori; **129 verificări în fiecare dintre cinci configurații de editor**, zero erori; 14 scripturi verificate byte cu byte | Randare cu Godot upstream ARM64 și date de probă; APK-ul include codul, dar testarea fizică rămâne separată |
-| Controale compacte și artwork upstream | **150 verificări funcționale** și **132 × 5 verificări în editor**, fără erori; 15 surse încorporate verificate byte cu byte; 57 SVG-uri verificate față de hash-urile upstream | Sursele curente sunt verificate local; livrarea APK-ului este consemnată separat după compilare |
+| Controale compacte și artwork upstream | **150 verificări funcționale** și **132 × 5 verificări în editor**, fără erori; 15 surse încorporate verificate byte cu byte; 57 SVG-uri verificate față de hash-urile upstream | APK `12794c4` compilat și livrat; editorul nativ al fork-ului a trecut **142 × 5 verificări**, fără erori |
 
 Rapoartele extinderilor tool use sunt în `.ai-qa/tool-use-final/`, pentru `desktop`,
 `narrow`, `wide`, `phone_landscape` și `phone_compact`. Manifestul local
 `.ai-qa/tool-use-verification.json` înregistrează hash-urile surselor, verificarea
 C++ și limitele validării. Randarea telefonului landscape a fost inspectată vizual.
 
-Jobul `native-editor` al workflow-ului `39725351751` a compilat editorul desktop
+Jobul `native-editor` al workflow-ului `39725331751` a compilat editorul desktop
 al fork-ului și a executat fixture-ul în cele cinci configurații: **139 de
 verificări în fiecare**, zero erori și ieșire normală. Acesta este primul
 rezultat care include execuția reală a punții `script_diagnostics`: script salvat
@@ -198,13 +200,13 @@ normal în toate cele cinci configurații. Avertismente ale mediului virtual
 Proot/X11 pot apărea în loguri; acestea nu constituie validare fizică Android.
 
 Ultimul installer:
-`/storage/emulated/0/Download/Godot-AI-4.7.2-arm64-588bef1-debug.apk`
-(144.895.281 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
-Fișierul `.sha256` este lângă APK; installerul `e98ddb7` și sumele lui au fost
-eliminate.
+`/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
+(144.944.433 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
+Fișierul `.sha256` este lângă APK. Installerul `588bef1` și checksum-ul lui au
+fost eliminate; în Download rămâne un singur APK al fork-ului.
 
 SHA-256:
-`e208b1e7894d2153ee2e6677e6a5372cfe16c0691dea845502a8b839c3299a92`.
+`ee87843477cdaff55a109508093804883f85f5ab97206537cbf133e9debc5db3`.
 
 Certificatul de dezvoltare a rămas neschimbat:
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
@@ -247,7 +249,7 @@ Certificatul de dezvoltare a rămas neschimbat:
   setări, cu identități distincte pentru furnizori. Verificarea vizuală include
   capturi ale fiecărui sertar și ale selectorului din composer. Rezultat final:
   149 verificări funcționale și 129 × 5 verificări în editor, fără erori.
-- **22.10.2026:** APK compilat din `588bef1` prin workflow-ul `39725351751`
+- **22.10.2026:** APK compilat din `588bef1` prin workflow-ul `39725331751`
   (joburile android, runtime și native-editor reușite). Installerul
   `Godot-AI-4.7.2-arm64-588bef1-debug.apk`, cu SHA-256 `e208b1e7…`, a fost
   instalat în Download, iar APK-ul `e98ddb7` a fost eliminat. Semnătura de
@@ -258,6 +260,14 @@ Certificatul de dezvoltare a rămas neschimbat:
   Lobe Icons, Lucide și llama.cpp. Testele locale au încheiat 150 verificări
   funcționale și 132 × 5 verificări în editor, fără erori. Adăugate verificarea
   și înlocuirea atomică a installerului, cu nume stabil în Download.
+- **22.10.2026:** compilare și livrare finală `12794c4`, workflow `39733876322`.
+  Controalele compacte și logo-urile upstream sunt incluse în APK. Au trecut
+  150 verificări funcționale, 3 teste de livrare, 132 × 5 verificări upstream
+  și 142 × 5 verificări pe editorul nativ. Toate cele 15 surse au fost găsite
+  identic în biblioteca ARM64 din APK; semnătura persistentă a fost verificată
+  local. Înlocuire atomică în Download și eliminarea installerului `588bef1`.
+  Dovezi: `.ai-qa/delivery-12794c4.json`, `.ai-qa/compact-authentic-icons-final/`
+  și `.ai-qa/compact-icons-native-ci/.ai-qa/native-rendered/`.
 
 Detalii: [configurare și verificări](docs/AI_ASSISTANT.md),
 [contractul harness-ului](docs/AI_HARNESS.md).
