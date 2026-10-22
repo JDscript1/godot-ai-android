@@ -1,7 +1,7 @@
 # Fișiere în chat, preview și control vizual al editorului
 
-Data: 22.10.2026. **Implementare în surse; validarea și livrarea sunt urmărite
-separat în PROGRES_SI_PLAN.md.** Documentul păstrează cerințele aprobate și
+Data: 22.10.2026. **Inclus în APK `6539a44`; verificările și livrarea sunt urmărite
+în PROGRES_SI_PLAN.md.** Documentul păstrează cerințele aprobate și
 limitele implementării. Nu adaugă o pagină duplicată în Integrări.
 
 ## Implementarea acestei etape

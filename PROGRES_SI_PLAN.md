@@ -12,18 +12,18 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`db5343b`**
-  (`db5343b03d4637a32bac880a7bdbdd8c7d31c2ab`).
+- Ultimul commit livrat și verificat ca pachet: **`6539a44`**
+  (`6539a444278b828b35baa53e9df1f1d7f3e243ed`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
-  sunete, Integrări, Skills, Jurnal, AGENT.MD și generare Meshy/Tripo/OpenAI.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `9a019f6` a fost
+  sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
+  fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `db5343b` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
 
-**Ajustare ulterioară numai în surse:** eliminat cardul Servicii și scurtăturile
-MCP / Generare 2D/3D din Integrări. APK-ul `db5343b` nu include încă această
-curățare.
+APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
+MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
 ## Implementări existente
 
@@ -56,7 +56,7 @@ curățare.
 - Controale compacte în composer: înălțime de 32 unități, iconuri de 16 unități,
   text de 12 unități și margini reduse. Selectorul ocupă lățimea textului, până
   la 150 unități; reasoning-ul până la 104. Valorile se adaptează scalei editorului.
-- **65 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
+- **76 SVG-uri preluate din surse upstream**: logo-uri de furnizori din Lobe
   Icons, logo llama.cpp din repository-ul ggml-org și acțiuni Lucide. Acestea
   înlocuiesc aproximările desenate anterior. Sunt încorporate local, fără acces
   la internet la afișare. Sursele, reviziile fixe, hash-urile și licențele sunt în
@@ -193,7 +193,7 @@ datele SVG pentru iconuri.
   versiune, script Python din proiect, fundal fără shell, ieșire limitată,
   anulare/timeout și coduri reale de eroare. Nu este instalat în APK/Android.
   MCP și generarea au pagini proprii; scurtăturile duplicate din Integrări au
-  fost eliminate în surse după livrarea APK-ului `db5343b`.
+  fost eliminate și sunt absente în APK-ul curent.
 - Skills sunt fișiere `res://.godot_ai/skills/<id>/SKILL.md`, cu manager de creare,
   editare, activare/dezactivare și ștergere cu recuperare. Agentul are
   `skill_list`, `skill_read`, `skill_save`; actualizările verifică hash-ul,
@@ -252,7 +252,8 @@ local și în CI, cu runtimes simulate. Dovezi: `.ai-qa/auto-plan-final/`,
 
 | Etapă | Dovezi | Limite |
 | --- | --- | --- |
-| APK `db5343b` — moduri, Integrări și generare | [Workflow `39772723053`](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053) reușit; 237 aserțiuni locale / 232 în CI, 178 × 5 verificări upstream și 188 × 5 native, trei teste livrare, nouă teste companion + build; 19 scripturi comparate exact cu biblioteca APK, 65 SVG-uri | Livrat atomic în Download; fără teste fizice Android sau generare plătită reală |
+| APK `6539a44` — fișiere, preview și control vizual | [Workflow `39823384697`](https://github.com/JDscript1/godot-ai-android/actions/runs/39823384697) reușit; 295 aserțiuni locale / 290 CI, 233 × 5 verificări upstream și 243 × 5 native; 25 scripturi comparate exact cu APK-ul, 76 SVG-uri | Livrat atomic; modele/servicii simulate, testarea fizică Android și Store public rămân separate |
+| APK `db5343b` — moduri, Integrări și generare (istoric) | [Workflow `39772723053`](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053) reușit; 237 aserțiuni locale / 232 în CI, 178 × 5 verificări upstream și 188 × 5 native, trei teste livrare, nouă teste companion + build; 19 scripturi comparate exact cu biblioteca APK, 65 SVG-uri | Livrat atomic în Download; fără teste fizice Android sau generare plătită reală |
 | APK `9a019f6` — Auto/Plan și lizibilitate (istoric) | [Workflow `39740297032`](https://github.com/JDscript1/godot-ai-android/actions/runs/39740297032) reușit: 167 aserțiuni, 142 × 5 verificări upstream, 152 × 5 verificări native, 3 teste de livrare, 9 teste companion + build, C++ și 17 surse încorporate verificate | Livrat atomic în Download; fără teste fizice Android sau furnizori reali |
 | APK `12794c4` (istoric) | [Workflow `39733876322`](https://github.com/JDscript1/godot-ai-android/actions/runs/39733876322): android, runtime și native-editor reușite; semnătură, pachet, ARM64 și hash verificate local; **15 surse comparate byte cu byte cu biblioteca din APK** | Teste fizice Android și servicii live neefectuate de agent; nume stabil în Download |
 | APK `588bef1` (istoric) | Workflow `39725331751`: joburile android, runtime și native-editor încheiate cu succes; semnătură, pachet, ARM64 și SHA-256 verificate; cele 14 scripturi au trecut verificarea de încorporare byte cu byte | Fără teste fizice Android sau servicii live; semnătura de dezvoltare persistentă păstrată |
@@ -298,20 +299,20 @@ Proot/X11 pot apărea în loguri; acestea nu constituie validare fizică Android
 
 Ultimul installer:
 `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
-(145.026.353 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
-Fișierul `.sha256` este lângă APK. Versiunea `9a019f6` a fost înlocuită atomic
+(145.141.041 bytes, pachet `com.jdscript.godotai.debug`, numai `arm64-v8a`).
+Fișierul `.sha256` este lângă APK. Versiunea `db5343b` a fost înlocuită atomic
 la aceeași cale stabilă, după verificarea noii versiuni; în Download rămâne un
 singur APK al fork-ului.
 
 SHA-256:
-`233cbc8980e4a2323f5af292463ff4da7c2edcb0c9cd98da7090c8ae51ab06fe`.
+`0cc48766d215068d5e914a7a65f56f5377c1ef7eb146ff3aa1451f0dadeae6ba`.
 
 Certificatul de dezvoltare a rămas neschimbat:
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
 
 ## Ce rămâne de făcut sau de validat
 
-- Teste fizice Android: tastatură, atingere, rotație, suspendare/revenire,
+- Teste fizice Android: swipe/preview/capturi, tastatură, atingere, rotație, suspendare/revenire,
   Keystore și microfon.
 - Teste cu modele reale pentru coding și mai multe apeluri de unelte succesive;
   catalogul sau compatibilitatea API nu garantează calitatea modelului.
@@ -322,6 +323,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   Git nativ printr-o bibliotecă integrată și integrări externe opționale.
 - Compactare automată după bugetul de context, evaluări de fiabilitate și
   automatizări programate. Acestea nu sunt funcții finalizate.
+- Catalog Store public și addon public real: verificarea locală a catalogului a primit HTTP 403; instalarea/activarea/dezinstalarea sunt probate cu un addon fixture în fork-ul nativ.
+- MediaStore/URI SAF persistente, MediaProjection Android și preview pentru OBJ/FBX/.blend nu sunt implementate. GLB/glTF și accesul filesystem deja autorizat sunt disponibile.
 - Inferența locală în interiorul APK-ului nu este implementată; profilele locale
   folosesc endpointuri de modele deja pornite.
 
@@ -457,7 +460,7 @@ compacte și adaptoarele Meshy/Tripo/OpenAI; compilarea APK este autorizată din
   Consultate documentațiile Android/Godot. Este o propunere documentată, fără
   schimbări de runtime, teste noi sau recompilare APK în această etapă.
 
-## Fișiere în chat și control vizual — implementare în curs, 22.10.2026
+## Fișiere în chat și control vizual — jurnalul implementării, inclusă în APK `6539a44`
 
 - În surse: registru cu versiuni imutabile și acces separat pe conversație,
   căutare nativă în proiect/stocare autorizată, carduri cu miniaturi și mențiuni
@@ -541,3 +544,34 @@ QA vizual și adaptorul Store sunt în lucru. APK-ul din Download rămâne db534
   de noduri glTF este verificat și înainte de generarea scenei. O copie schimbată
   în timpul citirii este eliminată din cache, fără atingerea sursei.
   295 aserțiuni runtime fără eșecuri (`.ai-qa/files-invalid-models.log`).
+
+
+## Livrare finală — 22.10.2026, 19:50 CEST
+
+- Sursă **6539a444278b828b35baa53e9df1f1d7f3e243ed**, workflow
+  [39823384697](https://github.com/JDscript1/godot-ai-android/actions/runs/39823384697):
+  android, runtime și native-editor încheiate cu succes.
+- **290 aserțiuni CI**, **233 verificări × 5** în editor upstream și
+  **243 verificări × 5** în fork-ul nativ, fără eșecuri. Local: 295 aserțiuni;
+  diferența de cinci provine din probele Blender disponibile local. Au trecut
+  și cele trei teste de livrare și nouă teste companion, cu build TypeScript.
+- Probe reale în editor: miniaturi, swipe/mențiuni/coadă, crop/comparație,
+  geometrie GLB și randare offscreen, click efectiv și capturi mascate,
+  sincronizare Pin, politici imagini per model, ZIP/activare/dezinstalare,
+  diff colorat și Undo. Aserțiunile nu sunt prezentate drept validare a unui
+  model cloud, addon public sau dispozitiv Android fizic.
+- Inspectate vizual capturile native pentru chat/referințe, imagini și 3D,
+  dock drept îngust și diff. Dovezi: `.ai-qa/6539a44-native-ci/`,
+  `.ai-qa/6539a44-ci.log`, `.ai-qa/delivery-6539a44.json`.
+- APK: **145.141.041 bytes**, pachet `com.jdscript.godotai.debug`, numai ARM64;
+  semnătura persistentă verificată. Toate **25 sursele încorporate** sunt identice
+  byte cu byte cu commit-ul compilat. **76 SVG-uri** au hash-uri valide.
+- Înlocuire atomică la `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`,
+  cu checksum-ul alăturat și mtime **22.10.2026, 19:50:44 CEST**. Verificată
+  existența unui singur installer al acestui fork; alte descărcări sunt păstrate.
+- SHA-256: `0cc48766d215068d5e914a7a65f56f5377c1ef7eb146ff3aa1451f0dadeae6ba`.
+
+Jurnal: 22.10.2026 — pachetul de fișiere/preview/control/Store/diff este compilat,
+verificat și livrat. Android fizic, providerii vision reali și catalogul Store
+public rămân de verificat separat; limitele de format/platformă sunt în
+`docs/AI_CHAT_FILES_AND_EDITOR_CONTROL.md`.
