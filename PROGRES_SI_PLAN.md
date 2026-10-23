@@ -27,6 +27,51 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
+## Etapa curentă — Store, rețea locală și generare, 23.10.2026
+
+Implementat în surse; compilarea și livrarea acestei etape sunt în verificare:
+
+- `store_search` citește structura reală `hits` din API-ul nou și returnează
+  `publisher/slug`; `store_describe` folosește această identitate și rutele
+  publice corecte. Terrain3D a apărut în răspunsul live al căutării. Instalarea
+  permite GDExtension numai când manifestul indică un binar Android ARM64 din
+  arhivă, cu antet ELF AArch64 verificat. Arhiva oficială Terrain3D v1.0.2 a
+  trecut verificarea ZIP și s-a instalat în proiectul editorului de test, cu
+  29 verificări randate fără eșecuri. Activarea rămâne separată; aceasta nu
+  dovedește că pluginul se încarcă pe telefon.
+- Selectorul tuturor serviciilor Cloud/Local rămâne vizibil și la editarea unui
+  profil. Adresa API/LAN este vizibilă pentru profilurile locale. Descoperirea
+  probează întâi adresele Wi-Fi private, înaintea celor VPN/mobile, și are
+  fallback de enumerare; mesajul explică activarea „Serve on Local Network” din LM Studio
+  și introducerea manuală a URL-ului. Rețeaua utilizatorului nu a fost probată.
+- Generare folosește o cheie comună per furnizor cloud pentru profilurile de
+  imagini și 3D, cu credențiale ComfyUI separate. Butonul de test face ping
+  autentificat Runware fără generare, apoi afișează catalogul. Configurarea are
+  folder principal și format 3D preferat; comenzile manuale sunt într-un sertar.
+  PNG/GLB se importă automat într-un folder propriu, numit după prompt și ID;
+  exporturile finalizate se păstrează lângă original cu nume corespunzător.
+  Scanarea incrementală a fișierelor evită suprapunerea importurilor editorului.
+  Conversiile la furnizor nu pornesc doar prin alegerea formatului.
+- Skills și Sarcini au pagini principale separate imediat sub Integrări. Baza
+  rămâne Godot **4.7.2-stable**, identică cu ultima ediție oficială Android
+  verificată; versiunea APK precedent era deja `4.7.2.stable`. Eșecul Store
+  provenea din adaptor, nu din eticheta versiunii.
+
+Verificări locale: **361 aserțiuni runtime**, zero eșecuri, cu arhiva oficială
+Terrain3D furnizată testului; fixturile acoperă API-ul Store, GDExtension ELF
+ARM64, cheia Runware, prioritatea Wi-Fi, importul și exportul în foldere.
+Instalarea arhivei reale a trecut **29 verificări** într-un proiect temporar.
+Randarea editorului a trecut **319 verificări × 5 configurații**, zero eșecuri;
+capturile Furnizori, Generare, Skills și dockul îngust au fost inspectate.
+Dovezi: `.ai-qa/terrain-generation-runtime-final.log`,
+`.ai-qa/terrain-real-install/` și `.ai-qa/terrain-generation-all-final/`.
+APK-ul nou urmează. Serviciile live cu cheile utilizatorului,
+încărcarea Terrain3D pe Android fizic și rețeaua Wi-Fi a utilizatorului rămân
+probe separate.
+
+Jurnal: 23.10.2026 — corectat Store, păstrat selectorul Cloud/Local la vedere,
+clarificată conexiunea LM Studio și organizată generarea per obiect/furnizor.
+
 ## Etapa curentă — rafinare vizuală, livrată 23.10.2026
 
 Implementată în surse și inclusă în APK-ul **`978a6d3`**:

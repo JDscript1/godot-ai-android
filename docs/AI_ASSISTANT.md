@@ -65,6 +65,12 @@ Ollama's `OLLAMA_HOST=0.0.0.0:11434` and restart its server. Restrict access to 
 trusted network, use server authentication where available, and configure the
 host firewall. Client isolation/guest Wi-Fi can block peers even on the same SSID.
 The editor does not alter the computer's server/firewall settings.
+The full cloud/local service selector stays visible for existing profiles; local
+profiles show their API/LAN address directly. Discovery prioritizes the device's
+own private IPv4 address and falls back to the local address list when interface
+enumeration omits it. If scanning fails, paste the exact API URL shown by LM
+Studio, save the profile and use **Verifică / modele**. A model loaded in LM
+Studio does not by itself enable LAN serving.
 
 Sources: [LM Studio LAN hosting](https://lmstudio.ai/docs/developer/core/server/serve-on-network),
 [Ollama network binding](https://docs.ollama.com/faq#how-do-i-configure-ollama-server).

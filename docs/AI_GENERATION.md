@@ -1,9 +1,10 @@
 # Native generation providers
 
-Configure profiles in **Setări → Generare**. Each profile owns its API key in the
-credential vault. Cloud endpoints use fixed official HTTPS URLs. ComfyUI alone
+Configure profiles in **Setări → Generare**. Cloud profiles of the same provider
+share one API key in the credential vault, so Runware image and 3D profiles use
+the same key; ComfyUI keeps credentials per endpoint. Cloud endpoints use fixed official HTTPS URLs. ComfyUI alone
 accepts a configurable local endpoint with explicit HTTP opt-in. Select a saved
-profile from the generation form or use its ID with `asset_generate` in chat.
+profile from the list below the configuration form or use its ID with `asset_generate` in chat.
 Generation consumes provider credits; an API key and access to the model are
 required. A chat subscription does not supply these API credits.
 
@@ -21,11 +22,12 @@ You can enter another compatible model ID. Provider changes clear a previous
 model ID to avoid sending a model to the wrong service. Meshy uses GLB for the original preview and
 OpenAI forces PNG; Tripo supports separate profiles for either result type.
 
-**Verifică server / modele** uses Meshy/Tripo balance endpoints or the OpenAI
+**Testează cheia / modele** uses an authenticated, non-generating Runware ping,
+Meshy/Tripo balance endpoints or the OpenAI
 model catalog without submitting a generation. Meshy/Tripo choices are documented
 presets, not a dynamic account-specific discovery endpoint. A successful key
-check does not establish access to every model. Runware uses a public catalog
-and does not verify the key in that action.
+check does not establish access to every model. Runware's model list is public;
+the separate ping validates the saved key.
 
 Meshy text-to-3D currently submits the `preview` stage only. Its GLB is geometry
 without the paid `refine` texture stage. Image-to-3D requests textures/PBR directly.
@@ -34,8 +36,11 @@ No extra paid stage is started by the read-only status polling tool.
 `asset_generate` returns a persistent job ID. `asset_wait` polls within a bounded,
 cancellable wait; `asset_status` refreshes later. Remote IDs, provider, endpoint,
 progress and result paths survive restart. OpenAI returns image bytes directly;
-these go through the same PNG validation and job storage. Import uses unique
-project filenames and checks PNG decoding or self-contained GLB 2.0 structure.
+these go through the same PNG validation and job storage. Completed originals
+are automatically imported under the configured `res://` destination, one
+folder per job named from the prompt and a short ID, such as
+`res://ai_assets/copac_12345678/copac.glb`. Import checks PNG decoding or
+self-contained GLB 2.0 structure and never overwrites an existing file.
 Cloud CDN downloads receive no provider API key and only accepted provider domains
 are allowed. Plan mode cannot submit or import; Auto requires a short executing
 plan, and YOLO/individual confirmation rules apply to paid generation/import.
@@ -47,9 +52,14 @@ paid submissions or Meshy refine is implemented.
 
 ## Export formats
 
-Select a completed **3D job**, choose **Format export 3D**, then **Exportă modelul…**.
-The original GLB remains the preview/import source. Export opens a save-file picker
-and refuses existing destinations. No format is implemented by renaming an extension.
+Choose a preferred 3D format in the profile, then select the completed job and
+use **Exportă modelul…** for that format. The agent can call `asset_export` after
+generation. The original GLB remains the preview/import source; successful
+exports are saved beside it with the object name and format suffix. If the
+project folder is unavailable, the UI offers a save-file picker. No format is
+implemented by renaming an extension. Paid provider conversions still require
+the normal external-action permission and are not launched merely by selecting
+a preferred format. Manual generation and results are in a collapsed section.
 
 | Format | Runware / ComfyUI | Meshy | Tripo | Result |
 | --- | --- | --- | --- | --- |
@@ -103,6 +113,7 @@ physical Android import/rendering. Those require configured-provider/device QA.
 - [Meshy conversion](https://docs.meshy.ai/en/api/convert)
 - [Tripo conversion v3](https://developers.tripo3d.ai/en/docs/models-convert)
 - [Meshy balance](https://docs.meshy.ai/en/api/balance)
+- [Runware authentication and ping](https://runware.ai/docs/models-api/authentication)
 - [Tripo text-to-model v3](https://developers.tripo3d.ai/en/docs/generation-text-to-model/standard)
 - [Tripo image-to-model v3](https://developers.tripo3d.ai/en/docs/generation-image-to-model/standard)
 - [Tripo text-to-image](https://developers.tripo3d.ai/en/docs/generation-text-to-image)

@@ -110,6 +110,8 @@ func _run() -> void:
 	check(providers.hosting({"issuer": "custom", "url": "https://private.example.com", "hosting": "local"}) == "local", "Self-hosted public domains can explicitly select local hosting")
 	var targets = providers.lan_targets(["192.168.3.8", "192.168.3.9", "10.0.0.4", "172.16.1.2", "8.8.8.8", "127.0.0.1", "192.168.300.3"])
 	check(targets.size() == 1524 and targets.all(func(item: Dictionary) -> bool: return providers.private_ipv4(item["host"]) and item["port"] in [11434, 1234, 8080]), "Discovery is bounded to two private segments and known ports")
+	var prioritized = providers.lan_addresses([{"name": "tun0", "addresses": ["10.0.0.9"]}, {"name": "rmnet0", "addresses": ["172.16.2.9"]}, {"name": "wlan0", "addresses": ["192.168.3.8"]}])
+	check(prioritized == ["192.168.3.8", "10.0.0.9", "172.16.2.9"] and providers.lan_targets(prioritized)[0]["host"] == "192.168.3.8", "Wi-Fi subnet is searched before VPN or cellular private addresses")
 	check(not providers.detect("sk-generic-fixture").get("ok", false), "Ambiguous keys never trigger issuer guessing")
 	check(providers.detect("DEEPSEEK_API_KEY=sk-generic-fixture").get("profile", {}).get("id") == "deepseek", "Labeled key determines issuer")
 	var messages = [{"role": "system", "content": "Inspect"}, {"role": "user", "content": "Create"}, {"role": "assistant", "content": "", "reasoning_content": "Retained reasoning", "tool_calls": [{"id": "a", "name": "godot_project", "arguments": {}}]}, {"role": "tool", "tool_call_id": "a", "tool_name": "godot_project", "content": "{}"}]
@@ -521,13 +523,14 @@ func _network_tests(node: Node) -> void:
 	var scratch = OS.get_user_data_dir().path_join("ai_test_generation")
 	assets.configure(scratch)
 	for kind in ["image", "mesh"]:
-		var generation = {"id": "fixture-comfy", "kind": "comfy", "asset_kind": kind, "url": mock_url, "allow_http": true, "workflow": {"1": {"class_type": "SaveGLB" if kind == "mesh" else "SaveImage", "inputs": {"text": ""}}}, "prompt_node": "1", "prompt_input": "text", "output_node": "1"}
+		var generation = {"id": "fixture-comfy", "kind": "comfy", "asset_kind": kind, "url": mock_url, "allow_http": true, "destination": "res://ai_test_assets", "workflow": {"1": {"class_type": "SaveGLB" if kind == "mesh" else "SaveImage", "inputs": {"text": ""}}}, "prompt_node": "1", "prompt_input": "text", "output_node": "1"}
 		var submitted = await assets.submit(generation, "Fixture", "", {})
 		check(submitted.get("ok", false), "ComfyUI submit: " + kind)
 		if not submitted.get("ok", false): continue
 		var refreshed = await assets.refresh(str(submitted["result"]["id"]), generation, {})
 		check(refreshed.get("ok", false) and refreshed.get("result", {}).get("status") == "completed", "ComfyUI download and artifact validation: " + kind)
 		if not refreshed.get("ok", false): continue
+		check(FileAccess.file_exists(str(refreshed["result"].get("imported_path", ""))) and str(refreshed["result"].get("imported_path", "")).begins_with("res://ai_test_assets/fixture_"), "Completed ComfyUI asset is auto-imported into its named folder: " + kind)
 		var waited = await assets.wait_for_job(str(submitted["result"]["id"]), generation, {}, 1)
 		check(waited.get("ok", false) and waited.get("result", {}).get("status") == "completed", "Generation wait returns the verified result: " + kind)
 		if kind == "mesh":
@@ -538,9 +541,9 @@ func _network_tests(node: Node) -> void:
 			check(scene != null, "Godot builds the generated GLB scene")
 			if scene != null: scene.free()
 		var imported = assets.import_job(str(submitted["result"]["id"]), "res://ai_test_assets")
-		check(imported.get("ok", false) and FileAccess.file_exists(str(imported.get("result", {}).get("path", ""))), "Import artifact into the fixture project: " + kind)
+		check(imported.get("ok", false) and FileAccess.file_exists(str(imported.get("result", {}).get("path", ""))) and str(imported.get("result", {}).get("path", "")).contains("/fixture_"), "Completed artifact is organized under the configured folder: " + kind)
 		var again = assets.import_job(str(submitted["result"]["id"]), "res://ai_test_assets")
-		check(again.get("ok", false) and again.get("result", {}).get("path") != imported.get("result", {}).get("path"), "Artifact import never overwrites: " + kind)
+		check(again.get("ok", false) and again.get("result", {}).get("path") == imported.get("result", {}).get("path"), "Repeated import reuses the organized artifact without overwriting: " + kind)
 	var bad_profile = {"id": "fixture-bad-output", "kind": "comfy", "asset_kind": "mesh", "url": mock_url, "allow_http": true, "workflow": {"2": {"class_type": "FixturePrompt", "inputs": {"text": ""}}}, "prompt_node": "2", "prompt_input": "text", "output_node": "2"}
 	var bad_submit = await assets.submit(bad_profile, "Fixture", "", {})
 	if bad_submit.get("ok", false):
@@ -632,11 +635,18 @@ func _cloud_generation_tests(node: Node) -> void:
 	for provider in ["meshy", "tripo", "openai_image"]: assets.api_urls[provider] = mock_url + "/" + provider
 	var cache = OS.get_user_data_dir().path_join("cloud-generation")
 	assets.configure(cache)
+	assets.api_urls["runware"] = mock_url + "/runware"
+	vault.store("generation_runware", "generation-fixture-key")
+	var runware_profile = {"id": "runware-image", "kind": "runware", "credential_id": "generation_runware", "asset_kind": "image"}
+	check((await assets.verify_key(runware_profile, {})).get("ok", false), "One shared Runware credential validates image and 3D profiles without generating credits")
+	vault.store("generation_runware", "invalid-fixture-key")
+	check(not (await assets.verify_key(runware_profile, {})).get("ok", false), "Invalid Runware key is rejected by the authenticated ping")
+	vault.store("generation_runware", "generation-fixture-key")
 	var reference = "res://ai_test_reference.png"
 	var transport = scripts["transport"].new(node)
 	await transport.request(mock_url + "/artifact/image.png", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "save_path": reference})
 	for entry in [["meshy", "mesh", ""], ["meshy", "mesh", reference], ["tripo", "mesh", ""], ["tripo", "mesh", reference], ["tripo", "image", ""], ["openai_image", "image", ""]]:
-		var profile = {"id": "fixture-" + entry[0], "kind": entry[0], "asset_kind": entry[1], "model": ""}
+		var profile = {"id": "fixture-" + entry[0], "kind": entry[0], "asset_kind": entry[1], "model": "", "destination": "res://ai_test_assets"}
 		vault.store(profile["id"], "generation-fixture-key")
 		var catalog = await assets.models(profile, {})
 		check(catalog.get("ok", false) and catalog.get("credential_verified", false) and not catalog.get("result", []).is_empty(), "Provider credential check and model presets: " + str(entry))
@@ -650,6 +660,7 @@ func _cloud_generation_tests(node: Node) -> void:
 		var completed = await assets.wait_for_job(id, profile, {}, 1)
 		check(completed.get("ok", false) and completed.get("result", {}).get("status") == "completed", "Cloud download without API-key leakage and artifact validation: " + str(entry))
 		if not completed.get("ok", false): continue
+		check(FileAccess.file_exists(str(completed["result"].get("imported_path", ""))) and str(completed["result"].get("imported_path", "")).begins_with("res://ai_test_assets/bird_"), "Cloud asset is auto-imported under its object name: " + str(entry))
 		var imported = assets.import_job(id, "res://ai_test_assets")
 		check(imported.get("ok", false) and FileAccess.file_exists(str(imported.get("result", {}).get("path", ""))), "Generated PNG/GLB imports into project: " + str(entry))
 		if entry[1] == "mesh":
@@ -680,6 +691,7 @@ func _export_tests(assets: RefCounted, vault: RefCounted, cache: String) -> void
 		var result = await assets.export_job(mesh_job["id"], {}, format, {})
 		check(result.get("ok", false) and result.get("result", {}).get("status") == "completed", "Real GLB exports to native " + format)
 		if not result.get("ok", false): continue
+		check(FileAccess.file_exists(str(result["result"].get("project_path", ""))) and str(result["result"].get("project_path", "")).get_base_dir() == str(mesh_job.get("imported_path", "")).get_base_dir(), "Export " + format + " is filed beside the named original")
 		var path = str(result["result"]["file"])
 		if format == "stl":
 			var file = FileAccess.open(path, FileAccess.READ)
@@ -704,6 +716,7 @@ func _export_tests(assets: RefCounted, vault: RefCounted, cache: String) -> void
 		vault.store(profile["id"], "generation-fixture-key")
 		var result = await assets.export_job(job["id"], profile, "fbx", {})
 		check(result.get("ok", false) and str(result.get("result", {}).get("file", "")).ends_with(".fbx"), "Documented " + provider + " conversion task downloads a validated FBX without credentials on CDN")
+		check(result.get("ok", false) and FileAccess.file_exists(str(result.get("result", {}).get("project_path", ""))), "Converted FBX is saved under the configured object folder: " + provider)
 		var recovered = scripts["assets"].new(assets.owner, vault)
 		recovered.configure(cache)
 		recovered.test_http = true
@@ -821,8 +834,8 @@ func _store_tests(node: Node) -> void:
 	service.api_url = mock_url + "/store"
 	service.test_http = true
 	var result = await service.search("fixture", 1, {})
-	check(result.get("ok", false) and result.get("store_items", []).size() == 1 and result["store_items"][0]["id"] == "fixture-addon", "Store search uses the editor v1 schema and actual query parameter")
-	result = await service.describe("fixture-addon", {})
+	check(result.get("ok", false) and result.get("store_items", []).size() == 1 and result["store_items"][0]["id"] == "fixture/fixture-addon", "Store search uses the editor v1 schema and publisher/slug identity")
+	result = await service.describe("fixture/fixture-addon", {})
 	check(result.get("ok", false) and result["result"]["releases"].size() == 1 and result["result"]["releases"][0]["version"] == "1.0", "Store filters incompatible releases before offering installation")
 	check(not (await service.describe("../outside", {})).get("ok", false), "Store IDs cannot inject paths")
 	var transport = scripts["transport"].new(node)
@@ -840,4 +853,34 @@ func _store_tests(node: Node) -> void:
 		writer.close()
 		var inspected = scripts["store"].zip_manifest(path)
 		check(inspected.get("ok", false) == (not filename.begins_with("..")), "ZIP preflight validates paths before extraction: " + filename)
+	for machine in [183, 62]:
+		var native_path = OS.get_user_data_dir().path_join("store-native-test.zip")
+		var native_zip = ZIPPacker.new()
+		native_zip.open(native_path)
+		native_zip.start_file("release/addons/native/native.gdextension")
+		native_zip.write_file("[libraries]\nandroid.debug.arm64 = \"res://addons/native/bin/libnative.so\"\n".to_utf8_buffer())
+		native_zip.close_file()
+		var elf = PackedByteArray()
+		elf.resize(20)
+		elf[0] = 127; elf[1] = 69; elf[2] = 76; elf[3] = 70; elf[4] = 2; elf[5] = 1
+		elf.encode_u16(18, machine)
+		native_zip.start_file("release/addons/native/bin/libnative.so")
+		native_zip.write_file(elf)
+		native_zip.close_file()
+		native_zip.close()
+		var native_manifest = scripts["store"].zip_manifest(native_path)
+		var native_reader = ZIPReader.new()
+		native_reader.open(native_path)
+		var native_supported = scripts["store"]._android_native_support(native_reader, native_manifest.get("result", []))
+		native_reader.close()
+		check(native_supported.get("ok", false) == (machine == 183), "Android GDExtension requires referenced ARM64 ELF instead of rejecting all native addons: " + str(machine))
+	var release_archive = OS.get_environment("GODOT_AI_TERRAIN3D_ZIP")
+	if not release_archive.is_empty():
+		var release_manifest = scripts["store"].zip_manifest(release_archive)
+		check(release_manifest.get("ok", false), "Actual Terrain3D release passes ZIP preflight")
+		if release_manifest.get("ok", false):
+			var release_reader = ZIPReader.new()
+			if release_reader.open(release_archive) == OK:
+				check(scripts["store"]._android_native_support(release_reader, release_manifest["result"]).get("ok", false), "Actual Terrain3D release contains a referenced Android ARM64 GDExtension")
+				release_reader.close()
 	for definition in scripts["store"].definitions(): check(scripts["tool_registry"].new([definition]).error.is_empty(), "Store tool schema is discoverable: " + str(definition["name"]))

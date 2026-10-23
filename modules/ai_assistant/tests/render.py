@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--godot", required=True)
     parser.add_argument("--proot", action="store_true")
-    parser.add_argument("--scenario", choices=["all", "dock", "files"], default="all")
+    parser.add_argument("--scenario", choices=["all", "dock", "files", "terrain"], default="all")
     parser.add_argument("--output", default=".ai-qa/rendered")
     parser.add_argument("--only", choices=["desktop", "narrow", "wide", "phone_landscape", "phone_compact"])
     args = parser.parse_args()
@@ -40,6 +40,8 @@ def main():
                 "XDG_CONFIG_HOME": str(Path(directory) / "config"),
                 "XDG_DATA_HOME": str(Path(directory) / "data"),
             }
+            if args.scenario == "terrain" and os.environ.get("GODOT_AI_TERRAIN3D_ZIP"):
+                environment["GODOT_AI_TERRAIN3D_ZIP"] = os.environ["GODOT_AI_TERRAIN3D_ZIP"]
             command = ["xvfb-run", "-a", "-s", f"-screen 0 {resolution}x24 -ac",
                        args.godot, "--editor", "--rendering-method", "gl_compatibility",
                        "--audio-driver", "Dummy", "--resolution", resolution,

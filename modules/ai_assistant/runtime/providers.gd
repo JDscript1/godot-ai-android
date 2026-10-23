@@ -57,15 +57,36 @@ static func lan_targets(addresses: Array) -> Array:
 		var prefix = str(address).rsplit(".", true, 1)[0]
 		if prefix not in prefixes and prefixes.size() < 2: prefixes.append(prefix)
 	var result = []
+	# Probe the device's own LAN address first, then the remaining hosts. This
+	# keeps a reachable server visible even when a slow network hits the deadline.
+	for address in addresses:
+		if private_ipv4(str(address)) and str(address).rsplit(".", true, 1)[0] in prefixes:
+			for port in [1234, 11434, 8080]: result.append({"host": str(address), "port": port})
 	for prefix in prefixes:
 		for last in range(1, 255):
-			for port in [11434, 1234, 8080]: result.append({"host": prefix + "." + str(last), "port": port})
+			for port in [1234, 11434, 8080]:
+				var target = {"host": prefix + "." + str(last), "port": port}
+				if target not in result: result.append(target)
 	return result
 
+static func lan_addresses(interfaces: Array) -> Array:
+	var wifi = []
+	var others = []
+	for interface in interfaces:
+		var name = str(interface.get("name", "")).to_lower()
+		var preferred = name.contains("wlan") or name.contains("wifi")
+		for address in interface.get("addresses", []):
+			if not private_ipv4(str(address)): continue
+			var bucket = wifi if preferred else others
+			if str(address) not in bucket: bucket.append(str(address))
+	return wifi + others
+
 func discover_lan(cancel: Dictionary) -> Dictionary:
-	var addresses = []
-	for interface in IP.get_local_interfaces():
-		for address in interface.get("addresses", []): addresses.append(str(address))
+	var addresses = lan_addresses(IP.get_local_interfaces())
+	if addresses.is_empty():
+		for address in IP.get_local_addresses():
+			if private_ipv4(str(address)): addresses.append(str(address))
+	if lan_targets(addresses).is_empty(): return Common.failure("Nu am găsit o adresă IPv4 privată pe dispozitiv. Introdu manual adresa LAN a calculatorului.", "lan_address_missing")
 	return await probe_targets(lan_targets(addresses), cancel)
 
 func probe_targets(targets: Array, cancel: Dictionary) -> Dictionary:

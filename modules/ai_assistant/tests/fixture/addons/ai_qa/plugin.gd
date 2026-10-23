@@ -98,7 +98,7 @@ func _check(condition: bool, label: String) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.0).timeout
-	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
 	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
@@ -120,13 +120,20 @@ func _run() -> void:
 		EditorInterface.get_editor_main_screen().add_child(panel)
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
-	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 10, "Build all settings forms")
+	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "files":
 		await _file_chat_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "dock":
 		await _configuration_screenshots(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "terrain":
+		var archive = OS.get_environment("GODOT_AI_TERRAIN3D_ZIP")
+		var result = await panel.store.install_zip(archive, {"id": "tokisangames/terrain3d", "name": "Terrain3D"}, "1.0.2", {})
+		_check(result.get("ok", false) and result.get("result", {}).get("files", 0) > 0, "Actual Terrain3D release installs its addon files into an isolated editor project")
+		_check(FileAccess.file_exists("res://addons/terrain_3d/plugin.cfg") and FileAccess.file_exists("res://addons/terrain_3d/bin/libterrain.android.debug.arm64.so"), "Installed Terrain3D includes plugin manifest and Android ARM64 binary")
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	await _chat_workflow_tests()
@@ -671,7 +678,7 @@ func _layout_tests() -> void:
 		for index in range(panel.settings_navigation.item_count): longest = maxf(longest, font.get_string_size(panel.settings_navigation.get_item_text(index), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
 		_check(panel.settings_navigation.size.x >= longest + 12, "Settings categories fit the actual font metrics")
 	else:
-		_check(panel.settings_category.visible and panel.settings_category.item_count == 10, "Compact settings use a full-width category selector")
+		_check(panel.settings_category.visible and panel.settings_category.item_count == 12, "Compact settings expose every main category through a full-width selector")
 	_check(not panel.lists["accounts"].visible and not panel.lists["general"].visible, "Empty saved lists do not create blank sections")
 	var initial_size = panel.settings_window.size
 	panel.settings_window.size = Vector2i(420 * EditorInterface.get_editor_scale(), initial_size.y)
@@ -714,7 +721,7 @@ func _control_settings_tests() -> void:
 	_check(not form["asset_kind"].disabled and form["kind"].item_count == 5, "Tripo supports both image and GLB profiles alongside existing generators")
 	form["kind"].select(0)
 	panel._generation_fields(0, form["workflow_fields"], true)
-	_check(panel.section_tabs.has("integrations") and not panel.section_tabs.has("automations") and panel.settings_tabs.get_tab_title(panel.section_tabs["agent"]) == "AGENT.MD", "Integrations and AGENT.MD replace legacy sections")
+	_check(panel.section_tabs.has("integrations") and panel.section_tabs.has("skills") and panel.section_tabs.has("automations") and panel.section_tabs["skills"] == panel.section_tabs["integrations"] + 1 and panel.section_tabs["automations"] == panel.section_tabs["skills"] + 1 and panel.settings_tabs.get_tab_title(panel.section_tabs["agent"]) == "AGENT.MD", "Skills and tasks have main sections after Integrations")
 	_check(panel.forms["general"].has("yolo") and panel.forms["general"].has("dock") and panel.forms["general"].has("sounds") and not panel.forms["general"].has("max_steps") and not panel.forms["general"].has("enabled"), "General exposes control preferences without technical runtime settings")
 	_check(not "Permisiuni" in panel._settings_labels(panel.chat.runtime_options) and not "Extinde" in panel._settings_labels(panel.chat.runtime_options), "Work mode menu contains no permissions or duplicate expand action")
 	panel.mode_picker.select(0)
@@ -786,8 +793,17 @@ func _configuration_screenshots(output: String) -> void:
 	await get_tree().create_timer(0.15).timeout
 	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("context-filling.png"))
 	for section in ["general", "providers", "generation", "integrations", "journal", "agent"]:
+		if section == "generation":
+			panel._clear_form("generation")
+			panel.forms["generation"]["destination"].text = "res://ai_assets"
+			panel.forms["generation"]["kind"].select(0)
+			panel.forms["generation"]["asset_kind"].select(1)
+			panel._generation_fields(0, panel.forms["generation"]["workflow_fields"])
 		panel.open_settings(section)
 		await get_tree().create_timer(0.2).timeout
+		var page: ScrollContainer = panel.settings_tabs.get_tab_control(panel.section_tabs[section])
+		page.scroll_vertical = 0
+		await get_tree().process_frame
 		panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-" + section + ".png"))
 		if section == "providers":
 			var service: OptionButton = panel.forms["provider"]["issuer"]
@@ -795,11 +811,12 @@ func _configuration_screenshots(output: String) -> void:
 			await get_tree().create_timer(0.15).timeout
 			service.get_popup().get_texture().get_image().save_png(output.path_join("provider-groups.png"))
 			service.get_popup().hide()
-	panel.open_settings("integrations")
-	var integration_tabs = panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).find_children("*", "TabContainer", true, false)[0]
-	integration_tabs.current_tab = 1
+	panel.open_settings("skills")
 	await get_tree().create_timer(0.2).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-skills.png"))
+	panel.open_settings("automations")
+	await get_tree().create_timer(0.2).timeout
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-tasks.png"))
 	panel.settings_window.hide()
 	var base = EditorInterface.get_base_control()
 	var groups = {}
@@ -1000,9 +1017,9 @@ func _populated_chat_tests() -> void:
 	panel._refresh_profiles()
 	panel._edit_provider(0)
 	_check(panel.provider_selector.item_count == 3 and panel.provider_selector.get_item_metadata(2) == "visual-provider" and not panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved profiles use a compact selector with advanced fields collapsed")
-	_check(not panel.provider_mark.visible and panel.forms["provider"]["issuer"].get_parent() == panel.provider_advanced, "Saved provider shows its icon once and keeps service editing in advanced settings")
+	_check(not panel.provider_mark.visible and panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["key"].get_parent().get_parent(), "Saved provider keeps the service catalog visible above the API key")
 	panel._new_provider()
-	_check(panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["container"], "New provider exposes service selection before the API key")
+	_check(panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["key"].get_parent().get_parent(), "New provider exposes service selection before the API key")
 	panel._edit_provider(0)
 	var previous_profiles = panel.config["providers"].duplicate(true)
 	panel.config["providers"].append({"id": "lan-fixture", "name": "LAN fixture", "issuer": "custom", "kind": "chat", "url": "http://192.168.1.20:1234/v1", "models": []})
@@ -1122,22 +1139,16 @@ func _export_button_tests(path: String) -> void:
 	panel.settings_actions["job_export"].pressed.emit()
 	while panel.busy: await get_tree().process_frame
 	await get_tree().process_frame
-	var dialogs = panel.find_children("*", "FileDialog", true, false).filter(func(item: FileDialog) -> bool: return item.title.begins_with("Salvează exportul"))
-	_check(dialogs.size() == 1 and dialogs[0].current_file.ends_with(".stl") and dialogs[0].get_parent() == panel.settings_window, "Export button opens the destination picker with the real selected format")
-	var destination = panel.project_directory.path_join("ui-export.stl")
-	if not dialogs.is_empty(): dialogs[0].file_selected.emit(destination)
-	await get_tree().process_frame
+	var destination = str(panel.assets.jobs[0].get("exports", {}).get("stl", {}).get("project_path", ""))
+	_check(destination.begins_with("res://ai_assets/") and destination.ends_with("_stl.stl") and panel.settings_status.text.contains("Export salvat"), "Export button saves the selected format in the named object folder")
 	var file = FileAccess.open(destination, FileAccess.READ)
 	if file != null: file.seek(80)
-	_check(file != null and file.get_length() == 684 and file.get_32() == 12, "Export destination receives twelve actual cube triangles in binary STL")
+	_check(file != null and file.get_length() == 684 and file.get_32() == 12, "Object folder receives twelve actual cube triangles in binary STL")
 	file = null
-	panel._perform_export("export-cube", "stl")
-	await get_tree().process_frame
-	dialogs = panel.find_children("*", "FileDialog", true, false).filter(func(item: FileDialog) -> bool: return item.title.begins_with("Salvează exportul"))
 	var original = FileAccess.get_file_as_bytes(destination)
-	if not dialogs.is_empty(): dialogs[0].file_selected.emit(destination)
-	await get_tree().process_frame
-	_check(FileAccess.get_file_as_bytes(destination) == original and panel.settings_status.text.contains("există deja"), "Export refuses to overwrite an existing destination")
+	panel._perform_export("export-cube", "stl")
+	while panel.busy: await get_tree().process_frame
+	_check(FileAccess.get_file_as_bytes(destination) == original and str(panel.assets.jobs[0]["exports"]["stl"].get("project_path", "")) == destination, "Repeated export reuses the existing object file without overwriting it")
 	for index in range(picker.item_count):
 		if picker.get_item_metadata(index) == "fbx": picker.select(index); picker.item_selected.emit(index)
 	panel.settings_actions["job_export"].pressed.emit()
@@ -1158,7 +1169,7 @@ func _export_button_tests(path: String) -> void:
 	panel.assets.jobs = previous_jobs
 	panel._refresh_lists()
 	panel.chat.show_status("", false)
-	DirAccess.remove_absolute(destination)
+	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 
 func _model_and_control_tests() -> void:
 	var scene = Node3D.new()

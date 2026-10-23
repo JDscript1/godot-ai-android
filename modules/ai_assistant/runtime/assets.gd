@@ -11,7 +11,7 @@ var cache_directory = ""
 var jobs: Array = []
 
 # Endpoints are fixed in production. Tests can replace this instance map only.
-var api_urls = {"meshy": "https://api.meshy.ai", "tripo": "https://openapi.tripo3d.ai/v3", "openai_image": "https://api.openai.com/v1"}
+var api_urls = {"runware": "https://api.runware.ai/v1", "meshy": "https://api.meshy.ai", "tripo": "https://openapi.tripo3d.ai/v3", "openai_image": "https://api.openai.com/v1"}
 var test_http = false
 const KINDS = ["runware", "comfy", "meshy", "tripo", "openai_image"]
 const LABELS = ["Runware", "ComfyUI local", "Meshy", "Tripo", "OpenAI Images"]
@@ -27,7 +27,17 @@ func configure(directory: String) -> void:
 	jobs = Common.read_json(cache_directory.path_join("jobs.json"), [])
 
 func definitions() -> Array:
-	return [Common.tool("asset_export", "Export a completed 3D job. GLB is the immutable original; glTF is a ZIP with dependencies; OBJ/STL/PLY are static geometry only. FBX, USDZ, 3MF and Meshy BLEND use explicit provider conversion and may consume credits. Resume with the same job and format to avoid duplicate conversions. If a submission response was lost, obtain the existing conversion task_id from the user/provider dashboard to recover; never invent an ID or resubmit blindly. Returns processing or a private cache file; does not overwrite project files.", {"job": Common.string_field(), "task_id": Common.string_field(), "format": {"type": "string", "enum": ["glb", "gltf", "fbx", "obj", "stl", "ply", "usdz", "blend", "3mf"]}}, ["job", "format"], "external"), Common.tool("asset_generate", "Generate an image or GLB with a configured Runware, ComfyUI, Meshy, Tripo or OpenAI Images profile. Meshy text-to-3D produces preview geometry; image-to-3D includes textures. Cloud generation consumes provider credits. The job is retained for later polling; use asset_wait to wait for its result before importing.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
+	return [Common.tool("asset_export", "Export a completed 3D job into its named project folder. GLB is the immutable original; glTF is a ZIP with dependencies; OBJ/STL/PLY are static geometry only. FBX, USDZ, 3MF and Meshy BLEND use explicit provider conversion and may consume credits. Resume with the same job and format to avoid duplicate conversions. If a submission response was lost, obtain the existing conversion task_id from the user/provider dashboard to recover; never invent an ID or resubmit blindly. Never overwrite project files.", {"job": Common.string_field(), "task_id": Common.string_field(), "format": {"type": "string", "enum": ["glb", "gltf", "fbx", "obj", "stl", "ply", "usdz", "blend", "3mf"]}}, ["job", "format"], "external"), Common.tool("asset_generate", "Generate an image or GLB with a configured Runware, ComfyUI, Meshy, Tripo or OpenAI Images profile. Cloud generation consumes provider credits. The completed original is automatically imported into its own named folder under the profile destination; use asset_wait to obtain it.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into a dedicated named folder under res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
+
+func verify_key(profile: Dictionary, cancel: Dictionary) -> Dictionary:
+	if str(profile.get("kind", "")) == "runware":
+		if _headers(profile).is_empty(): return Common.failure("Adaugă o cheie Runware.", "missing_credentials")
+		var response = await _runware(profile, [{"taskType": "ping", "ping": true}], cancel)
+		if not response.get("ok", false): return response
+		return Common.success({"credential_verified": true}) if response.get("result", []).any(func(item: Variant) -> bool: return item is Dictionary and item.get("pong", false)) else Common.failure("Runware nu a confirmat cheia.")
+	var checked = await models(profile, cancel)
+	if not checked.get("ok", false): return checked
+	return Common.success({"credential_verified": bool(checked.get("credential_verified", false))})
 
 func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	var provider = str(profile.get("kind", "runware"))
@@ -61,7 +71,7 @@ func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dict
 	if str(profile.get("kind", "runware")) in ["meshy", "tripo", "openai_image"]: return await _cloud_submit(profile, prompt, reference, cancel)
 	var id = Common.uid()
 	var kind = str(profile.get("asset_kind", "image"))
-	var job = {"id": id, "profile_id": profile["id"], "kind": kind, "provider": profile.get("kind", "runware"), "external_id": id, "status": "submitting", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "file": ""}
+	var job = {"id": id, "profile_id": profile["id"], "kind": kind, "provider": profile.get("kind", "runware"), "external_id": id, "status": "submitting", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "destination": profile.get("destination", "res://ai_assets"), "file": ""}
 	var result: Dictionary
 	if profile.get("kind") == "comfy":
 		var workflow: Variant = profile.get("workflow", {})
@@ -203,26 +213,42 @@ func _finish_download(job: Dictionary, temporary: String) -> Dictionary:
 	if DirAccess.rename_absolute(temporary, path) != OK: return Common.failure("Nu pot păstra rezultatul descărcat.")
 	job["file"] = path
 	job["status"] = "completed"
+	var imported = import_job(str(job["id"]), str(job.get("destination", "res://ai_assets")))
+	if not imported.get("ok", false): job["import_error"] = str(imported.get("error", "Import automat eșuat."))
 	_save()
 	return Common.success(job.duplicate(true))
 
 func import_job(id: String, directory: String) -> Dictionary:
 	var job = find_job(id)
 	if job.is_empty() or job.get("status") != "completed": return Common.failure("Generarea nu este finalizată.")
+	if not str(job.get("imported_path", "")).is_empty() and FileAccess.file_exists(str(job["imported_path"])): return Common.success({"path": job["imported_path"], "import_requested": false})
 	var target = Common.project_path(directory)
 	if target.is_empty(): return Common.failure("Alege o destinație din res://.")
 	var validation = validate_artifact(str(job["file"]), str(job["kind"]))
 	if not validation.get("ok", false): return validation
-	if DirAccess.make_dir_recursive_absolute(target) != OK: return Common.failure("Nu pot crea destinația.")
+	var subject = asset_slug(str(job.get("prompt", "")))
+	var folder = target.path_join(subject + "_" + id.left(8))
+	if DirAccess.make_dir_recursive_absolute(folder) != OK: return Common.failure("Nu pot crea destinația.")
 	var extension = ".glb" if job["kind"] == "mesh" else ".png"
-	var path = target.path_join("generated_" + id.left(12) + extension)
-	if FileAccess.file_exists(path): path = target.path_join("generated_" + Common.uid().left(12) + extension)
+	var path = folder.path_join(subject + extension)
+	if FileAccess.file_exists(path): return Common.failure("Fișierul există deja; importul nu îl suprascrie.")
 	var error = DirAccess.copy_absolute(str(job["file"]), ProjectSettings.globalize_path(path))
 	if error != OK: return Common.failure(error_string(error))
-	if Engine.is_editor_hint(): EditorInterface.get_resource_filesystem().scan()
+	if Engine.is_editor_hint(): EditorInterface.get_resource_filesystem().scan_sources()
 	job["imported_path"] = path
 	_save()
 	return Common.success({"path": path, "import_requested": true})
+
+static func asset_slug(prompt: String) -> String:
+	var normalized = prompt.to_lower().strip_edges().get_slice("\n", 0)
+	for pair in [["ă", "a"], ["â", "a"], ["î", "i"], ["ș", "s"], ["ţ", "t"], ["ț", "t"]]: normalized = normalized.replace(pair[0], pair[1])
+	var result = ""
+	for character in normalized:
+		if character in "abcdefghijklmnopqrstuvwxyz0123456789": result += character
+		elif not result.ends_with("-") and not result.is_empty(): result += "-"
+		if result.length() >= 40: break
+	result = result.trim_suffix("-")
+	return result if not result.is_empty() else "resursa"
 
 func wait_for_job(id: String, profile: Dictionary, cancel: Dictionary, max_seconds: int = 300) -> Dictionary:
 	var deadline = Time.get_ticks_msec() + clampi(max_seconds, 1, 600) * 1000
@@ -264,14 +290,14 @@ static func validate_artifact(path: String, kind: String) -> Dictionary:
 	return Common.success()
 
 func _headers(profile: Dictionary) -> PackedStringArray:
-	var secret = vault.read(str(profile["id"])) if vault != null else ""
+	var secret = vault.read(str(profile.get("credential_id", profile["id"]))) if vault != null else ""
 	return PackedStringArray(["Authorization: Bearer " + secret]) if not secret.is_empty() else PackedStringArray()
 
 func _options(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	return {"allow_http": profile.get("allow_http", false), "cancel": cancel}
 
 func _runware(profile: Dictionary, tasks: Array, cancel: Dictionary) -> Dictionary:
-	var result = await transport.request("https://api.runware.ai/v1", HTTPClient.METHOD_POST, _headers(profile), tasks, {"cancel": cancel})
+	var result = await transport.request(str(api_urls["runware"]), HTTPClient.METHOD_POST, _headers(profile), tasks, {"cancel": cancel, "allow_http": test_http})
 	if not result.get("ok", false): return result
 	var json: Variant = result.get("json")
 	if not json is Dictionary: return Common.failure("Răspuns Runware invalid.")
@@ -372,7 +398,7 @@ func _cloud_submit(profile: Dictionary, prompt: String, reference: String, cance
 	if not result.get("ok", false): return result
 	var data: Dictionary = result["result"]
 	var id = Common.uid()
-	var job = {"id": id, "profile_id": profile["id"], "kind": profile.get("asset_kind", "image"), "provider": provider, "external_id": "", "status": "processing", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "file": "", "endpoint": built["result"]["endpoint"]}
+	var job = {"id": id, "profile_id": profile["id"], "kind": profile.get("asset_kind", "image"), "provider": provider, "external_id": "", "status": "processing", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "destination": profile.get("destination", "res://ai_assets"), "file": "", "endpoint": built["result"]["endpoint"]}
 	if provider == "openai_image":
 		var images: Variant = data.get("data", [])
 		if not images is Array or images.is_empty() or not images[0] is Dictionary: return Common.failure("OpenAI nu a returnat o imagine.", "missing_artifact")
@@ -436,7 +462,36 @@ func trusted_download(url: String, provider: String) -> bool:
 func export_job(id: String, profile: Dictionary, format: String, cancel: Dictionary, task_id: String = "") -> Dictionary:
 	var job = find_job(id)
 	if job.is_empty(): return Common.failure("Sarcină de generare inexistentă.")
-	return await AssetExports.new(self).export_job(job, profile, format, cancel, task_id)
+	var result = await AssetExports.new(self).export_job(job, profile, format, cancel, task_id)
+	if not result.get("ok", false) or result.get("result", {}).get("status") != "completed": return result
+	var existing = str(job.get("exports", {}).get(format, {}).get("project_path", ""))
+	if not existing.is_empty() and FileAccess.file_exists(existing):
+		result["result"]["project_path"] = existing
+		return result
+	var imported = import_job(id, str(job.get("destination", "res://ai_assets")))
+	if not imported.get("ok", false): return result
+	if format == "glb":
+		result["result"]["project_path"] = imported["result"]["path"]
+		return result
+	var source = str(result["result"].get("file", ""))
+	var folder = str(imported["result"]["path"]).get_base_dir()
+	var filename = asset_slug(str(job.get("prompt", ""))) + "_" + format + "." + source.get_extension()
+	var destination = folder.path_join(filename)
+	var suffix = 2
+	while FileAccess.file_exists(destination) and FileAccess.get_sha256(destination) != FileAccess.get_sha256(source) and suffix < 1000:
+		destination = folder.path_join(asset_slug(str(job.get("prompt", ""))) + "_" + format + "_" + str(suffix) + "." + source.get_extension())
+		suffix += 1
+	if FileAccess.file_exists(destination) and FileAccess.get_sha256(destination) != FileAccess.get_sha256(source): return Common.failure("Nu am găsit un nume liber pentru export.")
+	if not FileAccess.file_exists(destination):
+		var error = DirAccess.copy_absolute(source, ProjectSettings.globalize_path(destination))
+		if error != OK: return Common.failure("Exportul este în cache, dar nu îl pot salva în proiect: " + error_string(error))
+	if not job.has("exports"): job["exports"] = {}
+	if not job["exports"].has(format): job["exports"][format] = {}
+	job["exports"][format]["project_path"] = destination
+	result["result"]["project_path"] = destination
+	_save()
+	if Engine.is_editor_hint(): EditorInterface.get_resource_filesystem().scan_sources()
+	return result
 
 
 func _tripo_upload(profile: Dictionary, path: String, cancel: Dictionary) -> Dictionary:

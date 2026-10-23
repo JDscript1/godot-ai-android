@@ -32,6 +32,10 @@ static func valid_id(value: String) -> bool:
 		if not character.to_lower() in "abcdefghijklmnopqrstuvwxyz0123456789-_.": return false
 	return value not in [".", ".."]
 
+static func asset_parts(value: String) -> PackedStringArray:
+	var parts = value.split("/")
+	return PackedStringArray(parts) if parts.size() == 2 and valid_id(parts[0]) and valid_id(parts[1]) else PackedStringArray()
+
 func _request_json(path: String, cancel: Dictionary) -> Dictionary:
 	var result = await transport.request(api_url.trim_suffix("/") + "/" + path, HTTPClient.METHOD_GET, [], null, {"cancel": cancel, "allow_http": test_http})
 	if not result.get("ok", false): return result
@@ -46,21 +50,24 @@ func search(query: String, page: int, cancel: Dictionary) -> Dictionary:
 	var cards = []
 	for hit in result["result"].get("hits", []).slice(0, 12):
 		var asset: Dictionary = hit.get("asset", {})
-		var id = str(asset.get("slug", ""))
-		if not valid_id(id): continue
+		var slug = str(asset.get("slug", ""))
+		var publisher = str(asset.get("publisher", {}).get("slug", ""))
+		if not valid_id(slug) or not valid_id(publisher): continue
+		var id = publisher + "/" + slug
 		var item = {"id": id, "name": asset.get("name", id), "publisher": asset.get("publisher", {}).get("name", ""), "license": asset.get("license_type", ""), "url": asset.get("store_url", "")}
 		cards.append(item)
 	return {"ok": true, "result": {"count": result["result"].get("count", 0), "items": cards}, "store_items": cards}
 
 func describe(id: String, cancel: Dictionary) -> Dictionary:
-	if not valid_id(id): return Common.failure("ID Store invalid.")
-	var result = await _request_json("assets/" + id.uri_encode(), cancel)
+	var parts = asset_parts(id)
+	if parts.is_empty(): return Common.failure("ID Store invalid. Folosește publisher/addon din store_search.")
+	var result = await _request_json("assets/" + parts[0] + "/" + parts[1] + "/", cancel)
 	if not result.get("ok", false): return result
 	if not result.get("result") is Dictionary: return Common.failure("Descriere Store invalidă.")
 	var asset: Dictionary = result["result"]
 	var publisher = str(asset.get("publisher", {}).get("slug", ""))
-	if not valid_id(publisher): return Common.failure("Publisher Store invalid.")
-	var releases = await _request_json("releases/" + publisher.uri_encode() + "/" + id.uri_encode() + "/", cancel)
+	if publisher != parts[0] or str(asset.get("slug", "")) != parts[1]: return Common.failure("Identitatea addonului nu corespunde catalogului.")
+	var releases = await _request_json("releases/" + parts[0] + "/" + parts[1] + "/", cancel)
 	if not releases.get("ok", false): return releases
 	if not releases.get("result") is Array: return Common.failure("Lista versiunilor este invalidă.")
 	var available = []
@@ -95,7 +102,7 @@ func install(id: String, version: String, cancel: Dictionary) -> Dictionary:
 	if not Common.parse_url(url, test_http).get("ok", false): return Common.failure("Adresă de descărcare invalidă.")
 	busy = true
 	var path = directory.path_join(Common.uid() + ".zip")
-	var downloaded = await transport.request(url, HTTPClient.METHOD_GET, [], null, {"cancel": cancel, "allow_http": test_http, "save_path": path, "max_bytes": 64 * 1024 * 1024, "follow_redirects": true, "timeout": 120})
+	var downloaded = await transport.request(url, HTTPClient.METHOD_GET, [], null, {"cancel": cancel, "allow_http": test_http, "save_path": path, "max_bytes": 128 * 1024 * 1024, "follow_redirects": true, "timeout": 600})
 	if not downloaded.get("ok", false): busy = false; return downloaded
 	var sha = str(selected.get("sha256", selected.get("download_hash", "")))
 	if not sha.is_empty() and FileAccess.get_sha256(path) != sha: busy = false; return Common.failure("Hash-ul arhivei nu corespunde sursei.")
@@ -105,7 +112,7 @@ func install(id: String, version: String, cancel: Dictionary) -> Dictionary:
 
 static func zip_manifest(path: String) -> Dictionary:
 	var file = FileAccess.open(path, FileAccess.READ)
-	if file == null or file.get_length() > 64 * 1024 * 1024: return Common.failure("Arhivă lipsă sau prea mare.")
+	if file == null or file.get_length() > 128 * 1024 * 1024: return Common.failure("Arhivă lipsă sau prea mare.")
 	# Inspect central directory before ZIPReader can allocate decompressed entries.
 	var bytes = file.get_buffer(file.get_length())
 	var end = -1
@@ -115,7 +122,7 @@ static func zip_manifest(path: String) -> Dictionary:
 	var count = bytes.decode_u16(end + 10)
 	var offset = bytes.decode_u32(end + 16)
 	if bytes.decode_u16(end + 8) != count or bytes.decode_u16(end + 20) + end + 22 != bytes.size() or offset + bytes.decode_u32(end + 12) != end: return Common.failure("Index ZIP inconsistent sau ZIP64 nesuportat.")
-	if count < 1 or count > 1000: return Common.failure("Prea multe fișiere în arhivă.")
+	if count < 1 or count > 5000: return Common.failure("Prea multe fișiere în arhivă.")
 	var names = []
 	var sizes = {}
 	var total = 0
@@ -128,11 +135,11 @@ static func zip_manifest(path: String) -> Dictionary:
 		var extra = bytes.decode_u16(offset + 30)
 		var comment = bytes.decode_u16(offset + 32)
 		var mode = bytes.decode_u32(offset + 38) >> 16
-		if offset + 46 + name_length + extra + comment > end or (flags & 1) != 0 or method not in [0, 8] or size > 32 * 1024 * 1024 or (mode & 0xF000) == 0xA000: return Common.failure("Intrare ZIP nesigură sau prea mare.")
+		if offset + 46 + name_length + extra + comment > end or (flags & 1) != 0 or method not in [0, 8] or size > 128 * 1024 * 1024 or (mode & 0xF000) == 0xA000: return Common.failure("Intrare ZIP nesigură sau prea mare.")
 		var name = bytes.slice(offset + 46, offset + 46 + name_length).get_string_from_utf8()
 		if name.is_absolute_path() or ":" in name or "\\" in name or 0 in name.to_utf8_buffer() or ".." in name.split("/") or ".git" in name.split("/") or name.begins_with("/"): return Common.failure("Cale ZIP nepermisă.")
 		total += size
-		if total > 128 * 1024 * 1024: return Common.failure("Arhiva decomprimată este prea mare.")
+		if total > 512 * 1024 * 1024: return Common.failure("Arhiva decomprimată este prea mare.")
 		if sizes.has(name): return Common.failure("Intrări ZIP duplicate.")
 		sizes[name] = size
 		if not name.ends_with("/"): names.append(name)
@@ -144,6 +151,8 @@ func install_zip(path: String, metadata: Dictionary, version: String, cancel: Di
 	if not inspected.get("ok", false): return inspected
 	var reader = ZIPReader.new()
 	if reader.open(path) != OK: return Common.failure("Arhiva ZIP nu poate fi deschisă.")
+	var native_check = _android_native_support(reader, inspected["result"])
+	if not native_check.get("ok", false): reader.close(); return native_check
 	var files = []
 	var hashes = {}
 	var plugins = []
@@ -159,7 +168,6 @@ func install_zip(path: String, metadata: Dictionary, version: String, cancel: Di
 		if safe.is_empty() or DirAccess.dir_exists_absolute(safe) or FileAccess.file_exists(safe) or hashes.has(safe.to_lower()): writer.close(); reader.close(); return Common.failure("Conflict de instalare: " + target, "install_conflict")
 		var data = reader.read_file(source)
 		if data.size() != int(inspected["sizes"].get(source, -1)): writer.close(); reader.close(); return Common.failure("Fișier corupt în addon: " + target)
-		if target.ends_with(".gdextension") or target.get_extension().to_lower() in ["so", "dll", "dylib"]: writer.close(); reader.close(); return Common.failure("Addon nativ: compatibilitatea binarelor trebuie validată separat.", "native_addon_unverified")
 		writer.start_file(target)
 		writer.write_file(data)
 		writer.close_file()
@@ -199,6 +207,35 @@ func install_zip(path: String, metadata: Dictionary, version: String, cancel: Di
 	Common.atomic_json(directory.path_join("installed.json"), installed)
 	tools._request_scan()
 	return {"ok": success, "result": {"installation": id, "plugins": plugins, "files": manifest.size(), "enabled": false, "restart_required": false}, "error": "" if success else "Instalare incompletă; consultă fișierele și Output."}
+
+static func _android_native_support(reader: ZIPReader, sources: Array) -> Dictionary:
+	var targets = {}
+	var manifests = []
+	var has_native = false
+	for source in sources:
+		var start = str(source).find("addons/")
+		if start < 0 or (start > 0 and str(source)[start - 1] != "/"): continue
+		var target = str(source).substr(start)
+		targets["res://" + target] = source
+		if target.ends_with(".gdextension"): manifests.append(source)
+		if target.get_extension().to_lower() in ["so", "dll", "dylib"]: has_native = true
+	if not has_native and manifests.is_empty(): return Common.success()
+	if manifests.is_empty(): return Common.failure("Arhiva nativă nu are manifest GDExtension.", "native_addon_unverified")
+	for source in manifests:
+		var config = ConfigFile.new()
+		if config.parse(reader.read_file(source).get_string_from_utf8()) != OK or not config.has_section("libraries"):
+			return Common.failure("Manifest GDExtension invalid.", "native_addon_unverified")
+		var supported = false
+		for key in config.get_section_keys("libraries"):
+			var tags = str(key).to_lower().split(".")
+			var library = str(config.get_value("libraries", key, ""))
+			var manifest_path = "res://" + str(source).substr(str(source).find("addons/"))
+			var resolved = library if library.begins_with("res://") else manifest_path.get_base_dir().path_join(library).simplify_path()
+			if "android" in tags and "arm64" in tags and resolved.ends_with(".so") and targets.has(resolved):
+				var binary = reader.read_file(str(targets[resolved]))
+				if binary.size() >= 20 and binary.slice(0, 4) == PackedByteArray([127, 69, 76, 70]) and binary[4] == 2 and binary[5] == 1 and binary.decode_u16(18) == 183: supported = true
+		if not supported: return Common.failure("GDExtension nu include un binar Android ARM64 verificabil.", "native_addon_unverified")
+	return Common.success()
 
 func enable_plugin(name: String, enabled: bool) -> Dictionary:
 	if not valid_id(name) or not FileAccess.file_exists("res://addons/" + name + "/plugin.cfg"): return Common.failure("Addon inexistent.")

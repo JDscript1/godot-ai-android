@@ -43,10 +43,15 @@ utilizatorul poate selecta modelul și alege Din catalog / Permite imagini / Doa
 text; alegerea este separată pentru fiecare model și se salvează cu profilul.
 Aplicația nu deduce vision din numele modelului.
 
-Pachetele Store cu binare native sunt refuzate până la validarea platformei.
+Pachetele Store cu GDExtension pot fi instalate când manifestul referă un binar
+Android ARM64 prezent în arhivă, cu antet ELF AArch64 valid. Activarea rămâne
+separată, iar încărcarea efectivă se verifică în Output/Debugger.
 Dezinstalarea folosește și puntea nativă pentru cache-ul GDScript;
-editorul upstream raportează explicit lipsa acesteia. Catalogul public Store a răspuns HTTP 403 în verificarea locală; protocolul și
-instalarea sunt testate cu fixture, fără a pretinde succes pe un addon public.
+editorul upstream raportează explicit lipsa acesteia. API-ul public a returnat
+Terrain3D în căutarea live; parserul folosește acum identitatea `publisher/slug`
+și adresele publice corecte. Arhiva oficială Terrain3D v1.0.2 a trecut
+preflight-ul și s-a instalat într-un proiect temporar al editorului de test.
+Încărcarea/activarea addonului pe Android necesită încă o probă pe dispozitiv.
 
 ## Baza existentă înainte de această etapă
 

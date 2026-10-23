@@ -1014,7 +1014,7 @@ func provider_icon(profile: Dictionary) -> Texture2D:
 	return _icon("Provider_" + issuer)
 
 func section_icon(section: String) -> Texture2D:
-	return _icon({"general": "Settings", "providers": "Providers", "accounts": "Accounts", "generation": "Generation", "mcp": "MCP", "integrations": "Integrations", "journal": "Journal", "agent": "File", "voice": "Microphone", "playtesting": "Play"}.get(section, "Settings"))
+	return _icon({"general": "Settings", "providers": "Providers", "accounts": "Accounts", "generation": "Generation", "mcp": "MCP", "integrations": "Integrations", "skills": "Skills", "automations": "Plan", "journal": "Journal", "agent": "File", "voice": "Microphone", "playtesting": "Play"}.get(section, "Settings"))
 
 func _toggle_expanded() -> void:
 	action.emit("expand", {})

@@ -72,7 +72,7 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             valid = urllib.parse.parse_qs(location.query).get("query") == ["fixture"]
             self.reply({"count": 1, "hits": [{"asset": {"slug": "fixture-addon", "name": "Fixture addon", "publisher": {"name": "Fixture publisher", "slug": "fixture"}, "license_type": "MIT"}}]} if valid else {"error": "query missing"}, 200 if valid else 400)
             return
-        if location.path == "/store/assets/fixture-addon":
+        if location.path == "/store/assets/fixture/fixture-addon/":
             self.reply({"slug": "fixture-addon", "name": "Fixture addon", "publisher": {"name": "Fixture publisher", "slug": "fixture"}, "license_type": "MIT"})
             return
         if location.path == "/store/releases/fixture/fixture-addon/":
@@ -157,6 +157,10 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             return
         payload = ({key: values[0] for key, values in urllib.parse.parse_qs(raw.decode()).items()} if self.headers.get("Content-Type", "").startswith("application/x-www-form-urlencoded") else json.loads(raw or b"{}"))
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/runware":
+            valid = self.headers.get("Authorization") == "Bearer generation-fixture-key" and isinstance(payload, list) and payload == [{"taskType": "ping", "ping": True}]
+            self.reply({"data": [{"taskType": "ping", "pong": True}]} if valid else {"errors": [{"code": "invalidApiKey", "message": "Invalid API key"}]}, 200 if valid else 401)
+            return
         if location.path in ["/login/device/code", "/login/oauth/access_token"]:
             client = payload.get("client_id", "")
             if location.path.endswith("/device/code"):
@@ -256,7 +260,10 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     command = [args.godot, "--headless", "--path", str(source / "tests/fixture"), "--script", str(source / "tests/test_runtime.gd"), "--", "--source=" + str(source), f"--mock-url=http://127.0.0.1:{server.server_port}"]
     if args.proot:
-        command = ["proot-distro", "login", "debian", "--shared-home", "--"] + command
+        prefix = ["proot-distro", "login", "debian", "--shared-home", "--"]
+        if os.environ.get("GODOT_AI_TERRAIN3D_ZIP"):
+            prefix += ["env", "GODOT_AI_TERRAIN3D_ZIP=" + os.environ["GODOT_AI_TERRAIN3D_ZIP"]]
+        command = prefix + command
     try:
         with tempfile.TemporaryDirectory(prefix="godot-ai-qa-") as scratch:
             env = dict(os.environ, XDG_CONFIG_HOME=scratch, XDG_DATA_HOME=scratch, XDG_CACHE_HOME=scratch)
