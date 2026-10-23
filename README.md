@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39835516663/artifacts/12451395446)
-(GitHub Actions artifact, source `2538551`).
+[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39908354563/artifacts/12482320480)
+(GitHub Actions artifact, source `13456af`).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -27,7 +27,9 @@ its tested source is identified above.
 
 The APK also includes [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md),
 plus [native Meshy, Tripo and image generation](docs/AI_GENERATION.md).
-Automated generation checks use HTTP fixtures; paid-provider and physical Android
+It also includes multi-format 3D export, grouped cloud/local profiles, explicit
+LAN discovery and GitHub Device Flow (our OAuth app registration is still required).
+Automated generation/auth checks use HTTP fixtures; paid-provider and physical Android
 validation remain separate.
 
 [Chat file previews, visual editor control and Store tools](docs/AI_CHAT_FILES_AND_EDITOR_CONTROL.md)

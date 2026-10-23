@@ -12,12 +12,14 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`2538551`**
-  (`25385516d329a373d37196148e293ca7fa05733a`).
+- Ultimul commit livrat și verificat ca pachet: **`13456af`**
+  (`13456afe2ca741c5b658ae5df76d1f98b8c8d5d7`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `6539a44` a fost
+  Include exporturi 3D extinse, GitHub Sign in (Client ID încă necesar),
+  separatoare Cloud/Local și căutare LAN explicită.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `2538551` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -27,7 +29,7 @@ MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
 ## Etapa curentă — exporturi 3D, GitHub și LAN, 23.10.2026
 
-Implementate în surse, după APK-ul `2538551`:
+Implementate și incluse în APK-ul `13456af`, care înlocuiește `2538551`:
 
 - GLB original păstrat pentru preview/import; export glTF în ZIP cu dependențe,
   OBJ/STL/PLY native pentru geometrie statică și conversii FBX/USDZ/3MF prin
@@ -63,10 +65,14 @@ fără chei pe CDN, OAuth pending/slowdown/refuz/anulare/expirare și endpoint L
 local izolat. Nu s-a scanat rețeaua utilizatorului. Verificarea randată a trecut: **314 verificări × 5 configurații**, fără eșecuri.
 Capturile desktop, înguste și compacte au fost inspectate. Ultima extindere verifică
 și exportul deschis chiar din fereastra modală Setări, cu dialog copil corect.
-Compilarea în editorul nativ/APK și verificările live rămân etape distincte.
+CI a trecut integral: **335 aserțiuni runtime**, **314 verificări × 5** upstream
+și **324 verificări × 5** în editorul nativ, fără eșecuri. Capturile native compacte
+pentru Furnizori, Integrări, export și dock stânga au fost inspectate.
 Dovezi locale: `.ai-qa/new-integrations-unit-final.log`,
-`.ai-qa/new-integrations-final-render/`. APK-ul din Download este încă `2538551`;
-compilarea/livrarea noii etape se consemnează separat după verificare.
+`.ai-qa/new-integrations-final-render/`, `.ai-qa/new-integrations-nested/`,
+`.ai-qa/13456af-native-ci/`, `.ai-qa/13456af-runtime-ci.log`,
+`.ai-qa/13456af-native-ci.log` și `.ai-qa/delivery-13456af.json`.
+APK-ul nou a fost livrat în Download după verificarea locală; detalii la final.
 
 Jurnal: 23.10.2026 — extinse exporturile 3D, pregătit GitHub Sign in și selectarea
 repository-ului, separate găzduirile și adăugată căutarea LAN. Serviciile live și
@@ -715,3 +721,30 @@ verificările exercită fișiere, indexuri, dialoguri și tranziții reale în e
 Jurnal: 22.10.2026 — livrat auditul de încadrare și comportament al butoanelor;
 versiunile intermediare nu au fost livrate. Documentația curentă indică sursa,
 testele și APK-ul verificat.
+
+
+## Livrare exporturi 3D, GitHub și LAN — 23.10.2026, 08:02:45 CEST
+
+- Sursă **13456afe2ca741c5b658ae5df76d1f98b8c8d5d7**, workflow
+  [39908354563](https://github.com/JDscript1/godot-ai-android/actions/runs/39908354563):
+  runtime, native-editor și Android trecute.
+- Local: **340 aserțiuni**, 3 teste de livrare, **314 verificări × 5** randate și
+  repetare desktop pentru export din Setări. CI: **335 aserțiuni**, **314 × 5**
+  upstream, **324 × 5** native, 3 teste de livrare, 9 teste companion + build TS.
+- APK **145.190.193 bytes**, `com.jdscript.godotai.debug`, numai ARM64; certificatul
+  persistent și toate cele **26 de surse încorporate** verificate byte cu byte.
+- Înlocuit atomic `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
+  la **08:02:45 CEST**, cu checksum alăturat. Verificat un singur APK al fork-ului;
+  celelalte descărcări sunt păstrate. Pachetul nu a fost instalat automat.
+- SHA-256: `6b1178452b49fff41309a75eefeb313ba237ab7584ae0e290144515f3f71b110`.
+- Dovezi: `.ai-qa/delivery-13456af.json`, `.ai-qa/13456af-native-ci/`,
+  `.ai-qa/13456af-runtime-ci.log`, `.ai-qa/13456af-native-ci.log`,
+  `.ai-qa/new-integrations-unit-final.log`, `.ai-qa/new-integrations-final-render/`,
+  `.ai-qa/new-integrations-nested/`.
+- OAuth GitHub real așteaptă aplicația proprie/Client ID și autorizarea utilizatorului.
+  Testele furnizorilor plătiți, rețeaua Wi-Fi între dispozitive și comportamentul
+  fizic Android rămân de validat; testele simulate nu țin locul acestor probe.
+
+Jurnal: 23.10.2026 — livrat `13456af`; exporturile, GitHub Sign in și căutarea LAN
+sunt în APK. Actualizate documentația și lista priorităților. Rețeaua utilizatorului
+nu a fost scanată, iar conturi/chei ale dezvoltatorului nu au fost împrumutate aplicației.

@@ -34,7 +34,7 @@ opens the same global configuration window.
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current APK is `2538551`, including control/integrations/generation and
+The current APK is `13456af`, including control/integrations/generation and
 [chat files, previews, editor control, Store and real diff](AI_CHAT_FILES_AND_EDITOR_CONTROL.md).
 Delivery evidence is recorded in [the project progress document](../PROGRES_SI_PLAN.md).
 
@@ -134,7 +134,7 @@ Original Godot Agent/Hydra-Go-3D worktrees were not edited.
 
 ## Verification
 
-The 2026-10-22 harness source is included in the APK listed below. See
+The 2026-10-23 harness source is included in the APK listed below. See
 [the harness contract and verification scope](AI_HARNESS.md).
 
 Run the embedded-runtime tests with an upstream or forked 4.7.2 editor binary:
@@ -164,20 +164,20 @@ with the standard `androiddebugkey` alias and `android` debug passwords. CI also
 compares the APK certificate with that keystore before uploading an artifact.
 This is a development build; no production signing key is included in source.
 
-Evidence below describes delivered APK `2538551`. Full history and local paths
+Evidence below describes delivered APK `13456af`. Full history and local paths
 are in [the progress record](../PROGRES_SI_PLAN.md).
 
 | Area | Current verification |
 | --- | --- |
-| Runtime, protocol adapters, file revisions, diff and model capability policies | 302 assertions locally; 297 in CI, which omits the five optional local Blender checks. HTTP providers use deterministic fixtures |
-| Upstream editor | 305 checks in each of five configurations: desktop, narrow, wide, phone landscape and phone compact |
-| Compiled native fork | 315 checks in each configuration, including actual mouse input, GLB pixels, offscreen rendering, native addon installation/activation/removal, Undo and diagnostics |
+| Runtime, protocol adapters, file revisions, diff and model capability policies | 340 assertions locally; 335 in CI, which omits the five optional local Blender checks. HTTP providers use deterministic fixtures |
+| Upstream editor | 314 checks in each of five configurations: desktop, narrow, wide, phone landscape and phone compact |
+| Compiled native fork | 324 checks in each configuration, including actual mouse input, GLB pixels, offscreen rendering, native addon installation/activation/removal, Undo and diagnostics |
 | Companion | Nine deterministic tests and TypeScript build passed |
-| APK | ARM64, package and persistent certificate verified; all 25 embedded scripts match the compiled commit byte for byte |
+| APK | ARM64, package and persistent certificate verified; all 26 embedded scripts match the compiled commit byte for byte |
 | Device and live services | Physical Android UI/touch/Keystore/microphone/suspend and real vision/subscription/generation providers remain separate checks. The public Store request returned HTTP 403 locally; Store execution was tested with a fixture addon |
 
-[All three CI jobs passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39835516663).
-Native dock screenshots were inspected in the current build, including compact
+[All three CI jobs passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39908354563).
+Native export/provider/integration settings and dock screenshots were inspected in the current build, including compact
 left placement and the 3D workspace overlap check. Image/3D viewer, references
 and diff screenshot inspection is also recorded in the earlier delivery history.
 Godot may enforce a larger editor window than the narrow virtual display.
@@ -188,14 +188,14 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The tested APK source is `25385516d329a373d37196148e293ca7fa05733a`.
-Download its [ARM64 artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39835516663/artifacts/12451395446).
-The APK is 145,157,425 bytes; its SHA-256 is
-`f8d4d2d208d06655d2b731872423260b02fb2ccbcd7ba8485eaa3932c4bd8a52`.
+The tested APK source is `13456afe2ca741c5b658ae5df76d1f98b8c8d5d7`.
+Download its [ARM64 artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39908354563/artifacts/12482320480).
+The APK is 145,190,193 bytes; its SHA-256 is
+`6b1178452b49fff41309a75eefeb313ba237ab7584ae0e290144515f3f71b110`.
 The delivered phone copy is `Download/Godot-AI-Android-arm64-debug.apk`,
-with a matching `.sha256` file, updated on 22 October 2026 at 21:11:14 CEST.
+with a matching `.sha256` file, updated on 23 October 2026 at 08:02:45 CEST.
 Its checksum, package, ABI, persistent signature and all embedded sources were
-checked locally. It atomically replaced `6539a44`; Download contains one fork
+checked locally. It atomically replaced `2538551`; Download contains one fork
 installer. Unrelated downloads remain untouched.
 The persistent development certificate SHA-256 is
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.

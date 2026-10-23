@@ -1,6 +1,6 @@
 # Fișiere în chat, preview și control vizual al editorului
 
-Data: 22.10.2026. **Inclus în APK `2538551`; verificările și livrarea sunt urmărite
+Data: 23.10.2026. **Inclus în APK `13456af`; verificările și livrarea sunt urmărite
 în PROGRES_SI_PLAN.md.** Documentul păstrează cerințele aprobate și
 limitele implementării. Nu adaugă o pagină duplicată în Integrări.
 
@@ -35,7 +35,9 @@ pentru texturi. Importul nativ GLTFDocument este sincron; Stop este verificat
 Scenelor inactive li se eliberează resursele la închiderea viewerului.
 
 Backend-ul de captură operează Godot, inclusiv ferestrele sale; MediaProjection,
-controlul altor aplicații, OBJ/FBX și conversia .blend sunt extensii separate.
+controlul altor aplicații și preview-ul direct OBJ/FBX sunt extensii separate.
+Exporturile OBJ/STL/PLY/glTF și conversiile furnizorilor FBX/USDZ/3MF/BLEND sunt
+descrise separat în [generare/export](AI_GENERATION.md); preview-ul păstrează GLB/glTF.
 Unele cataloage omit modalitățile de intrare. În Furnizori → Opțiuni avansate,
 utilizatorul poate selecta modelul și alege Din catalog / Permite imagini / Doar
 text; alegerea este separată pentru fiecare model și se salvează cu profilul.

@@ -1,6 +1,8 @@
 # Control, integrations and project skills
 
-These changes ship in APK `db5343b`, built and verified in [workflow 39772723053](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053).
+Current source, compiled-package and delivery evidence are recorded in
+[PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md). OAuth protocol implementation is
+separate from registering the project's GitHub app and verifying live login.
 
 ## Control
 
@@ -17,7 +19,7 @@ restores the main tab. Docked chat stays available beside the editor, and openin
 its tab restores the prior workspace. Moving it is refused during active work or
 voice capture. The top expand action temporarily centers docked chat and restores
 its prior dock on collapse, retaining the saved position. Docked expansion also
-waits for active work to finish. Preferences survive restart. The C++ bridge compiled and ran in the native fork editor fixture: 188 checks
+waits for active work to finish. Preferences survive restart. The C++ bridge compiled and ran in the native fork editor fixture: 324 checks
 in each of five display configurations, including real dock moves. Physical
 Android interaction and sound output remain unverified.
 
@@ -124,5 +126,4 @@ No live issue was created and no private GitHub account was connected; real OAut
 login still requires app registration and user browser authorization. Rendered editor fixtures cover
 permissions, skills/recovery, memory conflicts, context, settings and dock moves.
 Exact counts and evidence are recorded in [PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
-Windows execution, the recompiled native dock bridge, physical Android and actual
-audio playback remain unverified. The current source/build/delivery status is recorded in the progress document.
+Windows execution, physical Android and actual audio playback remain unverified. The current source/build/delivery status is recorded in the progress document.
