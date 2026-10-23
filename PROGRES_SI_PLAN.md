@@ -12,14 +12,14 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`978a6d3`**
-  (`978a6d332edd1204baeb0f5fed0634345b16645d`).
+- Ultimul commit livrat și verificat ca pachet: **`36457dd`**
+  (`36457dd4569ac787ad5888599e6ba2c1c573e095`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
   Include exporturi 3D extinse, GitHub cu token personal,
   separatoare Cloud/Local și căutare LAN explicită.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `13456af` a fost
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `978a6d3` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -29,12 +29,11 @@ MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
 ## Etapa curentă — Store, rețea locală și generare, 23.10.2026
 
-Implementat în surse; compilarea și livrarea acestei etape sunt în verificare:
+Implementat în surse, compilat și livrat în APK-ul **`36457dd`**:
 
 - Integrarea GitHub a fost simplificată la token personal: câmp vizibil, salvare
   în vault, verificare cont/repository, alegere repository și deconectare.
   Fluxul OAuth/Device Flow și Client ID-ul au fost scoase din aplicație.
-
 - `store_search` citește structura reală `hits` din API-ul nou și returnează
   `publisher/slug`; `store_describe` folosește această identitate și rutele
   publice corecte. Terrain3D a apărut în răspunsul live al căutării. Instalarea
@@ -61,20 +60,43 @@ Implementat în surse; compilarea și livrarea acestei etape sunt în verificare
   verificată; versiunea APK precedent era deja `4.7.2.stable`. Eșecul Store
   provenea din adaptor, nu din eticheta versiunii.
 
-Verificări locale: **361 aserțiuni runtime**, zero eșecuri, cu arhiva oficială
+Verificări locale finale: **357 aserțiuni runtime**, zero eșecuri, cu arhiva oficială
 Terrain3D furnizată testului; fixturile acoperă API-ul Store, GDExtension ELF
 ARM64, cheia Runware, prioritatea Wi-Fi, importul și exportul în foldere.
 Instalarea arhivei reale a trecut **29 verificări** într-un proiect temporar.
-Randarea editorului a trecut **319 verificări × 5 configurații**, zero eșecuri;
-capturile Furnizori, Generare, Skills și dockul îngust au fost inspectate.
+Randarea editorului a trecut **321 verificări × 5 configurații**, zero eșecuri;
+capturile Furnizori, Generare, Skills, dockul îngust și GitHub cu token au fost inspectate.
+CI a trecut integral: **350 aserțiuni runtime**, **321 verificări × 5** upstream
+și **331 verificări × 5** în editorul nativ. Salvarea/deconectarea tokenului și
+respingerea credențialelor lipsă sau invalide sunt acoperite de fixturi.
 Dovezi: `.ai-qa/terrain-generation-runtime-final.log`,
-`.ai-qa/terrain-real-install/` și `.ai-qa/terrain-generation-all-final/`.
-APK-ul nou urmează. Serviciile live cu cheile utilizatorului,
+`.ai-qa/terrain-real-install/`, `.ai-qa/terrain-generation-all-final/`,
+`.ai-qa/token-only-render-final/` și `.ai-qa/36457dd-ci.log`.
+APK-ul nou a înlocuit versiunea precedentă în Download la **18:00:16 CEST**.
+Serviciile live cu cheile utilizatorului,
 încărcarea Terrain3D pe Android fizic și rețeaua Wi-Fi a utilizatorului rămân
 probe separate.
 
 Jurnal: 23.10.2026 — corectat Store, păstrat selectorul Cloud/Local la vedere,
-clarificată conexiunea LM Studio și organizată generarea per obiect/furnizor.
+clarificată conexiunea LM Studio, organizată generarea per obiect/furnizor și
+simplificat GitHub la token personal; compilat, verificat și livrat `36457dd`.
+
+## Livrare Store, generare și token GitHub — 23.10.2026, 18:00 CEST
+
+- Sursă **`36457dd4569ac787ad5888599e6ba2c1c573e095`**; [workflow-ul
+  `39947703170`](https://github.com/JDscript1/godot-ai-android/actions/runs/39947703170)
+  a trecut integral: runtime, native-editor și Android.
+- APK **145.206.577 bytes**, `com.jdscript.godotai.debug`, numai ARM64.
+  Certificatul persistent, checksum-ul și cele **26 de scripturi încorporate**
+  au fost verificate înainte de livrare.
+- SHA-256: `cda966c83f61dd836bd518b3f8b14a5b46eab2dd1e297a0e5fc4cd42b5b49616`.
+- Înlocuit atomic `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
+  și fișierul `.sha256` alăturat. În Download rămâne un singur APK al fork-ului;
+  celelalte descărcări au fost păstrate. Nu s-a instalat automat pachetul.
+- Dovezi: `.ai-qa/delivery-36457dd.json`, `.ai-qa/36457dd-artifact/`,
+  `.ai-qa/36457dd-ci.log` și `.ai-qa/token-only-render-final/`.
+- Tokenul GitHub real, furnizorii plătiți, conexiunea Wi-Fi între dispozitive și
+  încărcarea Terrain3D pe Android fizic rămân de verificat separat.
 
 ## Etapa curentă — rafinare vizuală, livrată 23.10.2026
 

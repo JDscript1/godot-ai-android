@@ -29,8 +29,8 @@ opens the same global configuration window.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
   configure the process in the companion and connect to its `/mcp/<name>` URL.
 - **General:** YOLO, center/left/right chat placement and completion sounds.
-- **Integrări:** GitHub cu token personal și selecție de repository, desktop Blender CLI, project
-  Skills and saved tasks. Configurarea GitHub este descrisă în
+- **Integrări:** GitHub cu token personal și selecție de repository, desktop Blender CLI.
+  Skills și Sarcini au pagini principale proprii. Configurarea GitHub este descrisă în
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 

@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39932275075/artifacts/12492461717)
-(GitHub Actions artifact, source `978a6d3`).
+[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39947703170/artifacts/12499161928)
+(GitHub Actions artifact, source `36457dd`).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -16,7 +16,7 @@ are tracked separately from automated checks.
 [Implementări, verificări și planul proiectului](PROGRES_SI_PLAN.md) este
 documentul de progres actualizat după fiecare etapă importantă.
 [Prioritățile următoare](docs/AI_ROADMAP.md) includ validarea pe dispozitiv,
-GitHub complet și profilurile de export 3D.
+GitHub cu token personal și profilurile de export 3D.
 [Auditul interfeței](docs/AI_UI_AUDIT.md) urmărește încadrarea și efectele reale
 ale butoanelor din chat și istoric.
 

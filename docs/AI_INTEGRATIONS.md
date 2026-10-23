@@ -36,7 +36,8 @@ separate device verification.
 
 ## Integrations
 
-Integrations contains GitHub, desktop Blender CLI, Skills and saved tasks.
+Integrations contains GitHub and desktop Blender CLI. Skills and saved tasks
+have separate main settings pages immediately below Integrations.
 MCP servers and image/3D generation have their own settings pages. The duplicate
 Services card and its shortcuts have been removed in source after APK `db5343b`.
 
@@ -67,7 +68,7 @@ Changing repositories in one project does not configure another project.
   bounded output, supports Stop/timeout and reports nonzero/Python exit status
   as failure. Scripts have Blender's desktop filesystem access. Android has no
   Blender CLI control or tool, and the APK never installs Blender.
-- Existing manually launched saved tasks remain under Integrations → Sarcini.
+- Existing manually launched saved tasks remain on the Sarcini page.
   This adds no autonomous scheduler.
 
 Authentication uses [GitHub personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
@@ -77,7 +78,7 @@ The adapters follow [GitHub repository contents](https://docs.github.com/en/rest
 
 ## Skills and memory
 
-Integrations → Skills lists portable project instructions in
+The Skills page lists portable project instructions in
 `res://.godot_ai/skills/<id>/SKILL.md`. The manager creates, edits, enables,
 disables and deletes skills; deletion uses native file recovery. Revisions are
 checked before updates/removal, and project-path/symlink rules still apply.
