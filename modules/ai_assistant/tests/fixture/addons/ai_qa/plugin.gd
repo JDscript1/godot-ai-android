@@ -865,6 +865,7 @@ func _narrow_dock_controls(slot: TabContainer, placement_index: int, output: Str
 			print("Control bounds: chat=", scope, " host=", panel.get_parent().get_global_rect(), " control=", control.get_global_rect(), " composer=", panel.chat.compose_panel.get_global_rect(), " toolbar=", panel.chat.composer_controls.get_global_rect())
 			EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("dock-clipped-" + str(placement_index) + ".png"))
 		_check(fits, "Narrow dock keeps the complete control visible: " + control.tooltip_text + " / " + str(placement_index))
+	_check(panel.chat.composer.placeholder_text == "Mesaj…" and panel.chat.send_button.size.y <= 34 * EditorInterface.get_editor_scale(), "Narrow dock keeps the input hint on one line and Send at compact height")
 	panel.chat.navigation_buttons["history"].pressed.emit()
 	for _frame in range(4): await get_tree().process_frame
 	_check(panel.chat.sidebar.visible and not panel.chat.root_column.visible and panel.chat.get_global_rect().grow(1).encloses(panel.chat.sidebar.get_global_rect()), "History replaces chat inside a narrow dock without expanding outside it")
@@ -999,6 +1000,10 @@ func _populated_chat_tests() -> void:
 	panel._refresh_profiles()
 	panel._edit_provider(0)
 	_check(panel.provider_selector.item_count == 3 and panel.provider_selector.get_item_metadata(2) == "visual-provider" and not panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved profiles use a compact selector with advanced fields collapsed")
+	_check(not panel.provider_mark.visible and panel.forms["provider"]["issuer"].get_parent() == panel.provider_advanced, "Saved provider shows its icon once and keeps service editing in advanced settings")
+	panel._new_provider()
+	_check(panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["container"], "New provider exposes service selection before the API key")
+	panel._edit_provider(0)
 	var previous_profiles = panel.config["providers"].duplicate(true)
 	panel.config["providers"].append({"id": "lan-fixture", "name": "LAN fixture", "issuer": "custom", "kind": "chat", "url": "http://192.168.1.20:1234/v1", "models": []})
 	panel._refresh_lists()
@@ -1105,6 +1110,7 @@ func _export_button_tests(path: String) -> void:
 	panel.config["generation"] = [{"id": "export-profile", "kind": "meshy", "asset_kind": "mesh", "name": "Meshy fixture"}]
 	panel.assets.jobs = [{"id": "export-cube", "profile_id": "export-profile", "kind": "mesh", "provider": "meshy", "status": "completed", "file": path, "external_id": "fixture-remote"}]
 	panel._refresh_lists()
+	_check(panel.lists["jobs"].get_item_text(0).begins_with("Model 3D · Finalizat"), "Generation result list uses a readable type and status")
 	panel.lists["jobs"].select(0)
 	panel.lists["jobs"].item_selected.emit(0)
 	var picker: OptionButton = panel.forms["generation"]["export_format"]

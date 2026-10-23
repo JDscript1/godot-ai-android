@@ -248,6 +248,9 @@ func _build_settings() -> void:
 	settings_window = AcceptDialog.new()
 	settings_window.title = "AI Assistant · Setări"
 	settings_window.get_ok_button().text = "Închide"
+	settings_window.get_ok_button().custom_minimum_size = Vector2(88, 34) * EditorInterface.get_editor_scale()
+	settings_window.get_ok_button().add_theme_stylebox_override("normal", chat._compact_style(Color("252939")))
+	settings_window.get_ok_button().add_theme_stylebox_override("hover", chat._compact_style(Color("393456")))
 	settings_window.min_size = Vector2i(340, 380)
 	settings_window.size_changed.connect(_layout_settings)
 	settings_window.close_requested.connect(settings_window.hide)
@@ -289,6 +292,8 @@ func _build_settings() -> void:
 	full_control = general_form["yolo"]
 	full_control.button_pressed = bool(preferences.get("yolo", false))
 	full_control.tooltip_text = "Activat: modificări fără confirmare. Dezactivat: cere confirmare. Plan rămâne doar pentru citire."
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		full_control.add_theme_stylebox_override(state, chat._compact_style(Color("252939") if state in ["normal", "pressed"] else Color("393456")))
 	_choice(general_form, "dock", "Poziție chat", ["Centru", "Stânga", "Dreapta"])
 	general_form["dock"].select(clampi(int(preferences.get("dock", 0)), 0, 2))
 	_check(general_form, "sounds", "Sunete în chat")
@@ -315,6 +320,7 @@ func _build_settings() -> void:
 	provider_mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	provider_mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	profile_row.add_child(provider_mark)
+	provider_mark.hide()
 	provider_selector = OptionButton.new()
 	provider_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	profile_row.add_child(provider_selector)
@@ -329,6 +335,7 @@ func _build_settings() -> void:
 	provider_badge.add_theme_color_override("font_color", Color("a9b5cb"))
 	var p = _form(provider_tab, "provider")
 	_choice(p, "issuer", "Serviciu", [])
+	p["issuer_label"] = p["container"].get_child(p["container"].get_child_count() - 2)
 	for group in ["cloud", "local"]:
 		p["issuer"].add_separator("Cloud" if group == "cloud" else "Local / self-hosted")
 		for entry in Providers.CATALOG:
@@ -338,7 +345,7 @@ func _build_settings() -> void:
 	_select_issuer("openai")
 	_field(p, "key", "Cheie API", true)
 	var row = _row(provider_tab)
-	_button(row, "Salvează", _save_provider)
+	_primary_button(row, "Salvează", _save_provider)
 	_action_button(row, "Verifică / modele", "provider_test", _test_provider)
 	_action_button(row, "Șterge", "provider_delete", func() -> void: _remove_profile("providers", "provider"))
 	provider_advanced = _disclosure(provider_tab, "Opțiuni avansate")
@@ -367,7 +374,8 @@ func _build_settings() -> void:
 		p["name"].text = str(entry["name"])
 		p["allow_http"].button_pressed = bool(entry.get("local", false))
 		provider_advanced.visible = bool(entry.get("local", false)) or entry["id"] == "custom")
-	_button(provider_tab, "Caută servere în rețea…", _discover_providers)
+	var discover = _button(provider_tab, "Caută servere în rețea…", _discover_providers)
+	discover.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	p["key"].text_changed.connect(func(text: String) -> void:
 		var detection = Providers.detect(text)
 		if detection.get("ok", false) and str(p.get("editing", "")).is_empty():
@@ -466,10 +474,15 @@ func _build_settings() -> void:
 	_field(g, "destination", "Destinație import")
 	g["destination"].text = "res://ai_assets"
 	var job_row = _row(gen_tab)
-	_action_button(job_row, "Generează", "generate", _generate)
+	settings_actions["generate"] = _primary_button(job_row, "Generează", _generate)
 	_action_button(job_row, "Actualizează rezultatul", "job_refresh", _refresh_job)
 	_action_button(job_row, "Previzualizare", "job_preview", _preview_job)
 	_action_button(job_row, "Importă în proiect", "job_import", _import_job)
+	g["jobs_heading"] = _label(gen_tab, "Rezultate")
+	lists["jobs"] = ItemList.new()
+	lists["jobs"].custom_minimum_size.y = 80 * EditorInterface.get_editor_scale()
+	gen_tab.add_child(lists["jobs"])
+	lists["jobs"].item_selected.connect(func(_index: int) -> void: _refresh_export_formats(); _update_settings_controls())
 	g["container"] = _form_container(gen_tab)
 	g["export_group"] = g["container"]
 	_choice(g, "export_format", "Format export 3D", [])
@@ -477,13 +490,9 @@ func _build_settings() -> void:
 	g["export_note"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	g["export_format"].item_selected.connect(func(index: int) -> void: g["export_note"].text = AssetExports.note(str(g["export_format"].get_item_metadata(index))))
 	var export_actions = _row(g["container"])
-	_action_button(export_actions, "Exportă modelul…", "job_export", _export_job)
+	settings_actions["job_export"] = _primary_button(export_actions, "Exportă modelul…", _export_job)
 	g["export_stop"] = _button(export_actions, "Oprește", _stop)
 	g["export_stop"].hide()
-	lists["jobs"] = ItemList.new()
-	lists["jobs"].custom_minimum_size.y = 110
-	gen_tab.add_child(lists["jobs"])
-	lists["jobs"].item_selected.connect(func(_index: int) -> void: _refresh_export_formats(); _update_settings_controls())
 	generation_preview = VBoxContainer.new()
 	gen_tab.add_child(generation_preview)
 	var mcp_tab = _tab("MCP", "mcp")
@@ -651,6 +660,12 @@ func _integration_card(parent: Node, title: String, icon: String) -> VBoxContain
 func _build_integrations(parent: Node) -> void:
 	var tabs = TabContainer.new()
 	tabs.add_theme_stylebox_override("panel", chat.style(Color("171b27"), 10))
+	tabs.add_theme_stylebox_override("tabbar_background", chat.style(Color("171b27"), 8))
+	tabs.add_theme_stylebox_override("tab_unselected", chat._compact_style(Color("171b27")))
+	tabs.add_theme_stylebox_override("tab_hovered", chat._compact_style(Color("302c43")))
+	tabs.add_theme_stylebox_override("tab_selected", chat._compact_style(Color("302b45")))
+	tabs.add_theme_color_override("font_selected_color", Color("f0eaff"))
+	tabs.add_theme_color_override("font_unselected_color", Color("a9b5cb"))
 	parent.add_child(tabs)
 	var connections = VBoxContainer.new()
 	connections.name = "Conexiuni"
@@ -665,7 +680,7 @@ func _build_integrations(parent: Node) -> void:
 	form["repository"].placeholder_text = "proprietar/proiect"
 	form["repository"].text = str(saved.get("github_repository", ""))
 	var auth_actions = _row(github)
-	form["signin"] = _button(auth_actions, "Sign in with GitHub", _github_signin)
+	form["signin"] = _primary_button(auth_actions, "Conectează GitHub", _github_signin)
 	form["cancel_auth"] = _button(auth_actions, "Anulează", _github_cancel_login)
 	form["cancel_auth"].hide()
 	form["code"] = _label(github, "")
@@ -688,6 +703,9 @@ func _build_integrations(parent: Node) -> void:
 		_save_connections(true)
 		form["status"].text = "Neconectat")
 	form["status"] = _label(github, "Cont salvat · verifică conexiunea" if not vault.read("integration_github").is_empty() else "Neconectat")
+	github.move_child(form["status"], 1)
+	github.move_child(auth_actions, 2)
+	form["status"].add_theme_color_override("font_color", Color("a9b5cb"))
 	var advanced = _disclosure(github, "Configurare autentificare")
 	form["auth_config"] = advanced
 	form["container"] = advanced
@@ -717,11 +735,11 @@ func _build_integrations(parent: Node) -> void:
 	tabs.add_child(skills)
 	tabs.set_tab_icon(1, chat._icon("Skills"))
 	lists["skills"] = ItemList.new()
-	lists["skills"].custom_minimum_size.y = 84 * EditorInterface.get_editor_scale()
+	lists["skills"].custom_minimum_size.y = 52 * EditorInterface.get_editor_scale()
 	skills.add_child(lists["skills"])
 	lists["skills"].item_selected.connect(_edit_skill)
 	var sk = _form(skills, "skill")
-	_field(sk, "id", "ID")
+	_field(sk, "id", "Identificator")
 	sk["id"].placeholder_text = "exemplu-workflow"
 	_field(sk, "description", "Descriere")
 	sk["instructions"] = TextEdit.new()
@@ -899,8 +917,13 @@ func _refresh_skills() -> void:
 	if not lists.has("skills"): return
 	lists["skills"].clear()
 	for item in workspace.catalog():
-		lists["skills"].add_item(("● " if item["enabled"] else "○ ") + str(item["id"]))
-		lists["skills"].set_item_metadata(lists["skills"].item_count - 1, item)
+		var description = str(item.get("description", "")).strip_edges().get_slice("\n", 0)
+		var caption = description if not description.is_empty() else str(item["id"])
+		lists["skills"].add_item(("● " if item["enabled"] else "○ ") + caption.left(56))
+		var index = lists["skills"].item_count - 1
+		lists["skills"].set_item_metadata(index, item)
+		lists["skills"].set_item_tooltip(index, str(item["id"]) + (" · " + description if not description.is_empty() else ""))
+	lists["skills"].custom_minimum_size.y = min(maxi(lists["skills"].item_count, 1), 3) * 52 * EditorInterface.get_editor_scale()
 
 func _new_skill() -> void:
 	var form: Dictionary = forms["skill"]
@@ -1027,6 +1050,7 @@ func _select_issuer(id: String) -> void:
 
 func _refresh_provider_selector() -> void:
 	if provider_selector == null: return
+	_layout_provider_service()
 	provider_selector.clear()
 	provider_selector.add_item("Adaugă un furnizor")
 	provider_selector.set_item_metadata(0, "")
@@ -1047,6 +1071,16 @@ func _refresh_provider_selector() -> void:
 				var count = profile.get("models", []).size()
 				provider_badge.text = ("● Conexiune verificată" if profile.has("verified_at") else "○ Configurat · conexiune neverificată") + " · %s %s" % [count, "model" if count == 1 else "modele"]
 				provider_badge.add_theme_color_override("font_color", Color("a2d2b0") if profile.has("verified_at") else Color("a9b5cb"))
+
+func _layout_provider_service() -> void:
+	if not forms.has("provider") or provider_advanced == null: return
+	var form: Dictionary = forms["provider"]
+	var target: Node = provider_advanced if not str(form.get("editing", "")).is_empty() else form["container"]
+	if form["issuer"].get_parent() == target: return
+	form["issuer_label"].reparent(target, false)
+	form["issuer"].reparent(target, false)
+	target.move_child(form["issuer_label"], 0)
+	target.move_child(form["issuer"], 1)
 
 func _discover_providers() -> void:
 	if busy: return
@@ -1138,10 +1172,21 @@ func _row(parent: Node) -> HFlowContainer:
 func _button(parent: Node, title: String, callback: Callable) -> Button:
 	var button = Button.new()
 	button.text = title
-	button.custom_minimum_size.y = 40 * EditorInterface.get_editor_scale()
+	button.custom_minimum_size.y = 32 * EditorInterface.get_editor_scale()
+	button.add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
+	button.add_theme_stylebox_override("normal", chat._compact_style(Color("252939")))
+	button.add_theme_stylebox_override("hover", chat._compact_style(Color("393456")))
+	button.add_theme_stylebox_override("pressed", chat._compact_style(Color("59458c")))
 	button.pressed.connect(callback)
 	parent.add_child(button)
 	return button
+
+func _primary_button(parent: Node, title: String, callback: Callable) -> Button:
+	var control = _button(parent, title, callback)
+	control.add_theme_stylebox_override("normal", chat._compact_style(Color("6041a8")))
+	control.add_theme_stylebox_override("hover", chat._compact_style(Color("7654bf")))
+	control.add_theme_stylebox_override("pressed", chat._compact_style(Color("503785")))
+	return control
 
 func _mount_dialog(dialog: Window) -> void:
 	# Settings is a modal window; its nested dialogs must share that window chain.
@@ -1244,9 +1289,16 @@ func _refresh_lists() -> void:
 		var selected = _selected_list_id(lists["jobs"])
 		lists["jobs"].clear()
 		for job in assets.jobs:
-			lists["jobs"].add_item("%s · %s · %s" % [job["id"].left(8), job["kind"], job["status"]])
+			var kind = "Model 3D" if job.get("kind") == "mesh" else "Imagine"
+			var state = {"submitting": "Se trimite", "processing": "Se generează", "running": "Se generează", "completed": "Finalizat", "failed": "Eșuat"}.get(str(job.get("status", "")), "În curs")
+			var subject = str(job.get("prompt", "")).strip_edges().get_slice("\n", 0).left(32)
+			if subject.is_empty(): subject = str(job["id"]).left(8)
+			lists["jobs"].add_item("%s · %s · %s" % [kind, state, subject])
 			lists["jobs"].set_item_metadata(lists["jobs"].item_count - 1, job["id"])
 			if job["id"] == selected: lists["jobs"].select(lists["jobs"].item_count - 1)
+		var has_jobs = not assets.jobs.is_empty()
+		lists["jobs"].visible = has_jobs
+		if forms.has("generation") and forms["generation"].has("jobs_heading"): forms["generation"]["jobs_heading"].visible = has_jobs
 	_refresh_journal()
 	_refresh_list_visibility()
 	_refresh_provider_selector()
@@ -1259,6 +1311,10 @@ func _selected_list_id(list: ItemList) -> String:
 
 func _action_button(parent: Node, title: String, key: String, callback: Callable) -> Button:
 	var control = _button(parent, title, callback)
+	if key.ends_with("_delete") or key == "github_disconnect":
+		control.add_theme_stylebox_override("normal", chat._compact_style(Color("342733")))
+		control.add_theme_stylebox_override("hover", chat._compact_style(Color("563342")))
+		control.add_theme_color_override("font_color", Color("e9bdc9"))
 	settings_actions[key] = control
 	return control
 

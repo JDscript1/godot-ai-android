@@ -53,8 +53,9 @@ var picker_search: LineEdit
 var picker_list: ItemList
 var reasoning_button: Button
 var selection_row: HBoxContainer
-var composer_controls: HFlowContainer
+var composer_controls: HBoxContainer
 var compose_column: VBoxContainer
+var input_row: HBoxContainer
 var controls_spacer: Control
 var voice_button: Button
 var catalog: Array = []
@@ -170,6 +171,10 @@ func _ready() -> void:
 	attachment_chips = HFlowContainer.new()
 	attachment_chips.hide()
 	compose_column.add_child(attachment_chips)
+	input_row = HBoxContainer.new()
+	input_row.add_theme_constant_override("separation", int(4 * EditorInterface.get_editor_scale()))
+	compose_column.add_child(input_row)
+	var attach_button = icon_button(input_row, "Attach", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
 	composer = TextEdit.new()
 	composer.placeholder_text = "Scrie un mesaj…"
 	composer.tooltip_text = "@ fișiere · $ noduri · / comenzi"
@@ -180,16 +185,25 @@ func _ready() -> void:
 	var input_style = style(Color.TRANSPARENT, 8)
 	input_style.set_content_margin_all(3 * EditorInterface.get_editor_scale())
 	composer.add_theme_stylebox_override("normal", input_style)
-	compose_column.add_child(composer)
+	composer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	input_row.add_child(composer)
+	voice_button = icon_button(input_row, "Microphone", "Dictare", func() -> void: action.emit("voice", {}))
+	send_button = icon_button(input_row, "ArrowUp", "Trimite mesajul", func() -> void: action.emit("send", {}))
+	stop_button = icon_button(input_row, "Stop", "Oprește agentul", func() -> void: action.emit("stop", {}))
+	stop_button.hide()
 	composer.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ENTER and not event.shift_pressed and not OS.has_feature("android"):
 			composer.accept_event()
 			action.emit("send", {}))
+	composer_controls = HBoxContainer.new()
+	composer_controls.add_theme_constant_override("separation", int(4 * EditorInterface.get_editor_scale()))
+	compose_column.add_child(composer_controls)
 	selection_row = HBoxContainer.new()
-	compose_column.add_child(selection_row)
+	selection_row.add_theme_constant_override("separation", int(4 * EditorInterface.get_editor_scale()))
+	composer_controls.add_child(selection_row)
 	model_button = button(selection_row, "Alege un model", _open_picker)
 	model_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	model_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	model_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	model_button.clip_text = true
 	model_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	model_button.icon = _icon("Models")
@@ -202,10 +216,6 @@ func _ready() -> void:
 	reasoning_button.custom_maximum_size.x = 150 * EditorInterface.get_editor_scale()
 	reasoning_button.tooltip_text = "Nivel de raționament"
 	reasoning_button.add_theme_constant_override("icon_max_width", int(20 * EditorInterface.get_editor_scale()))
-	composer_controls = HFlowContainer.new()
-	composer_controls.last_wrap_alignment = FlowContainer.LAST_WRAP_ALIGNMENT_END
-	compose_column.add_child(composer_controls)
-	icon_button(composer_controls, "Attach", "Atașează o imagine sau un fișier", func() -> void: action.emit("attach", {}))
 	options_button = button(composer_controls, "Auto", _open_options)
 	options_button.icon = _icon("Agent")
 	options_button.tooltip_text = "Mod de lucru"
@@ -232,13 +242,10 @@ func _ready() -> void:
 	context_label = label(context_indicator, "—")
 	context_label.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
 	set_context(0, 0)
-	voice_button = icon_button(composer_controls, "Microphone", "Dictare", func() -> void: action.emit("voice", {}))
-	send_button = icon_button(composer_controls, "ArrowUp", "Trimite mesajul", func() -> void: action.emit("send", {}))
 	send_button.add_theme_stylebox_override("normal", style(Color("7650c5")))
-	stop_button = icon_button(composer_controls, "Stop", "Oprește agentul", func() -> void: action.emit("stop", {}))
-	stop_button.hide()
-	for control in [model_button, reasoning_button, options_button, voice_button, send_button, stop_button, composer_controls.get_child(0)]:
+	for control in [model_button, reasoning_button, options_button, voice_button, send_button, stop_button, attach_button]:
 		_compact_button(control)
+	for control in [attach_button, voice_button, send_button, stop_button]: control.size_flags_vertical = Control.SIZE_SHRINK_END
 	send_button.add_theme_stylebox_override("normal", _compact_style(Color("7650c5")))
 	provider_picker = OptionButton.new()
 	model_picker = OptionButton.new()
@@ -303,13 +310,7 @@ func close_mobile_history() -> void:
 
 func _layout_composer() -> void:
 	if selection_row == null: return
-	var inline = size.x >= 600 * EditorInterface.get_editor_scale() and root_column.size.x >= 600 * EditorInterface.get_editor_scale()
-	var target: Node = composer_controls if inline else compose_column
-	if selection_row.get_parent() != target:
-		selection_row.reparent(target, false)
-		target.move_child(selection_row, 1 if inline else 2)
-	selection_row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	controls_spacer.show()
+	composer.placeholder_text = "Mesaj…" if root_column.size.x < 280 * EditorInterface.get_editor_scale() else "Scrie un mesaj…"
 	voice_button.visible = not stop_button.visible
 	_size_selection_chips()
 	_layout_drawer()
@@ -336,15 +337,17 @@ func _compact_button(control: Button) -> void:
 func _size_selection_chips() -> void:
 	if reasoning_button == null: return
 	var scale = EditorInterface.get_editor_scale()
-	var font = reasoning_button.get_theme_font("font")
-	var font_size = reasoning_button.get_theme_font_size("font_size")
-	# Use the allocated chat width, not a child that may still have an old minimum.
-	var width = minf(size.x, root_column.size.x) - 20 * scale
-	var effort_width = minf(minf(104 * scale, width * 0.42), font.get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
-	reasoning_button.custom_minimum_size.x = effort_width
-	reasoning_button.custom_maximum_size.x = effort_width
-	var available = maxf(32 * scale, width - selection_row.get_theme_constant("separation") - effort_width)
-	var model_width = minf(minf(150 * scale, available), font.get_string_size(model_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 36 * scale)
+	var width = minf(size.x, root_column.size.x) / scale - 20.0
+	var very_narrow = width < 230.0
+	var compact_reasoning = width < 340.0
+	reasoning_button.visible = not very_narrow and not reasoning_button.disabled
+	reasoning_button.text = "" if compact_reasoning else effort_label(str(_current_selection().get("effort", "")))
+	reasoning_button.tooltip_text = "Raționament · " + effort_label(str(_current_selection().get("effort", ""))) + " · schimbă nivelul"
+	var effort_width = (32.0 if compact_reasoning else minf(104.0, 34.0 + reasoning_button.get_theme_font("font").get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, reasoning_button.get_theme_font_size("font_size")).x)) if reasoning_button.visible else 0.0
+	reasoning_button.custom_minimum_size.x = effort_width * scale
+	reasoning_button.custom_maximum_size.x = effort_width * scale
+	var reserved = options_button.get_combined_minimum_size().x / scale + context_indicator.get_combined_minimum_size().x / scale + 16.0 + (effort_width + 4.0 if reasoning_button.visible else 0.0)
+	var model_width = clampf(width - reserved, 62.0, 150.0) * scale
 	model_button.custom_minimum_size.x = model_width
 	model_button.custom_maximum_size.x = model_width
 
@@ -367,7 +370,7 @@ func style(color: Color, radius: int = 12) -> StyleBoxFlat:
 
 func _apply_theme() -> void:
 	var skin = Theme.new()
-	for type in ["Label", "Button", "LineEdit", "TextEdit", "CodeEdit", "OptionButton", "CheckBox", "RichTextLabel", "ItemList"]:
+	for type in ["Label", "Button", "LineEdit", "TextEdit", "CodeEdit", "OptionButton", "CheckBox", "RichTextLabel", "ItemList", "PopupMenu"]:
 		skin.set_color("font_color", type, Color("e7eaf4"))
 		skin.set_color("font_hover_color", type, Color.WHITE)
 		skin.set_color("font_selected_color", type, Color.WHITE)
@@ -384,6 +387,9 @@ func _apply_theme() -> void:
 		skin.set_color("caret_color", type, Color("a78bfa"))
 	skin.set_stylebox("panel", "AcceptDialog", style(Color("131723"), 16))
 	skin.set_stylebox("panel", "PopupPanel", style(Color("191e2c"), 16))
+	skin.set_stylebox("panel", "PopupMenu", style(Color("191e2c"), 12))
+	skin.set_stylebox("hover", "PopupMenu", style(Color("393150"), 8))
+	skin.set_color("font_separator_color", "PopupMenu", Color("a9b5cb"))
 	skin.set_stylebox("selected", "ItemList", style(Color("393150"), 8))
 	var plain = StyleBoxEmpty.new()
 	var focus = style(Color.TRANSPARENT, 8)
@@ -586,9 +592,9 @@ func sync_selection() -> void:
 	model_button.icon = provider_icon(profile)
 	model_button.tooltip_text = (str(profile.get("name", "Furnizor")) + " · " + str(selection["model"]) + "\nSchimbă furnizorul sau modelul") if not model.is_empty() else "Adaugă un furnizor și alege un model"
 	reasoning_button.text = effort_label(str(selection["effort"]))
-	_size_selection_chips()
-	reasoning_button.tooltip_text = "Reasoning · " + reasoning_button.text
 	reasoning_button.disabled = model.is_empty()
+	_size_selection_chips()
+	if not model.is_empty(): model_button.tooltip_text += "\nRaționament: " + effort_label(str(selection["effort"]))
 
 func effort_label(effort: String) -> String:
 	return str({"": "Auto", "none": "Fără", "minimal": "Minim", "low": "Redus", "medium": "Mediu", "high": "Ridicat", "xhigh": "Foarte ridicat", "max": "Maxim"}.get(effort, effort))
@@ -832,6 +838,7 @@ func _render_content(record: Dictionary) -> void:
 				language.add_theme_color_override("font_color", Color("9faac0"))
 				var editor = CodeEdit.new()
 				editor.editable = false
+				editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 				editor.scroll_fit_content_height = true
 				editor.custom_minimum_size.y = 54 * EditorInterface.get_editor_scale()
 				editor.custom_maximum_size.y = 360 * EditorInterface.get_editor_scale()
@@ -934,6 +941,7 @@ func _refresh_message_controls(record: Dictionary) -> void:
 	for control in record.get("actions", []):
 		var name = str(control.get_meta("message_action", ""))
 		control.disabled = record["streaming"] or (name == "copy" and str(record["text"]).is_empty()) or (name == "changes" and not change_cards.has(str(record["metadata"].get("turn_id", ""))) and record["metadata"].get("changes", []).is_empty())
+		if name == "changes": control.visible = not control.disabled
 
 func _message_action(record: Dictionary, name: String) -> void:
 	var metadata: Dictionary = record["metadata"]
@@ -946,6 +954,9 @@ func activity(text: String, details: String = "") -> void:
 		var entries = VBoxContainer.new()
 		var toggle = button(activity_group, "Activitate", func() -> void: entries.visible = not entries.visible)
 		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_compact_button(toggle)
+		toggle.custom_minimum_size.y = 28 * EditorInterface.get_editor_scale()
+		toggle.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		activity_group.add_child(entries)
 		entries.hide()
 		activity_group.set_meta("entries", entries)
@@ -959,7 +970,7 @@ func activity(text: String, details: String = "") -> void:
 	var toggle = button(column, "› " + text, func() -> void: body.visible = not body.visible)
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	column.move_child(toggle, 0)
-	activity_group.get_meta("toggle").text = "Activitate · %s operații  ▾" % entries.get_child_count()
+	activity_group.get_meta("toggle").text = "Activitate · %s  ▾" % entries.get_child_count()
 	_follow.call_deferred()
 
 func _follow() -> void:

@@ -27,7 +27,40 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — exporturi 3D, GitHub și LAN, 23.10.2026
+## Etapa curentă — rafinare vizuală, 23.10.2026
+
+Implementată **în surse locale**, încă necompilată într-un APK nou:
+
+- Bara de chat are câmpul de mesaj, atașarea, microfonul și Trimitere pe primul
+  rând; modelul, reasoning-ul unde încape, modul Auto/Default/Plan și contextul
+  sunt pe al doilea. În dockul foarte îngust, indiciul devine „Mesaj…”, iar
+  butoanele nu se întind pe înălțimea textului. Nivelul de reasoning rămâne
+  accesibil prin sertarul modelului și apare în tooltip când nu încape separat.
+- Activitatea este un control compact; acțiunea Modificări apare numai când
+  există modificări. Codul din răspunsuri se poate încadra în dockul îngust.
+- În Furnizori, sigla nu se dublează, iar serviciul unui profil existent se
+  schimbă din Opțiuni avansate; la profil nou selectorul rămâne la vedere.
+  Meniurile furnizorilor folosesc aceeași paletă cu restul agentului.
+- În Setări, acțiunile primare sunt evidențiate, ștergerea/deconectarea au
+  culoare distinctă, controalele sunt mai compacte, iar subfilele Integrări
+  folosesc paleta agentului. Cardul GitHub arată întâi starea și conectarea;
+  Skills afișează descrierea, păstrând identificatorul în detalii.
+- La Generare, rezultatul selectabil este înaintea formatelor de export;
+  lista goală se ascunde, iar tipul și starea au etichete lizibile.
+
+Verificări locale: **340 aserțiuni runtime**, fără eșecuri; **319 verificări × 5
+configurații randate** (desktop, narrow, wide, phone_landscape, phone_compact),
+fără eșecuri. Capturile pentru furnizori, Integrări, chat și dockul stâng/îngust
+au fost inspectate în `.ai-qa/premium-ui-final-all/`. Randările rulează în
+editorul Godot ARM64 de test prin proot; nu demonstrează încă interfața dintr-un
+APK recompilat sau atingerea/tastatura pe un dispozitiv Android real. APK-ul
+livrat în Download rămâne versiunea `13456af`; această etapă nu l-a înlocuit.
+
+Jurnal: 23.10.2026 — compactat chatul, îndreptat dockul foarte îngust,
+unificate meniurile și ierarhia acțiunilor, simplificate Furnizori, Integrări,
+Skills și rezultatele de generare; verificare randată în cinci configurații.
+
+## Etapa anterioară — exporturi 3D, GitHub și LAN, 23.10.2026
 
 Implementate și incluse în APK-ul `13456af`, care înlocuiește `2538551`:
 
