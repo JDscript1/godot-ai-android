@@ -101,8 +101,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -785,10 +785,16 @@ func _configuration_screenshots(output: String) -> void:
 	panel.chat.set_context(8192, 32768, 430)
 	await get_tree().create_timer(0.15).timeout
 	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("context-filling.png"))
-	for section in ["general", "integrations", "journal", "agent"]:
+	for section in ["general", "providers", "generation", "integrations", "journal", "agent"]:
 		panel.open_settings(section)
 		await get_tree().create_timer(0.2).timeout
 		panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-" + section + ".png"))
+		if section == "providers":
+			var service: OptionButton = panel.forms["provider"]["issuer"]
+			service.show_popup()
+			await get_tree().create_timer(0.15).timeout
+			service.get_popup().get_texture().get_image().save_png(output.path_join("provider-groups.png"))
+			service.get_popup().hide()
 	panel.open_settings("integrations")
 	var integration_tabs = panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).find_children("*", "TabContainer", true, false)[0]
 	integration_tabs.current_tab = 1
@@ -992,7 +998,20 @@ func _populated_chat_tests() -> void:
 	panel._refresh_lists()
 	panel._refresh_profiles()
 	panel._edit_provider(0)
-	_check(panel.provider_selector.item_count == 2 and not panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved profiles use a compact selector with advanced fields collapsed")
+	_check(panel.provider_selector.item_count == 3 and panel.provider_selector.get_item_metadata(2) == "visual-provider" and not panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved profiles use a compact selector with advanced fields collapsed")
+	var previous_profiles = panel.config["providers"].duplicate(true)
+	panel.config["providers"].append({"id": "lan-fixture", "name": "LAN fixture", "issuer": "custom", "kind": "chat", "url": "http://192.168.1.20:1234/v1", "models": []})
+	panel._refresh_lists()
+	var local_index = panel.provider_selector.item_count - 1
+	panel.provider_selector.item_selected.emit(local_index)
+	_check(panel.forms["provider"]["editing"] == "lan-fixture" and panel.forms["provider"]["url"].text.contains("192.168.1.20"), "Cloud/local separators retain stable profile selection instead of offset indexes")
+	panel._select_issuer("ollama")
+	_check(panel._provider_issuer()["id"] == "ollama", "Separated service picker resolves the correct catalog entry by ID")
+	panel.config["providers"] = previous_profiles
+	panel._edit_provider(0)
+	panel._github_signin()
+	_check(panel.forms["github"]["auth_config"].visible and not panel.github_auth_running and panel.forms["github"]["status"].text.contains("Client ID"), "Sign in explains the one-time OAuth app setup instead of claiming authentication without a client ID")
+	panel.forms["github"]["auth_config"].hide()
 	_check(panel.provider_badge.text.contains("neverificată"), "Saved model metadata does not imply a verified connection")
 	panel.config["providers"][0]["verified_at"] = 1
 	panel._refresh_lists()
@@ -1080,6 +1099,61 @@ func _file_chat_tests() -> void:
 	await get_tree().process_frame
 	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
 
+func _export_button_tests(path: String) -> void:
+	var previous_profiles = panel.config["generation"].duplicate(true)
+	var previous_jobs = panel.assets.jobs.duplicate(true)
+	panel.config["generation"] = [{"id": "export-profile", "kind": "meshy", "asset_kind": "mesh", "name": "Meshy fixture"}]
+	panel.assets.jobs = [{"id": "export-cube", "profile_id": "export-profile", "kind": "mesh", "provider": "meshy", "status": "completed", "file": path, "external_id": "fixture-remote"}]
+	panel._refresh_lists()
+	panel.lists["jobs"].select(0)
+	panel.lists["jobs"].item_selected.emit(0)
+	var picker: OptionButton = panel.forms["generation"]["export_format"]
+	_check(not panel.settings_actions["job_export"].disabled and picker.item_count == 9, "Completed Meshy model enables nine actual export formats")
+	for index in range(picker.item_count):
+		if picker.get_item_metadata(index) == "stl": picker.select(index); picker.item_selected.emit(index)
+	panel.open_settings("generation")
+	await get_tree().process_frame
+	panel.settings_actions["job_export"].pressed.emit()
+	while panel.busy: await get_tree().process_frame
+	await get_tree().process_frame
+	var dialogs = panel.find_children("*", "FileDialog", true, false).filter(func(item: FileDialog) -> bool: return item.title.begins_with("Salvează exportul"))
+	_check(dialogs.size() == 1 and dialogs[0].current_file.ends_with(".stl") and dialogs[0].get_parent() == panel.settings_window, "Export button opens the destination picker with the real selected format")
+	var destination = panel.project_directory.path_join("ui-export.stl")
+	if not dialogs.is_empty(): dialogs[0].file_selected.emit(destination)
+	await get_tree().process_frame
+	var file = FileAccess.open(destination, FileAccess.READ)
+	if file != null: file.seek(80)
+	_check(file != null and file.get_length() == 684 and file.get_32() == 12, "Export destination receives twelve actual cube triangles in binary STL")
+	file = null
+	panel._perform_export("export-cube", "stl")
+	await get_tree().process_frame
+	dialogs = panel.find_children("*", "FileDialog", true, false).filter(func(item: FileDialog) -> bool: return item.title.begins_with("Salvează exportul"))
+	var original = FileAccess.get_file_as_bytes(destination)
+	if not dialogs.is_empty(): dialogs[0].file_selected.emit(destination)
+	await get_tree().process_frame
+	_check(FileAccess.get_file_as_bytes(destination) == original and panel.settings_status.text.contains("există deja"), "Export refuses to overwrite an existing destination")
+	for index in range(picker.item_count):
+		if picker.get_item_metadata(index) == "fbx": picker.select(index); picker.item_selected.emit(index)
+	panel.settings_actions["job_export"].pressed.emit()
+	var confirmations = panel.find_children("*", "ConfirmationDialog", true, false).filter(func(item: ConfirmationDialog) -> bool: return item.title == "Conversie FBX")
+	_check(confirmations.size() == 1 and panel.assets.jobs[0].get("exports", {}).has("stl") and not panel.assets.jobs[0].get("exports", {}).has("fbx"), "FBX requires explicit conversion confirmation before any paid submission")
+	if not confirmations.is_empty(): confirmations[0].canceled.emit()
+	await get_tree().process_frame
+	panel.open_settings("generation")
+	var group: Control = panel.forms["generation"]["export_group"]
+	var scroll = group.get_parent()
+	while scroll != null and not scroll is ScrollContainer: scroll = scroll.get_parent()
+	if scroll != null: scroll.ensure_control_visible(group)
+	await get_tree().create_timer(0.2).timeout
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty(): panel.settings_window.get_texture().get_image().save_png(output.path_join("export-formats.png"))
+	panel.settings_window.hide()
+	panel.config["generation"] = previous_profiles
+	panel.assets.jobs = previous_jobs
+	panel._refresh_lists()
+	panel.chat.show_status("", false)
+	DirAccess.remove_absolute(destination)
+
 func _model_and_control_tests() -> void:
 	var scene = Node3D.new()
 	var mesh = MeshInstance3D.new()
@@ -1093,6 +1167,7 @@ func _model_and_control_tests() -> void:
 	var exported = document.append_from_scene(scene, state) == OK and document.write_to_filesystem(state, path) == OK
 	scene.free()
 	_check(exported, "Build an actual GLB fixture for the shared native renderer")
+	if exported: await _export_button_tests(path)
 	var registered = panel.file_registry.register_file(path, str(panel.conversations.index["active"]))
 	_check(registered.get("ok", false), "Register a GLB snapshot for the current conversation")
 	if registered.get("ok", false):

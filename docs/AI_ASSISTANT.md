@@ -12,7 +12,9 @@ opens the same global configuration window.
 
 - **Furnizori:** select an issuer or paste a distinctive API key. Generic keys such
   as `sk-...` require an issuer selection. Save, then test/list models. Manual model
-  IDs remain available for servers without a listing endpoint.
+  IDs remain available for servers without a listing endpoint. Cloud and local/self-hosted
+  services/profiles have separate headings. Advanced hosting overrides support a
+  self-hosted server behind a public HTTPS domain.
 - **Abonamente:** use **Continue with ChatGPT** for the native SIWC flow. Claude,
   Copilot and Kimi use the optional companion on your own computer/server.
 - **Generare:** choose Runware, Meshy, Tripo, OpenAI Images or an existing ComfyUI
@@ -27,7 +29,9 @@ opens the same global configuration window.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
   configure the process in the companion and connect to its `/mcp/<name>` URL.
 - **General:** YOLO, center/left/right chat placement and completion sounds.
-- **Integrări:** GitHub, desktop Blender CLI, project Skills and saved tasks.
+- **Integrări:** GitHub Sign in/repository selection, desktop Blender CLI, project
+  Skills and saved tasks. First-time GitHub OAuth setup is described in
+  [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
 The current APK is `2538551`, including control/integrations/generation and
@@ -37,6 +41,33 @@ Delivery evidence is recorded in [the project progress document](../PROGRES_SI_P
 HTTP is opt-in per local connection. `127.0.0.1` means this Android device; a server
 on your computer needs its reachable LAN address or authenticated HTTPS endpoint.
 No inference runtime or generation model is installed automatically.
+
+## Local servers over Wi-Fi
+
+Use the computer's LAN IP, not `127.0.0.1`, for example
+`http://192.168.1.20:11434/v1` (Ollama) or `http://192.168.1.20:1234/v1`
+(LM Studio). Enable HTTP for that profile and use **Verifică / modele**.
+A custom port/path or authenticated HTTPS address can be entered manually.
+Local/self-hosted hosting can be selected explicitly for custom public domains.
+
+**Caută servere în rețea…** runs an explicit native discovery, never on startup:
+up to two private IPv4 /24 segments derived from local interfaces, ports
+11434/1234/8080, 48 concurrent TCP probes with bounded timeouts, then at most
+24 `/v1/models` checks. It sends no API keys and saves/connects to no server until
+you select and save it. Auth-protected endpoints, other subnets/ports, IPv6,
+VPN/interface ordering or unsupported interface enumeration may require a manual
+address. An empty model catalog can still identify a reachable server. This is
+bounded probing, not guaranteed mDNS discovery or detection of every local host.
+The dialog can stop discovery; no Termux, shell or external runtime is involved.
+
+On the computer, enable LM Studio's **Serve on Local Network** or configure
+Ollama's `OLLAMA_HOST=0.0.0.0:11434` and restart its server. Restrict access to your
+trusted network, use server authentication where available, and configure the
+host firewall. Client isolation/guest Wi-Fi can block peers even on the same SSID.
+The editor does not alter the computer's server/firewall settings.
+
+Sources: [LM Studio LAN hosting](https://lmstudio.ai/docs/developer/core/server/serve-on-network),
+[Ollama network binding](https://docs.ollama.com/faq#how-do-i-configure-ollama-server).
 
 ## Execution and recovery
 

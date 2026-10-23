@@ -9,6 +9,7 @@ static var Providers: GDScript
 static var Tools: GDScript
 static var MCP: GDScript
 static var Assets: GDScript
+static var AssetExports: GDScript
 static var Accounts: GDScript
 static var Conversations: GDScript
 static var ChatView: GDScript
@@ -113,6 +114,11 @@ var journal_follow: CheckBox
 var completion_audio: AudioStreamPlayer
 var memory_hash = ""
 var integration_settings: Dictionary = {}
+var github_auth_cancel: Dictionary = {}
+var github_auth_running = false
+var github_repos_loading = false
+var github_has_token = false
+var exporting_asset = false
 var current_placement = 0
 var expanded_dock = 0
 var dock_layout_busy = false
@@ -313,14 +319,23 @@ func _build_settings() -> void:
 	provider_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	profile_row.add_child(provider_selector)
 	provider_selector.item_selected.connect(func(index: int) -> void:
-		if index > 0: _edit_provider(index - 1)
-		else: _new_provider())
+		var id = str(provider_selector.get_item_metadata(index))
+		if id.is_empty(): _new_provider()
+		else:
+			for profile_index in range(config["providers"].size()):
+				if str(config["providers"][profile_index]["id"]) == id: _edit_provider(profile_index))
 	chat.icon_button(profile_row, "Add", "Adaugă un profil", _new_provider)
 	provider_badge = _label(provider_tab, "Adaugă cheia furnizorului pentru a conecta un model.")
 	provider_badge.add_theme_color_override("font_color", Color("a9b5cb"))
 	var p = _form(provider_tab, "provider")
-	_choice(p, "issuer", "Serviciu", Providers.CATALOG.map(func(item: Dictionary) -> String: return str(item["name"])))
-	for index in range(Providers.CATALOG.size()): p["issuer"].set_item_icon(index, chat.provider_icon({"issuer": Providers.CATALOG[index]["id"]}))
+	_choice(p, "issuer", "Serviciu", [])
+	for group in ["cloud", "local"]:
+		p["issuer"].add_separator("Cloud" if group == "cloud" else "Local / self-hosted")
+		for entry in Providers.CATALOG:
+			if ("local" if entry.get("local", false) or entry["id"] == "custom" else "cloud") != group: continue
+			p["issuer"].add_icon_item(chat.provider_icon({"issuer": entry["id"]}), entry["name"])
+			p["issuer"].set_item_metadata(p["issuer"].item_count - 1, entry["id"])
+	_select_issuer("openai")
 	_field(p, "key", "Cheie API", true)
 	var row = _row(provider_tab)
 	_button(row, "Salvează", _save_provider)
@@ -331,6 +346,7 @@ func _build_settings() -> void:
 	_field(p, "name", "Nume profil")
 	_field(p, "url", "Adresă API")
 	_check(p, "allow_http", "Permite HTTP pentru serverul local")
+	_choice(p, "hosting", "Găzduire", ["Detectare automată", "Cloud", "Local / self-hosted"])
 	_field(p, "manual_model", "Model manual (opțional)")
 	_choice(p, "vision_model", "Capabilități model", [])
 	p["vision_model"].fit_to_longest_item = false
@@ -344,19 +360,19 @@ func _build_settings() -> void:
 			var id = str(p["vision_model"].get_item_metadata(p["vision_model"].selected))
 			p["vision_pending"][id] = index)
 	_refresh_provider_vision({})
-	p["issuer"].item_selected.connect(func(index: int) -> void:
-		provider_mark.texture = chat.provider_icon({"issuer": Providers.CATALOG[index]["id"]})
-		p["url"].text = str(Providers.CATALOG[index]["url"])
-		p["name"].text = str(Providers.CATALOG[index]["name"])
-		p["allow_http"].button_pressed = bool(Providers.CATALOG[index].get("local", false)))
-	p["issuer"].item_selected.connect(func(index: int) -> void:
-		provider_advanced.visible = bool(Providers.CATALOG[index].get("local", false)) or Providers.CATALOG[index]["id"] == "custom")
+	p["issuer"].item_selected.connect(func(_index: int) -> void:
+		var entry = _provider_issuer()
+		provider_mark.texture = chat.provider_icon({"issuer": entry["id"]})
+		p["url"].text = str(entry["url"])
+		p["name"].text = str(entry["name"])
+		p["allow_http"].button_pressed = bool(entry.get("local", false))
+		provider_advanced.visible = bool(entry.get("local", false)) or entry["id"] == "custom")
+	_button(provider_tab, "Caută servere în rețea…", _discover_providers)
 	p["key"].text_changed.connect(func(text: String) -> void:
 		var detection = Providers.detect(text)
 		if detection.get("ok", false) and str(p.get("editing", "")).is_empty():
 			var entry: Dictionary = detection["profile"]
-			for index in range(Providers.CATALOG.size()):
-				if Providers.CATALOG[index]["id"] == entry["id"]: p["issuer"].select(index)
+			_select_issuer(str(entry["id"]))
 			provider_mark.texture = chat.provider_icon({"issuer": entry["id"]})
 			p["url"].text = str(entry["url"])
 			p["name"].text = str(entry["name"]))
@@ -411,7 +427,7 @@ func _build_settings() -> void:
 	g["kind"].set_item_icon(2, chat._icon("Provider_meshy"))
 	g["kind"].set_item_icon(3, chat._icon("Provider_tripo"))
 	g["kind"].set_item_icon(4, chat._icon("Provider_openai"))
-	_choice(g, "asset_kind", "Rezultat", ["Imagine PNG", "Model GLB"])
+	_choice(g, "asset_kind", "Rezultat", ["Imagine PNG", "Model 3D"])
 	g["asset_kind"].set_item_icon(0, chat._icon("Generation"))
 	g["asset_kind"].set_item_icon(1, chat._icon("Models"))
 	_field(g, "name", "Nume profil")
@@ -454,9 +470,20 @@ func _build_settings() -> void:
 	_action_button(job_row, "Actualizează rezultatul", "job_refresh", _refresh_job)
 	_action_button(job_row, "Previzualizare", "job_preview", _preview_job)
 	_action_button(job_row, "Importă în proiect", "job_import", _import_job)
+	g["container"] = _form_container(gen_tab)
+	g["export_group"] = g["container"]
+	_choice(g, "export_format", "Format export 3D", [])
+	g["export_note"] = _label(g["container"], "")
+	g["export_note"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	g["export_format"].item_selected.connect(func(index: int) -> void: g["export_note"].text = AssetExports.note(str(g["export_format"].get_item_metadata(index))))
+	var export_actions = _row(g["container"])
+	_action_button(export_actions, "Exportă modelul…", "job_export", _export_job)
+	g["export_stop"] = _button(export_actions, "Oprește", _stop)
+	g["export_stop"].hide()
 	lists["jobs"] = ItemList.new()
 	lists["jobs"].custom_minimum_size.y = 110
 	gen_tab.add_child(lists["jobs"])
+	lists["jobs"].item_selected.connect(func(_index: int) -> void: _refresh_export_formats(); _update_settings_controls())
 	generation_preview = VBoxContainer.new()
 	gen_tab.add_child(generation_preview)
 	var mcp_tab = _tab("MCP", "mcp")
@@ -637,19 +664,42 @@ func _build_integrations(parent: Node) -> void:
 	_field(form, "repository", "Repository")
 	form["repository"].placeholder_text = "proprietar/proiect"
 	form["repository"].text = str(saved.get("github_repository", ""))
-	_field(form, "key", "Token", true)
-	form["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Opțional pentru proiecte publice"
+	var auth_actions = _row(github)
+	form["signin"] = _button(auth_actions, "Sign in with GitHub", _github_signin)
+	form["cancel_auth"] = _button(auth_actions, "Anulează", _github_cancel_login)
+	form["cancel_auth"].hide()
+	form["code"] = _label(github, "")
+	form["code"].hide()
+	form["code"].mouse_filter = Control.MOUSE_FILTER_STOP
+	form["copy_code"] = _button(github, "Copiază codul și deschide GitHub", func() -> void:
+		DisplayServer.clipboard_set(str(form.get("user_code", "")))
+		OS.shell_open("https://github.com/login/device"))
+	form["copy_code"].hide()
 	var actions = _row(github)
-	_button(actions, "Salvează", _save_connections)
-	_button(actions, "Verifică", _verify_github)
-	_button(actions, "Deconectează", func() -> void:
+	_action_button(actions, "Alege repository…", "github_repositories", func() -> void: _github_repo_picker())
+	_action_button(actions, "Salvează", "github_save", _save_connections)
+	_action_button(actions, "Verifică", "github_verify", _verify_github)
+	_action_button(actions, "Deconectează", "github_disconnect", func() -> void:
 		if busy: return
+		_github_cancel_login()
 		vault.erase("integration_github")
 		form["key"].clear()
-		form["key"].placeholder_text = "Opțional pentru proiecte publice"
 		form["enabled"].button_pressed = false
-		_save_connections())
-	form["status"] = _label(github, "Neconectat")
+		_save_connections(true)
+		form["status"].text = "Neconectat")
+	form["status"] = _label(github, "Cont salvat · verifică conexiunea" if not vault.read("integration_github").is_empty() else "Neconectat")
+	var advanced = _disclosure(github, "Configurare autentificare")
+	form["auth_config"] = advanced
+	form["container"] = advanced
+	_field(form, "client_id", "Client ID · aplicația noastră GitHub")
+	form["client_id"].text = str(config.get("github_oauth_client_id", saved.get("github_client_id", Integrations.GITHUB_CLIENT_ID)))
+	var registration_note = _label(advanced, "Înregistrează aplicația OAuth și activează Device Flow. Client Secret nu este necesar.")
+	registration_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_button(advanced, "Înregistrează aplicația pe GitHub…", func() -> void: OS.shell_open("https://github.com/settings/applications/new"))
+	_check(form, "private_repos", "Acces și la repository-uri private")
+	form["private_repos"].button_pressed = bool(saved.get("github_private_repos", false))
+	_field(form, "key", "Token manual (opțional)", true)
+	form["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Alternativă la Sign in"
 	if Integrations.desktop_blender():
 		var blender = _integration_card(connections, "Blender CLI", "Models")
 		var b = _form(blender, "blender")
@@ -703,8 +753,8 @@ func _build_integrations(parent: Node) -> void:
 	lists["automations"].item_selected.connect(func(index: int) -> void: _fill("automation", config["automations"][index]))
 	_refresh_skills()
 
-func _save_connections() -> bool:
-	if busy: return false
+func _save_connections(allow_during_auth: bool = false) -> bool:
+	if busy or (github_auth_running and not allow_during_auth): return false
 	var g: Dictionary = forms["github"]
 	var repository = str(g["repository"].text).strip_edges()
 	if not repository.is_empty() and not Integrations.valid_repository(repository):
@@ -717,23 +767,117 @@ func _save_connections() -> bool:
 	g["key"].clear()
 	g["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Opțional pentru proiecte publice"
 	var saved: Dictionary = integration_settings.duplicate(true)
-	saved.merge({"github_enabled": g["enabled"].button_pressed, "github_repository": repository}, true)
+	saved.merge({"github_enabled": g["enabled"].button_pressed, "github_repository": repository, "github_private_repos": g["private_repos"].button_pressed}, true)
+	saved.erase("github_client_id")
 	if forms.has("blender"):
 		saved.merge({"blender_enabled": forms["blender"]["enabled"].button_pressed, "blender_path": forms["blender"]["path"].text.strip_edges()}, true)
 	if Common.atomic_json(project_directory.path_join("integrations.json"), saved) != OK:
 		_status("Conexiunea nu a putut fi salvată.")
 		return false
 	integration_settings = saved
+	config["github_oauth_client_id"] = str(g["client_id"].text).strip_edges()
+	_save_config()
 	_refresh_secrets()
 	g["status"].text = "Configurat" if saved["github_enabled"] and not repository.is_empty() else "Dezactivat"
 	return true
 
+func _github_cancel_login() -> void:
+	github_auth_cancel["cancelled"] = true
+	integrations.github_cancel()
+	if not forms.has("github"): return
+	var form: Dictionary = forms["github"]
+	form["code"].hide()
+	form["copy_code"].hide()
+	form["cancel_auth"].hide()
+	form["signin"].disabled = false
+
+func _github_signin() -> void:
+	if busy or github_auth_running: return
+	var form: Dictionary = forms["github"]
+	if str(form["client_id"].text).strip_edges().is_empty():
+		form["auth_config"].show()
+		form["status"].text = "Adaugă Client ID-ul aplicației noastre și activează Device Flow pe GitHub."
+		return
+	if not _save_connections(): return
+	github_auth_running = true
+	github_auth_cancel = {"cancelled": false}
+	var operation_cancel = github_auth_cancel
+	form["signin"].disabled = true
+	form["cancel_auth"].show()
+	form["status"].text = "Pregătesc autentificarea…"
+	var result = await integrations.github_begin(str(form["client_id"].text), form["private_repos"].button_pressed)
+	if result.get("ok", false) and not operation_cancel.get("cancelled", false):
+		form["user_code"] = str(result["result"]["user_code"])
+		form["code"].text = "Cod GitHub: " + form["user_code"]
+		form["code"].show()
+		form["copy_code"].show()
+		form["status"].text = "Confirmă codul în browser."
+		OS.shell_open("https://github.com/login/device")
+		result = await integrations.github_poll(operation_cancel)
+	github_auth_running = false
+	_github_cancel_login()
+	_refresh_secrets()
+	if result.get("ok", false):
+		form["enabled"].button_pressed = true
+		_save_connections()
+		form["status"].text = "Conectat · @" + str(result["result"]["login"])
+		_github_repo_picker()
+	else: form["status"].text = str(result.get("error", "Autentificare anulată."))
+
+func _github_repo_picker(page: int = 1) -> void:
+	if busy or github_auth_running or github_repos_loading: return
+	github_repos_loading = true
+	var generation = integrations.github_auth_generation
+	var result = await integrations.github_repositories(page)
+	github_repos_loading = false
+	if generation != integrations.github_auth_generation: return
+	if not result.get("ok", false):
+		forms["github"]["status"].text = str(result.get("error", "Conectează contul GitHub."))
+		return
+	var dialog = AcceptDialog.new()
+	dialog.title = "Repository-uri · pagina %s" % page
+	var content = VBoxContainer.new()
+	dialog.add_child(content)
+	var search = LineEdit.new()
+	search.placeholder_text = "Filtrează pagina…"
+	content.add_child(search)
+	var choices = ItemList.new()
+	choices.custom_minimum_size = Vector2(300, 260)
+	content.add_child(choices)
+	var repositories: Array = result["result"]
+	var populate = func(query: String) -> void:
+		choices.clear()
+		for item in repositories:
+			if not query.to_lower() in str(item["full_name"]).to_lower(): continue
+			choices.add_item(str(item["full_name"]) + (" · privat" if item["private"] else ""))
+			choices.set_item_metadata(choices.item_count - 1, item["full_name"])
+	populate.call("")
+	search.text_changed.connect(populate)
+	dialog.get_ok_button().text = "Selectează"
+	dialog.confirmed.connect(func() -> void:
+		var selected = choices.get_selected_items()
+		if not selected.is_empty():
+			forms["github"]["repository"].text = str(choices.get_item_metadata(selected[0]))
+			_save_connections()
+		dialog.queue_free())
+	choices.item_activated.connect(func(_index: int) -> void: dialog.confirmed.emit())
+	var navigation = _row(content)
+	var previous = _button(navigation, "Înapoi", func() -> void: dialog.queue_free(); _github_repo_picker(page - 1))
+	previous.disabled = page == 1
+	var next = _button(navigation, "Mai multe", func() -> void: dialog.queue_free(); _github_repo_picker(page + 1))
+	next.disabled = repositories.size() < 30 or page >= 100
+	dialog.canceled.connect(dialog.queue_free)
+	_mount_dialog(dialog)
+	dialog.popup_centered_clamped(Vector2i(600, 450), 0.9)
+
 func _verify_github() -> void:
 	if not _save_connections(): return
 	var repository = str(integration_settings["github_repository"])
+	var generation = integrations.github_auth_generation
 	forms["github"]["status"].text = "Verific…"
-	var result = await integrations.github_request(repository, {"resource": "repository"})
-	forms["github"]["status"].text = "Conectat · " + repository if result.get("ok", false) else str(result.get("error", "Conexiune eșuată."))
+	var result = await integrations.github_account() if not vault.read("integration_github").is_empty() else await integrations.github_request(repository, {"resource": "repository"})
+	if generation != integrations.github_auth_generation: return
+	forms["github"]["status"].text = ("Conectat · @" + str(result["result"]["login"]) if result["result"].has("login") else "Repository accesibil · " + repository) if result.get("ok", false) else str(result.get("error", "Conexiune eșuată."))
 
 func _pick_blender() -> void:
 	if busy: return
@@ -742,7 +886,7 @@ func _pick_blender() -> void:
 	picker.access = EditorFileDialog.ACCESS_FILESYSTEM
 	picker.file_selected.connect(func(path: String) -> void: forms["blender"]["path"].text = path; picker.queue_free())
 	picker.canceled.connect(picker.queue_free)
-	add_child(picker)
+	_mount_dialog(picker)
 	picker.popup_centered_ratio(0.8)
 
 func _verify_blender() -> void:
@@ -869,26 +1013,85 @@ func _voice_fields() -> void:
 	for key in ["url", "model", "key"]: form["groups"][key].visible = endpoint
 	form["allow_http"].visible = endpoint
 
+func _provider_issuer() -> Dictionary:
+	var picker: OptionButton = forms["provider"]["issuer"]
+	var id = str(picker.get_item_metadata(picker.selected)) if picker.selected >= 0 else "openai"
+	for entry in Providers.CATALOG:
+		if entry["id"] == id: return entry
+	return Providers.CATALOG[0]
+
+func _select_issuer(id: String) -> void:
+	var picker: OptionButton = forms["provider"]["issuer"]
+	for index in range(picker.item_count):
+		if picker.get_item_metadata(index) == id: picker.select(index); return
+
 func _refresh_provider_selector() -> void:
 	if provider_selector == null: return
 	provider_selector.clear()
 	provider_selector.add_item("Adaugă un furnizor")
+	provider_selector.set_item_metadata(0, "")
 	var editing = str(forms["provider"].get("editing", ""))
-	provider_mark.texture = chat.provider_icon({"issuer": Providers.CATALOG[forms["provider"]["issuer"].selected]["id"]})
+	provider_mark.texture = chat.provider_icon({"issuer": _provider_issuer()["id"]})
 	provider_badge.text = "Adaugă cheia furnizorului pentru a conecta un model."
-	for profile in config["providers"]:
-		provider_selector.add_icon_item(chat.provider_icon(profile), str(profile["name"]))
-		if str(profile["id"]) == editing:
-			provider_selector.select(provider_selector.item_count - 1)
-			provider_mark.texture = chat.provider_icon(profile)
-			var count = profile.get("models", []).size()
-			provider_badge.text = ("● Conexiune verificată" if profile.has("verified_at") else "○ Configurat · conexiune neverificată") + " · %s %s" % [count, "model" if count == 1 else "modele"]
-			provider_badge.add_theme_color_override("font_color", Color("a2d2b0") if profile.has("verified_at") else Color("a9b5cb"))
+	provider_badge.add_theme_color_override("font_color", Color("a9b5cb"))
+	for group in ["cloud", "local"]:
+		var profiles = config["providers"].filter(func(item: Dictionary) -> bool: return Providers.hosting(item) == group)
+		if profiles.is_empty(): continue
+		provider_selector.add_separator("Cloud" if group == "cloud" else "Local / self-hosted")
+		for profile in profiles:
+			provider_selector.add_icon_item(chat.provider_icon(profile), str(profile["name"]))
+			provider_selector.set_item_metadata(provider_selector.item_count - 1, str(profile["id"]))
+			if str(profile["id"]) == editing:
+				provider_selector.select(provider_selector.item_count - 1)
+				provider_mark.texture = chat.provider_icon(profile)
+				var count = profile.get("models", []).size()
+				provider_badge.text = ("● Conexiune verificată" if profile.has("verified_at") else "○ Configurat · conexiune neverificată") + " · %s %s" % [count, "model" if count == 1 else "modele"]
+				provider_badge.add_theme_color_override("font_color", Color("a2d2b0") if profile.has("verified_at") else Color("a9b5cb"))
+
+func _discover_providers() -> void:
+	if busy: return
+	var dialog = AcceptDialog.new()
+	dialog.title = "Servere în rețea"
+	dialog.dialog_text = "Caut servere Ollama, LM Studio și OpenAI-compatible…"
+	dialog.get_ok_button().text = "Oprește"
+	var search_cancel = {"cancelled": false}
+	cancel = search_cancel
+	dialog.confirmed.connect(func() -> void: search_cancel["cancelled"] = true)
+	dialog.canceled.connect(func() -> void: search_cancel["cancelled"] = true)
+	_mount_dialog(dialog)
+	dialog.popup_centered_clamped(Vector2i(560, 400), 0.9)
+	busy = true
+	_update_settings_controls()
+	var response = await providers.discover_lan(search_cancel)
+	busy = false
+	_update_settings_controls()
+	if not is_instance_valid(dialog): return
+	if search_cancel["cancelled"]:
+		dialog.queue_free()
+		return
+	dialog.get_ok_button().text = "Închide"
+	var servers: Array = response.get("result", {}).get("servers", [])
+	dialog.dialog_text = "Alege un server pentru configurare." if not servers.is_empty() else "Niciun server accesibil găsit. Poți introduce manual adresa API. Activează accesul LAN pe server și verifică firewall-ul."
+	var choices = VBoxContainer.new()
+	dialog.add_child(choices)
+	for server in servers:
+		var found: Dictionary = server.duplicate(true)
+		_button(choices, "%s · %s modele" % [found["url"], found["model_count"]], func() -> void:
+			_new_provider()
+			_select_issuer(str(found["issuer"]))
+			for key in ["name", "url"]: forms["provider"][key].text = found[key]
+			forms["provider"]["allow_http"].button_pressed = true
+			provider_advanced.show()
+			_refresh_provider_selector()
+			dialog.queue_free())
+	dialog.confirmed.connect(dialog.queue_free)
+	dialog.canceled.connect(dialog.queue_free)
 
 func _new_provider() -> void:
 	_clear_form("provider")
 	var form: Dictionary = forms["provider"]
-	form["issuer"].select(0)
+	_select_issuer("openai")
+	form["hosting"].select(0)
 	form["name"].text = str(Providers.CATALOG[0]["name"])
 	form["url"].text = str(Providers.CATALOG[0]["url"])
 	form["key"].placeholder_text = "Introdu cheia API"
@@ -940,6 +1143,11 @@ func _button(parent: Node, title: String, callback: Callable) -> Button:
 	parent.add_child(button)
 	return button
 
+func _mount_dialog(dialog: Window) -> void:
+	# Settings is a modal window; its nested dialogs must share that window chain.
+	if settings_window != null and settings_window.visible: settings_window.add_child(dialog)
+	else: add_child(dialog)
+
 func open_settings(section: String = "") -> void:
 	if settings_window == null: return
 	if section_tabs.has(section): _select_settings(int(section_tabs[section]))
@@ -966,6 +1174,7 @@ func _save_config() -> void:
 	_refresh_profiles()
 
 func _refresh_secrets() -> void:
+	github_has_token = not vault.read("integration_github").is_empty()
 	secrets.clear()
 	var profiles = config["providers"] + config["generation"] + config["mcp"] + [config["companion"], {"id": "transcription"}, {"id": "integration_github"}]
 	for profile in profiles:
@@ -1041,6 +1250,7 @@ func _refresh_lists() -> void:
 	_refresh_journal()
 	_refresh_list_visibility()
 	_refresh_provider_selector()
+	_refresh_export_formats()
 	_update_settings_controls()
 
 func _selected_list_id(list: ItemList) -> String:
@@ -1053,6 +1263,14 @@ func _action_button(parent: Node, title: String, key: String, callback: Callable
 	return control
 
 func _update_settings_controls() -> void:
+	if forms.has("generation") and forms["generation"].has("export_stop"): forms["generation"]["export_stop"].visible = busy and exporting_asset
+	if forms.has("github"):
+		var auth_busy = github_auth_running or github_repos_loading
+		forms["github"]["signin"].disabled = busy or auth_busy
+		_action_available("github_repositories", not auth_busy and github_has_token, "Conectează contul GitHub.")
+		_action_available("github_save", not auth_busy, "Încheie sau anulează autentificarea.")
+		_action_available("github_verify", not auth_busy and (github_has_token or Integrations.valid_repository(str(forms["github"]["repository"].text))), "Conectează contul sau alege un repository public.")
+		_action_available("github_disconnect", github_has_token or github_auth_running, "Niciun cont conectat.")
 	for entry in [["provider", "providers"], ["generation", "generation"], ["mcp", "mcp"], ["automation", "automations"]]:
 		if not forms.has(entry[0]): continue
 		var id = str(forms[entry[0]].get("editing", ""))
@@ -1062,6 +1280,7 @@ func _update_settings_controls() -> void:
 	var job = _selected_job() if lists.has("jobs") else {}
 	_action_available("job_refresh", not job.is_empty() and not _generation_profile(str(job.get("profile_id", ""))).is_empty(), "Selectează un rezultat cu profil conectat.")
 	var ready = not job.is_empty() and job.get("status") == "completed" and FileAccess.file_exists(str(job.get("file", "")))
+	_action_available("job_export", ready and job.get("kind") == "mesh", "Selectează un model 3D descărcat.")
 	for key in ["job_preview", "job_import"]: _action_available(key, ready, "Selectează un rezultat descărcat și finalizat.")
 	if forms.has("skill"): _action_available("skill_delete", not str(forms["skill"].get("sha256", "")).is_empty(), "Selectează un skill salvat.")
 	if account_logout != null: account_logout.disabled = busy or lists["accounts"].get_selected_items().is_empty()
@@ -1099,7 +1318,7 @@ func _upsert(category: String, profile: Dictionary) -> void:
 func _save_provider() -> void:
 	if busy: return
 	var p: Dictionary = forms["provider"]
-	var issuer: Dictionary = Providers.CATALOG[p["issuer"].selected]
+	var issuer: Dictionary = _provider_issuer()
 	var id = str(p.get("editing", ""))
 	if id.is_empty(): id = Common.uid()
 	var url = str(p["url"].text).strip_edges().trim_suffix("/")
@@ -1132,6 +1351,7 @@ func _save_provider() -> void:
 	for previous in config["providers"]:
 		if previous["id"] == id and (previous.get("url") != url or previous.get("issuer") != issuer["id"]): vision_overrides = {}
 	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models, "vision_overrides": vision_overrides}
+	if p["hosting"].selected > 0: profile["hosting"] = "cloud" if p["hosting"].selected == 1 else "local"
 	for previous in config["providers"]:
 		if previous["id"] == id and previous.get("url") == url and previous.get("issuer") == issuer["id"] and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
 	p["editing"] = id
@@ -1143,8 +1363,8 @@ func _edit_provider(index: int) -> void:
 	var profile: Dictionary = config["providers"][index]
 	_fill("provider", profile)
 	_refresh_provider_vision(profile)
-	for issuer_index in range(Providers.CATALOG.size()):
-		if Providers.CATALOG[issuer_index]["id"] == profile.get("issuer", "custom"): forms["provider"]["issuer"].select(issuer_index)
+	_select_issuer(str(profile.get("issuer", "custom")))
+	forms["provider"]["hosting"].select({"cloud": 1, "local": 2}.get(str(profile.get("hosting", "")), 0))
 	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
 	provider_advanced.visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "custom"]
 	_refresh_provider_selector()
@@ -1463,6 +1683,14 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		if profile.is_empty(): result = Common.failure("Profil de generare inexistent.")
 		elif name == "asset_wait": result = await assets.wait_for_job(str(args["job"]), profile, cancel, int(args.get("max_seconds", 300)))
 		else: result = await assets.refresh(str(args["job"]), profile, cancel)
+	elif name == "asset_export":
+		var job = assets.find_job(str(args.get("job", "")))
+		result = await assets.export_job(str(args.get("job", "")), _generation_profile(str(job.get("profile_id", ""))), str(args.get("format", "glb")), cancel, str(args.get("task_id", "")))
+		if result.get("ok", false) and not str(result.get("result", {}).get("file", "")).is_empty():
+			var path = str(result["result"]["file"])
+			file_registry.permit(path)
+			var registered = file_registry.register_file(path, str(conversations.index["active"]))
+			if registered.get("ok", false): result["files"] = [registered["result"]["id"]]
 	elif name == "asset_import": result = assets.import_job(str(args.get("job", "")), str(args.get("directory", "res://ai_assets")))
 	else: result = tools.execute(name, args, _permission_mode(), true)
 	if result.get("ok", false) and not result.get("images", []).is_empty() and not result.has("files") and name not in ["file_observe"]:
@@ -1730,7 +1958,7 @@ func _pick_workflow() -> void:
 			_status("Workflow importat: %s noduri. Configurează intrările și nodul rezultat." % value.size())
 		picker.queue_free())
 	picker.canceled.connect(picker.queue_free)
-	add_child(picker)
+	_mount_dialog(picker)
 	picker.popup_centered_ratio(0.85)
 
 func _save_generation() -> void:
@@ -1798,7 +2026,7 @@ func _test_generation() -> void:
 		list.item_selected.connect(func(index: int) -> void: forms["generation"]["model"].text = str(list.get_item_metadata(index)))
 		dialog.confirmed.connect(dialog.queue_free)
 		dialog.canceled.connect(dialog.queue_free)
-		add_child(dialog)
+		_mount_dialog(dialog)
 		dialog.popup_centered_clamped(Vector2i(650, 450), 0.9)
 		_status("Cheie verificată. Accesul la model se confirmă la generare." if result.get("credential_verified", false) else "Catalog public Runware. Cheia și accesul la model se verifică la generare.")
 
@@ -1843,6 +2071,86 @@ func _refresh_job() -> void:
 	send_button.disabled = false
 	_status("Stare: " + str(result.get("result", {}).get("status", "")) if result.get("ok", false) else str(result.get("error", "Eroare de generare.")))
 	_refresh_lists()
+
+func _refresh_export_formats() -> void:
+	if not forms.has("generation") or not forms["generation"].has("export_format"): return
+	var picker: OptionButton = forms["generation"]["export_format"]
+	var selected = str(picker.get_item_metadata(picker.selected)) if picker.selected >= 0 else "glb"
+	picker.clear()
+	var job = _selected_job()
+	for format in AssetExports.formats(str(job.get("provider", ""))):
+		picker.add_item(str(format).to_upper() + (" · ZIP" if format == "gltf" else ""))
+		picker.set_item_metadata(picker.item_count - 1, format)
+		if format == selected: picker.select(picker.item_count - 1)
+	forms["generation"]["export_note"].text = AssetExports.note(str(picker.get_item_metadata(picker.selected)))
+
+func _export_job() -> void:
+	if busy: return
+	var job = _selected_job()
+	if job.is_empty(): return
+	var picker: OptionButton = forms["generation"]["export_format"]
+	var format = str(picker.get_item_metadata(picker.selected))
+	if job.get("exports", {}).get(format, {}).get("status") == "unknown":
+		var recovery = ConfirmationDialog.new()
+		recovery.title = "Reia conversia existentă"
+		var content = VBoxContainer.new()
+		recovery.add_child(content)
+		_label(content, "Verifică sarcinile furnizorului și introdu ID-ul conversiei existente. Nu se creează o conversie nouă.")
+		var task_id = LineEdit.new()
+		task_id.placeholder_text = "Task ID"
+		content.add_child(task_id)
+		recovery.confirmed.connect(func() -> void: _perform_export(str(job["id"]), format, task_id.text.strip_edges()); recovery.queue_free())
+		recovery.canceled.connect(recovery.queue_free)
+		_mount_dialog(recovery)
+		recovery.popup_centered_clamped(Vector2i(480, 220), 0.9)
+		return
+	if format not in AssetExports.LOCAL and job.get("exports", {}).get(format, {}).is_empty():
+		var confirmation = ConfirmationDialog.new()
+		confirmation.title = "Conversie " + format.to_upper()
+		confirmation.dialog_text = "Conversia este executată de furnizor și poate consuma credite."
+		confirmation.confirmed.connect(func() -> void: confirmation.queue_free(); _perform_export(str(job["id"]), format))
+		confirmation.canceled.connect(confirmation.queue_free)
+		_mount_dialog(confirmation)
+		confirmation.popup_centered_clamped(Vector2i(440, 200), 0.9)
+	else: _perform_export(str(job["id"]), format)
+
+func _perform_export(id: String, format: String, task_id: String = "") -> void:
+	if busy: return
+	var job = assets.find_job(id)
+	if job.is_empty(): return
+	busy = true
+	exporting_asset = true
+	cancel = {"cancelled": false}
+	_update_settings_controls()
+	_status("Pregătesc exportul " + format.to_upper() + "…")
+	var result = await assets.export_job(id, _generation_profile(str(job["profile_id"])), format, cancel, task_id)
+	busy = false
+	exporting_asset = false
+	_update_settings_controls()
+	_audit("asset_export", {"job": id, "format": format}, result)
+	if not result.get("ok", false):
+		_status(str(result.get("error", "Export eșuat.")))
+		return
+	if result.get("result", {}).get("status") != "completed":
+		_status("Conversia continuă la furnizor. Export reia aceeași sarcină.")
+		return
+	var source = str(result["result"]["file"])
+	var dialog = FileDialog.new()
+	dialog.title = "Salvează exportul " + format.to_upper()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	dialog.use_native_dialog = true
+	dialog.current_file = "model_" + id.left(8) + "." + source.get_extension()
+	dialog.filters = PackedStringArray(["*." + source.get_extension() + "; " + format.to_upper()])
+	dialog.file_selected.connect(func(path: String) -> void:
+		if FileAccess.file_exists(path): _status("Fișierul există deja. Alege un nume nou.")
+		else:
+			var error = DirAccess.copy_absolute(source, path)
+			_status("Export salvat: " + path if error == OK else "Exportul nu a putut fi salvat: " + error_string(error))
+		dialog.queue_free())
+	dialog.canceled.connect(dialog.queue_free)
+	_mount_dialog(dialog)
+	dialog.popup_centered_ratio(0.8)
 
 func _import_job() -> void:
 	if busy: return
@@ -2225,7 +2533,7 @@ func _history_action(action: String) -> void:
 					_status("Conversație exportată: " + path if output.get_error() == OK else "Exportul nu a putut fi salvat.")
 				dialog.queue_free())
 			dialog.canceled.connect(dialog.queue_free)
-			add_child(dialog)
+			_mount_dialog(dialog)
 			dialog.popup_centered_ratio(0.8)
 		"rename":
 			var dialog = ConfirmationDialog.new()
@@ -2243,7 +2551,7 @@ func _history_action(action: String) -> void:
 				_refresh_conversations()
 				dialog.queue_free())
 			dialog.canceled.connect(dialog.queue_free)
-			add_child(dialog)
+			_mount_dialog(dialog)
 			dialog.popup_centered()
 			input.grab_focus()
 			input.select_all()
@@ -2273,7 +2581,7 @@ func _history_action(action: String) -> void:
 				_refresh_conversations()
 				dialog.queue_free())
 			dialog.canceled.connect(dialog.queue_free)
-			add_child(dialog)
+			_mount_dialog(dialog)
 			dialog.popup_centered()
 	_refresh_conversations()
 
@@ -2475,7 +2783,7 @@ func _reference_picker(kind: String) -> void:
 		var selected = list.get_selected_items()
 		if not selected.is_empty(): accept.call(selected[0]))
 	dialog.canceled.connect(dialog.queue_free)
-	add_child(dialog)
+	_mount_dialog(dialog)
 	dialog.popup_centered_clamped(Vector2i(620, 430), 0.9)
 	query.grab_focus()
 
@@ -2498,7 +2806,7 @@ func _pick_attachment() -> void:
 		_composer_hints()
 		picker.queue_free())
 	picker.canceled.connect(picker.queue_free)
-	add_child(picker)
+	_mount_dialog(picker)
 	picker.popup_centered_ratio(0.85)
 
 func _slash(text: String) -> bool:
@@ -2649,7 +2957,7 @@ func _show_changes(turn: String, path: String = "") -> void:
 		restore.tooltip_text = "Istoricul Undo al scenei aparține sesiunii anterioare. Fișierele au copii de recuperare separate."
 	dialog.confirmed.connect(dialog.queue_free)
 	dialog.canceled.connect(dialog.queue_free)
-	add_child(dialog)
+	_mount_dialog(dialog)
 	dialog.popup_centered_clamped(Vector2i(740, 540), 0.92)
 
 func _load_summary() -> void:

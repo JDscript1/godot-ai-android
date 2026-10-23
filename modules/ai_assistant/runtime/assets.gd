@@ -3,6 +3,7 @@ extends RefCounted
 
 static var Common: GDScript
 static var Transport: GDScript
+static var AssetExports: GDScript
 var transport: RefCounted
 var vault: RefCounted
 var owner: Node
@@ -26,7 +27,7 @@ func configure(directory: String) -> void:
 	jobs = Common.read_json(cache_directory.path_join("jobs.json"), [])
 
 func definitions() -> Array:
-	return [Common.tool("asset_generate", "Generate an image or GLB with a configured Runware, ComfyUI, Meshy, Tripo or OpenAI Images profile. Meshy text-to-3D produces preview geometry; image-to-3D includes textures. Cloud generation consumes provider credits. The job is retained for later polling; use asset_wait to wait for its result before importing.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
+	return [Common.tool("asset_export", "Export a completed 3D job. GLB is the immutable original; glTF is a ZIP with dependencies; OBJ/STL/PLY are static geometry only. FBX, USDZ, 3MF and Meshy BLEND use explicit provider conversion and may consume credits. Resume with the same job and format to avoid duplicate conversions. If a submission response was lost, obtain the existing conversion task_id from the user/provider dashboard to recover; never invent an ID or resubmit blindly. Returns processing or a private cache file; does not overwrite project files.", {"job": Common.string_field(), "task_id": Common.string_field(), "format": {"type": "string", "enum": ["glb", "gltf", "fbx", "obj", "stl", "ply", "usdz", "blend", "3mf"]}}, ["job", "format"], "external"), Common.tool("asset_generate", "Generate an image or GLB with a configured Runware, ComfyUI, Meshy, Tripo or OpenAI Images profile. Meshy text-to-3D produces preview geometry; image-to-3D includes textures. Cloud generation consumes provider credits. The job is retained for later polling; use asset_wait to wait for its result before importing.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
 
 func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	var provider = str(profile.get("kind", "runware"))
@@ -302,8 +303,8 @@ func _comfy_upload(profile: Dictionary, path: String, cancel: Dictionary) -> Dic
 	if not result.get("json") is Dictionary or not result["json"].has("name"): return Common.failure("Încărcarea referinței nu a reușit.")
 	return Common.success(str(result["json"].get("subfolder", "")).path_join(str(result["json"]["name"])).trim_prefix("/"))
 
-func _save() -> void:
-	Common.atomic_json(cache_directory.path_join("jobs.json"), jobs)
+func _save() -> bool:
+	return Common.atomic_json(cache_directory.path_join("jobs.json"), jobs) == OK
 
 # Native REST adapters. No shell, SDK or companion process is required.
 static func cloud_payload(profile: Dictionary, prompt: String, reference: String = "") -> Dictionary:
@@ -420,15 +421,23 @@ func _cloud_poll(job: Dictionary, profile: Dictionary, cancel: Dictionary) -> Di
 		job["error"] = "Generarea s-a încheiat fără fișierul PNG/GLB cerut."
 		_save()
 		return Common.failure(job["error"], "missing_artifact")
-	var parsed = Common.parse_url(url, test_http)
-	if not parsed.get("ok", false): return parsed
-	var host = str(parsed["host"]).to_lower()
-	var allowed = ["meshy.ai"] if provider == "meshy" else ["tripo3d.ai", "tripo3d.com"]
-	var trusted = test_http and host == "127.0.0.1"
-	for domain in allowed:
-		if host == domain or host.ends_with("." + domain): trusted = true
-	if not trusted: return Common.failure("Domeniu de descărcare nerecunoscut pentru " + provider + ".")
+	if not trusted_download(url, provider): return Common.failure("Domeniu de descărcare nerecunoscut pentru " + provider + ".")
 	return Common.success(url)
+
+func trusted_download(url: String, provider: String) -> bool:
+	var parsed = Common.parse_url(url, test_http)
+	if not parsed.get("ok", false): return false
+	var host = str(parsed["host"]).to_lower()
+	if test_http and host == "127.0.0.1": return true
+	for domain in (["meshy.ai"] if provider == "meshy" else ["tripo3d.ai", "tripo3d.com"]):
+		if host == domain or host.ends_with("." + domain): return true
+	return false
+
+func export_job(id: String, profile: Dictionary, format: String, cancel: Dictionary, task_id: String = "") -> Dictionary:
+	var job = find_job(id)
+	if job.is_empty(): return Common.failure("Sarcină de generare inexistentă.")
+	return await AssetExports.new(self).export_job(job, profile, format, cancel, task_id)
+
 
 func _tripo_upload(profile: Dictionary, path: String, cancel: Dictionary) -> Dictionary:
 	var data_uri = _reference_data(path)

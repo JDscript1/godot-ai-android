@@ -28,10 +28,85 @@ const CATALOG = [
 
 var transport: RefCounted
 var vault: RefCounted
+var owner: Node
 
 func _init(node: Node = null, secret_store: RefCounted = null) -> void:
+	owner = node
 	transport = Transport.new(node)
 	vault = secret_store
+
+static func private_ipv4(address: String) -> bool:
+	var parts = address.split(".")
+	if parts.size() != 4: return false
+	for part in parts:
+		if not part.is_valid_int() or int(part) < 0 or int(part) > 255: return false
+	return int(parts[0]) == 10 or (int(parts[0]) == 172 and int(parts[1]) in range(16, 32)) or (int(parts[0]) == 192 and int(parts[1]) == 168)
+
+static func hosting(profile: Dictionary) -> String:
+	if profile.get("hosting") in ["cloud", "local"]: return profile["hosting"]
+	if profile.get("issuer", profile.get("id", "")) in ["ollama", "lmstudio", "llamacpp"]: return "local"
+	var parsed = Common.parse_url(str(profile.get("url", "")), true)
+	var host = str(parsed.get("host", "")).to_lower()
+	return "local" if host in ["localhost", "127.0.0.1", "::1"] or host.ends_with(".local") or private_ipv4(host) else "cloud"
+
+static func lan_targets(addresses: Array) -> Array:
+	# An explicit search covers at most two private /24 segments, never the Internet.
+	var prefixes = []
+	for address in addresses:
+		if not private_ipv4(str(address)): continue
+		var prefix = str(address).rsplit(".", true, 1)[0]
+		if prefix not in prefixes and prefixes.size() < 2: prefixes.append(prefix)
+	var result = []
+	for prefix in prefixes:
+		for last in range(1, 255):
+			for port in [11434, 1234, 8080]: result.append({"host": prefix + "." + str(last), "port": port})
+	return result
+
+func discover_lan(cancel: Dictionary) -> Dictionary:
+	var addresses = []
+	for interface in IP.get_local_interfaces():
+		for address in interface.get("addresses", []): addresses.append(str(address))
+	return await probe_targets(lan_targets(addresses), cancel)
+
+func probe_targets(targets: Array, cancel: Dictionary) -> Dictionary:
+	if cancel.get("cancelled", false): return Common.failure("Căutare oprită.", "cancelled")
+	var pending = []
+	var open = []
+	var cursor = 0
+	var deadline = Time.get_ticks_msec() + 20000
+	while (cursor < targets.size() or not pending.is_empty()) and Time.get_ticks_msec() < deadline:
+		if cancel.get("cancelled", false) or not is_instance_valid(owner) or not owner.is_inside_tree():
+			for item in pending: item["tcp"].disconnect_from_host()
+			return Common.failure("Căutare oprită.", "cancelled")
+		while pending.size() < 48 and cursor < targets.size():
+			var target: Dictionary = targets[cursor]
+			cursor += 1
+			# Test loopback is allowed here; discover_lan only supplies private addresses.
+			if not private_ipv4(str(target.get("host", ""))) and target.get("host") != "127.0.0.1": continue
+			if int(target.get("port", 0)) < 1 or int(target.get("port", 0)) > 65535: continue
+			var tcp = StreamPeerTCP.new()
+			if tcp.connect_to_host(str(target["host"]), int(target["port"])) == OK: pending.append({"tcp": tcp, "target": target, "started": Time.get_ticks_msec()})
+		for index in range(pending.size() - 1, -1, -1):
+			var item: Dictionary = pending[index]
+			item["tcp"].poll()
+			var status = item["tcp"].get_status()
+			if status == StreamPeerTCP.STATUS_CONNECTED: open.append(item["target"])
+			if status != StreamPeerTCP.STATUS_CONNECTING or Time.get_ticks_msec() - int(item["started"]) > 350:
+				item["tcp"].disconnect_from_host()
+				pending.remove_at(index)
+		await owner.get_tree().process_frame
+	for item in pending: item["tcp"].disconnect_from_host()
+	var found = []
+	# Bound HTTP verification as well, including networks with many unrelated servers.
+	for target in open.slice(0, 24):
+		if cancel.get("cancelled", false): return Common.failure("Căutare oprită.", "cancelled")
+		var url = "http://%s:%s/v1" % [target["host"], target["port"]]
+		var response = await transport.request(url + "/models", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": cancel, "timeout": 1, "max_bytes": 512000})
+		var payload: Variant = response.get("json")
+		if not response.get("ok", false) or not payload is Dictionary or not payload.get("data") is Array: continue
+		var issuer = {11434: "ollama", 1234: "lmstudio", 8080: "llamacpp"}.get(int(target["port"]), "custom")
+		found.append({"issuer": issuer, "kind": "chat", "url": url, "hosting": "local", "allow_http": true, "model_count": payload["data"].size(), "name": "%s · %s" % [issuer, target["host"]]})
+	return Common.success({"servers": found, "searched": cursor, "limited": cursor < targets.size() or open.size() > 24})
 
 static func detect(key: String, issuer: String = "") -> Dictionary:
 	var normalized = key.strip_edges()

@@ -1,6 +1,7 @@
 @tool
 extends HBoxContainer
 static var Common: GDScript
+static var Providers: GDScript
 static var Icons: GDScript
 static var Markdown: GDScript
 var file_registry: RefCounted
@@ -599,7 +600,7 @@ func _filter_models() -> void:
 		for group in ["API cloud", "Abonamente", "Modele locale"]:
 			var heading = false
 			for profile in catalog:
-				var category = "Abonamente" if profile.get("kind") in ["siwc", "companion"] else ("Modele locale" if profile.get("issuer") in ["ollama", "lmstudio", "llamacpp"] else "API cloud")
+				var category = "Abonamente" if profile.get("kind") in ["siwc", "companion"] else ("Modele locale" if Providers.hosting(profile) == "local" else "API cloud")
 				if category != group or (not query.is_empty() and not query in (str(profile["name"]) + " " + str(profile.get("issuer", ""))).to_lower()): continue
 				if not heading:
 					label_once(group)

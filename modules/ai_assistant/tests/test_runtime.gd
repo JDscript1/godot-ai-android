@@ -66,7 +66,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -75,7 +75,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -106,6 +106,10 @@ func _run() -> void:
 	check(events.size() == 1 and events[0]["value"] == "română 🐦", "SSE preserves UTF-8 across arbitrary byte boundaries")
 	check(decoder.ended, "SSE recognizes terminal sentinel")
 	var providers = scripts["providers"]
+	check(providers.hosting({"issuer": "custom", "url": "http://192.168.2.5:1234/v1"}) == "local" and providers.hosting({"issuer": "custom", "url": "https://api.example.com"}) == "cloud", "LAN compatible profiles and cloud endpoints are grouped by hosting")
+	check(providers.hosting({"issuer": "custom", "url": "https://private.example.com", "hosting": "local"}) == "local", "Self-hosted public domains can explicitly select local hosting")
+	var targets = providers.lan_targets(["192.168.3.8", "192.168.3.9", "10.0.0.4", "172.16.1.2", "8.8.8.8", "127.0.0.1", "192.168.300.3"])
+	check(targets.size() == 1524 and targets.all(func(item: Dictionary) -> bool: return providers.private_ipv4(item["host"]) and item["port"] in [11434, 1234, 8080]), "Discovery is bounded to two private segments and known ports")
 	check(not providers.detect("sk-generic-fixture").get("ok", false), "Ambiguous keys never trigger issuer guessing")
 	check(providers.detect("DEEPSEEK_API_KEY=sk-generic-fixture").get("profile", {}).get("id") == "deepseek", "Labeled key determines issuer")
 	var messages = [{"role": "system", "content": "Inspect"}, {"role": "user", "content": "Create"}, {"role": "assistant", "content": "", "reasoning_content": "Retained reasoning", "tool_calls": [{"id": "a", "name": "godot_project", "arguments": {}}]}, {"role": "tool", "tool_call_id": "a", "tool_name": "godot_project", "content": "{}"}]
@@ -167,6 +171,28 @@ func _integration_tests(node: Node) -> void:
 	var service = scripts["integrations"].new(node, FakeVault.new())
 	service.api_url = mock_url
 	service.test_http = true
+	service.github_login_url = mock_url
+	check((await service.github_begin("")).get("code") == "missing_client_id", "GitHub login requires the project's own registered client ID")
+	check(not (await service.github_begin("foreign")).get("ok", false), "OAuth rejects a foreign verification URI")
+	var authorization = await service.github_begin("valid")
+	check(authorization.get("result", {}).get("user_code") == "ABCD-EFGH" and not JSON.stringify(authorization).contains("device-code"), "Device flow exposes only the public code to the UI")
+	var signed_in = await service.github_poll({})
+	check(signed_in.get("result", {}).get("login") == "fixture" and service.vault.read("integration_github") == "github-fixture-token", "Device flow handles pending and slowdown then verifies the account before vault persistence")
+	var repositories = await service.github_repositories(1)
+	check(repositories.get("result", []).size() == 2 and repositories["result"][1]["private"], "Native GitHub repository picker retrieves public and authorized private repositories")
+	service.vault.erase("integration_github")
+	await service.github_begin("invalid-account")
+	check(not (await service.github_poll({})).get("ok", false) and service.vault.read("integration_github").is_empty(), "An unverified account token never reaches the vault")
+	await service.github_begin("denied")
+	check((await service.github_poll({})).get("code") == "access_denied", "Refused device authorization terminates without login")
+	await service.github_begin("cancelled")
+	check((await service.github_poll({"cancelled": true})).get("code") == "cancelled" and service.vault.read("integration_github").is_empty(), "Cancelled authorization cannot persist credentials")
+	await service.github_begin("expired")
+	service.github_flow["expires"] = 0
+	check((await service.github_poll({})).get("code") == "expired_token", "Expired device code requires a fresh login")
+	var discovered = await scripts["providers"].new(node).probe_targets([{"host": "127.0.0.1", "port": int(mock_url.get_slice(":", 2))}], {})
+	check(discovered.get("result", {}).get("servers", []).size() == 1 and discovered["result"]["servers"][0]["model_count"] == 1, "LAN discovery verifies an actual TCP and OpenAI-compatible models endpoint without credentials")
+	check((await scripts["providers"].new(node).probe_targets([], {"cancelled": true})).get("code") == "cancelled", "Discovery cancellation is explicit even for an empty address list")
 	check(not scripts["integrations"].valid_repository("../outside") and not scripts["integrations"].valid_repository("user/project?token=x"), "GitHub repository scope rejects paths and query injection")
 	var result = await service.github_request("fixture/project", {"resource": "repository"})
 	check(result.get("result", {}).get("full_name") == "fixture/project", "Native GitHub HTTP adapter reads the configured repository")
@@ -633,6 +659,7 @@ func _cloud_generation_tests(node: Node) -> void:
 		var wrong = profile.duplicate()
 		wrong["id"] = "wrong-profile"
 		check(not (await assets.refresh(id, wrong, {})).get("ok", false), "Saved generation job refuses a different credential profile")
+	await _export_tests(assets, vault, cache)
 	var profile = {"id": "fixture-tripo", "kind": "tripo", "asset_kind": "mesh"}
 	for prompt in ["fail", "foreign"]:
 		var submitted = await assets.submit(profile, prompt, "", {})
@@ -644,6 +671,81 @@ func _cloud_generation_tests(node: Node) -> void:
 	vault.erase("fixture-tripo")
 	check((await assets.submit(profile, "bird", "", {})).get("code") == "missing_credentials", "Cloud generation requires this profile's own API key")
 	DirAccess.remove_absolute(reference)
+
+func _export_tests(assets: RefCounted, vault: RefCounted, cache: String) -> void:
+	var exports = scripts["asset_exports"]
+	var mesh_job: Dictionary = assets.jobs.filter(func(item: Dictionary) -> bool: return item["kind"] == "mesh")[0]
+	var original = FileAccess.get_file_as_bytes(mesh_job["file"])
+	for format in ["obj", "stl", "ply", "gltf"]:
+		var result = await assets.export_job(mesh_job["id"], {}, format, {})
+		check(result.get("ok", false) and result.get("result", {}).get("status") == "completed", "Real GLB exports to native " + format)
+		if not result.get("ok", false): continue
+		var path = str(result["result"]["file"])
+		if format == "stl":
+			var file = FileAccess.open(path, FileAccess.READ)
+			file.seek(80)
+			check(file.get_32() == 1 and file.get_length() == 134, "Binary STL contains the real source triangle and valid record length")
+		elif format == "obj": check(FileAccess.get_file_as_string(path).contains("f 1 2 3") and FileAccess.get_file_as_string(path).contains("v -1.000000000 0.000000000 0.000000000"), "OBJ contains real vertices and topology rather than a renamed GLB")
+		elif format == "ply": check(FileAccess.get_file_as_string(path).contains("element vertex 3") and FileAccess.get_file_as_string(path).contains("element face 1"), "PLY declares the correct geometry counts")
+		else:
+			var archive = ZIPReader.new()
+			var opened = archive.open(path) == OK
+			var document: Variant = scripts["common"].parse_json(archive.read_file("model.gltf").get_string_from_utf8()) if opened else {}
+			var buffers: Array = document.get("buffers", [])
+			check(opened and not buffers.is_empty() and buffers.all(func(buffer: Dictionary) -> bool: return archive.file_exists(str(buffer.get("uri", "")))), "glTF export bundles its JSON and referenced binary dependencies")
+			archive.close()
+	var cached_local = await assets.export_job(mesh_job["id"], {}, "gltf", {})
+	var repeated_local = await assets.export_job(mesh_job["id"], {}, "gltf", {})
+	check(cached_local.get("result", {}).get("file") == repeated_local.get("result", {}).get("file"), "Repeated native export reuses its immutable-source cache instead of duplicating files")
+	check(FileAccess.get_file_as_bytes(mesh_job["file"]) == original, "All exports preserve original GLB bytes")
+	for provider in ["meshy", "tripo"]:
+		var job: Dictionary = assets.jobs.filter(func(item: Dictionary) -> bool: return item["provider"] == provider and item["kind"] == "mesh")[0]
+		var profile = {"id": job["profile_id"], "kind": provider}
+		vault.store(profile["id"], "generation-fixture-key")
+		var result = await assets.export_job(job["id"], profile, "fbx", {})
+		check(result.get("ok", false) and str(result.get("result", {}).get("file", "")).ends_with(".fbx"), "Documented " + provider + " conversion task downloads a validated FBX without credentials on CDN")
+		var recovered = scripts["assets"].new(assets.owner, vault)
+		recovered.configure(cache)
+		recovered.test_http = true
+		recovered.api_urls = assets.api_urls.duplicate()
+		check((await recovered.export_job(job["id"], profile, "fbx", {})).get("ok", false), "Cached conversion survives restart and avoids a duplicate paid POST: " + provider)
+	for format in ["usdz", "blend", "3mf"]:
+		var profile = {"id": mesh_job["profile_id"], "kind": "meshy"}
+		if format == "3mf":
+			var token = {"cancelled": false}
+			_cancel_export_when_submitted(mesh_job, format, token, assets.owner)
+			var interrupted = await assets.export_job(mesh_job["id"], profile, format, token)
+			check(interrupted.get("code") == "cancelled" and not str(mesh_job.get("exports", {}).get(format, {}).get("external_id", "")).is_empty(), "Cancelled conversion wait retains its provider ID for later resume")
+		var result = await assets.export_job(mesh_job["id"], profile, format, {})
+		check(result.get("ok", false) and str(result.get("result", {}).get("file", "")).ends_with("." + format), "Cloud conversion checks the actual " + format.to_upper() + " container")
+	var unknown: Dictionary = mesh_job.duplicate(true)
+	unknown["id"] = scripts["common"].uid()
+	unknown["exports"] = {"fbx": {"status": "unknown", "endpoint": "/openapi/v1/convert", "external_id": "", "format": "fbx", "file": ""}}
+	assets.jobs.append(unknown)
+	var original_profile = {"id": mesh_job["profile_id"], "kind": "meshy"}
+	check((await assets.export_job(unknown["id"], original_profile, "fbx", {})).get("code") == "conversion_unknown", "Lost conversion response blocks blind duplicate paid submissions")
+	check((await assets.export_job(unknown["id"], original_profile, "fbx", {}, "convert-fbx")).get("ok", false), "Existing task ID recovers a lost conversion response through GET without a paid POST")
+	check(not (await assets.export_job(mesh_job["id"], {}, "exe", {})).get("ok", false), "Export rejects unsupported formats")
+	var fake = cache.path_join("not-fbx.part")
+	var fake_file = FileAccess.open(fake, FileAccess.WRITE)
+	fake_file.store_string("<html>server error</html>")
+	fake_file.close()
+	check(not exports.validate_export(fake, "fbx").get("ok", false), "Provider HTML cannot masquerade as FBX")
+	var archive_path = cache.path_join("traversal.zip")
+	var unsafe_zip = ZIPPacker.new()
+	unsafe_zip.open(archive_path)
+	unsafe_zip.start_file("../model.fbx")
+	unsafe_zip.write_file("; FBX fake".to_utf8_buffer())
+	unsafe_zip.close_file()
+	unsafe_zip.close()
+	check(not exports.validate_export(archive_path, "fbx").get("ok", false), "Export bundles reject parent traversal paths")
+
+
+func _cancel_export_when_submitted(job: Dictionary, format: String, cancel: Dictionary, node: Node) -> void:
+	var deadline = Time.get_ticks_msec() + 10000
+	while str(job.get("exports", {}).get(format, {}).get("external_id", "")).is_empty() and Time.get_ticks_msec() < deadline:
+		await node.get_tree().process_frame
+	cancel["cancelled"] = true
 
 func _file_registry_tests(node: Node) -> void:
 	var registry = scripts["file_registry"].new(node)

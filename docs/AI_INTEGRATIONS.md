@@ -42,15 +42,33 @@ Services card and its shortcuts have been removed in source after APK `db5343b`.
 GitHub and Blender configuration is stored per project in the editor's private
 `projects/<hash>/integrations.json`. GitHub tokens use the existing encrypted
 vault/Android Keystore and never enter that JSON, model instructions or logs.
+The OAuth Client ID is public editor configuration, shared across projects.
 Changing repositories in one project does not configure another project.
 
-- GitHub uses native HTTP, without `git`, `gh` or a shell. Configure
-  `owner/repository`, optionally save a token and enable the connection.
-  `github_read` inspects repository metadata, branches, issues, pull requests and
+- GitHub uses native HTTP, without `git`, `gh` or a shell. **Sign in with GitHub**
+  starts Device Flow, displays a public code and opens GitHub in the browser. Confirm
+  the code there, then choose a repository from the paginated account list or enter
+  `owner/repository` manually. The account is verified through `/user` before its
+  token is saved. Refusal, expiry, cancellation and `slow_down` are handled; a late
+  response cannot reconnect a cancelled/disconnected account. Manual tokens remain
+  available under **Configurare autentificare**. Public repositories can still be
+  read without a token. **Verifică** distinguishes account login from public access.
+- **One-time setup is still required:** this project has no registered GitHub OAuth
+  app/Client ID yet. Register our own app, enable **Device Flow**, and put its public
+  Client ID in **Configurare autentificare**. No Client Secret is requested or shipped.
+  The link opens GitHub registration; it does not register an app automatically.
+  Once the public ID is available it can also be supplied as the fork's default.
+  Third-party application IDs and developer `gh` credentials are never reused.
+- Default scopes are `read:user public_repo`; enabling private repositories requests
+  `repo`. GitHub shows the requested permissions during approval. Device Flow can be
+  cancelled in the editor; local disconnect erases the token, and server-side OAuth
+  grants can be revoked in GitHub settings. Disconnect does not claim to revoke the
+  remote grant. Account selection alone does not grant the agent permission to publish.
+- `github_read` inspects repository metadata, branches, issues, pull requests and
   file/directory contents. Lists are paginated and bounded; file content includes
-  its revision. `github_create_issue` is an external mutation intended for an
-  explicit user request and follows Auto/Default/Plan and YOLO/confirmation rules.
-  It does not implement git clone, commits, push or PR creation.
+  its revision. `github_create_issue` publishes only for an explicit request under
+  Auto/Default/Plan and YOLO/confirmation rules. Git clone, commits, push and PR
+  creation are not implemented by these adapters.
 - Blender CLI appears only on Windows/Linux, when Blender is already installed.
   Select its executable and verify the version. `blender_run` starts Blender
   directly with an argument array, no shell, using background/factory mode,
@@ -62,6 +80,7 @@ Changing repositories in one project does not configure another project.
 - Existing manually launched saved tasks remain under Integrations → Sarcini.
   This adds no autonomous scheduler.
 
+Authentication follows [GitHub OAuth Device Flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow).
 The adapters follow [GitHub repository contents](https://docs.github.com/en/rest/repos/contents),
 [GitHub issues](https://docs.github.com/en/rest/issues/issues) and
 [Blender CLI arguments](https://docs.blender.org/manual/en/5.4/advanced/command_line/arguments.html).
@@ -99,9 +118,11 @@ journal retains its existing 1,000-entry limit.
 Local runtime checks include a deterministic GitHub HTTP fixture and a real
 Blender 4.3.2 process on Debian ARM64: Python → GLB → Godot import, Python errors,
 cancellation and timeout. A separate unauthenticated request through the native
-adapter read the public `godotengine/godot` repository. No live issue was created
-and no private GitHub account was connected. Rendered editor fixtures cover
+adapter read the public `godotengine/godot` repository. Device Flow protocol tests use local HTTP fixtures, including pending/slowdown,
+refusal, expiry, cancellation, invalid account tokens and repository listing.
+No live issue was created and no private GitHub account was connected; real OAuth
+login still requires app registration and user browser authorization. Rendered editor fixtures cover
 permissions, skills/recovery, memory conflicts, context, settings and dock moves.
 Exact counts and evidence are recorded in [PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 Windows execution, the recompiled native dock bridge, physical Android and actual
-audio playback remain unverified. The last delivered APK is unchanged.
+audio playback remain unverified. The current source/build/delivery status is recorded in the progress document.

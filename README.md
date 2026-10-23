@@ -15,6 +15,8 @@ are tracked separately from automated checks.
 
 [Implementări, verificări și planul proiectului](PROGRES_SI_PLAN.md) este
 documentul de progres actualizat după fiecare etapă importantă.
+[Prioritățile următoare](docs/AI_ROADMAP.md) includ validarea pe dispozitiv,
+GitHub complet și profilurile de export 3D.
 [Auditul interfeței](docs/AI_UI_AUDIT.md) urmărește încadrarea și efectele reale
 ale butoanelor din chat și istoric.
 

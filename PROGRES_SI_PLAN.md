@@ -1,6 +1,6 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **22 octombrie 2026**.
+Ultima actualizare: **23 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
@@ -24,6 +24,53 @@ drept funcție validată cu un serviciu real.
 
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
+
+## Etapa curentă — exporturi 3D, GitHub și LAN, 23.10.2026
+
+Implementate în surse, după APK-ul `2538551`:
+
+- GLB original păstrat pentru preview/import; export glTF în ZIP cu dependențe,
+  OBJ/STL/PLY native pentru geometrie statică și conversii FBX/USDZ/3MF prin
+  Meshy/Tripo, plus BLEND prin Meshy. Formatele native nu includ materiale,
+  rig sau animații; nu pretindem suport pentru toate formatele la fiecare API.
+- Selector și buton de export pe rezultatul selectat, destinație aleasă de
+  utilizator, fără suprascriere. Tool `asset_export` disponibil agentului.
+  Cache după hash pentru exporturi locale; task ID persistent și reluare pentru
+  conversii. Răspunsul pierdut la POST blochează retrimiterea plătită oarbă și
+  permite recuperare după ID-ul sarcinii existente.
+- GitHub **Sign in**, Device Flow nativ, cod public/copiere/browser, validarea
+  contului înainte de salvarea tokenului, selectare repository cu paginare și
+  fallback manual. Client ID public comun editorului; repo/activare per proiect.
+  Tokenurile rămân în vault, fără Client Secret sau credențiale externe împrumutate.
+- **Activare GitHub încă necesară:** nu avem o aplicație OAuth proprie înregistrată.
+  Interfața explică înregistrarea și Device Flow; login real nu este încă validat.
+- Separatoare vizuale Cloud / Local-self-hosted în serviciile/profilurile din
+  Furnizori, selecție după ID stabil și clasificare unitară în sertarul din chat.
+  Adresele LAN sunt recunoscute; domeniile proprii pot declara explicit găzduirea.
+- Căutare LAN nativă pornită explicit, limitată la două segmente IPv4 private și
+  porturile 11434/1234/8080, apoi verificare `/v1/models`, fără trimiterea cheilor.
+  Alegerea rezultatului doar completează formularul; salvarea este explicită.
+  IP/port/adresă HTTPS pot fi introduse manual, inclusiv când scanarea nu ajunge.
+- Documentație: [generare/export](docs/AI_GENERATION.md),
+  [autentificare/integrări](docs/AI_INTEGRATIONS.md),
+  [conectare Wi-Fi](docs/AI_ASSISTANT.md#local-servers-over-wi-fi),
+  [lista de priorități](docs/AI_ROADMAP.md).
+
+Verificări locale: **340 aserțiuni**, fără eșecuri, prin Godot ARM64 în proot.
+Acestea includ geometrie reală în OBJ/STL/PLY, glTF cu dependențe, original
+nemodificat, conversii HTTP simulate FBX/USDZ/3MF/BLEND, cache/reluare/recuperare,
+fără chei pe CDN, OAuth pending/slowdown/refuz/anulare/expirare și endpoint LAN
+local izolat. Nu s-a scanat rețeaua utilizatorului. Verificarea randată a trecut: **314 verificări × 5 configurații**, fără eșecuri.
+Capturile desktop, înguste și compacte au fost inspectate. Ultima extindere verifică
+și exportul deschis chiar din fereastra modală Setări, cu dialog copil corect.
+Compilarea în editorul nativ/APK și verificările live rămân etape distincte.
+Dovezi locale: `.ai-qa/new-integrations-unit-final.log`,
+`.ai-qa/new-integrations-final-render/`. APK-ul din Download este încă `2538551`;
+compilarea/livrarea noii etape se consemnează separat după verificare.
+
+Jurnal: 23.10.2026 — extinse exporturile 3D, pregătit GitHub Sign in și selectarea
+repository-ului, separate găzduirile și adăugată căutarea LAN. Serviciile live și
+validarea fizică Android rămân probe distincte.
 
 ## Implementări existente
 

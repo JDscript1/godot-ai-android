@@ -2,6 +2,8 @@
 import argparse
 import base64
 import http.server
+import io
+import zipfile
 import json
 from pathlib import Path
 import os
@@ -29,10 +31,19 @@ def glb():
 
 
 class Fixtures(http.server.BaseHTTPRequestHandler):
+    oauth_polls = {}
+    conversion_posts = {}
+    conversion_polls = {}
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *args):
         pass
+
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, BrokenPipeError):
+            pass
 
     def reply(self, value, status=200, content_type="application/json", headers=None):
         body = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode()
@@ -49,6 +60,14 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/user":
+            valid = self.headers.get("Authorization") == "Bearer github-fixture-token"
+            self.reply({"login": "fixture", "id": 42, "name": "Fixture user"} if valid else {"error": "unauthorized"}, 200 if valid else 401)
+            return
+        if location.path == "/user/repos":
+            valid = self.headers.get("Authorization") == "Bearer github-fixture-token"
+            self.reply([{"full_name": "fixture/project", "private": False}, {"full_name": "fixture/private", "private": True}] if valid else {"error": "unauthorized"}, 200 if valid else 401)
+            return
         if location.path == "/store/search/query/":
             valid = urllib.parse.parse_qs(location.query).get("query") == ["fixture"]
             self.reply({"count": 1, "hits": [{"asset": {"slug": "fixture-addon", "name": "Fixture addon", "publisher": {"name": "Fixture publisher", "slug": "fixture"}, "license_type": "MIT"}}]} if valid else {"error": "query missing"}, 200 if valid else 400)
@@ -66,6 +85,19 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             if self.headers.get("Authorization") != "Bearer generation-fixture-key":
                 self.reply({"error": "missing fixture authorization"}, 401)
                 return
+            if "/convert/" in location.path or "/tasks/convert-" in location.path:
+                task = location.path.rsplit("/", 1)[-1]
+                fmt = task.removeprefix("convert-")
+                url = f"http://127.0.0.1:{self.server.server_port}/artifact/model.{fmt}"
+                self.conversion_polls[task] = self.conversion_polls.get(task, 0) + 1
+                if fmt == "3mf" and self.conversion_polls[task] == 1:
+                    self.reply({"status": "IN_PROGRESS", "progress": 50})
+                    return
+                if location.path.startswith("/meshy/"):
+                    self.reply({"status": "SUCCEEDED", "model_urls": {fmt: url}, "consumed_credits": 1})
+                else:
+                    self.reply({"code": 0, "data": {"status": "success", "output": {"model_url": url}, "credits_consumed": 1}})
+                return
             if location.path.endswith("/balance"):
                 self.reply({"code": 0, "data": {"balance": 100}} if location.path.startswith("/tripo/") else {"balance": 100})
             elif location.path.endswith("/models"):
@@ -82,6 +114,19 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             if self.headers.get("Authorization"):
                 self.reply({"error": "credentials sent to CDN"}, 403)
             else:
+                if location.path.endswith(".fbx"):
+                    self.reply(b"; FBX 7.4.0 project file\nObjects: {}\n", content_type="application/octet-stream")
+                    return
+                fmt = location.path.rsplit(".", 1)[-1]
+                if fmt in ["usdz", "3mf", "blend"]:
+                    if fmt == "blend":
+                        self.reply(b"BLENDER-v400" + b"\x00" * 32, content_type="application/octet-stream")
+                    else:
+                        data = io.BytesIO()
+                        with zipfile.ZipFile(data, "w") as archive:
+                            archive.writestr("model.usda" if fmt == "usdz" else "3D/3dmodel.model", "#usda 1.0" if fmt == "usdz" else "<model/>")
+                        self.reply(data.getvalue(), content_type="application/octet-stream")
+                    return
                 mesh = location.path.endswith(".glb")
                 self.reply(glb() if mesh else png(), content_type="model/gltf-binary" if mesh else "image/png")
         elif location.path == "/repos/fixture/project":
@@ -110,8 +155,34 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             valid = self.headers.get("Authorization") == "Bearer generation-fixture-key" and b'name="file"' in raw and png() in raw
             self.reply({"code": 0, "data": {"file_token": "file_fixture"}} if valid else {"code": 1004, "message": "invalid multipart upload"})
             return
-        payload = json.loads(raw or b"{}")
+        payload = ({key: values[0] for key, values in urllib.parse.parse_qs(raw.decode()).items()} if self.headers.get("Content-Type", "").startswith("application/x-www-form-urlencoded") else json.loads(raw or b"{}"))
         location = urllib.parse.urlparse(self.path)
+        if location.path in ["/login/device/code", "/login/oauth/access_token"]:
+            client = payload.get("client_id", "")
+            if location.path.endswith("/device/code"):
+                self.oauth_polls[client] = 0
+                self.reply({"device_code": client + "-private-device-code", "user_code": "ABCD-EFGH", "verification_uri": "https://attacker.example" if client == "foreign" else "https://github.com/login/device", "expires_in": 900, "interval": 1})
+            else:
+                valid = payload.get("device_code") == client + "-private-device-code" and payload.get("grant_type") == "urn:ietf:params:oauth:grant-type:device_code"
+                if not valid:
+                    self.reply({"error": "incorrect_device_code"})
+                    return
+                self.oauth_polls[client] = self.oauth_polls.get(client, 0) + 1
+                count = self.oauth_polls[client]
+                if client == "denied": self.reply({"error": "access_denied"})
+                elif count == 1: self.reply({"error": "authorization_pending"})
+                elif count == 2: self.reply({"error": "slow_down"})
+                else: self.reply({"access_token": "bad-token" if client == "invalid-account" else "github-fixture-token", "token_type": "bearer", "scope": "read:user public_repo"})
+            return
+        if location.path in ["/meshy/openapi/v1/convert", "/tripo/models/convert"]:
+            valid = self.headers.get("Authorization") == "Bearer generation-fixture-key"
+            fmt = payload.get("target_formats", [""])[0] if location.path.startswith("/meshy/") else str(payload.get("format", "")).lower()
+            valid = valid and fmt in ["fbx", "usdz", "3mf", "blend"] and bool(payload.get("input_task_id") or payload.get("input"))
+            counter = location.path + ":" + fmt
+            self.conversion_posts[counter] = self.conversion_posts.get(counter, 0) + 1
+            valid = valid and self.conversion_posts[counter] <= 1
+            self.reply(({"result": "convert-" + fmt} if location.path.startswith("/meshy/") else {"code": 0, "data": {"task_id": "convert-" + fmt}}) if valid else {"error": "invalid or duplicate paid conversion"}, 200 if valid else 400)
+            return
         if location.path.startswith(("/meshy/", "/tripo/", "/openai_image/")):
             if self.headers.get("Authorization") != "Bearer generation-fixture-key":
                 self.reply({"error": "missing fixture authorization"}, 401)
