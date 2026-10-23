@@ -9,10 +9,9 @@ jos nu sunt prezentate ca implementate. Starea verificată este în
 1. **Validare pe tableta/telefonul real.** Interfață, tastatură, gesturi, mutarea
    dock-ului, accesul la stocare, suspendare/revenire și preview-uri mari. Testele
    randate și APK-ul compilat nu înlocuiesc acest control.
-2. **Activarea autentificării GitHub.** Înregistrăm aplicația OAuth proprie,
-   activăm Device Flow și configurăm Client ID-ul public. Verificăm login,
-   repository privat, anulare și deconectare cu un cont real. Apoi Client ID-ul
-   poate deveni implicit în aplicație, eliminând configurarea pentru utilizator.
+2. **Verificarea GitHub cu token personal.** Testăm un token real cu acces minim,
+   un repository privat, schimbarea repository-ului și deconectarea. Confirmăm
+   separat permisiunea necesară pentru publicarea unui issue.
 3. **Un export real per furnizor și format.** Meshy/Tripo → FBX/USDZ/3MF/BLEND,
    texturi și animații unde sunt disponibile, deschidere în aplicațiile țintă și
    import în Godot. Confirmăm costul și consistența fișierelor, nu doar răspunsul API.

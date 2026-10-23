@@ -31,7 +31,6 @@ def glb():
 
 
 class Fixtures(http.server.BaseHTTPRequestHandler):
-    oauth_polls = {}
     conversion_posts = {}
     conversion_polls = {}
     protocol_version = "HTTP/1.1"
@@ -160,23 +159,6 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         if location.path == "/runware":
             valid = self.headers.get("Authorization") == "Bearer generation-fixture-key" and isinstance(payload, list) and payload == [{"taskType": "ping", "ping": True}]
             self.reply({"data": [{"taskType": "ping", "pong": True}]} if valid else {"errors": [{"code": "invalidApiKey", "message": "Invalid API key"}]}, 200 if valid else 401)
-            return
-        if location.path in ["/login/device/code", "/login/oauth/access_token"]:
-            client = payload.get("client_id", "")
-            if location.path.endswith("/device/code"):
-                self.oauth_polls[client] = 0
-                self.reply({"device_code": client + "-private-device-code", "user_code": "ABCD-EFGH", "verification_uri": "https://attacker.example" if client == "foreign" else "https://github.com/login/device", "expires_in": 900, "interval": 1})
-            else:
-                valid = payload.get("device_code") == client + "-private-device-code" and payload.get("grant_type") == "urn:ietf:params:oauth:grant-type:device_code"
-                if not valid:
-                    self.reply({"error": "incorrect_device_code"})
-                    return
-                self.oauth_polls[client] = self.oauth_polls.get(client, 0) + 1
-                count = self.oauth_polls[client]
-                if client == "denied": self.reply({"error": "access_denied"})
-                elif count == 1: self.reply({"error": "authorization_pending"})
-                elif count == 2: self.reply({"error": "slow_down"})
-                else: self.reply({"access_token": "bad-token" if client == "invalid-account" else "github-fixture-token", "token_type": "bearer", "scope": "read:user public_repo"})
             return
         if location.path in ["/meshy/openapi/v1/convert", "/tripo/models/convert"]:
             valid = self.headers.get("Authorization") == "Bearer generation-fixture-key"

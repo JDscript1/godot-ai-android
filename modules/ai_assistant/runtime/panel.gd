@@ -114,8 +114,6 @@ var journal_follow: CheckBox
 var completion_audio: AudioStreamPlayer
 var memory_hash = ""
 var integration_settings: Dictionary = {}
-var github_auth_cancel: Dictionary = {}
-var github_auth_running = false
 var github_repos_loading = false
 var github_has_token = false
 var exporting_asset = false
@@ -677,48 +675,27 @@ func _build_integrations(parent: Node) -> void:
 	var form = _form(github, "github")
 	_check(form, "enabled", "Activ")
 	form["enabled"].button_pressed = bool(saved.get("github_enabled", false))
+	_field(form, "key", "Token personal GitHub", true)
+	form["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Introdu tokenul personal"
+	form["key"].text_changed.connect(func(_value: String) -> void: _update_settings_controls())
 	_field(form, "repository", "Repository")
 	form["repository"].placeholder_text = "proprietar/proiect"
 	form["repository"].text = str(saved.get("github_repository", ""))
-	var auth_actions = _row(github)
-	form["signin"] = _primary_button(auth_actions, "Conectează GitHub", _github_signin)
-	form["cancel_auth"] = _button(auth_actions, "Anulează", _github_cancel_login)
-	form["cancel_auth"].hide()
-	form["code"] = _label(github, "")
-	form["code"].hide()
-	form["code"].mouse_filter = Control.MOUSE_FILTER_STOP
-	form["copy_code"] = _button(github, "Copiază codul și deschide GitHub", func() -> void:
-		DisplayServer.clipboard_set(str(form.get("user_code", "")))
-		OS.shell_open("https://github.com/login/device"))
-	form["copy_code"].hide()
 	var actions = _row(github)
 	_action_button(actions, "Alege repository…", "github_repositories", func() -> void: _github_repo_picker())
 	_action_button(actions, "Salvează", "github_save", _save_connections)
 	_action_button(actions, "Verifică", "github_verify", _verify_github)
 	_action_button(actions, "Deconectează", "github_disconnect", func() -> void:
 		if busy: return
-		_github_cancel_login()
+		integrations.github_invalidate()
 		vault.erase("integration_github")
 		form["key"].clear()
 		form["enabled"].button_pressed = false
-		_save_connections(true)
+		_save_connections()
 		form["status"].text = "Neconectat")
-	form["status"] = _label(github, "Cont salvat · verifică conexiunea" if not vault.read("integration_github").is_empty() else "Neconectat")
+	form["status"] = _label(github, "Token salvat · verifică conexiunea" if not vault.read("integration_github").is_empty() else "Neconectat")
 	github.move_child(form["status"], 1)
-	github.move_child(auth_actions, 2)
 	form["status"].add_theme_color_override("font_color", Color("a9b5cb"))
-	var advanced = _disclosure(github, "Configurare autentificare")
-	form["auth_config"] = advanced
-	form["container"] = advanced
-	_field(form, "client_id", "Client ID · aplicația noastră GitHub")
-	form["client_id"].text = str(config.get("github_oauth_client_id", saved.get("github_client_id", Integrations.GITHUB_CLIENT_ID)))
-	var registration_note = _label(advanced, "Înregistrează aplicația OAuth și activează Device Flow. Client Secret nu este necesar.")
-	registration_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_button(advanced, "Înregistrează aplicația pe GitHub…", func() -> void: OS.shell_open("https://github.com/settings/applications/new"))
-	_check(form, "private_repos", "Acces și la repository-uri private")
-	form["private_repos"].button_pressed = bool(saved.get("github_private_repos", false))
-	_field(form, "key", "Token manual (opțional)", true)
-	form["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Alternativă la Sign in"
 	if Integrations.desktop_blender():
 		var blender = _integration_card(connections, "Blender CLI", "Models")
 		var b = _form(blender, "blender")
@@ -768,8 +745,8 @@ func _build_tasks(tasks_page: Node) -> void:
 	_action_button(auto_row, "Șterge", "automation_delete", _delete_automation)
 	lists["automations"].item_selected.connect(func(index: int) -> void: _fill("automation", config["automations"][index]))
 
-func _save_connections(allow_during_auth: bool = false) -> bool:
-	if busy or (github_auth_running and not allow_during_auth): return false
+func _save_connections() -> bool:
+	if busy: return false
 	var g: Dictionary = forms["github"]
 	var repository = str(g["repository"].text).strip_edges()
 	if not repository.is_empty() and not Integrations.valid_repository(repository):
@@ -779,73 +756,34 @@ func _save_connections(allow_during_auth: bool = false) -> bool:
 	if not key.is_empty() and not vault.store("integration_github", key):
 		_status("Tokenul nu a putut fi salvat.")
 		return false
+	if not key.is_empty(): g["enabled"].button_pressed = true
+	if g["enabled"].button_pressed and vault.read("integration_github").is_empty():
+		_status("Adaugă tokenul personal GitHub.")
+		return false
 	g["key"].clear()
-	g["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Opțional pentru proiecte publice"
+	g["key"].placeholder_text = "Salvat" if not vault.read("integration_github").is_empty() else "Introdu tokenul personal"
 	var saved: Dictionary = integration_settings.duplicate(true)
-	saved.merge({"github_enabled": g["enabled"].button_pressed, "github_repository": repository, "github_private_repos": g["private_repos"].button_pressed}, true)
+	saved.merge({"github_enabled": g["enabled"].button_pressed, "github_repository": repository}, true)
 	saved.erase("github_client_id")
+	saved.erase("github_private_repos")
 	if forms.has("blender"):
 		saved.merge({"blender_enabled": forms["blender"]["enabled"].button_pressed, "blender_path": forms["blender"]["path"].text.strip_edges()}, true)
 	if Common.atomic_json(project_directory.path_join("integrations.json"), saved) != OK:
 		_status("Conexiunea nu a putut fi salvată.")
 		return false
 	integration_settings = saved
-	config["github_oauth_client_id"] = str(g["client_id"].text).strip_edges()
-	_save_config()
+	if config.erase("github_oauth_client_id"): _save_config()
 	_refresh_secrets()
-	g["status"].text = "Configurat" if saved["github_enabled"] and not repository.is_empty() else "Dezactivat"
+	g["status"].text = "Token salvat" if not vault.read("integration_github").is_empty() else "Neconectat"
 	return true
 
-func _github_cancel_login() -> void:
-	github_auth_cancel["cancelled"] = true
-	integrations.github_cancel()
-	if not forms.has("github"): return
-	var form: Dictionary = forms["github"]
-	form["code"].hide()
-	form["copy_code"].hide()
-	form["cancel_auth"].hide()
-	form["signin"].disabled = false
-
-func _github_signin() -> void:
-	if busy or github_auth_running: return
-	var form: Dictionary = forms["github"]
-	if str(form["client_id"].text).strip_edges().is_empty():
-		form["auth_config"].show()
-		form["status"].text = "Adaugă Client ID-ul aplicației noastre și activează Device Flow pe GitHub."
-		return
-	if not _save_connections(): return
-	github_auth_running = true
-	github_auth_cancel = {"cancelled": false}
-	var operation_cancel = github_auth_cancel
-	form["signin"].disabled = true
-	form["cancel_auth"].show()
-	form["status"].text = "Pregătesc autentificarea…"
-	var result = await integrations.github_begin(str(form["client_id"].text), form["private_repos"].button_pressed)
-	if result.get("ok", false) and not operation_cancel.get("cancelled", false):
-		form["user_code"] = str(result["result"]["user_code"])
-		form["code"].text = "Cod GitHub: " + form["user_code"]
-		form["code"].show()
-		form["copy_code"].show()
-		form["status"].text = "Confirmă codul în browser."
-		OS.shell_open("https://github.com/login/device")
-		result = await integrations.github_poll(operation_cancel)
-	github_auth_running = false
-	_github_cancel_login()
-	_refresh_secrets()
-	if result.get("ok", false):
-		form["enabled"].button_pressed = true
-		_save_connections()
-		form["status"].text = "Conectat · @" + str(result["result"]["login"])
-		_github_repo_picker()
-	else: form["status"].text = str(result.get("error", "Autentificare anulată."))
-
 func _github_repo_picker(page: int = 1) -> void:
-	if busy or github_auth_running or github_repos_loading: return
+	if busy or github_repos_loading: return
 	github_repos_loading = true
-	var generation = integrations.github_auth_generation
+	var generation = integrations.github_generation
 	var result = await integrations.github_repositories(page)
 	github_repos_loading = false
-	if generation != integrations.github_auth_generation: return
+	if generation != integrations.github_generation: return
 	if not result.get("ok", false):
 		forms["github"]["status"].text = str(result.get("error", "Conectează contul GitHub."))
 		return
@@ -888,11 +826,17 @@ func _github_repo_picker(page: int = 1) -> void:
 func _verify_github() -> void:
 	if not _save_connections(): return
 	var repository = str(integration_settings["github_repository"])
-	var generation = integrations.github_auth_generation
+	var generation = integrations.github_generation
 	forms["github"]["status"].text = "Verific…"
-	var result = await integrations.github_account() if not vault.read("integration_github").is_empty() else await integrations.github_request(repository, {"resource": "repository"})
-	if generation != integrations.github_auth_generation: return
-	forms["github"]["status"].text = ("Conectat · @" + str(result["result"]["login"]) if result["result"].has("login") else "Repository accesibil · " + repository) if result.get("ok", false) else str(result.get("error", "Conexiune eșuată."))
+	var result = await integrations.github_account()
+	if generation != integrations.github_generation: return
+	if result.get("ok", false) and not repository.is_empty():
+		var account = str(result["result"]["login"])
+		result = await integrations.github_request(repository, {"resource": "repository"})
+		if generation != integrations.github_generation: return
+		forms["github"]["status"].text = "Conectat · @" + account + " · " + repository if result.get("ok", false) else str(result.get("error", "Repository inaccesibil."))
+	else:
+		forms["github"]["status"].text = "Conectat · @" + str(result["result"]["login"]) if result.get("ok", false) else str(result.get("error", "Conexiune eșuată."))
 
 func _pick_blender() -> void:
 	if busy: return
@@ -1332,12 +1276,10 @@ func _action_button(parent: Node, title: String, key: String, callback: Callable
 func _update_settings_controls() -> void:
 	if forms.has("generation") and forms["generation"].has("export_stop"): forms["generation"]["export_stop"].visible = busy and exporting_asset
 	if forms.has("github"):
-		var auth_busy = github_auth_running or github_repos_loading
-		forms["github"]["signin"].disabled = busy or auth_busy
-		_action_available("github_repositories", not auth_busy and github_has_token, "Conectează contul GitHub.")
-		_action_available("github_save", not auth_busy, "Încheie sau anulează autentificarea.")
-		_action_available("github_verify", not auth_busy and (github_has_token or Integrations.valid_repository(str(forms["github"]["repository"].text))), "Conectează contul sau alege un repository public.")
-		_action_available("github_disconnect", github_has_token or github_auth_running, "Niciun cont conectat.")
+		_action_available("github_repositories", not github_repos_loading and github_has_token, "Adaugă tokenul personal GitHub.")
+		_action_available("github_save", not github_repos_loading, "Așteaptă lista de repository-uri.")
+		_action_available("github_verify", not github_repos_loading and (github_has_token or not str(forms["github"]["key"].text).strip_edges().is_empty()), "Adaugă tokenul personal GitHub.")
+		_action_available("github_disconnect", github_has_token, "Niciun token salvat.")
 	for entry in [["provider", "providers"], ["generation", "generation"], ["mcp", "mcp"], ["automation", "automations"]]:
 		if not forms.has(entry[0]): continue
 		var id = str(forms[entry[0]].get("editing", ""))
@@ -1575,7 +1517,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	transcript = chat.append_message("user", str(user_message["content"]), user_message)
 	composer.clear()
 	_status("Pregătesc contextul și instrumentele…")
-	active_definitions = tools.definitions() + assets.definitions() + FileRegistry.definitions() + EditorControl.definitions() + Store.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)), bool(integration_settings.get("blender_enabled", false)))
+	active_definitions = tools.definitions() + assets.definitions() + FileRegistry.definitions() + EditorControl.definitions() + Store.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)) and github_has_token and Integrations.valid_repository(str(integration_settings.get("github_repository", ""))), bool(integration_settings.get("blender_enabled", false)))
 	mcp.tool_index.clear()
 	for server in config["mcp"]:
 		if cancel.get("cancelled", false): break

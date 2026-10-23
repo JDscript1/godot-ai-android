@@ -17,7 +17,7 @@ drept funcție validată cu un serviciu real.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
-  Include exporturi 3D extinse, GitHub Sign in (Client ID încă necesar),
+  Include exporturi 3D extinse, GitHub cu token personal,
   separatoare Cloud/Local și căutare LAN explicită.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `13456af` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
@@ -30,6 +30,10 @@ MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 ## Etapa curentă — Store, rețea locală și generare, 23.10.2026
 
 Implementat în surse; compilarea și livrarea acestei etape sunt în verificare:
+
+- Integrarea GitHub a fost simplificată la token personal: câmp vizibil, salvare
+  în vault, verificare cont/repository, alegere repository și deconectare.
+  Fluxul OAuth/Device Flow și Client ID-ul au fost scoase din aplicație.
 
 - `store_search` citește structura reală `hits` din API-ul nou și returnează
   `publisher/slug`; `store_describe` folosește această identitate și rutele
@@ -119,11 +123,11 @@ Implementate și incluse în APK-ul `13456af`, care înlocuiește `2538551`:
   Cache după hash pentru exporturi locale; task ID persistent și reluare pentru
   conversii. Răspunsul pierdut la POST blochează retrimiterea plătită oarbă și
   permite recuperare după ID-ul sarcinii existente.
-- GitHub **Sign in**, Device Flow nativ, cod public/copiere/browser, validarea
+- Istoric, înlocuit ulterior: GitHub **Sign in**, Device Flow nativ, cod public/copiere/browser, validarea
   contului înainte de salvarea tokenului, selectare repository cu paginare și
   fallback manual. Client ID public comun editorului; repo/activare per proiect.
   Tokenurile rămân în vault, fără Client Secret sau credențiale externe împrumutate.
-- **Activare GitHub încă necesară:** nu avem o aplicație OAuth proprie înregistrată.
+- **Istoric, nu mai este necesar:** nu avem o aplicație OAuth proprie înregistrată.
   Interfața explică înregistrarea și Device Flow; login real nu este încă validat.
 - Separatoare vizuale Cloud / Local-self-hosted în serviciile/profilurile din
   Furnizori, selecție după ID stabil și clasificare unitară în sertarul din chat.
@@ -820,7 +824,7 @@ testele și APK-ul verificat.
   `.ai-qa/13456af-runtime-ci.log`, `.ai-qa/13456af-native-ci.log`,
   `.ai-qa/new-integrations-unit-final.log`, `.ai-qa/new-integrations-final-render/`,
   `.ai-qa/new-integrations-nested/`.
-- OAuth GitHub real așteaptă aplicația proprie/Client ID și autorizarea utilizatorului.
+- Această versiune istorică folosea OAuth; sursele curente folosesc doar token personal.
   Testele furnizorilor plătiți, rețeaua Wi-Fi între dispozitive și comportamentul
   fizic Android rămân de validat; testele simulate nu țin locul acestor probe.
 
@@ -846,5 +850,5 @@ nu a fost scanată, iar conturi/chei ale dezvoltatorului nu au fost împrumutate
   descărcări au fost păstrate. Pachetul nu a fost instalat automat.
 - Dovezi: `.ai-qa/delivery-978a6d3.json`, `.ai-qa/978a6d3-artifact/`,
   `.ai-qa/978a6d3-native-ci/`, `.ai-qa/premium-ui-final-all/`.
-- Validarea pe un dispozitiv Android fizic, GitHub OAuth cu Client ID propriu,
+- Validarea pe un dispozitiv Android fizic, GitHub cu token personal real,
   furnizorii plătiți și rețeaua Wi-Fi reală rămân probe separate.

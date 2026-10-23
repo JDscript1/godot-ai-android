@@ -28,7 +28,7 @@ its tested source is identified above.
 The APK also includes [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md),
 plus [native Meshy, Tripo and image generation](docs/AI_GENERATION.md).
 It also includes multi-format 3D export, grouped cloud/local profiles, explicit
-LAN discovery and GitHub Device Flow (our OAuth app registration is still required).
+LAN discovery and personal-token GitHub integration.
 Automated generation/auth checks use HTTP fixtures; paid-provider and physical Android
 validation remain separate.
 

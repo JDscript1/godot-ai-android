@@ -1031,9 +1031,11 @@ func _populated_chat_tests() -> void:
 	_check(panel._provider_issuer()["id"] == "ollama", "Separated service picker resolves the correct catalog entry by ID")
 	panel.config["providers"] = previous_profiles
 	panel._edit_provider(0)
-	panel._github_signin()
-	_check(panel.forms["github"]["auth_config"].visible and not panel.github_auth_running and panel.forms["github"]["status"].text.contains("Client ID"), "Sign in explains the one-time OAuth app setup instead of claiming authentication without a client ID")
-	panel.forms["github"]["auth_config"].hide()
+	_check(panel.forms["github"]["key"].secret and not panel.forms["github"].has("client_id"), "GitHub settings offer a masked personal-token field only")
+	panel.forms["github"]["key"].text = "fixture-personal-token"
+	_check(panel._save_connections() and panel.vault.read("integration_github") == "fixture-personal-token" and panel.integration_settings["github_enabled"], "Saving a personal token enables GitHub and stores the secret in the vault")
+	panel.settings_actions["github_disconnect"].pressed.emit()
+	_check(panel.vault.read("integration_github").is_empty() and not panel.integration_settings["github_enabled"], "Disconnect removes the personal token and disables GitHub")
 	_check(panel.provider_badge.text.contains("neverificată"), "Saved model metadata does not imply a verified connection")
 	panel.config["providers"][0]["verified_at"] = 1
 	panel._refresh_lists()

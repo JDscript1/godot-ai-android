@@ -3,85 +3,32 @@ extends RefCounted
 ## Optional native HTTP integrations and desktop-only Blender process control.
 static var Common: GDScript
 static var Transport: GDScript
-const GITHUB_CLIENT_ID = "" # Set only to the public ID of this project's registered OAuth app.
 var owner: Node
 var vault: RefCounted
 var transport: RefCounted
 var api_url = "https://api.github.com"
 var test_http = false
 var processes: Array = []
-var github_login_url = "https://github.com"
-var github_flow: Dictionary = {}
-var github_auth_generation = 0
+var github_generation = 0
 
-func github_begin(client_id: String, private_repositories: bool = false) -> Dictionary:
-	github_cancel()
-	if client_id.strip_edges().is_empty(): return Common.failure("Configurează Client ID-ul aplicației OAuth GitHub.", "missing_client_id")
-	var generation = github_auth_generation
-	var body = "client_id=" + client_id.strip_edges().uri_encode() + "&scope=" + ("read:user " + ("repo" if private_repositories else "public_repo")).uri_encode()
-	var response = await transport.request(github_login_url + "/login/device/code", HTTPClient.METHOD_POST, ["Accept: application/json", "Content-Type: application/x-www-form-urlencoded"], body, {"allow_http": test_http, "max_bytes": 16000, "timeout": 30})
-	if generation != github_auth_generation: return Common.failure("Autentificare anulată.", "cancelled")
-	var data: Variant = response.get("json")
-	if not response.get("ok", false) or not data is Dictionary or str(data.get("device_code", "")).is_empty(): return Common.failure("GitHub nu a pornit autentificarea. Verifică Client ID-ul și activarea Device Flow.", "github_auth_error")
-	# Only the public user code is exposed to the interface. Device code stays in memory.
-	if str(data.get("verification_uri", "")) != "https://github.com/login/device": return Common.failure("Adresă de autentificare GitHub neașteptată.")
-	github_flow = {"client_id": client_id.strip_edges(), "device_code": str(data["device_code"]), "interval": maxi(5, int(data.get("interval", 5))), "expires": Time.get_ticks_msec() + clampi(int(data.get("expires_in", 900)), 1, 1800) * 1000, "generation": generation}
-	return Common.success({"user_code": str(data.get("user_code", "")), "verification_uri": "https://github.com/login/device"})
+func github_invalidate() -> void:
+	github_generation += 1
 
-func github_poll(cancel: Dictionary) -> Dictionary:
-	if github_flow.is_empty(): return Common.failure("Autentificare inactivă.", "cancelled")
-	var flow = github_flow.duplicate(true)
-	while not cancel.get("cancelled", false) and int(flow["generation"]) == github_auth_generation:
-		var next_poll = Time.get_ticks_msec() + (20 if test_http else int(flow["interval"]) * 1000)
-		while Time.get_ticks_msec() < next_poll:
-			if cancel.get("cancelled", false) or int(flow["generation"]) != github_auth_generation: return Common.failure("Autentificare anulată.", "cancelled")
-			if not is_instance_valid(owner) or not owner.is_inside_tree(): return Common.failure("Autentificare anulată.", "cancelled")
-			await owner.get_tree().process_frame
-		if Time.get_ticks_msec() >= int(flow["expires"]):
-			github_cancel()
-			return Common.failure("Cod expirat. Apasă din nou Sign in.", "expired_token")
-		var body = "client_id=" + str(flow["client_id"]).uri_encode() + "&device_code=" + str(flow["device_code"]).uri_encode() + "&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code"
-		var response = await transport.request(github_login_url + "/login/oauth/access_token", HTTPClient.METHOD_POST, ["Accept: application/json", "Content-Type: application/x-www-form-urlencoded"], body, {"allow_http": test_http, "cancel": cancel, "max_bytes": 16000, "timeout": 30})
-		if cancel.get("cancelled", false) or int(flow["generation"]) != github_auth_generation: return Common.failure("Autentificare anulată.", "cancelled")
-		var data: Variant = response.get("json")
-		if not response.get("ok", false) or not data is Dictionary: return Common.failure("Conexiunea de autentificare GitHub a eșuat.", "github_auth_error")
-		var error = str(data.get("error", ""))
-		if error == "authorization_pending": continue
-		if error == "slow_down":
-			flow["interval"] = int(flow["interval"]) + 5
-			continue
-		if not error.is_empty():
-			github_cancel()
-			return Common.failure("Autentificarea GitHub a fost refuzată sau a expirat. Reîncearcă Sign in.", error)
-		var token = str(data.get("access_token", ""))
-		if token.is_empty(): return Common.failure("GitHub nu a returnat un token.", "github_auth_error")
-		var identity = await github_account(cancel, token)
-		if cancel.get("cancelled", false) or int(flow["generation"]) != github_auth_generation: return Common.failure("Autentificare anulată.", "cancelled")
-		if not identity.get("ok", false): return identity
-		if not vault.store("integration_github", token): return Common.failure("Tokenul GitHub nu a putut fi salvat.", "vault_error")
-		github_cancel()
-		return identity
-	github_cancel()
-	return Common.failure("Autentificare anulată.", "cancelled")
-
-func github_cancel() -> void:
-	github_auth_generation += 1
-	github_flow.clear()
-
-func _github_headers(token: String = "") -> PackedStringArray:
+func _github_headers() -> PackedStringArray:
 	var headers = PackedStringArray(["Accept: application/vnd.github+json", "X-GitHub-Api-Version: 2026-03-10", "User-Agent: Godot-AI-Editor"])
-	var key = token if not token.is_empty() else vault.read("integration_github")
+	var key = vault.read("integration_github")
 	if not key.is_empty(): headers.append("Authorization: Bearer " + key)
 	return headers
 
-func github_account(cancel: Dictionary = {}, token: String = "") -> Dictionary:
-	var response = await transport.request(api_url + "/user", HTTPClient.METHOD_GET, _github_headers(token), null, {"cancel": cancel, "allow_http": test_http, "max_bytes": 64000})
+func github_account(cancel: Dictionary = {}) -> Dictionary:
+	if vault.read("integration_github").is_empty(): return Common.failure("Adaugă tokenul personal GitHub.", "missing_credentials")
+	var response = await transport.request(api_url + "/user", HTTPClient.METHOD_GET, _github_headers(), null, {"cancel": cancel, "allow_http": test_http, "max_bytes": 64000})
 	var data: Variant = response.get("json")
-	if not response.get("ok", false) or not data is Dictionary or str(data.get("login", "")).is_empty(): return Common.failure("Cont GitHub neverificat. Reautentifică-te.", "github_auth_error")
+	if not response.get("ok", false) or not data is Dictionary or str(data.get("login", "")).is_empty(): return Common.failure("Token GitHub invalid sau expirat.", "github_auth_error")
 	return Common.success({"login": str(data["login"]), "name": str(data.get("name", "")), "id": int(data.get("id", 0))})
 
 func github_repositories(page: int = 1, cancel: Dictionary = {}) -> Dictionary:
-	if vault.read("integration_github").is_empty(): return Common.failure("Conectează contul GitHub.", "missing_credentials")
+	if vault.read("integration_github").is_empty(): return Common.failure("Adaugă tokenul personal GitHub.", "missing_credentials")
 	var response = await transport.request(api_url + "/user/repos?sort=updated&per_page=30&page=" + str(clampi(page, 1, 100)), HTTPClient.METHOD_GET, _github_headers(), null, {"cancel": cancel, "allow_http": test_http, "max_bytes": 2 * 1024 * 1024})
 	if not response.get("ok", false) or not response.get("json") is Array: return Common.failure("Lista de repository-uri nu este disponibilă.", "github_error")
 	var result = []
@@ -112,6 +59,7 @@ static func valid_repository(value: String) -> bool:
 	return pattern.search(value) != null and value.get_slice("/", 1) not in [".", ".."]
 
 func github_request(repository: String, args: Dictionary, cancel: Dictionary = {}, issue: bool = false) -> Dictionary:
+	if vault.read("integration_github").is_empty(): return Common.failure("Adaugă tokenul personal GitHub.", "missing_credentials")
 	if not valid_repository(repository): return Common.failure("Repository invalid. Folosește proprietar/proiect.", "invalid_repository")
 	var route = "/repos/" + repository
 	var resource = str(args.get("resource", "repository"))
@@ -153,7 +101,7 @@ func github_request(repository: String, args: Dictionary, cancel: Dictionary = {
 	return Common.success(value)
 
 func stop() -> void:
-	github_cancel()
+	github_invalidate()
 	for pid in processes:
 		if OS.is_process_running(pid): OS.kill(pid)
 	processes.clear()
