@@ -1273,7 +1273,7 @@ func _model_and_control_tests() -> void:
 	window.queue_free()
 	panel.editor_control.release()
 	await get_tree().process_frame
-	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 
 func _store_install_tests() -> void:
 	var archive_path = panel.store.directory.path_join("qa-addon.zip")
@@ -1289,10 +1289,13 @@ func _store_install_tests() -> void:
 	_check(result.get("ok", false) and FileAccess.get_file_as_string("res://addons/ai_test_store/plugin.gd") == contents["fixture-root/addons/ai_test_store/plugin.gd"], "Store installation extracts actual approved addon files" + (" through the native Godot installer" if native else " in the upstream fixture"))
 	if not result.get("ok", false): return
 	var installation = str(result["result"]["installation"])
-	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	_check(panel.store.enable_plugin("ai_test_store", true).get("ok", false) and EditorInterface.is_plugin_enabled("ai_test_store"), "Installed addon enables through the real EditorInterface")
 	_check(not panel.store.remove(installation).get("ok", false), "Store removal requires disabling the active addon first")
 	panel.store.enable_plugin("ai_test_store", false)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	var duplicate = await panel.store.install_zip(archive_path, {"id": "qa-addon"}, "1.0", {})
 	_check(duplicate.get("code") == "install_conflict", "Store installation refuses to overwrite existing addon files")
 	var source = "res://addons/ai_test_store/plugin.gd"
@@ -1307,7 +1310,9 @@ func _store_install_tests() -> void:
 	var removed = panel.store.remove(installation)
 	if native: _check(removed.get("ok", false) and not FileAccess.file_exists(source), "Unmodified tracked addon uninstalls after being disabled")
 	else: _check(removed.get("code") == "native_bridge_unavailable" and FileAccess.file_exists(source), "Upstream editor reports the native cache-removal bridge requirement without deleting live scripts")
-	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	while panel.tools.scan_pending or EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
 
 func _vision_settings_tests() -> void:
 	var original = panel.config["providers"].duplicate(true)
