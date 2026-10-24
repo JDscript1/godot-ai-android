@@ -30,7 +30,51 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — APK compilat și livrat, 24.10.2026
+## Etapa curentă — jurnal Blender înainte de pornire, 24.10.2026
+
+Utilizatorul a raportat un jurnal gol după răspunsul agentului cu Blender
+activat, dar `ready=false`. Reprodusă cauza în surse: jurnalul integrării era
+populat numai de o sarcină deja pornită, iar `ensure_ready()` ieșea fără
+diagnostic la prima configurare. Evenimentele de setup nu ajungeau în Jurnalul
+general și nu erau păstrate după redeschidere.
+
+- Diagnostic pentru detectare Termux, versiune, permisiune, configurare inițială,
+  pornire, reconectare și erorile native; mesajul include următoarea acțiune.
+- Jurnal persistent, limitat, cu tokenul local și cheile recunoscute redactate.
+  Ieșirea unei sarcini nu mai șterge pașii de conectare. Verificările periodice
+  cu aceeași stare nu dublează intrările. Evenimentele ajung și în Jurnalul general.
+- La conectare eșuată jurnalul se deschide, intră în zona vizibilă și arată
+  ultima eroare; există buton de copiere. Actualizările păstrează poziția când
+  utilizatorul citește intrări mai vechi.
+- Contextul agentului include motivul concret al indisponibilității și cere
+  explicație scurtă, fără căutări repetate pentru un tool exclus intenționat.
+  Aceasta este o schimbare a instrucțiunilor, nu o probă nouă cu un model real.
+- În Termux-ul acestui dispozitiv lipsea `allow-external-apps`; folderul
+  worker-ului Android nu exista. Activată proprietatea și reîncărcate setările,
+  cu cod de ieșire 0. Copia configurației anterioare este
+  `.ai-qa/termux.properties-before-blender-20261024-164144`. Nu s-au instalat
+  pachete sau schimbat containerele Blender existente.
+
+Verificări locale: **423 aserțiuni runtime, zero eșecuri**, inclusiv 11 probe
+noi pentru diagnostice timpurii, permisiuni, pornire respinsă, persistență,
+redactare și deduplicarea jurnalelor; `.ai-qa/blender-diagnostics-runtime.log`.
+Proba Godot → HTTP → Blender real a trecut din nou **21 aserțiuni**;
+`.ai-qa/blender-diagnostics-connector/report.json`, cu
+`android_intent_tested=false`. Proba UI a trecut **45 verificări desktop** și
+**46 pentru telefon**, cu aserțiune suplimentară pentru ultima linie împărțită;
+capturile de eroare au fost inspectate. Dovezi:
+`.ai-qa/blender-diagnostics-ui-delivery/`. Scenariul telefonului este adăugat
+în CI pentru a verifica permanent jurnalul și vizibilitatea erorii.
+Noua livrare APK este în curs; instalatorul din Download rămâne `45ea380`
+până la verificarea înlocuitorului.
+Activarea proprietății Termux nu confirmă permisiunea Android acordată aplicației
+sau executarea efectivă prin Intent; acestea necesită verificare din APK.
+
+Jurnal: 24.10.2026 — reprodus jurnalul gol înainte de prima conectare, adăugate
+diagnostice persistente și corectată afișarea erorilor; activată proprietatea
+Termux necesară conectorului, cu configurația anterioară păstrată.
+
+## Etapa precedentă — APK compilat și livrat, 24.10.2026
 
 **Livrat `45ea380`**, cu toate modificările AI acumulate după `36457dd`:
 comportament, conectare locală, bara de activitate, control 3D, reguli pentru

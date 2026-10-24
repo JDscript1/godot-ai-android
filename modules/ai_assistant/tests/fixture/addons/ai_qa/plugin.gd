@@ -1013,11 +1013,13 @@ func _termux_blender_card_tests() -> void:
 	backend.native_override = func(action: String, _args: Dictionary) -> Dictionary: return device if action == "status" else {"ok": false}
 	panel.integrations.termux = backend
 	backend.changed.connect(panel._refresh_blender_card)
+	backend.diagnostic.connect(panel._blender_diagnostic)
 	panel._build_termux_blender(page)
 	panel.open_settings("integrations")
 	await get_tree().create_timer(.2).timeout
 	var form: Dictionary = panel.forms["blender"]
 	_check(form["primary"].text == "Instalează Termux" and not form["guide"].visible, "Missing Termux offers installation without a broken setup form")
+	_check(not form["logs"].text.is_empty() and panel.journal_console.text.contains("blender_connection"), "Initial Termux detection fills the Blender journal and the general activity journal")
 	device["installed"] = true
 	await backend.refresh()
 	_check(form["primary"].text == "Acordă permisiunea" and form["guide"].visible, "First setup exposes Android permission and activation guidance")
@@ -1028,6 +1030,16 @@ func _termux_blender_card_tests() -> void:
 	await get_tree().create_timer(.1).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-setup.png"))
 	device["permission"] = true
+	await panel._blender_setup("connect")
+	_check(form["logs"].visible and form["logs"].text.contains("Conexiunea locală nu poate fi pregătită"), "A failed connection automatically opens a populated Blender journal")
+	_check(panel.journal_console.text.contains("missing_bridge"), "Pre-job connection failures are recorded in the main journal")
+	await get_tree().create_timer(.2).timeout
+	var visible_log = form["logs"].get_global_rect().intersection(panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).get_global_rect())
+	_check(visible_log.size.y >= form["logs"].size.y - 1, "The error journal scrolls into view rather than opening below the visible settings area")
+	var log_bar = form["logs"].get_v_scroll_bar()
+	_check(log_bar.value + log_bar.page >= log_bar.max_value - 1, "The last wrapped error line remains visible at phone scaling")
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-error.png"))
+	form["logs"].hide()
 	backend.state = device.duplicate()
 	backend.connected = true
 	panel._refresh_blender_card()

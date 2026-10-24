@@ -2,6 +2,7 @@
 extends RefCounted
 ## Optional Android Blender backend. The AI harness itself stays inside Godot.
 signal changed
+signal diagnostic(entry: Dictionary)
 static var Common: GDScript
 static var Transport: GDScript
 static var FileRegistry: GDScript
@@ -22,10 +23,14 @@ var connected = false
 var refreshing = false
 var setup_cancel: Dictionary = {}
 var log_text = ""
+var log_entries: Array = []
+var job_log = ""
+var last_diagnostic = ""
 var last_check = 0
 
 const ACTIVATION = "mkdir -p ~/.termux && touch ~/.termux/termux.properties && sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties && printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties && termux-reload-settings"
 const TERMINAL = ["completed", "failed", "cancelled", "interrupted"]
+const LOG_LIMIT = 32000
 
 func _init(node: Node = null, native_bridge: Object = null) -> void:
 	owner = node
@@ -39,11 +44,76 @@ func configure(global_directory: String, project_data: String) -> void:
 	DirAccess.make_dir_recursive_absolute(project_directory)
 	verified = Common.read_json(directory.path_join("verified.json"), {})
 	pending = Common.read_json(project_directory.path_join("pending.json"), {})
+	var saved = Common.read_json(directory.path_join("diagnostics.json"), {})
+	log_entries = saved.get("entries", []).slice(-100)
+	job_log = str(saved.get("job_log", "")).right(LOG_LIMIT)
+	_render_log()
+
+func _safe(text: String) -> String:
+	return Common.redact(text, [token] if not token.is_empty() else [])
+
+func _render_log() -> void:
+	var lines = PackedStringArray()
+	for entry in log_entries:
+		lines.append("[%s] %s · %s" % [entry.get("time", ""), entry.get("code", "blender"), _safe(str(entry.get("message", "")))])
+	if not job_log.is_empty(): lines.append("--- Blender ---\n" + _safe(job_log))
+	log_text = "\n".join(lines).right(LOG_LIMIT * 2)
+
+func _save_log() -> void:
+	job_log = _safe(job_log).right(LOG_LIMIT)
+	_render_log()
+	if not directory.is_empty(): Common.atomic_json(directory.path_join("diagnostics.json"), {"entries": log_entries, "job_log": _safe(job_log)})
+
+func note(message: String, code: String = "blender", failed: bool = false) -> void:
+	message = _safe(message).left(6000)
+	if not log_entries.is_empty() and log_entries[-1].get("message") == message and log_entries[-1].get("code") == code: return
+	var entry = {"time": Time.get_datetime_string_from_system(true) + "Z", "code": code, "message": message, "failed": failed}
+	log_entries.append(entry)
+	log_entries = log_entries.slice(-100)
+	_save_log()
+	diagnostic.emit(entry)
+	changed.emit()
+
+func diagnostics() -> Dictionary:
+	if available(): return {"code": "ready", "message": "Disponibil", "next_action": ""}
+	if working or refreshing: return {"code": "busy", "message": str(state.get("stage", "Verificare Blender…")), "next_action": "Așteaptă finalizarea operației."}
+	if state.is_empty(): return {"code": "unchecked", "message": "Conexiunea Blender nu a fost verificată.", "next_action": "Deschide Integrări → Blender."}
+	if not state.get("ok", false): return {"code": "missing_bridge", "message": _safe(str(state.get("error", "Conectorul Android nu este disponibil."))), "next_action": "Verifică versiunea aplicației."}
+	if not state.get("supported", true): return {"code": "unsupported_arch", "message": "Configurarea automată necesită Android ARM64.", "next_action": ""}
+	if not state.get("installed", false): return {"code": "missing_termux", "message": "Termux nu este instalat sau nu este vizibil editorului.", "next_action": "Instalează și deschide Termux o dată."}
+	if not state.get("compatible", true): return {"code": "incompatible_termux", "message": "Este necesar Termux 0.118 sau mai nou.", "next_action": "Actualizează Termux."}
+	if not state.get("permission", false): return {"code": "permission_required", "message": "Permisiunea Android pentru comenzi Termux nu este acordată.", "next_action": "Apasă Acordă permisiunea în Integrări → Blender."}
+	if not str(state.get("error", "")).is_empty(): return {"code": "termux_start_failed", "message": _safe(str(state["error"])).left(6000), "next_action": "Verifică jurnalul și activarea comenzilor externe în Termux."}
+	if not str(state.get("error_code", "")).is_empty(): return {"code": str(state["error_code"]), "message": _safe(str(state.get("stage", "Conectarea Blender a eșuat."))), "next_action": "Deschide Integrări → Blender și verifică jurnalul."}
+	if not pending.is_empty(): return {"code": "pending_job", "message": "Există o sarcină Blender de recuperat.", "next_action": "Apasă Recuperează în Integrări → Blender."}
+	if connected and runtime.is_empty(): return {"code": "runtime_missing", "message": "Conectorul răspunde, dar Blender nu a fost detectat.", "next_action": "Apasă Instalează Blender în Integrări → Blender."}
+	if verified.is_empty(): return {"code": "setup_required", "message": "Configurarea inițială Blender nu a fost finalizată.", "next_action": "Apasă Conectează în Integrări → Blender."}
+	if not connected: return {"code": "disconnected", "message": "Conectorul Blender nu răspunde.", "next_action": "Deschide Termux, apoi apasă Conectează în Integrări → Blender."}
+	return {"code": "verification_required", "message": "Instalarea Blender necesită verificare.", "next_action": "Apasă Verifică în Integrări → Blender."}
+
+func _report_state() -> void:
+	var detail = diagnostics()
+	var signature = str(detail["code"]) + ":" + str(detail["message"])
+	state["stage"] = str(detail["message"]).left(240)
+	if signature != last_diagnostic:
+		last_diagnostic = signature
+		note(str(detail["message"]) + (" " + str(detail["next_action"]) if not str(detail["next_action"]).is_empty() else ""), str(detail["code"]), detail["code"] in ["missing_bridge", "termux_start_failed", "connection_failed"])
+
+func _failure(response: Dictionary) -> void:
+	state["error_code"] = str(response.get("code", "connection_failed"))
+	state["stage"] = _safe(str(response.get("error", "Blender indisponibil."))).left(240)
+	note(str(response.get("error", "Blender indisponibil.")), str(state["error_code"]), true)
 
 func native(action: String, args: Dictionary = {}) -> Dictionary:
-	if native_override.is_valid(): return native_override.call(action, args)
-	if bridge == null or not bridge.has_method("termux_blender_request"): return Common.failure("Conectorul necesită un APK Android actualizat.", "missing_bridge")
-	return bridge.termux_blender_request(action, args)
+	var result: Dictionary
+	if native_override.is_valid(): result = native_override.call(action, args)
+	elif bridge == null or not bridge.has_method("termux_blender_request"): result = Common.failure("Conectorul necesită un APK Android actualizat.", "missing_bridge")
+	else: result = bridge.termux_blender_request(action, args)
+	var labels = {"permission": "Permisiune Android solicitată. Confirmă dialogul Android sau verifică Setări Android.", "settings": "Setările Android au fost solicitate.", "open_termux": "Deschiderea Termux a fost solicitată.", "install_termux": "Pagina oficială de instalare Termux a fost solicitată."}
+	if labels.has(action):
+		if result.get("ok", false): note(labels[action], action)
+		else: _failure(result)
+	return result
 
 static func fingerprint(value: Dictionary) -> String:
 	return "%s|%s|%s|%s|%s" % [value.get("kind", ""), value.get("container", ""), value.get("executable", ""), value.get("version", ""), value.get("binary_stamp", "")]
@@ -86,14 +156,21 @@ func refresh() -> void:
 	if state.get("installed", false) and state.get("permission", false) and _credentials(): await _health()
 	last_check = Time.get_ticks_msec()
 	refreshing = false
+	_report_state()
 	changed.emit()
 
 func _connect(prepare: bool = false) -> Dictionary:
+	note("Verificare Termux și permisiune Android.", "preflight")
 	state = native("status")
+	if not state.get("ok", false): return state
+	note("Termux: %s · Permisiune: %s." % [str(state.get("version", "detectat")) if state.get("installed", false) else "absent", "acordată" if state.get("permission", false) else "neacordată"], "device")
 	if not state.get("installed", false): return Common.failure("Instalează și deschide Termux o dată.", "missing_termux")
 	if not state.get("permission", false): return Common.failure("Acordă permisiunea de rulare a comenzilor în Termux.", "permission_required")
 	if not _credentials(): return Common.failure("Conexiunea locală nu poate fi pregătită.", "missing_bridge")
-	if await _health(): return Common.success(runtime)
+	if await _health():
+		note("Conectorul local răspunde.", "connected")
+		return Common.success(runtime)
+	note("Pornire conector local prin Android → Termux.", "starting")
 	var launched = native("start", {"install_python": prepare})
 	if not launched.get("ok", false): return launched
 	state["stage"] = "Pregătire conector Termux…"
@@ -101,7 +178,9 @@ func _connect(prepare: bool = false) -> Dictionary:
 	var deadline = Time.get_ticks_msec() + (300000 if prepare else 30000)
 	while Time.get_ticks_msec() < deadline:
 		if setup_cancel.get("cancelled", false): return Common.failure("Conectare oprită.", "cancelled")
-		if await _health(): return Common.success(runtime)
+		if await _health():
+			note("Conectorul local răspunde.", "connected")
+			return Common.success(runtime)
 		var current = native("status")
 		if not str(current.get("error", "")).is_empty(): return Common.failure(str(current["error"]), "termux_start_failed")
 		if not is_instance_valid(owner) or not owner.is_inside_tree(): return Common.failure("Editorul s-a închis.", "interrupted")
@@ -109,13 +188,19 @@ func _connect(prepare: bool = false) -> Dictionary:
 	return Common.failure("Termux nu răspunde. Deschide-l, activează comenzile externe și verifică permisiunile.", "connection_failed")
 
 func ensure_ready(cancel: Dictionary = {}) -> bool:
-	if working or refreshing or verified.is_empty(): return false
+	if working or refreshing: return false
+	if verified.is_empty():
+		await refresh()
+		return false
 	setup_cancel = cancel
 	working = true
 	var result = await _connect(false)
 	working = false
-	if not result.get("ok", false):
-		state["stage"] = str(result.get("error", "Reconectare necesară.")).left(240)
+	if not result.get("ok", false): _failure(result)
+	else:
+		state.erase("error_code")
+		state.erase("error")
+		_report_state()
 	changed.emit()
 	return result.get("ok", false) and available()
 
@@ -142,7 +227,10 @@ func _wait(id: String, cancel: Dictionary) -> Dictionary:
 		var job: Dictionary = response["result"]
 		state["stage"] = str(job.get("stage", "În lucru…"))
 		if job.get("cancel_requested", false): state["stage"] = "Oprire după etapa curentă…" if job.get("kind") == "install" else "Oprire…"
-		log_text = str(job.get("log", "")).replace(token, "[redacted]")
+		var output = _safe(str(job.get("log", ""))).right(LOG_LIMIT)
+		if output != job_log:
+			job_log = output
+			_save_log()
 		changed.emit()
 		if job.get("status") in TERMINAL:
 			if job.get("status") != "completed":
@@ -156,6 +244,8 @@ func _submit(kind: String, args: Dictionary, cancel: Dictionary, id: String = ""
 	if cancel.get("cancelled", false): return Common.failure("Sarcină oprită.", "cancelled")
 	if not pending.is_empty(): return Common.failure("Există o sarcină de recuperat. Folosește Recuperează în Integrări.", "pending_job")
 	if id.is_empty(): id = Common.uid()
+	job_log = ""
+	note(str({"discover": "Caut Blender în instalările existente.", "install": "Pornesc instalarea Blender.", "verify": "Verific exportul Blender și importul GLB în Godot.", "run": "Pornesc sarcina Blender."}.get(kind, "Pornesc sarcina Blender.")), kind)
 	if kind == "verify":
 		verified = {}
 		Common.atomic_json(directory.path_join("verified.json"), {})
@@ -191,13 +281,10 @@ func setup(action: String) -> Dictionary:
 						if response.get("ok", false): response = await _accept_verification(response["result"], setup_cancel)
 	if response.get("ok", false):
 		state.erase("error_code")
+		state.erase("error")
 		state["stage"] = "Disponibil" if available() else "Blender nu este instalat"
-	else:
-		state["error_code"] = str(response.get("code", ""))
-		var message = str(response.get("error", "Blender indisponibil."))
-		if not token.is_empty(): message = message.replace(token, "[redacted]")
-		state["stage"] = message.left(240)
-		log_text += "\n" + message
+		note(str(state["stage"]), "ready" if available() else "runtime_missing")
+	else: _failure(response)
 	working = false
 	changed.emit()
 	return response

@@ -38,6 +38,21 @@ Protocolul de pornire urmează [RUN_COMMAND Intent](https://github.com/termux/te
 Gestionarea mediului folosește [PRoot-Distro](https://github.com/termux/proot-distro),
 iar profilul nou utilizează [Blender Debian ARM64](https://packages.debian.org/trixie/arm64/blender).
 
+## Jurnal și diagnostic
+
+Iterația următoare APK-ului `45ea380` înregistrează și pașii anteriori pornirii
+unei sarcini: detectare Termux, permisiune, configurare inițială, pornire și
+reconectare. **Activat** pentru agent și **Disponibil** sunt stări separate.
+Agentul primește motivul indisponibilității și următoarea acțiune.
+
+Jurnalul Blender este salvat în configurația privată a editorului, limitat la
+100 evenimente și ultima parte a ieșirii worker-ului. Tokenul conexiunii și
+cheile recunoscute sunt redactate înainte de salvare. Verificările periodice
+identice nu produc intrări noi. Evenimentele apar și în **Jurnalul** general.
+După o conectare eșuată, jurnalul se deschide și derulează la ultima eroare;
+butonul de copiere permite partajarea diagnosticului. Închiderea editorului nu
+șterge istoricul diagnosticelor.
+
 ## Rulare și fișiere
 
 `blender_run` păstrează `script`, `blend` și `seconds`. Pe Android oferă și:

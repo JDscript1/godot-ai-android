@@ -15,6 +15,11 @@ class FakeVault:
 	func read(name: String) -> String: return str(values.get(name, ""))
 	func erase(name: String) -> bool: return values.erase(name)
 
+class UnreachableBlenderTransport:
+	extends RefCounted
+	func request(_url: String, _method: int, _headers: PackedStringArray, _body: Variant, _options: Dictionary) -> Dictionary:
+		return {"ok": false, "code": "connection_failed", "error": "Fixture connector is not listening"}
+
 class HarnessHost:
 	extends RefCounted
 	var replies: Array = []
@@ -49,6 +54,47 @@ class HarnessHost:
 		return snapshot.get("status") != fail_checkpoint_status
 	func redact(value: String) -> String: return value.replace("fixture-secret", "[redacted]")
 	func hooks() -> Dictionary: return {"complete": complete, "execute": execute, "checkpoint": checkpoint, "redact": redact}
+
+func _blender_diagnostic_tests(node: Node) -> void:
+	var base = OS.get_user_data_dir().path_join("blender-diagnostic-" + scripts["common"].uid())
+	var backend = scripts["termux_blender"].new(node)
+	backend.configure(base, base.path_join("project"))
+	backend.transport = UnreachableBlenderTransport.new()
+	var calls = []
+	var events = []
+	var device = {"ok": true, "installed": false, "permission": false, "supported": true, "compatible": true}
+	var secret = "b".repeat(64)
+	backend.diagnostic.connect(func(entry: Dictionary) -> void: events.append(entry))
+	backend.native_override = func(action: String, _args: Dictionary) -> Dictionary:
+		calls.append(action)
+		if action == "connection": return {"ok": true, "url": "http://127.0.0.1:34567", "token": secret}
+		if action == "start": return {"ok": false, "code": "termux_start_failed", "error": "Fixture Android startup rejected " + secret + " api_key=fixture-redaction-key"}
+		return device.duplicate()
+	await backend.refresh()
+	check(backend.diagnostics().get("code") == "missing_termux" and not backend.log_text.is_empty(), "Termux detection writes a diagnostic before any Blender job exists")
+	var count = backend.log_entries.size()
+	await backend.refresh()
+	check(backend.log_entries.size() == count and events.size() == count, "Unchanged periodic status checks do not fill either journal with duplicate entries")
+	device["installed"] = true
+	await backend.refresh()
+	check(backend.diagnostics().get("code") == "permission_required" and backend.log_text.contains("Permisiunea Android"), "A denied Android permission is explained and logged before startup")
+	backend.native("permission")
+	check(backend.log_text.contains("Permisiune Android solicitată"), "Requesting the Android permission records the user action")
+	device["permission"] = true
+	check(not await backend.ensure_ready() and backend.diagnostics().get("code") == "setup_required" and not calls.has("start"), "An enabled but unconfigured backend records its next step without installing or launching anything")
+	var result = await backend.setup("connect")
+	check(result.get("code") == "termux_start_failed" and backend.log_text.contains("Pornire conector local") and backend.log_text.contains("Fixture Android startup rejected"), "Android startup errors retain the preceding connection steps in the journal")
+	check(not backend.log_text.contains(secret) and not backend.log_text.contains("fixture-redaction-key") and not JSON.stringify(events).contains(secret), "Connection secrets are removed from both persistent logs and emitted journal events")
+	await backend.refresh()
+	check(backend.diagnostics().get("code") == "termux_start_failed", "Refreshing the integration preserves the failed startup reason")
+	backend.job_log = "worker-output\n".repeat(4000) + secret
+	backend._save_log()
+	check(backend.log_text.length() <= backend.LOG_LIMIT * 2 and backend.log_text.contains("Fixture Android startup rejected") and backend.log_text.contains("worker-output"), "Worker output is bounded and retains connection diagnostics")
+	var reopened = scripts["termux_blender"].new(node)
+	reopened.configure(base, base.path_join("project"))
+	check(reopened.log_text == backend.log_text and not reopened.log_text.contains(secret), "Reopening the editor restores the redacted Blender journal")
+	var persisted = FileAccess.get_file_as_string(base.path_join("blender/diagnostics.json"))
+	check(not persisted.contains(secret) and not persisted.contains("fixture-redaction-key"), "The diagnostics file never stores the fixture credentials")
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -151,6 +197,7 @@ func _run() -> void:
 	check(not scripts["providers"].vision_allowed(vision_profile, "vision"), "An explicit text-only choice takes precedence over catalog vision metadata")
 	var node = Node.new()
 	root.add_child(node)
+	await _blender_diagnostic_tests(node)
 	var transport = scripts["transport"].new(node)
 	await _file_registry_tests(node)
 	_planning_tests(node)

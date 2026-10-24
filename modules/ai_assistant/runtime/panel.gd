@@ -174,6 +174,7 @@ func _ready() -> void:
 	if integrations.termux != null:
 		integrations.termux.configure(data_directory, project_directory)
 		integrations.termux.changed.connect(_refresh_blender_card)
+		integrations.termux.diagnostic.connect(_blender_diagnostic)
 	var editor_settings = EditorInterface.get_editor_settings()
 	var timeout = int(editor_settings.get_setting("ai_assistant/connection/request_timeout_seconds")) if editor_settings.has_setting("ai_assistant/connection/request_timeout_seconds") else 180
 	for service in [providers, mcp, assets, accounts]: service.transport.timeout_seconds = clampi(timeout, 10, 600)
@@ -756,9 +757,12 @@ func _build_termux_blender(parent: Node) -> void:
 		DisplayServer.clipboard_set(integrations.termux.ACTIVATION)
 		_status("Comanda de activare a fost copiată. Lipește-o și ruleaz-o o dată în Termux."))
 	_button(activation, "Deschide Termux", func() -> void: integrations.termux.native("open_termux"))
-	var disclosure = _button(card, "Jurnal", func() -> void:
-		b["logs"].visible = not b["logs"].visible)
+	var log_actions = _row(card)
+	var disclosure = _button(log_actions, "Jurnal", func() -> void:
+		b["logs"].visible = not b["logs"].visible
+		if b["logs"].visible: _reveal_blender_log.call_deferred())
 	disclosure.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	chat.icon_button(log_actions, "Copy", "Copiază jurnalul Blender", func() -> void: DisplayServer.clipboard_set(b["logs"].text))
 	b["logs"] = CodeEdit.new()
 	b["logs"].editable = false
 	b["logs"].custom_minimum_size.y = 150 * EditorInterface.get_editor_scale()
@@ -788,7 +792,25 @@ func _refresh_blender_card() -> void:
 	if backend.runtime.get("kind") == "proot": detail += " · " + str(backend.runtime.get("container", ""))
 	b["status"].text = ("Disponibil · " + detail) if ready and not backend.working else str(device.get("stage", "Termux conectat" if backend.connected else "Termux detectat" if installed else "Termux nu este instalat"))
 	if not device.get("supported", true): b["status"].text = "Configurarea automată necesită Android ARM64."
-	if b["logs"].text != backend.log_text: b["logs"].text = backend.log_text
+	var logs = backend.log_text if not backend.log_text.is_empty() else str(backend.diagnostics().get("message", "Verificare conexiune…"))
+	if b["logs"].text != logs:
+		var view: CodeEdit = b["logs"]
+		var position = view.scroll_vertical
+		var bar = view.get_v_scroll_bar()
+		var following = view.text.is_empty() or bar.value + bar.page >= bar.max_value - 1
+		view.text = logs
+		view.scroll_vertical = view.get_v_scroll_bar().max_value if following else position
+
+func _blender_diagnostic(entry: Dictionary) -> void:
+	_record_event("blender_connection", {"stage": entry.get("code", "blender")}, {"ok": not entry.get("failed", false), "message": entry.get("message", "")})
+
+func _reveal_blender_log() -> void:
+	await get_tree().process_frame
+	if not forms.has("blender") or not settings_window.visible: return
+	var logs: CodeEdit = forms["blender"]["logs"]
+	if logs.visible:
+		settings_tabs.get_tab_control(section_tabs["integrations"]).ensure_control_visible(logs)
+		logs.scroll_vertical = logs.get_v_scroll_bar().max_value
 
 func _blender_setup(operation: String) -> void:
 	if busy or integrations.termux.working: return
@@ -798,6 +820,9 @@ func _blender_setup(operation: String) -> void:
 	var result = await integrations.termux.setup(operation)
 	_refresh_secrets()
 	_refresh_blender_card()
+	if not result.get("ok", false):
+		forms["blender"]["logs"].show()
+		_reveal_blender_log.call_deferred()
 	if result.get("ok", false) and result.get("result", {}).get("outputs") is Array: _register_blender_outputs(result)
 
 func _build_skills(skills: Node) -> void:
@@ -1741,8 +1766,8 @@ func _context_messages() -> Array:
 	instructions += "\nFor addon requests, use store_search, store_describe and store_install before claiming a plugin is unavailable or the editor lacks network access. Report the actual tool result. Native addons still need compatible binaries and a separate load check after installation."
 	if integrations.termux != null:
 		var backend = integrations.termux
-		instructions += "\nAndroid Blender integration: " + JSON.stringify({"enabled": integration_settings.get("blender_enabled", false), "ready": backend.available(), "runtime": backend.runtime.get("version", ""), "capabilities": backend.runtime.get("capabilities", {}), "pending_job": not backend.pending.is_empty()})
-		instructions += " Use blender_run when enabled and ready. Save scripts in the project; declare dependency files in inputs, read them via GODOT_AI_PROJECT_DIR and write all outputs via GODOT_AI_OUTPUT_DIR. Save a GLB preview alongside FBX/OBJ/BLEND outputs for inspection in Godot. Respect the measured rendering capabilities. If setup or recovery is needed, direct the user to Integrări > Blender; never install packages or reset containers through a generated Blender script."
+		instructions += "\nAndroid Blender integration: " + JSON.stringify({"enabled": integration_settings.get("blender_enabled", false), "ready": backend.available(), "runtime": backend.runtime.get("version", ""), "capabilities": backend.runtime.get("capabilities", {}), "pending_job": not backend.pending.is_empty(), "diagnostic": backend.diagnostics()})
+		instructions += " Use blender_run when enabled and ready. When not ready, blender_run is deliberately excluded: do not repeatedly search for or describe it. Explain the supplied diagnostic and next action in one or two short sentences; do not expose internal JSON or claim Blender is absent without a discovery result. Save scripts in the project; declare dependency files in inputs, read them via GODOT_AI_PROJECT_DIR and write all outputs via GODOT_AI_OUTPUT_DIR. Save a GLB preview alongside FBX/OBJ/BLEND outputs for inspection in Godot. Respect the measured rendering capabilities. If setup or recovery is needed, direct the user to Integrări > Blender; never install packages or reset containers through a generated Blender script."
 	var snapshot = tools.execute("godot_project", {}, 0, false)
 	instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
 	instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")}))
