@@ -12,8 +12,8 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`2287ae5`**
-  (`2287ae59bb048b3832907c493305477280e80192`).
+- Ultimul commit livrat și verificat ca pachet: **`4236902`**
+  (`4236902daed5d7d9a6852a4b9ae0e7e5b816e20b`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -22,8 +22,10 @@ drept funcție validată cu un serviciu real.
 - Include și corecțiile harness-ului, conectarea locală simplificată, bara de
   activitate deasupra composer-ului, controlul rotirii 3D, regulile pentru
   imagini și integrarea opțională Blender/Termux, cu jurnal persistent și
-  diagnostic înainte de pornirea unei sarcini.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `45ea380` a fost
+  diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
+  inclusiv Google Play, folosește pornire explicită din terminal și verificare
+  automată la revenirea în Godot.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `2287ae5` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -36,8 +38,9 @@ MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 După jurnalul nou, utilizatorul a confirmat că butonul Permisiune nu deschide
 dialog, iar setările aplicației nu afișează permisiunea Termux. Inspectat APK-ul
 Termux instalat: **`googleplay.2026.10.09`, versionCode 142**, fără declarația
-`com.termux.permission.RUN_COMMAND` și fără `RunCommandService`. Există numai
-permisiunea internă cu protecție de semnătură, care nu poate fi cerută de Godot.
+`com.termux.permission.RUN_COMMAND` și fără `RunCommandService`. Serviciul
+Termux intern folosește o permisiune cu protecție de semnătură, care nu poate
+fi acordată de utilizator aplicației Godot.
 Verificarea anterioară bazată pe `versionCode >= 118` era insuficientă.
 Activarea `allow-external-apps` nu adaugă un serviciu absent din această variantă.
 Dovadă: `.ai-qa/installed-termux-manifest.txt`; sursa oficială:
@@ -78,7 +81,27 @@ Verificări locale:
 - Conectorul Kotlin și seiful au compilat cu SDK Android 36:
   `.ai-qa/termux-play-kotlin.log`. `git diff --check` trecut.
 
-**APK nou în pregătire; cel livrat rămâne `2287ae5` până la verificare.**
+**APK `4236902` compilat, verificat și livrat.**
+[Workflow `40106507842`](https://github.com/JDscript1/godot-ai-android/actions/runs/40106507842):
+toate cele trei job-uri reușite. **422 aserțiuni runtime CI**, **20 teste
+backend/bootstrap**, **3 teste livrare**, editor upstream **364 × 5 dimensiuni**,
+fork nativ **374 × 5**, plus **48 verificări UI Blender** pentru telefon;
+zero eșecuri. Cele cinci probe Blender locale opționale explică diferența față
+de cele 427 aserțiuni locale. Log: `.ai-qa/4236902-ci.log`.
+
+[Artifact `12565041849`](https://github.com/JDscript1/godot-ai-android/actions/runs/40106507842/artifacts/12565041849):
+**145.349.474 bytes**, ARM64, pachet `com.jdscript.godotai.debug`;
+SHA-256 `2d9a87f555658c21e7d8f4d5a51c69aabf646ae940bbcfe76dd75c030341f6c3`.
+Verificate local semnătura persistentă, manifestul, clasele Android/JNI,
+marcajele native pentru detectare și clipboard, toate cele **27 scripturi GD**
+și ambele assets bootstrap/worker, identice cu snapshot-ul compilat.
+Raport: `.ai-qa/artifacts/4236902/extended-verification.json`.
+
+Înlocuit atomic instalatorul `2287ae5` și checksum-ul din Download, cu numele
+stabil `Godot-AI-Android-arm64-debug.apk`, la **24.10.2026, 17:27:07 CEST**.
+Un singur instalator al fork-ului, alte descărcări păstrate.
+Raport: `.ai-qa/delivery-4236902.json`.
+
 Nu sunt validate fizic butonul de clipboard, lansarea activității Termux și
 revenirea în APK; clientul de probă substituie frontiera Android și păstrează
 `android_intent_tested=false`. Nu s-a înlocuit Termux și nu s-au instalat pachete
@@ -86,7 +109,9 @@ sau modificat containerele Blender ale utilizatorului.
 
 Jurnal: 24.10.2026 — identificată cauza reală a dialogului absent în Termux Google
 Play, înlocuită verificarea numai după număr cu inspecția capabilităților și
-adăugată pornirea explicită din terminal cu verificare Godot automată.
+adăugată pornirea explicită din terminal cu verificare Godot automată. Compilat
+și livrat APK `4236902`, înlocuind `2287ae5` după verificare; fluxul Android
+fizic rămâne de încercat din aplicația instalată.
 
 ## Etapa precedentă — jurnal Blender înainte de pornire, 24.10.2026
 

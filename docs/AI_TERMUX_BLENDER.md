@@ -1,6 +1,6 @@
 # Blender în Integrări, prin Termux
 
-Inclus în APK-ul Android ARM64 `2287ae5`, livrat la 24 octombrie 2026.
+Inclus în APK-ul Android ARM64 `4236902`, livrat la 24 octombrie 2026.
 Clasele Android, permisiunea, intrarea JNI, cele 27 scripturi și worker-ul inclus
 au fost verificate în pachet. Harness-ul AI rulează în Godot; Termux și Python
 sunt dependențe numai ale integrării opționale Blender. Legătura Android prin
@@ -11,7 +11,7 @@ Intent și configurarea inițială trebuie verificate din aplicația instalată
 
 ### Termux din Google Play
 
-Iterația următoare APK-ului `2287ae5` verifică manifestul Termux, nu numai
+APK-ul `4236902` verifică manifestul Termux, nu numai
 numărul versiunii. Distribuția Google Play verificată (`googleplay.2026.10.09`)
 nu declară `RUN_COMMAND` și nu include serviciul extern. În acest caz nu există
 un dialog Android pentru acea permisiune. Vezi
