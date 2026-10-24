@@ -12,8 +12,8 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`45ea380`**
-  (`45ea3801af6429de9b3eaa2d6617bb8be1b20484`).
+- Ultimul commit livrat și verificat ca pachet: **`2287ae5`**
+  (`2287ae59bb048b3832907c493305477280e80192`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -21,8 +21,9 @@ drept funcție validată cu un serviciu real.
   separatoare Cloud/Local și căutare LAN explicită.
 - Include și corecțiile harness-ului, conectarea locală simplificată, bara de
   activitate deasupra composer-ului, controlul rotirii 3D, regulile pentru
-  imagini și integrarea opțională Blender/Termux.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `36457dd` a fost
+  imagini și integrarea opțională Blender/Termux, cu jurnal persistent și
+  diagnostic înainte de pornirea unei sarcini.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `45ea380` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -65,14 +66,39 @@ Proba Godot → HTTP → Blender real a trecut din nou **21 aserțiuni**;
 capturile de eroare au fost inspectate. Dovezi:
 `.ai-qa/blender-diagnostics-ui-delivery/`. Scenariul telefonului este adăugat
 în CI pentru a verifica permanent jurnalul și vizibilitatea erorii.
-Noua livrare APK este în curs; instalatorul din Download rămâne `45ea380`
-până la verificarea înlocuitorului.
+
+Snapshot compilat: `2287ae59bb048b3832907c493305477280e80192`.
+[Workflow `40103875046`](https://github.com/JDscript1/godot-ai-android/actions/runs/40103875046):
+**toate cele trei job-uri trecute**. CI: **418 aserțiuni runtime**, **18 teste
+backend**, **3 teste livrare**, editor upstream **364 verificări × 5 dimensiuni**,
+fork nativ **374 × 5**, plus **46 verificări** ale panoului Blender pentru telefon.
+Zero eșecuri. Log: `.ai-qa/2287ae5-ci.log`. Cele cinci probe Blender locale
+opționale explică diferența dintre cele 418 aserțiuni CI și 423 locale.
+**APK `2287ae5` verificat și livrat** din
+[artifact `12563079376`](https://github.com/JDscript1/godot-ai-android/actions/runs/40103875046/artifacts/12563079376).
+Pachet `com.jdscript.godotai.debug`, ARM64, **145.348.880 bytes**;
+SHA-256 `e9d6121fa803ffd8b440739770a171ff6a48f5d7b6941f99c0ec8ea721a1c003`.
+Verificate semnătura persistentă, manifestul și clasele Termux/JNI, worker-ul
+și toate cele **27 scripturi GD**, identice cu snapshot-ul compilat.
+Rapoarte: `.ai-qa/artifacts/2287ae5/extended-verification.json` și
+`.ai-qa/delivery-2287ae5.json`.
+
+Înlocuit atomic instalatorul `45ea380` la
+`/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`, împreună cu
+checksum-ul. Timestamp **24.10.2026, 17:00:26 CEST**; un singur APK al fork-ului
+în Download. O conexiune întreruptă la descărcarea artifactului a fost recuperată
+pe ultimul fragment; verificările ZIP, SHA-256 și semnătură au trecut înaintea
+înlocuirii. Alte descărcări nu au fost modificate.
 Activarea proprietății Termux nu confirmă permisiunea Android acordată aplicației
 sau executarea efectivă prin Intent; acestea necesită verificare din APK.
+Nu există dispozitiv conectat prin ADB; noul APK nu a fost instalat sau pornit
+fizic de agent. Nu s-au efectuat probe noi cu un furnizor AI real la această etapă.
 
 Jurnal: 24.10.2026 — reprodus jurnalul gol înainte de prima conectare, adăugate
 diagnostice persistente și corectată afișarea erorilor; activată proprietatea
-Termux necesară conectorului, cu configurația anterioară păstrată.
+Termux necesară conectorului, cu configurația anterioară păstrată. Compilat și
+livrat APK `2287ae5`, înlocuind `45ea380` după verificare; validarea fizică a
+conexiunii din aplicație rămâne separată.
 
 ## Etapa precedentă — APK compilat și livrat, 24.10.2026
 

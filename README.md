@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40101377645/artifacts/12562872989)
-(GitHub Actions artifact, source `45ea380`, delivered 24 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40103875046/artifacts/12563079376)
+(GitHub Actions artifact, source `2287ae5`, delivered 24 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -43,6 +43,9 @@ under Integrations: reuse or install, real export/import verification, resumable
 file transfer and optional agent access. The Android classes, permission, JNI entry
 and bundled worker are verified in this APK; the Intent boundary still requires
 physical-device validation.
+Setup diagnostics now persist across editor restarts, include pre-job failures
+and appear in both the Blender and general journals. A failed connection opens
+and scrolls the journal to its latest error, with a copy button for diagnostics.
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture

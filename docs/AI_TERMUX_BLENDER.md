@@ -1,6 +1,6 @@
 # Blender în Integrări, prin Termux
 
-Inclus în APK-ul Android ARM64 `45ea380`, livrat la 24 octombrie 2026.
+Inclus în APK-ul Android ARM64 `2287ae5`, livrat la 24 octombrie 2026.
 Clasele Android, permisiunea, intrarea JNI, cele 27 scripturi și worker-ul inclus
 au fost verificate în pachet. Harness-ul AI rulează în Godot; Termux și Python
 sunt dependențe numai ale integrării opționale Blender. Legătura Android prin
@@ -40,7 +40,7 @@ iar profilul nou utilizează [Blender Debian ARM64](https://packages.debian.org/
 
 ## Jurnal și diagnostic
 
-Iterația următoare APK-ului `45ea380` înregistrează și pașii anteriori pornirii
+APK-ul `2287ae5` înregistrează și pașii anteriori pornirii
 unei sarcini: detectare Termux, permisiune, configurare inițială, pornire și
 reconectare. **Activat** pentru agent și **Disponibil** sunt stări separate.
 Agentul primește motivul indisponibilității și următoarea acțiune.
