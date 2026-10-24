@@ -25,6 +25,7 @@ class HarnessHost:
 	var token = {}
 	var stop_after_tool = false
 	var tool_result = {"ok": true, "result": "fixture-secret"}
+	var tool_results: Array = []
 	var fail_checkpoint_status = ""
 	var reenter: RefCounted
 	var reentry_result = {}
@@ -41,7 +42,7 @@ class HarnessHost:
 	func execute(name: String, arguments: Dictionary) -> Dictionary:
 		executed.append({"name": name, "arguments": arguments})
 		if stop_after_tool: token["cancelled"] = true
-		return tool_result
+		return tool_result if tool_results.is_empty() else tool_results.pop_front()
 
 	func checkpoint(snapshot: Dictionary) -> bool:
 		checkpoints.append(snapshot.duplicate(true))
@@ -66,7 +67,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -75,7 +76,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -154,10 +155,12 @@ func _run() -> void:
 	await _file_registry_tests(node)
 	_planning_tests(node)
 	await _harness_tests(node)
+	await _behavior_tests(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
 	if not mock_url.is_empty():
 		await _network_tests(node)
+		await _local_connection_tests(node)
 		await _cloud_generation_tests(node)
 		await _integration_tests(node)
 		await _store_tests(node)
@@ -245,6 +248,10 @@ func _planning_tests(node: Node) -> void:
 	plan.update({"tasks": steps, "phase": "executing"})
 	plan.pause()
 	check(plan.phase == "paused" and plan.steps[1]["status"] == "pending", "Stopping a plan does not mark unfinished steps completed")
+	var saved = plan.snapshot()
+	var resumed_plan = scripts["planner"].new()
+	check(resumed_plan.restore(saved, true).get("ok", false) and resumed_plan.turn == "plan-test" and resumed_plan.phase == "planning" and not resumed_plan.can_write(), "Resuming restores unfinished steps and requires an explicit execution phase before writes")
+	check(not resumed_plan.restore({"phase": "unexpected"}).get("ok", false) and resumed_plan.turn == "plan-test", "An invalid saved plan cannot overwrite the restored task")
 	plan.reset("proposal", true)
 	check(not plan.update({"tasks": steps, "phase": "executing"}, true).get("ok", true), "Manual Plan cannot switch itself into execution")
 	check(plan.update({"tasks": steps, "phase": "completed"}, true).get("ok", false) and not plan.can_write() and not plan.needs_continuation(), "A completed proposal retains pending implementation steps without executing them")
@@ -316,8 +323,15 @@ func _harness_tests(node: Node) -> void:
 	var outcome = await core.run({"messages": messages, "tools": definitions, "retry_delay_ms": 0}, host.hooks())
 	check(outcome.get("status") == "completed" and outcome.get("requests") == 3 and outcome.get("retries") == 1 and outcome.get("steps") == 2, "Native harness retries rate limits and completes a tool turn")
 	check(host.executed.size() == 1 and messages.size() == 4 and host.contexts[-1][-1].get("role") == "tool", "Native harness passes tool results back to the model")
+	check(outcome.get("duration_ms", -1) >= 0 and events.filter(func(item: Dictionary) -> bool: return item.get("kind") in ["message", "tool_result"]).all(func(item: Dictionary) -> bool: return item.get("duration_ms", -1) >= 0), "Harness records total, provider-response and tool durations without publishing reasoning")
 	check(not "fixture-secret" in JSON.stringify(messages) and not "fixture-secret" in JSON.stringify(events), "Harness transcripts and events redact credentials")
 	check(host.checkpoints.any(func(value: Dictionary) -> bool: return value.get("status") == "waiting_tool") and host.checkpoints[-1].get("status") == "completed", "Harness checkpoints before side effects and after settlement")
+	var blocked_host = HarnessHost.new()
+	blocked_host.replies = [_agent_response("Verification is unavailable")]
+	var blocked_hooks = blocked_host.hooks()
+	blocked_hooks["blocked_reason"] = func() -> String: return "Native diagnostics unavailable"
+	var blocked_outcome = await core.run({"tools": definitions}, blocked_hooks)
+	check(blocked_outcome.get("status") == "blocked" and blocked_outcome.get("code") == "task_blocked" and not blocked_outcome.get("ok", true), "A blocked task does not become completed when the model ends its tool loop")
 
 	# Simulate resuming a persisted conversation whose provider repeats its call ID.
 	host = HarnessHost.new()
@@ -442,6 +456,116 @@ func _harness_tests(node: Node) -> void:
 	hooks["needs_continuation"] = func() -> bool: return true
 	outcome = await core.run({"max_steps": 2}, hooks)
 	check(outcome.get("code") == "step_limit" and host.contexts.size() == 2, "Plan continuation respects the harness step budget")
+
+func _behavior_tests(node: Node) -> void:
+	var core = scripts["harness"].new(node)
+	var definitions = scripts["assets"].new(node, FakeVault.new()).definitions()
+	var first = {"id": "generate-1", "name": "asset_generate", "arguments": {"profile": "mesh-fixture", "prompt": "A wooden box"}}
+	var repeated = first.duplicate(true)
+	repeated["id"] = "generate-2"
+	var host = HarnessHost.new()
+	host.tool_result = {"ok": true, "result": {"id": "existing-job", "status": "processing"}}
+	host.replies = [_agent_response("", [first]), _agent_response("", [repeated]), _agent_response("Waiting for existing-job")]
+	var messages = [{"role": "user", "content": "Generate one box", "turn_id": "generation-turn"}]
+	var options = {"id": "generation-turn", "metadata": {"turn_id": "generation-turn"}, "messages": messages, "tools": definitions, "deduplicate_tools": ["asset_generate"]}
+	var result = await core.run(options, host.hooks())
+	check(result.get("ok", false) and host.executed.size() == 1, "The same paid generation with a fresh provider call ID reuses its existing job")
+	host = HarnessHost.new()
+	var resumed = first.duplicate(true)
+	resumed["id"] = "generate-resumed"
+	host.replies = [_agent_response("", [resumed]), _agent_response("Recovered")]
+	result = await core.run(options, host.hooks())
+	check(result.get("ok", false) and host.executed.is_empty(), "Resuming the same user turn cannot submit its generation again under another call ID")
+	host = HarnessHost.new()
+	resumed["id"] = "generate-new-request"
+	host.replies = [_agent_response("", [resumed]), _agent_response("New requested variant")]
+	options["id"] = "new-user-turn"
+	options["metadata"] = {"turn_id": "new-user-turn"}
+	result = await core.run(options, host.hooks())
+	check(result.get("ok", false) and host.executed.size() == 1, "A genuinely new user turn can request another generation with the same prompt")
+	host = HarnessHost.new()
+	var variant = repeated.duplicate(true)
+	variant["id"] = "generate-variant"
+	variant["arguments"]["variant"] = "second-requested-box"
+	host.replies = [_agent_response("", [first, variant]), _agent_response("Two requested variants")]
+	result = await core.run({"tools": definitions, "deduplicate_tools": ["asset_generate"]}, host.hooks())
+	check(result.get("ok", false) and host.executed.size() == 2, "An explicit variant distinguishes multiple requested outputs from accidental generation retries")
+	host = HarnessHost.new()
+	host.tool_results = [{"ok": false, "code": "plan_required", "error": "Publish a plan"}, {"ok": true, "result": {"id": "after-plan"}}]
+	host.replies = [_agent_response("", [first]), _agent_response("", [repeated]), _agent_response("Recovered after preflight")]
+	result = await core.run({"tools": definitions, "deduplicate_tools": ["asset_generate"]}, host.hooks())
+	check(result.get("ok", false) and host.executed.size() == 2, "A preflight plan refusal does not prevent submitting the operation after its requirements are fixed")
+	host = HarnessHost.new()
+	host.tool_results = [{"ok": false, "code": "plan_required", "error": "Publish a plan"}, {"ok": true, "result": {"id": "after-plan"}}]
+	host.replies = [_agent_response("", [first]), _agent_response("", [first]), _agent_response("Recovered with the original call ID")]
+	result = await core.run({"tools": definitions, "deduplicate_tools": ["asset_generate"]}, host.hooks())
+	check(result.get("ok", false) and host.executed.size() == 2, "A corrected plan preflight can reuse the original call ID instead of remaining stuck on its earlier refusal")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": false, "code": "permission_denied", "error": "User declined"}
+	var write = scripts["common"].tool("write_fixture", "Write a fixture", {}, [], "write")
+	host.replies = [_agent_response("", [{"id": "denied-one", "name": "write_fixture", "arguments": {}}]), _agent_response("", [{"id": "denied-two", "name": "write_fixture", "arguments": {}}]), _agent_response("Permission respected")]
+	result = await core.run({"tools": [write]}, host.hooks())
+	check(result.get("ok", false) and host.executed.size() == 1, "A fresh tool call ID cannot ask for the same declined operation again in the current turn")
+	var interrupted_message = _agent_response("", [first])["message"]
+	interrupted_message["turn_id"] = "uncertain-turn"
+	var uncertain = scripts["harness"].repair_messages([interrupted_message])
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [repeated]), _agent_response("Check the provider job before retrying")]
+	result = await core.run({"id": "uncertain-turn", "messages": uncertain, "tools": definitions, "deduplicate_tools": ["asset_generate"]}, host.hooks())
+	check(result.get("ok", false) and host.executed.is_empty(), "An interrupted paid submission cannot be blindly repeated after restart with a fresh call ID")
+	host = HarnessHost.new()
+	for index in range(5): host.replies.append(_agent_response("Still working"))
+	var hooks = host.hooks()
+	hooks["needs_continuation"] = func() -> bool: return true
+	result = await core.run({"max_steps": 5}, hooks)
+	check(result.get("code") == "no_progress" and host.contexts.size() == 3, "An unfinished plan cannot consume model turns forever without tools or progress")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": false, "code": "invalid_path", "error": "Missing file"}
+	var read = scripts["common"].tool("read_fixture", "Read a fixture", {}, [])
+	for index in range(5): host.replies.append(_agent_response("", [{"id": "failure-" + str(index), "name": "read_fixture", "arguments": {}}]))
+	result = await core.run({"tools": [read], "max_steps": 5}, host.hooks())
+	check(result.get("code") == "no_progress" and host.executed.size() == 3, "Repeated identical tool failures stop with a useful outcome instead of spending the full budget")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": false, "code": "invalid_path", "error": "Missing file"}
+	var batch = []
+	for index in range(5): batch.append({"id": "batch-" + str(index), "name": "read_fixture", "arguments": {}})
+	host.replies = [_agent_response("", batch)]
+	messages = []
+	result = await core.run({"tools": [read], "messages": messages}, host.hooks())
+	check(result.get("code") == "no_progress" and host.executed.size() == 3 and messages.size() == 6, "A stalled batch closes all remaining tool calls without executing them")
+	host = HarnessHost.new()
+	result = await core.run({"cancel": {"cancelled": true, "reason": "new_request"}}, host.hooks())
+	check(result.get("code") == "redirected" and result.get("message") == "Trec la cererea nouă." and host.contexts.is_empty(), "A replacement request has an explicit cancellation outcome instead of looking like a user Stop")
+
+func _local_connection_tests(node: Node) -> void:
+	var script = scripts["providers"]
+	for entry in [["192.168.1.50", "lmstudio", "http://192.168.1.50:1234/v1"], ["192.168.1.50", "ollama", "http://192.168.1.50:11434/v1"], ["192.168.1.50:7777/v1/models", "lmstudio", "http://192.168.1.50:7777/v1"], ["http://192.168.1.50:11434/api/tags", "ollama", "http://192.168.1.50:11434/v1"], ["::1", "lmstudio", "http://[::1]:1234/v1"], ["https://local.example/proxy/v1", "lmstudio", "https://local.example:443/proxy/v1"]]:
+		check(script.local_endpoint(entry[0], entry[1]).get("result") == entry[2], "Local connection accepts an IP or URL without requiring manual API paths: " + entry[0])
+	check(not script.local_endpoint("http://user@host:1234?token=x", "lmstudio").get("ok", true), "Quick local connection rejects embedded credentials and URL query tokens")
+	check(script.connection_error({"url": "http://127.0.0.1:1234/v1"}, {"code": "connection_failed"}, true).contains("acest dispozitiv"), "Android loopback failures explain which device 127.0.0.1 refers to")
+	check(script.connection_error({"url": mock_url}, {"status": 401}).contains("token valid"), "An authenticated server is distinguished from an unreachable host")
+	var local_options = script.inference_options({"issuer": "lmstudio", "url": mock_url})
+	check(local_options["connect_timeout"] < local_options["first_response_timeout"] and local_options["idle_timeout"] > 0 and local_options["timeout"] > local_options["first_response_timeout"], "Local inference has independent connect, initial-response, idle and total budgets")
+	var vault = FakeVault.new()
+	var service = script.new(node, vault)
+	var lm = await service.list_models({"id": "lm", "issuer": "lmstudio", "kind": "chat", "url": mock_url + "/local-lm", "allow_http": true})
+	check(lm.get("ok", false) and lm.get("result", []).size() == 1 and lm["result"][0]["loaded"] and lm["result"][0]["context"] == 4096, "LM Studio connection reads the actual loaded context and excludes embedding models")
+	var ollama = await service.list_models({"id": "ollama", "issuer": "ollama", "kind": "chat", "url": mock_url + "/local-ollama/v1", "allow_http": true})
+	check(ollama.get("ok", false) and ollama["result"].size() == 2 and ollama["result"][0]["loaded"] and not ollama["result"][1]["loaded"] and ollama["result"][0]["context"] == 4096, "Ollama connects through its native tags and running-model endpoints without inference")
+	var protected = {"id": "auth", "issuer": "lmstudio", "kind": "chat", "url": mock_url + "/auth-lm/v1", "allow_http": true}
+	check((await service.list_models(protected)).get("status") == 401, "Local server authentication failure is preserved")
+	vault.store("auth", "local-fixture-token")
+	check((await service.list_models(protected)).get("ok", false), "Local server tokens use the existing credential vault")
+	var transport = scripts["transport"].new(node)
+	var slow = await transport.request(mock_url + "/drip", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "timeout": 2.0, "first_response_timeout": 0.25, "idle_timeout": 0.4})
+	check(slow.get("ok", false) and slow.get("events", []).size() == 4, "A stream stays connected while data arrives beyond the initial response budget")
+	var idle = await transport.request(mock_url + "/idle-drip", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "timeout": 2.0, "idle_timeout": 0.2})
+	check(idle.get("code") == "timeout" and idle.get("stage") == "body", "A stream that stops sending data times out with an explicit body stage")
+	var hard = await transport.request(mock_url + "/drip", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "timeout": 0.2, "idle_timeout": 1.0})
+	check(hard.get("code") == "timeout", "The total stream budget remains enforced even when bytes keep arriving")
+	var stopping = {"cancelled": false}
+	var stopped = await transport.request(mock_url + "/drip", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": stopping, "idle_timeout": 2.0, "on_event": func(_event: Dictionary) -> void: stopping["cancelled"] = true})
+	check(stopped.get("code") == "cancelled", "Stop remains responsive during an otherwise healthy local stream")
 
 func _network_tests(node: Node) -> void:
 	var vault = FakeVault.new()
@@ -608,6 +732,58 @@ func _new_feature_tests() -> void:
 	jobs.jobs.erase("two")
 	check(not jobs.spawn("Inspect", "General", {"id": "local", "issuer": "ollama"}, "m", "", "p").get("ok", false), "Local models do not start an extra parallel child")
 
+func _image_purpose_tests(assets: RefCounted, vault: RefCounted, cache: String) -> void:
+	var script = scripts["assets"]
+	var image_profile = {"id": "fixture-purpose-image", "kind": "openai_image", "asset_kind": "image", "destination": "res://ai_test_assets"}
+	vault.store(image_profile["id"], "generation-fixture-key")
+	var sprite = script.generation_contract(image_profile, "A walking bird, 4 frames", {"purpose": "sprite"})
+	var texture = script.generation_contract(image_profile, "Wood planks", {"purpose": "texture"})
+	var scenery = script.generation_contract(image_profile, "A forest", {"purpose": "background"})
+	check(sprite.get("result", {}).get("background") == "transparent" and "2D game sprite" in sprite["result"]["generation_prompt"] and "4 frames" in sprite["result"]["generation_prompt"], "Sprite requests preserve the user's frame layout and require a real cutout instead of a reconstruction render")
+	check(texture.get("result", {}).get("background") == "opaque" and "tileable" in texture["result"]["generation_prompt"] and scenery.get("result", {}).get("background") == "opaque" and "complete composition" in scenery["result"]["generation_prompt"], "Textures and scenery retain opaque surfaces and environments rather than isolated sprite rules")
+	var generic = script.generation_contract(image_profile, "An ordinary painting")
+	var override = script.generation_contract(image_profile, "A bird on white", {"purpose": "reference_3d", "background": "opaque"})
+	check(generic["result"]["generation_prompt"] == "An ordinary painting" and generic["result"]["background"] == "auto" and override["result"]["background"] == "opaque" and not "real alpha" in override["result"]["generation_prompt"], "Ordinary illustrations remain unrestricted and an explicit opaque reference overrides the cutout default")
+	var submitted = await assets.submit(image_profile, "A wooden box", "", {}, {"purpose": "reference_3d"})
+	check(submitted.get("ok", false) and submitted.get("result", {}).get("purpose") == "reference_3d" and "3D reconstruction" in submitted.get("result", {}).get("generation_prompt", ""), "A real adapter submission carries the distinct reconstruction contract into its saved job")
+	if not submitted.get("ok", false): return
+	var source: Dictionary = submitted["result"]
+	check(source.get("status") == "completed" and not source.get("quality", {}).get("ready_for_use", true) and not source["quality"]["has_transparency"] and FileAccess.file_exists(source["imported_path"]), "An opaque RGBA PNG is preserved but never certified as a transparent 3D reference")
+	var mesh_profile = {"id": "fixture-purpose-mesh", "kind": "meshy", "asset_kind": "mesh", "destination": "res://ai_test_assets"}
+	vault.store(mesh_profile["id"], "generation-fixture-key")
+	var blocked = await assets.submit(mesh_profile, "must-not-submit", source["imported_path"], {})
+	check(blocked.get("code") == "reference_needs_review", "A known invalid reference cannot start a paid 3D conversion")
+	var source_hash = FileAccess.get_sha256(source["file"])
+	var removal_profile = {"id": "runware-image", "kind": "runware", "credential_id": "generation_runware", "asset_kind": "image", "destination": "res://ai_test_assets"}
+	var corrected = await assets.remove_background(removal_profile, source["file"], {}, "reference_3d")
+	check(corrected.get("ok", false) and corrected.get("result", {}).get("operation") == "remove_background", "The native background-removal adapter processes the existing image without regenerating it")
+	if not corrected.get("ok", false): return
+	var id = str(corrected["result"]["id"])
+	var completed = await assets.wait_for_job(id, removal_profile, {}, 1)
+	check(completed.get("ok", false) and completed.get("result", {}).get("quality", {}).get("ready_for_use", false) and completed["result"]["quality"]["has_transparency"], "Background removal downloads and verifies a PNG with visible content and actual alpha")
+	if not completed.get("ok", false): return
+	var cutout: Dictionary = completed["result"]
+	var repeated = await assets.remove_background(removal_profile, source["imported_path"], {}, "reference_3d")
+	check(repeated.get("result", {}).get("id") == id, "Using the imported alias of the same image reuses the existing cutout job instead of charging again")
+	check(cutout["file"] != source["file"] and FileAccess.get_sha256(source["file"]) == source_hash and str(cutout["imported_path"]).get_file().begins_with("a-wooden-box-cutout"), "Cutouts preserve original bytes and keep object-based names in a separate folder")
+	var recovered = script.new(assets.owner, vault)
+	recovered.test_http = true
+	recovered.api_urls = assets.api_urls.duplicate(true)
+	recovered.configure(cache)
+	var restored = await recovered.refresh(id, removal_profile, {})
+	check(restored.get("result", {}).get("quality", {}).get("ready_for_use", false), "Background-removal completion and alpha verification survive restart without another submission")
+	var converted = await assets.submit(mesh_profile, "existing-cutout", cutout["imported_path"], {})
+	check(converted.get("ok", false), "The corrected existing reference can proceed to image-to-3D")
+	var empty_image = Image.create(2, 2, false, Image.FORMAT_RGBA8)
+	empty_image.fill(Color.TRANSPARENT)
+	var empty_path = cache.path_join("empty-reference.png")
+	empty_image.save_png(empty_path)
+	check(not script.image_quality(empty_path, "transparent")["ready_for_use"] and script.image_quality(source["file"], "auto")["ready_for_use"], "An empty transparent image fails quality while an ordinary opaque illustration stays usable")
+	check((await assets.remove_background(image_profile, source["imported_path"], {})).get("code") == "unsupported_provider", "Background removal never invents unsupported provider parameters")
+	var transport = scripts["transport"].new(assets.owner)
+	var counts = await transport.request(mock_url + "/fixture-submissions", HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+	check(counts.get("json", {}).get("remove_background") == 1 and counts.get("json", {}).get("must-not-submit", 0) == 0, "Polling and recovering a cutout sends exactly one removal POST and no invalid 3D POST")
+
 func _cloud_generation_tests(node: Node) -> void:
 	var script = scripts["assets"]
 	var common = scripts["common"]
@@ -660,6 +836,7 @@ func _cloud_generation_tests(node: Node) -> void:
 		var wrong = profile.duplicate()
 		wrong["id"] = "wrong-profile"
 		check(not (await assets.refresh(id, wrong, {})).get("ok", false), "Saved generation job refuses a different credential profile")
+	await _image_purpose_tests(assets, vault, cache)
 	await _export_tests(assets, vault, cache)
 	var profile = {"id": "fixture-tripo", "kind": "tripo", "asset_kind": "mesh"}
 	for prompt in ["fail", "foreign"]:
@@ -667,6 +844,29 @@ func _cloud_generation_tests(node: Node) -> void:
 		var outcome = await assets.refresh(str(submitted.get("result", {}).get("id", "")), profile, {})
 		check(not outcome.get("ok", true), "Cloud generation failure or untrusted CDN is rejected: " + prompt)
 	check((await assets.submit(profile, "bird", "", {"cancelled": true})).get("code") == "cancelled", "Pre-cancelled generation cannot submit a paid task")
+	var lost = await assets.submit(profile, "lost-submit", "", {})
+	check(lost.get("code") == "submission_unknown" and lost.get("result", {}).get("status") == "submission_unknown", "A dropped submission response records uncertainty instead of pretending that the provider rejected it")
+	var recovered = script.new(node, vault)
+	recovered.configure(cache)
+	var lost_id = str(lost.get("result", {}).get("id", ""))
+	check(not lost_id.is_empty() and recovered.find_job(lost_id).get("status") == "submission_unknown", "An uncertain paid submission survives restart in the generation job list")
+	check((await recovered.refresh(lost_id, profile, {})).get("code") == "submission_unknown", "A job without its provider ID cannot be polled as a new or fictitious task")
+	var previous_cache = assets.cache_directory
+	var previous_count = assets.jobs.size()
+	assets.cache_directory = reference
+	var unsaved = await assets.submit(profile, "blocked-save", "", {})
+	assets.cache_directory = previous_cache
+	var counts = await transport.request(mock_url + "/fixture-submissions", HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+	check(unsaved.get("code") == "checkpoint_failed" and assets.jobs.size() == previous_count and counts.get("json", {}).get("blocked-save", 0) == 0, "Generation cannot reach the provider when its pre-submission checkpoint cannot be saved")
+	check(counts.get("json", {}).get("lost-submit", 0) == 1, "Recovering and inspecting an uncertain submission never sends another paid POST")
+	var interrupted_cache = cache.path_join("interrupted-submit")
+	common.atomic_json(interrupted_cache.path_join("jobs.json"), [{"id": "interrupted-job", "status": "submitting"}])
+	recovered.configure(interrupted_cache)
+	check(recovered.find_job("interrupted-job").get("status") == "submission_unknown", "Restart converts an unfinished submission checkpoint into explicit uncertainty")
+	var runware_submission = runware_profile.duplicate(true)
+	runware_submission["model"] = "runware:fixture@1"
+	var runware_lost = await assets.submit(runware_submission, "lost-runware-submit", "", {})
+	check(runware_lost.get("code") == "submission_unknown" and not str(runware_lost.get("result", {}).get("external_id", "")).is_empty(), "Runware preserves its locally assigned task UUID when the submission response is lost")
 	var invalid = await assets.submit({"id": "fixture-openai_image", "kind": "openai_image", "asset_kind": "image"}, "invalid", "", {})
 	check(not invalid.get("ok", true) and assets.jobs[-1].get("status") == "failed", "Invalid base64 image output is recorded as failure without import")
 	vault.erase("fixture-tripo")

@@ -63,6 +63,46 @@ class FixtureProvider:
 		if not text.is_empty(): delta.call(text)
 		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": "stop"}
 
+class FixtureLocalCatalog:
+	extends RefCounted
+	var requests = 0
+	func list_models(_profile: Dictionary, _cancel: Dictionary = {}) -> Dictionary:
+		requests += 1
+		return {"ok": true, "result": [{"id": "unloaded-code", "loaded": false, "capabilities": {}}, {"id": "loaded-code", "loaded": true, "context": 4096, "capabilities": {}}]}
+
+class FixtureResumeProvider:
+	extends RefCounted
+	var requests = 0
+	var contexts: Array = []
+	func complete(_profile: Dictionary, messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
+		requests += 1
+		contexts.append(messages.duplicate(true))
+		if requests == 1:
+			delta.call("Am început verificarea.")
+			return {"ok": false, "code": "incomplete_stream", "error": "Fixture interrupted stream"}
+		var text = "Verificare reluată fără operații duplicate."
+		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": []}, "calls": [], "finish": "stop"}
+
+class FixtureBlockedProvider:
+	extends RefCounted
+	var requests = 0
+	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, _delta: Callable) -> Dictionary:
+		requests += 1
+		var calls = [{"id": "fixture-blocked-plan", "name": "task_update", "arguments": {"phase": "blocked", "tasks": [{"step": "Verifică diagnosticele native", "status": "pending"}], "explanation": "Bridge indisponibil."}}] if requests == 1 else []
+		return {"ok": true, "message": {"role": "assistant", "content": "" if requests == 1 else "Verificarea este blocată.", "tool_calls": calls}, "calls": calls, "finish": "stop"}
+
+class FixtureRedirectProvider:
+	extends RefCounted
+	var host: Control
+	var requests = 0
+	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, _delta: Callable) -> Dictionary:
+		requests += 1
+		if requests == 1:
+			host._send_or_queue("Acum doar inspectează proiectul, fără generare.")
+			var calls = [{"id": "superseded-generate", "name": "asset_generate", "arguments": {"profile": "missing", "prompt": "Superseded box"}}]
+			return {"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": calls}, "calls": calls}
+		return {"ok": true, "message": {"role": "assistant", "content": "Am păstrat proiectul nemodificat.", "tool_calls": []}, "calls": [], "finish": "stop"}
+
 class FixturePlanningProvider:
 	extends RefCounted
 	var requests = 0
@@ -101,8 +141,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -121,6 +161,18 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "blender":
+		await _termux_blender_card_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "preview":
+		await _model_and_control_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "activity":
+		await _activity_drawer_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "files":
 		await _file_chat_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -140,6 +192,7 @@ func _run() -> void:
 	await _history_button_tests()
 	await _settings_action_tests()
 	await _layout_tests()
+	await _activity_drawer_tests()
 	await _control_settings_tests()
 	_vision_settings_tests()
 	await _file_chat_tests()
@@ -157,6 +210,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	await _harness_editor_tests(scene)
 	await _code_tool_tests()
+	_reflection_tool_tests(scene)
 	var toolset = panel.tools
 	var created = toolset.execute("godot_create_node", {"type": "Node3D", "name": "AIProbe"}, 2, true)
 	_check(created.get("ok", false), "Create scene node")
@@ -312,6 +366,37 @@ func _native_runtime_tests() -> void:
 func _fixture_approval(name: String, results: Dictionary, operation_cancel: Dictionary = {}) -> void:
 	results[name] = await panel._authorize({"name": name, "risk": "write"}, {}, operation_cancel)
 
+func _reflection_tool_tests(scene: Node) -> void:
+	var toolset = panel.tools
+	var created = toolset.execute("godot_create_node", {"type": "MeshInstance3D", "name": "TypedReflectionProbe"}, 2, true)
+	var node = scene.get_node_or_null("TypedReflectionProbe") as MeshInstance3D
+	_check(created.get("ok", false) and node != null, "Create reflection regression fixture")
+	if node == null: return
+	var handle = str(created.result.handle)
+	var mesh = toolset.execute("godot_create_resource", {"class": "BoxMesh"}, 2, true)
+	var reference = {"$handle": mesh.get("result", {}).get("handle", "")}
+	_check(mesh.get("result", {}).get("reference") == reference, "Object results expose a ready-to-use resource reference")
+	var invalid = toolset.execute("godot_set", {"handle": handle, "property": "mesh", "value": {"handle": reference["$handle"]}}, 2, true)
+	_check(invalid.get("code") == "invalid_arguments" and node.mesh == null, "A plain handle descriptor cannot silently clear a mesh while claiming success")
+	invalid = toolset.execute("godot_call", {"handle": handle, "method": "set_mesh", "arguments": [{"handle": reference["$handle"]}]}, 2, true)
+	_check(invalid.get("code") == "invalid_arguments" and node.mesh == null, "Generic calls reject incompatible object arguments before invoking Godot")
+	var assigned = toolset.execute("godot_set", {"handle": handle, "property": "mesh", "value": reference}, 2, true)
+	_check(assigned.get("ok", false) and node.mesh is BoxMesh, "Canonical object reference assigns and verifies a real BoxMesh")
+	var typed = toolset.execute("godot_call", {"handle": handle, "method": "set_mesh", "arguments": [{"$type": "Object", "handle": reference["$handle"]}]}, 2, true)
+	_check(typed.get("ok", false) and node.mesh is BoxMesh, "Explicit typed object references resolve inside method arguments")
+	var original = node.mesh
+	var stale = toolset.execute("godot_set", {"handle": handle, "property": "mesh", "value": {"$handle": "obj_missing"}}, 2, true)
+	_check(stale.get("code") == "stale_handle" and node.mesh == original, "Stale resource references preserve the previous property")
+	var material = toolset.execute("godot_create_resource", {"class": "StandardMaterial3D"}, 2, true)
+	var wrong_class = toolset.execute("godot_set", {"handle": handle, "property": "mesh", "value": material.result.reference}, 2, true)
+	_check(wrong_class.get("code") == "invalid_arguments" and node.mesh == original, "Native Resource class constraints reject a material where a mesh is required")
+	var description = toolset.execute("godot_describe", {"handle": handle, "filter": "set_mesh"}, 0, false)
+	var wire: Dictionary = embedded.common.json_safe(description)
+	var arguments: Array = wire.get("result", {}).get("methods", [{}])[0].get("args", [])
+	_check(not arguments.is_empty() and arguments[0].get("type") == TYPE_OBJECT and arguments[0].get("class_name") == "Mesh", "Reflected method argument metadata survives JSON serialization without depth truncation")
+	scene.remove_child(node)
+	node.queue_free()
+
 func _harness_editor_tests(scene: Node) -> void:
 	var original_service = panel.providers
 	var original_profiles: Array = panel.config["providers"]
@@ -328,6 +413,8 @@ func _harness_editor_tests(scene: Node) -> void:
 	_check(panel.history.size() == 6 and panel.history[2].get("role") == "tool" and panel.history[-1].get("content") == "Verificat în editor.", "Harness preserves discovery, tool turn and streamed assistant message")
 	var snapshot: Dictionary = embedded["common"].read_json(panel.project_directory.path_join("runs").path_join(panel.current_turn + ".json"), {})
 	_check(snapshot.get("status") == "completed" and snapshot.get("tool_calls") == 1, "Harness saves its settled run in private project storage")
+	var journal_results = panel.journal.filter(func(item: Dictionary) -> bool: return item.get("turn_id") == panel.current_turn and item.get("tool") == "agent_tool_result")
+	_check(journal_results.size() == 2 and journal_results[-1].get("arguments", {}).get("call_id") == service.call_id and journal_results[-1].get("arguments", {}).get("executed", false) and journal_results[-1].get("arguments", {}).get("duration_ms", -1) >= 0, "Activity journal correlates discovery and execution by call ID and records timing")
 	panel.tools.execute("godot_undo", {}, 2, true)
 	_check(scene.get_node_or_null("HarnessProbe") == null, "Harness scene mutation remains compatible with native Undo")
 	panel._new_conversation()
@@ -350,9 +437,54 @@ func _harness_editor_tests(scene: Node) -> void:
 	_check(panel.planner.phase == "completed" and panel.history[-1].get("plan_snapshot", {}).get("phase") == "completed", "Completed plan state is saved with the conversation")
 	panel._render_history()
 	_check(panel.chat.plan_cards.size() == 1 and panel.chat.plan_cards[panel.current_turn]["toggle"].text.contains("2/2"), "Conversation restore shows one updated plan card with completed steps")
+	_check(panel.chat.work_turn == panel.current_turn and panel.chat.activity_counter.text == "2/2" and panel.chat.work_plan.get("phase") == "completed", "Restoring chat also restores the latest task progress above the input")
 	panel.mode_picker.select(2)
 	_check(not await panel._authorize({"name": "godot_create_node", "risk": "write"}, {}), "Manual Plan refuses writes even when session writes are enabled")
 	panel.tools.execute("godot_undo", {}, 2, true)
+	panel._new_conversation()
+	panel.providers = FixtureBlockedProvider.new()
+	await panel._start_chat("Verifică și raportează blocajul real")
+	var blocked_snapshot: Dictionary = embedded.common.read_json(panel.project_directory.path_join("runs").path_join(panel.current_turn + ".json"), {})
+	_check(panel.harness.state == "blocked" and blocked_snapshot.get("status") == "blocked" and panel.history[-1].get("run_status") == "blocked", "A blocked plan remains blocked in harness, checkpoints and chat instead of hiding Resume as completed")
+	panel._new_conversation()
+	panel.mode_picker.select(1)
+	var resume_service = FixtureResumeProvider.new()
+	panel.providers = resume_service
+	await panel._start_chat("Verifică proiectul și raportează rezultatul.")
+	var interrupted_turn = panel.current_turn
+	var interrupted_message = str(panel.history[-1].get("id", ""))
+	panel.composer.text = "Ciornă păstrată în timpul reluării"
+	await panel._resume_chat({"message": interrupted_message})
+	_check(resume_service.requests == 2 and panel.current_turn == interrupted_turn and panel.history.filter(func(item: Dictionary) -> bool: return item.get("role") == "user").size() == 1, "Resume keeps the same task and does not fabricate another user message")
+	_check(panel.composer.text == "Ciornă păstrată în timpul reluării" and str(resume_service.contexts[-1][0]["content"]).contains("SAME user task"), "Resume preserves the user's draft and explicitly reuses the original request context")
+	await panel._resume_chat({"message": panel.history[-1]["id"]})
+	_check(resume_service.requests == 2 and panel.chat.status.text.contains("deja încheiată"), "Completed tasks cannot be replayed by the resume action")
+	panel.composer.clear()
+	panel._new_conversation()
+	var redirect_service = FixtureRedirectProvider.new()
+	redirect_service.host = panel
+	panel.providers = redirect_service
+	await panel._start_chat("Generează o cutie 3D.")
+	for frame in range(60):
+		if not panel.busy and panel.queued.is_empty(): break
+		await get_tree().process_frame
+	_check(redirect_service.requests == 2 and panel.history[-1].get("content") == "Am păstrat proiectul nemodificat.", "A new user message interrupts the previous model turn and runs after it settles")
+	_check(not panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "asset_generate") and panel.history.filter(func(item: Dictionary) -> bool: return item.get("role") == "user").size() == 2, "A superseded generation cannot execute after the user's replacement request")
+	var local_catalog = FixtureLocalCatalog.new()
+	panel.providers = local_catalog
+	panel._new_provider()
+	panel._select_issuer("lmstudio")
+	var local_form: Dictionary = panel.forms["provider"]
+	local_form["issuer"].item_selected.emit(local_form["issuer"].selected)
+	local_form["url"].text = "192.168.1.50"
+	await panel._provider_save_action()
+	_check(local_catalog.requests == 1 and panel._current_profile().get("url") == "http://192.168.1.50:1234/v1" and panel._selection().get("model") == "loaded-code", "Connect accepts a bare local IP, verifies its catalog and selects the loaded model in one action")
+	_check(local_form["save"].text == "Conectează" and local_form["key_label"].text == "Token (opțional)" and not panel.provider_advanced.visible and local_form["groups"]["url"].visible, "Local connection exposes the address and optional token without requiring advanced settings")
+	panel.open_settings("providers")
+	await get_tree().create_timer(0.2).timeout
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty(): panel.settings_window.get_texture().get_image().save_png(output.path_join("settings-local-connection.png"))
+	panel.settings_window.hide()
 	panel._new_conversation()
 	panel.providers = original_service
 	panel.config["providers"] = original_profiles
@@ -419,7 +551,9 @@ func _chat_workflow_tests() -> void:
 	panel._send_or_queue("Queued fixture instruction")
 	panel._choose({"profile": "qa-local", "model": "qa-local-code"})
 	_check(panel.queued.size() == 1 and panel.queued[0]["selection"]["profile"] == "qa-cloud" and panel.queued[0]["selection"]["effort"] == "high", "Queued messages retain provider, model and reasoning selection")
+	_check(panel.cancel.get("reason") == "new_request" and not panel.queue_paused, "A queued steering message stops outdated work and remains scheduled after settlement")
 	panel.busy = false
+	panel.cancel = {}
 	panel.queued.clear()
 	panel.history = [{"role": "user", "id": "fixture-history", "content": "Preserved fixture history"}]
 	panel._persist_history()
@@ -606,7 +740,7 @@ func _settings_action_tests() -> void:
 	panel._refresh_lists()
 	_check(panel._selected_job().get("id") == "button-ready" and not panel.settings_actions["job_preview"].disabled and not panel.settings_actions["job_import"].disabled, "Updating and reordering generation results preserves their stable selection and enables ready actions")
 	panel.settings_actions["job_preview"].pressed.emit()
-	var previews = panel.generation_preview.find_children("*", "TextureRect", false, false)
+	var previews = panel.generation_preview.get_children()
 	_check(previews.size() == 1 and previews[0].texture != null and previews[0].texture.get_image().get_pixel(0, 0).r > 0.9, "Generation Preview button decodes the selected result into an actual image")
 	panel.assets.jobs[0]["status"] = "running"
 	panel._refresh_lists()
@@ -689,6 +823,86 @@ func _layout_tests() -> void:
 	panel._layout_settings()
 	print("AI editor UI scale: ", EditorInterface.get_editor_scale())
 	panel.settings_window.hide()
+
+func _activity_capture(name: String) -> void:
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if output.is_empty(): return
+	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(name + ".png"))
+	var geometry = {"activity": str(panel.chat.activity_panel.get_global_rect()), "composer": str(panel.chat.compose_panel.get_global_rect()), "details": str(panel.chat.activity_details.get_global_rect()), "rows": []}
+	for row in panel.chat.activity_rows.get_children():
+		if row.has_meta("state"): geometry.rows.append({"state": row.get_meta("state"), "size": str(row.size)})
+	embedded.common.atomic_json(output.path_join(name + "-geometry.json"), geometry)
+
+func _activity_drawer_tests() -> void:
+	panel.settings_window.hide()
+	var chat = panel.chat
+	var saved_turn = panel.current_turn
+	var saved_jobs = panel.agent_jobs.jobs
+	var saved_busy = panel.busy
+	chat.clear_messages()
+	chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
+	chat.append_message("user", "Pregătește animațiile personajului și verifică scena.", {"id": "activity-visual-user"})
+	chat.append_message("assistant", "Am verificat proiectul și scriptul. Continui cu animațiile, apoi testez scena.", {"id": "activity-visual-answer"})
+	var snapshot = {"turn": "activity-visual", "phase": "executing", "intent": "execute", "steps": [{"step": "Inspectează proiectul și scena", "status": "completed"}, {"step": "Actualizează scriptul personajului", "status": "completed"}, {"step": "Pregătește animațiile personajului", "status": "in_progress"}, {"step": "Verifică tranzițiile și comenzile", "status": "pending"}, {"step": "Testează scena în editor", "status": "pending"}]}
+	chat.begin_work("activity-visual", snapshot)
+	panel.busy = true
+	chat.show_status("Pregătesc animațiile personajului…", true)
+	chat.start_operation("activity-read", "Citesc fișierul…", "res://player.gd")
+	chat.finish_operation("activity-read", "Citesc fișierul…", "res://player.gd", {"ok": true})
+	chat.start_operation("activity-write", "Aplic modificările…", "res://player.gd")
+	chat.finish_operation("activity-write", "Aplic modificările…", "res://player.gd", {"ok": true})
+	chat.start_operation("activity-animation", "Pregătesc animația…", "Player / AnimationPlayer")
+	chat.set_working(true)
+	await get_tree().create_timer(0.2).timeout
+	_check(chat.activity_panel.get_parent() == chat.compose_panel.get_parent() and chat.activity_panel.get_index() + 1 == chat.compose_panel.get_index() and chat.activity_panel.get_global_rect().end.y <= chat.compose_panel.get_global_rect().position.y + 1, "Activity status stays immediately above the composer, outside the conversation scroll")
+	_check(chat.activity_counter.text == "2/5" and not chat.activity_details.visible and chat.activity_toggle.focus_mode == Control.FOCUS_ALL, "Running activity is compact, counts real completed steps and supports keyboard focus")
+	_activity_capture("activity-collapsed")
+	chat.activity_toggle.pressed.emit()
+	await get_tree().create_timer(0.2).timeout
+	var rows = chat.activity_rows.get_children().filter(func(item: Node) -> bool: return item.has_meta("state"))
+	_check(chat.activity_details.visible and rows.size() == 8 and rows[0].get_meta("state") == "completed" and rows[2].get_meta("state") == "in_progress" and rows[4].get_meta("state") == "pending", "Expanding activity reveals completed, running and pending plan steps plus actual operations")
+	_check(rows.slice(0, 5).all(func(row: Node) -> bool: return row.get_child(2).is_visible_in_tree() and row.get_child(2).size.x >= row.get_child(2).get_minimum_size().x and row.get_child(2).size.x > 20 * EditorInterface.get_editor_scale() and row.get_global_rect().grow(1).encloses(row.get_child(2).get_global_rect())), "Plan state captions reserve readable width inside each activity row")
+	panel.current_turn = "activity-visual"
+	panel.agent_jobs.jobs = {"child-done": {"id": "child-done", "parent": "activity-visual", "task": "Verifică structura proiectului", "kind": "Explore", "status": "completed"}, "child-running": {"id": "child-running", "parent": "activity-visual", "task": "Verifică animațiile și tranzițiile", "kind": "General", "status": "running"}}
+	panel.agent_jobs.changed.emit("activity-visual")
+	await get_tree().create_timer(0.2).timeout
+	_check(chat.work_jobs.size() == 2 and chat.work_jobs[0].status == "completed" and chat.work_jobs[1].status == "running", "Background task events populate separate completed and running tasks in the drawer")
+	_check(chat.activity_details.size.y <= maxf(48 * EditorInterface.get_editor_scale(), minf(200 * EditorInterface.get_editor_scale(), chat.root_column.size.y * 0.30)) + 1 and chat.get_global_rect().grow(1).encloses(chat.compose_panel.get_global_rect()), "Expanded activity has bounded height and keeps the composer visible")
+	_check(chat.activity_rows.size.x <= chat.activity_details.size.x + 1, "Activity details wrap inside the available width without horizontal overflow")
+	_activity_capture("activity-expanded")
+	snapshot.steps[2].status = "completed"
+	snapshot.steps[3].status = "in_progress"
+	chat.show_work_plan(snapshot)
+	_check(chat.activity_counter.text == "3/5" and chat.activity_details.visible, "Live plan updates preserve the drawer expansion and advance only confirmed completed steps")
+	chat.finish_operation("activity-animation", "Pregătește animația", "Player", {"ok": false, "code": "permission_denied", "error": "Operația nu a fost autorizată."})
+	_check(chat.work_operations["activity-animation"].state == "blocked", "Denied operations remain visibly blocked rather than completed")
+	snapshot.phase = "paused"
+	chat.show_work_plan(snapshot)
+	chat.finish_work("activity-visual", "cancelled")
+	panel.busy = false
+	chat.set_working(false)
+	_check(chat.activity_counter.text == "3/5" and chat.status.text.contains("întreruptă") and chat.work_plan.steps[4].status == "pending", "Stopping keeps unfinished tasks visible without claiming full completion")
+	await get_tree().create_timer(0.2).timeout
+	_activity_capture("activity-interrupted")
+	chat.show_work_jobs([])
+	for item in snapshot.steps: item.status = "completed"
+	snapshot.phase = "completed"
+	chat.show_work_plan(snapshot)
+	chat.finish_work("activity-visual", "completed")
+	chat.activity_toggle.pressed.emit()
+	_check(chat.activity_counter.text == "5/5" and chat.activity_panel.visible and not chat.activity_details.visible, "Completed progress remains available for later inspection in one compact row")
+	chat.activity_toggle.pressed.emit()
+	_check(chat.activity_details.visible, "Completed task details can be reopened")
+	chat.begin_work("activity-new", {})
+	panel.current_turn = "activity-new"
+	panel.agent_jobs.changed.emit("activity-visual")
+	_check(chat.work_plan.is_empty() and chat.work_operations.is_empty() and chat.work_jobs.is_empty() and not chat.activity_details.visible, "A new request clears previous progress and ignores events from an older task")
+	panel.agent_jobs.jobs = saved_jobs
+	panel.current_turn = saved_turn
+	panel.busy = saved_busy
+	chat.set_working(false)
+	chat.reset_work()
+	panel._render_history()
 
 func _plan_and_markdown_screenshots(output: String) -> void:
 	panel.mode_picker.select(0)
@@ -787,6 +1001,68 @@ func _control_settings_tests() -> void:
 	panel.journal_filter.text_changed.emit("")
 	panel.full_control.button_pressed = false
 	panel.planner.reset()
+
+func _termux_blender_card_tests() -> void:
+	var old_card = panel.forms["blender"]["container"].get_parent().get_parent()
+	var page = old_card.get_parent()
+	page.remove_child(old_card)
+	old_card.queue_free()
+	var backend = embedded["termux_blender"].new(panel)
+	backend.configure(panel.data_directory, panel.project_directory)
+	var device = {"ok": true, "installed": false, "permission": false, "supported": true}
+	backend.native_override = func(action: String, _args: Dictionary) -> Dictionary: return device if action == "status" else {"ok": false}
+	panel.integrations.termux = backend
+	backend.changed.connect(panel._refresh_blender_card)
+	panel._build_termux_blender(page)
+	panel.open_settings("integrations")
+	await get_tree().create_timer(.2).timeout
+	var form: Dictionary = panel.forms["blender"]
+	_check(form["primary"].text == "Instalează Termux" and not form["guide"].visible, "Missing Termux offers installation without a broken setup form")
+	device["installed"] = true
+	await backend.refresh()
+	_check(form["primary"].text == "Acordă permisiunea" and form["guide"].visible, "First setup exposes Android permission and activation guidance")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).scroll_vertical = 10000
+	await get_tree().create_timer(.2).timeout
+	panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).scroll_vertical = 10000
+	await get_tree().create_timer(.1).timeout
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-setup.png"))
+	device["permission"] = true
+	backend.state = device.duplicate()
+	backend.connected = true
+	panel._refresh_blender_card()
+	_check(form["primary"].text == "Instalează Blender", "Connected Termux without Blender offers installation")
+	backend.state["error_code"] = "incomplete_image"
+	panel._refresh_blender_card()
+	_check(form["primary"].text == "Repară instalarea", "A partial owned image exposes explicit repair")
+	backend.state.erase("error_code")
+	backend.working = true
+	backend.state["stage"] = "Instalare Blender"
+	backend.log_text = "Pregătire Debian 13\nDescărcare pachete…\n"
+	panel._refresh_blender_card()
+	_check(form["primary"].disabled and form["cancel"].visible and not form["guide"].visible, "Install in progress prevents duplicate starts and exposes Stop")
+	backend.working = false
+	backend.pending = {"id": "fixture-interrupted", "kind": "run"}
+	panel._refresh_blender_card()
+	_check(form["primary"].text == "Recuperează", "Interrupted jobs expose explicit recovery")
+	backend.pending = {}
+	backend.runtime = {"kind": "proot", "container": "debian", "executable": "/usr/bin/blender", "version": "Blender 4.3.2", "capabilities": {"formats": ["glb", "fbx"], "render_cpu": true}}
+	backend.verified = {"fingerprint": backend.fingerprint(backend.runtime), "protocol": 1}
+	panel._refresh_blender_card()
+	_check(form["status"].text.begins_with("Disponibil") and not form["guide"].visible and not form["cancel"].visible, "Only a verified runtime is shown as available")
+	form["enabled"].button_pressed = true
+	_check(panel.integration_settings.get("blender_enabled", false), "Agent activation is saved independently of GitHub settings")
+	_check(not panel.Integrations.definitions(false, true, false).any(func(item: Dictionary) -> bool: return item.name == "blender_run" and "inputs" in item.parameters.properties), "An unready Android backend is not advertised")
+	_check(panel.Integrations.definitions(false, true, true).any(func(item: Dictionary) -> bool: return item.name == "blender_run" and "inputs" in item.parameters.properties), "A ready backend exposes the portable Blender input/output contract")
+	await get_tree().create_timer(.2).timeout
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-ready.png"))
+	form["logs"].show()
+	await get_tree().create_timer(.2).timeout
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-logs.png"))
+	for node in [form["primary"], form["status"], form["logs"]]:
+		_check(node.size.x <= panel.settings_window.size.x, "Blender card content stays inside the settings window")
+	panel.settings_window.hide()
+	panel.integrations.termux = null
 
 func _configuration_screenshots(output: String) -> void:
 	panel.chat.set_context(8192, 32768, 430)
@@ -1115,6 +1391,18 @@ func _file_chat_tests() -> void:
 	panel.busy = false
 	panel.queued.clear()
 	panel.pending_files.clear()
+	var cutout = Image.create(80, 80, false, Image.FORMAT_RGBA8)
+	cutout.fill(Color.TRANSPARENT)
+	cutout.fill_rect(Rect2i(20, 20, 40, 40), Color.CORNFLOWER_BLUE)
+	var cutout_path = panel.file_registry.directory.path_join("qa-cutout.png")
+	panel.file_registry.permit(cutout_path)
+	cutout.save_png(cutout_path)
+	var cutout_file = panel.file_registry.register_file(cutout_path, scope)
+	panel._open_file(str(cutout_file["result"]["id"]))
+	await get_tree().create_timer(0.2).timeout
+	_check(panel.media_view.canvases[0].checker != null and panel.media_view.canvases[0].exported(false).get_pixel(0, 0).a == 0, "Transparent images show a viewer checkerboard while original and exported pixels keep their real alpha")
+	if not output.is_empty(): panel.media_view.get_texture().get_image().save_png(output.path_join("viewer-transparent.png"))
+	panel.media_view.hide()
 	panel.composer.clear()
 	panel._composer_hints()
 	panel.chat.clear_messages()
@@ -1166,7 +1454,35 @@ func _export_button_tests(path: String) -> void:
 	await get_tree().create_timer(0.2).timeout
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty(): panel.settings_window.get_texture().get_image().save_png(output.path_join("export-formats.png"))
+	panel.generation_preview.get_parent().show()
+	panel.settings_actions["job_preview"].pressed.emit()
+	await get_tree().create_timer(0.2).timeout
+	var previews = panel.generation_preview.get_children()
+	_check(previews.size() == 1 and previews[0].has_method("pose") and previews[0].information.get("triangles") == 12, "Generation settings use the shared interactive model viewer instead of a static 3D viewport")
+	if previews.size() == 1:
+		var preview = previews[0]
+		if scroll != null: scroll.ensure_control_visible(preview)
+		await get_tree().create_timer(0.2).timeout
+		var old = Vector2(preview.yaw, preview.pitch)
+		var point = preview.get_global_rect().get_center()
+		var touch = InputEventScreenTouch.new()
+		touch.position = point
+		touch.pressed = true
+		panel.settings_window.push_input(touch, true)
+		var drag = InputEventScreenDrag.new()
+		drag.position = point + Vector2(24, -18)
+		drag.relative = Vector2(24, -18)
+		panel.settings_window.push_input(drag, true)
+		touch.pressed = false
+		panel.settings_window.push_input(touch, true)
+		_check(preview.yaw != old.x and preview.pitch != old.y, "A generated mesh rotates horizontally and vertically through the actual settings window")
+		await get_tree().create_timer(0.2).timeout
+		RenderingServer.force_draw(false)
+		if not output.is_empty(): panel.settings_window.get_texture().get_image().save_png(output.path_join("generation-preview-3d.png"))
 	panel.settings_window.hide()
+	for preview in panel.generation_preview.get_children():
+		panel.generation_preview.remove_child(preview)
+		preview.queue_free()
 	panel.config["generation"] = previous_profiles
 	panel.assets.jobs = previous_jobs
 	panel._refresh_lists()
@@ -1202,8 +1518,87 @@ func _model_and_control_tests() -> void:
 			var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 			if not output.is_empty(): panel.media_view.get_texture().get_image().save_png(output.path_join("viewer-3d.png"))
 			var original_yaw = model.yaw
-			model._orbit(Vector2(20, 10))
-			_check(model.yaw != original_yaw, "3D orbit responds to gesture displacement")
+			var original_pitch = model.pitch
+			var point = model.get_global_rect().get_center()
+			var touch = InputEventScreenTouch.new()
+			touch.pressed = true
+			touch.position = point
+			panel.media_view.push_input(touch, true)
+			var drag = InputEventScreenDrag.new()
+			drag.position = point + Vector2(60, 35)
+			drag.relative = Vector2(60, 35)
+			panel.media_view.push_input(drag, true)
+			touch.pressed = false
+			touch.position = drag.position
+			panel.media_view.push_input(touch, true)
+			_check(model.yaw != original_yaw and model.pitch != original_pitch, "Touch events routed through the real viewer window rotate the model on both axes")
+			var turned = model.camera.transform
+			touch.pressed = true
+			touch.position = point
+			panel.media_view.push_input(touch, true)
+			drag.position = point - Vector2(60, 35)
+			drag.relative = Vector2(-60, -35)
+			panel.media_view.push_input(drag, true)
+			touch.pressed = false
+			panel.media_view.push_input(touch, true)
+			_check(is_equal_approx(model.yaw, original_yaw) and is_equal_approx(model.pitch, original_pitch) and model.camera.transform != turned, "Opposite touch movement restores both camera axes through the navigation surface")
+			var mouse = InputEventMouseButton.new()
+			mouse.button_index = MOUSE_BUTTON_LEFT
+			mouse.position = point
+			mouse.pressed = true
+			panel.media_view.push_input(mouse, true)
+			var motion = InputEventMouseMotion.new()
+			motion.position = point + Vector2(-25, 20)
+			motion.relative = Vector2(-25, 20)
+			motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+			panel.media_view.push_input(motion, true)
+			mouse.position = motion.position
+			mouse.pressed = false
+			panel.media_view.push_input(mouse, true)
+			_check(model.yaw > original_yaw and model.pitch > original_pitch and not model.dragging, "Mouse drag rotates the preview and releases its gesture state")
+			var old_distance = model.distance
+			touch.position = point - Vector2(40, 0)
+			touch.pressed = true
+			panel.media_view.push_input(touch, true)
+			var second_touch = InputEventScreenTouch.new()
+			second_touch.index = 1
+			second_touch.position = point + Vector2(40, 0)
+			second_touch.pressed = true
+			panel.media_view.push_input(second_touch, true)
+			drag.index = 1
+			drag.position = point + Vector2(70, 0)
+			drag.relative = Vector2(30, 0)
+			panel.media_view.push_input(drag, true)
+			_check(model.distance < old_distance and model.target != Vector3.ZERO, "Two-finger input zooms and pans the actual preview camera")
+			touch.pressed = false
+			second_touch.pressed = false
+			panel.media_view.push_input(touch, true)
+			panel.media_view.push_input(second_touch, true)
+			var key = InputEventKey.new()
+			key.keycode = KEY_HOME
+			key.pressed = true
+			panel.media_view.push_input(key, true)
+			_check(model.touches.is_empty() and model.target == Vector3.ZERO and is_equal_approx(model.distance, model.radius * 3), "Releasing fingers clears navigation and Home resets camera framing")
+			touch.pressed = true
+			panel.media_view.push_input(touch, true)
+			panel.media_view.focus_exited.emit()
+			_check(model.touches.is_empty() and not model.dragging, "Losing viewer focus releases all navigation inputs")
+			touch.pressed = false
+			panel.media_view.push_input(touch, true)
+			await get_tree().create_timer(0.2).timeout
+			var rotations = []
+			var direction_buttons = model.input_surface.find_children("Orbit_*", "Button", true, false)
+			for direction_button in direction_buttons:
+				var before = Vector2(model.yaw, model.pitch)
+				touch.position = direction_button.get_global_rect().get_center()
+				touch.pressed = true
+				panel.media_view.push_input(touch, true)
+				touch.pressed = false
+				panel.media_view.push_input(touch, true)
+				rotations.append(Vector2(model.yaw, model.pitch) - before)
+			_check(rotations.size() == 4 and rotations[0].x > 0 and rotations[1].x < 0 and rotations[2].y < 0 and rotations[3].y > 0 and direction_buttons.all(func(control: Button) -> bool: return model.get_global_rect().grow(1).encloses(control.get_global_rect())), "Four visible navigation buttons rotate left, right, up and down through real window taps")
+			await get_tree().create_timer(0.2).timeout
+			if not output.is_empty(): panel.media_view.get_texture().get_image().save_png(output.path_join("viewer-3d-navigated.png"))
 		panel.media_view.hide()
 		await get_tree().process_frame
 		_check(panel.media_view.model_views.is_empty(), "Closing the viewer releases its active 3D scenes")

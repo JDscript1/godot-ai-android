@@ -29,12 +29,12 @@ opens the same global configuration window.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
   configure the process in the companion and connect to its `/mcp/<name>` URL.
 - **General:** YOLO, center/left/right chat placement and completion sounds.
-- **Integrări:** GitHub cu token personal și selecție de repository, desktop Blender CLI.
+- **Integrări:** GitHub cu token personal și selecție de repository, Blender CLI desktop și [configurare Blender prin Termux pe Android](AI_TERMUX_BLENDER.md) în surse; validarea Intent din APK este separată.
   Skills și Sarcini au pagini principale proprii. Configurarea GitHub este descrisă în
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current APK is `978a6d3`, including control/integrations/generation and
+The current APK is `36457dd`, including control/integrations/generation and
 [chat files, previews, editor control, Store and real diff](AI_CHAT_FILES_AND_EDITOR_CONTROL.md).
 Delivery evidence is recorded in [the project progress document](../PROGRES_SI_PLAN.md).
 
@@ -44,11 +44,25 @@ No inference runtime or generation model is installed automatically.
 
 ## Local servers over Wi-Fi
 
-Use the computer's LAN IP, not `127.0.0.1`, for example
-`http://192.168.1.20:11434/v1` (Ollama) or `http://192.168.1.20:1234/v1`
-(LM Studio). Enable HTTP for that profile and use **Verifică / modele**.
+The following simplified flow is implemented in source after APK `36457dd`;
+see [behavior and connection checks](AI_BEHAVIOR_TESTS.md) for its evidence.
+Select LM Studio, Ollama or llama.cpp, enter the computer's Wi-Fi IP and press
+**Conectează**. A bare IP such as `192.168.1.20` adds the service's usual port
+(1234, 11434 or 8080) and `/v1` automatically. The same action saves the profile,
+checks the catalog and selects an available loaded model when reported.
+The token field is optional for an unauthenticated local server; advanced settings
+are not needed for this flow. An explicit `http://` URL uses its specified port,
+or standard port 80 when omitted, rather than guessing a service port.
+
+Use the computer's LAN IP, not `127.0.0.1`, which means the current device.
 A custom port/path or authenticated HTTPS address can be entered manually.
 Local/self-hosted hosting can be selected explicitly for custom public domains.
+The model list reports loaded state and active context when the native server
+metadata is available. Ollama uses `/api/tags` and `/api/ps`; LM Studio adds its
+model metadata to the OpenAI-compatible catalog. Catalog connectivity and the
+speed/quality of a loaded model are separate checks. Slow active streams can
+continue within a bounded inference budget; a stalled model does not trigger
+automatic duplicate inference after a response timeout.
 
 **Caută servere în rețea…** runs an explicit native discovery, never on startup:
 up to two private IPv4 /24 segments derived from local interfaces, ports
@@ -69,11 +83,16 @@ The full cloud/local service selector stays visible for existing profiles; local
 profiles show their API/LAN address directly. Discovery prioritizes the device's
 own private IPv4 address and falls back to the local address list when interface
 enumeration omits it. If scanning fails, paste the exact API URL shown by LM
-Studio, save the profile and use **Verifică / modele**. A model loaded in LM
-Studio does not by itself enable LAN serving.
+Studio and use **Conectează**. Both peers may use a phone's hotspot; mobile data
+itself is not required for local model requests. Peer access and the current LAN
+IP still matter, and reconnecting can change that IP. A model loaded in LM
+Studio does not by itself enable LAN serving. The editor does not silently scan
+or reconnect to a different discovered host using a saved token.
 
 Sources: [LM Studio LAN hosting](https://lmstudio.ai/docs/developer/core/server/serve-on-network),
-[Ollama network binding](https://docs.ollama.com/faq#how-do-i-configure-ollama-server).
+[Ollama network binding](https://docs.ollama.com/faq#how-do-i-configure-ollama-server),
+[Ollama model catalog](https://docs.ollama.com/api/tags),
+[Ollama loaded models](https://docs.ollama.com/api/ps).
 
 ## Execution and recovery
 

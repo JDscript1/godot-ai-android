@@ -25,6 +25,30 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+[Agent behavior and local connection checks](docs/AI_BEHAVIOR_TESTS.md) document
+the subsequent source iteration: resumable turns, duplicate-generation protection,
+new-message steering and one-action LM Studio/Ollama connection. These changes
+are not included in the linked APK yet; source, rendered and live checks are
+reported separately.
+
+[Live API behavior evaluation](docs/AI_API_EVALUATION.md) exercises the production
+chat and editor tools with a real DeepSeek model in an isolated project, and
+records call traces and activity journals. It documents the reproduced reflection
+bug, the source fixes and the limits of testing outside the Android APK.
+
+The subsequent source changes add a [collapsible activity bar](docs/AI_ACTIVITY_DRAWER.md)
+above the chat input, showing plan progress, background tasks and tool outcomes.
+The delivered APK linked above has not been rebuilt for these changes.
+
+Source changes also add [Blender setup through Termux](docs/AI_TERMUX_BLENDER.md)
+under Integrations: reuse or install, real export/import verification, resumable jobs,
+file transfer and optional agent access. The Android Intent boundary still requires
+a new APK and physical-device validation.
+
+Further source changes add [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
+touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture
+prompts, alpha verification and an optional Runware background-removal tool.
+
 The APK also includes [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md),
 plus [native Meshy, Tripo and image generation](docs/AI_GENERATION.md).
 It also includes multi-format 3D export, grouped cloud/local profiles, explicit

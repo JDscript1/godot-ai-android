@@ -39,6 +39,7 @@ open class GodotEditor : BaseGodotEditor() {
 	override fun onCreate(savedInstanceState: android.os.Bundle?) {
 		AISecretVault.initialize(applicationContext)
 		AIVoice.initialize(this)
+		AITermuxBlender.initialize(this)
 		super.onCreate(savedInstanceState)
 	}
 

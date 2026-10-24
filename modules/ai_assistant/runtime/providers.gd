@@ -49,6 +49,43 @@ static func hosting(profile: Dictionary) -> String:
 	var host = str(parsed.get("host", "")).to_lower()
 	return "local" if host in ["localhost", "127.0.0.1", "::1"] or host.ends_with(".local") or private_ipv4(host) else "cloud"
 
+static func local_endpoint(value: String, issuer: String) -> Dictionary:
+	var url = value.strip_edges().trim_suffix("/")
+	if url.is_empty() or "?" in url or "#" in url: return Common.failure("Introdu IP-ul sau adresa serverului, fără parametri suplimentari.", "invalid_url")
+	if not "://" in url:
+		var raw_authority = url.get_slice("/", 0)
+		var suffix = url.substr(raw_authority.length())
+		if raw_authority.is_valid_ip_address() and ":" in raw_authority: raw_authority = "[" + raw_authority + "]"
+		var has_port = "]:" in raw_authority if raw_authority.begins_with("[") else ":" in raw_authority
+		if not has_port: raw_authority += ":" + str({"lmstudio": 1234, "ollama": 11434, "llamacpp": 8080}.get(issuer, 1234))
+		url = "http://" + raw_authority + suffix
+	var parsed = Common.parse_url(url, true)
+	if not parsed.get("ok", false): return parsed
+	var path = str(parsed["path"]).trim_suffix("/")
+	for suffix in ["/chat/completions", "/models"]:
+		if path.ends_with("/v1" + suffix): path = path.trim_suffix(suffix)
+	if path in ["", "/", "/api", "/api/tags", "/api/ps", "/api/v0", "/api/v0/models", "/api/v1"]: path = "/v1"
+	elif not path.ends_with("/v1"): path += "/v1"
+	var host = str(parsed["host"])
+	var authority = "[" + host + "]" if ":" in host else host
+	return Common.success("%s://%s:%s%s" % [parsed["scheme"], authority, parsed["port"], path])
+
+static func connection_error(profile: Dictionary, result: Dictionary, android: bool = false) -> String:
+	var parsed = Common.parse_url(str(profile.get("url", "")), true)
+	var host = str(parsed.get("host", ""))
+	if result.get("code") == "cancelled": return "Verificare oprită."
+	if int(result.get("status", 0)) in [401, 403]: return "Serverul este accesibil, dar cere un token valid. Introdu tokenul în Cheie API."
+	if android and host in ["localhost", "127.0.0.1", "::1"]: return "Adresa locală indică acest dispozitiv. Pentru serverul de pe calculator introdu IP-ul Wi-Fi al calculatorului."
+	if host.begins_with("169.254."): return "Adresa nu răspunde. Folosește IPv4-ul adaptorului Wi-Fi activ al calculatorului."
+	if result.get("code") in ["timeout", "connection_failed"]:
+		return "Serverul nu răspunde. Verifică IP-ul actual, aceeași rețea Wi-Fi/hotspot și accesul LAN al serverului."
+	if int(result.get("status", 0)) == 404: return "Ruta API nu este disponibilă. Folosește adresa serverului cu /v1."
+	return str(result.get("error", "Conexiunea nu a putut fi verificată."))
+
+static func inference_options(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
+	var local = hosting(profile) == "local"
+	return {"allow_http": profile.get("allow_http", false), "cancel": cancel, "connect_timeout": 8 if local else 10, "first_response_timeout": 300 if local else 180, "idle_timeout": 180 if local else 120, "timeout": 1800 if local else 900}
+
 static func lan_targets(addresses: Array) -> Array:
 	# An explicit search covers at most two private /24 segments, never the Internet.
 	var prefixes = []
@@ -163,7 +200,15 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
 	var url = str(profile.get("url", "")).trim_suffix("/")
-	var result = await transport.request(url + "/models", HTTPClient.METHOD_GET, headers(profile), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel})
+	var issuer = str(profile.get("issuer", ""))
+	if issuer in ["lmstudio", "ollama", "llamacpp"]:
+		var normalized = local_endpoint(url, issuer)
+		if not normalized.get("ok", false): return normalized
+		url = str(normalized["result"])
+	var options = {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 10, "connect_timeout": 4}
+	var root = url.trim_suffix("/v1")
+	var result = await transport.request(root + "/api/tags" if issuer == "ollama" else url + "/models", HTTPClient.METHOD_GET, headers(profile), null, options)
+	if issuer == "ollama" and int(result.get("status", 0)) == 404: result = await transport.request(url + "/models", HTTPClient.METHOD_GET, headers(profile), null, options)
 	if not result.get("ok", false): return result
 	var payload = result.get("json")
 	if not payload is Dictionary: return Common.failure("Catalogul de modele nu este JSON valid.")
@@ -184,6 +229,21 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
 		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": item.get("context_window", item.get("inputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live"})
+	if issuer in ["lmstudio", "ollama"]:
+		var metadata = await transport.request(root + ("/api/v0/models" if issuer == "lmstudio" else "/api/ps"), HTTPClient.METHOD_GET, headers(profile), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 3, "connect_timeout": 2})
+		if cancel.get("cancelled", false): return Common.failure("Verificare oprită.", "cancelled")
+		var details: Variant = metadata.get("json")
+		if metadata.get("ok", false) and details is Dictionary:
+			var entries_by_id = {}
+			for item in details.get("data", []) if issuer == "lmstudio" else details.get("models", []):
+				if item is Dictionary: entries_by_id[str(item.get("id", item.get("name", "")))] = item
+			models = models.filter(func(item: Dictionary) -> bool: return str(entries_by_id.get(item["id"], {}).get("type", "")) not in ["embedding", "embeddings"])
+			for item in models:
+				var detail: Dictionary = entries_by_id.get(item["id"], {})
+				item["loaded"] = detail.get("state") == "loaded" if issuer == "lmstudio" else entries_by_id.has(item["id"])
+				var reported_capacity: Variant = detail.get("loaded_context_length", 0) if issuer == "lmstudio" else detail.get("context_length", 0)
+				var capacity = int(reported_capacity) if reported_capacity is int or reported_capacity is float else 0
+				if capacity > 0: item["context"] = capacity
 	return Common.success(models)
 
 func ollama_capabilities(profile: Dictionary, model: String, cancel: Dictionary = {}) -> Dictionary:
@@ -203,8 +263,12 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 		consume_event(kind, event, collected)
 		var delta = str(collected["text"]).substr(before.length())
 		if not delta.is_empty() and on_delta.is_valid(): on_delta.call(delta)
-	var result = await transport.request(str(profile["url"]).trim_suffix("/") + path, HTTPClient.METHOD_POST, headers(profile), wire["body"], {"allow_http": profile.get("allow_http", false), "cancel": cancel, "on_event": receive})
-	if not result.get("ok", false): return result
+	var options = inference_options(profile, cancel)
+	options["on_event"] = receive
+	var result = await transport.request(str(profile["url"]).trim_suffix("/") + path, HTTPClient.METHOD_POST, headers(profile), wire["body"], options)
+	if not result.get("ok", false):
+		if result.get("code") == "timeout" and result.get("stage") in ["response", "body"]: return Common.failure("Modelul nu a mai trimis date în intervalul de așteptare. Verifică încărcarea și resursele serverului înainte de reluare.", "inference_timeout")
+		return result
 	# Some otherwise compatible local servers return a complete JSON message despite stream=true.
 	if kind == "chat" and result.get("events", []).is_empty() and result.get("json") is Dictionary:
 		consume_event(kind, result["json"], collected)

@@ -1,8 +1,9 @@
 @tool
 extends RefCounted
-## Optional native HTTP integrations and desktop-only Blender process control.
+## Optional native HTTP integrations and desktop/Termux Blender process control.
 static var Common: GDScript
 static var Transport: GDScript
+static var TermuxBlender: GDScript
 var owner: Node
 var vault: RefCounted
 var transport: RefCounted
@@ -10,6 +11,7 @@ var api_url = "https://api.github.com"
 var test_http = false
 var processes: Array = []
 var github_generation = 0
+var termux: RefCounted
 
 func github_invalidate() -> void:
 	github_generation += 1
@@ -40,16 +42,20 @@ func _init(node: Node = null, store: RefCounted = null) -> void:
 	owner = node
 	vault = store
 	transport = Transport.new(node)
+	if OS.has_feature("android"):
+		termux = TermuxBlender.new(node, node.get("plugin") if node != null else null)
 
 static func desktop_blender() -> bool:
 	return not OS.has_feature("android") and OS.get_name() in ["Windows", "Linux"]
 
-static func definitions(github: bool, blender: bool) -> Array:
+static func definitions(github: bool, blender: bool, android_ready: bool = false) -> Array:
 	var result = []
 	if github:
 		result.append(Common.tool("github_read", "Inspect the configured GitHub repository: repository, branches, issues, pulls or a file/directory. No git CLI required. Lists are paginated, 30 per page.", {"resource": {"type": "string", "enum": ["repository", "branches", "issues", "pulls", "contents"]}, "path": Common.string_field(), "ref": Common.string_field(), "page": {"type": "integer", "minimum": 1, "maximum": 100}}, ["resource"]))
 		result.append(Common.tool("github_create_issue", "Create an issue in the configured repository only when the user requested it. This publishes externally. Never put credentials or private project data into the issue.", {"title": Common.string_field(), "body": Common.string_field()}, ["title", "body"], "external"))
-	if blender and desktop_blender():
+	if blender and android_ready:
+		result.append(Common.tool("blender_run", "Run a saved project Python script in the verified Android Termux Blender backend. Inspect the script first. Only declared project inputs are copied; use os.environ['GODOT_AI_PROJECT_DIR'] to read them and os.environ['GODOT_AI_OUTPUT_DIR'] for generated files. Returns imported project output paths. Blender Python has the permissions of its Termux backend; PRoot is not a security sandbox. Never install packages or change runtime configuration through this tool.", {"script": Common.string_field(), "blend": Common.string_field(), "inputs": {"type": "array", "maxItems": 126, "items": {"type": "string"}}, "output_directory": Common.string_field(), "seconds": {"type": "integer", "minimum": 1, "maximum": 600}}, ["script"], "external"))
+	elif blender and desktop_blender():
 		result.append(Common.tool("blender_run", "Run a saved project Python script in Blender background mode on Windows/Linux. Blender has desktop filesystem access. Inspect the script first, use explicit project output paths, then inspect/import the produced assets with Godot tools.", {"script": Common.string_field(), "blend": Common.string_field(), "seconds": {"type": "integer", "minimum": 1, "maximum": 600}}, ["script"], "external"))
 	return result
 
@@ -102,12 +108,15 @@ func github_request(repository: String, args: Dictionary, cancel: Dictionary = {
 
 func stop() -> void:
 	github_invalidate()
+	if termux != null: termux.stop()
 	for pid in processes:
 		if OS.is_process_running(pid): OS.kill(pid)
 	processes.clear()
 
 func blender(executable: String, args: Dictionary, cancel: Dictionary = {}, version: bool = false) -> Dictionary:
 	if cancel.get("cancelled", false): return Common.failure("Blender oprit.", "cancelled")
+	if termux != null:
+		return await termux.setup("verify") if version else await termux.run(args, cancel)
 	if not desktop_blender(): return Common.failure("Blender CLI este disponibil pe Windows și Linux.", "unsupported_platform")
 	if executable.is_empty() or not executable.is_absolute_path() or not FileAccess.file_exists(executable): return Common.failure("Selectează executabilul Blender.", "missing_blender")
 	var command = PackedStringArray(["--version"])

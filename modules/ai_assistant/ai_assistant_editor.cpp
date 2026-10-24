@@ -163,6 +163,7 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
 	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
+	ClassDB::bind_method(D_METHOD("termux_blender_request", "action", "arguments"), &AIAssistantEditorPlugin::termux_blender_request);
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
 	ClassDB::bind_method(D_METHOD("prepare_script_removal", "paths"), &AIAssistantEditorPlugin::prepare_script_removal);
 	ClassDB::bind_method(D_METHOD("push_editor_input", "viewport", "event"), &AIAssistantEditorPlugin::push_editor_input);
@@ -265,6 +266,44 @@ Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const
 #else
 	Dictionary result;
 	result["error"] = "Dictarea Android nu este disponibilă pe această platformă.";
+	return result;
+#endif
+}
+
+Dictionary AIAssistantEditorPlugin::termux_blender_request(const String &p_action, const Dictionary &p_args) {
+#ifdef ANDROID_ENABLED
+	JNIEnv *env = get_jni_env();
+	jclass cls = jni_find_class(env, "org/godotengine/editor/AITermuxBlender");
+	if (!cls) {
+		return Dictionary();
+	}
+	jmethodID method = env->GetStaticMethodID(cls, "command", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+	if (!method || env->ExceptionCheck()) {
+		env->ExceptionClear();
+		env->DeleteLocalRef(cls);
+		return Dictionary();
+	}
+	jstring action = env->NewStringUTF(p_action.utf8().get_data());
+	jstring args = env->NewStringUTF(JSON::stringify(p_args).utf8().get_data());
+	jstring result = (jstring)env->CallStaticObjectMethod(cls, method, action, args);
+	String output;
+	if (env->ExceptionCheck()) {
+		env->ExceptionClear();
+	} else if (result) {
+		output = jstring_to_string(result, env);
+	}
+	if (result) {
+		env->DeleteLocalRef(result);
+	}
+	env->DeleteLocalRef(action);
+	env->DeleteLocalRef(args);
+	env->DeleteLocalRef(cls);
+	Variant parsed = JSON::parse_string(output);
+	return parsed.get_type() == Variant::DICTIONARY ? Dictionary(parsed) : Dictionary();
+#else
+	Dictionary result;
+	result["ok"] = false;
+	result["error"] = "Conectorul Termux necesită editorul Android.";
 	return result;
 #endif
 }

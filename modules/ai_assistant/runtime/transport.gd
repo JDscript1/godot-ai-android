@@ -52,11 +52,14 @@ func request(url: String, method: int = HTTPClient.METHOD_GET, headers: PackedSt
 	var tls: TLSOptions = TLSOptions.client() if location["scheme"] == "https" else null
 	var error = client.connect_to_host(str(location["host"]), int(location["port"]), tls)
 	if error != OK: return Common.failure("Conexiunea nu a putut porni (%s)." % error)
-	var deadline = Time.get_ticks_msec() + int(options.get("timeout", timeout_seconds)) * 1000
+	var started = Time.get_ticks_msec()
+	var deadline = started + int(float(options.get("timeout", timeout_seconds)) * 1000)
+	var connect_deadline = mini(deadline, started + int(float(options.get("connect_timeout", options.get("timeout", timeout_seconds))) * 1000))
+	var response_deadline = mini(deadline, started + int(float(options.get("first_response_timeout", options.get("timeout", timeout_seconds))) * 1000))
 	while client.get_status() in [HTTPClient.STATUS_RESOLVING, HTTPClient.STATUS_CONNECTING]:
-		if _expired(deadline, cancel):
+		if _expired(connect_deadline, cancel):
 			client.close()
-			return Common.failure("Oprit sau conexiune expirată.", "cancelled" if cancel.get("cancelled", false) else "timeout")
+			return Common.failure("Oprit sau conexiune expirată.", "cancelled" if cancel.get("cancelled", false) else "timeout").merged({"stage": "connect"})
 		client.poll()
 		await owner.get_tree().process_frame
 	if client.get_status() != HTTPClient.STATUS_CONNECTED:
@@ -79,9 +82,9 @@ func request(url: String, method: int = HTTPClient.METHOD_GET, headers: PackedSt
 		client.close()
 		return Common.failure("Cererea HTTP nu a putut porni (%s)." % error)
 	while client.get_status() == HTTPClient.STATUS_REQUESTING:
-		if _expired(deadline, cancel):
+		if _expired(response_deadline, cancel):
 			client.close()
-			return Common.failure("Oprit sau cerere expirată.", "cancelled" if cancel.get("cancelled", false) else "timeout")
+			return Common.failure("Oprit sau cerere expirată.", "cancelled" if cancel.get("cancelled", false) else "timeout").merged({"stage": "response"})
 		client.poll()
 		await owner.get_tree().process_frame
 	if not client.has_response():
@@ -104,18 +107,21 @@ func request(url: String, method: int = HTTPClient.METHOD_GET, headers: PackedSt
 		if event_callback.is_valid(): event_callback.call(event)
 	var file: FileAccess = null
 	var save_path = str(options.get("save_path", ""))
+	var body_deadline = response_deadline
+	var idle_milliseconds = int(float(options.get("idle_timeout", 0)) * 1000)
 	if not save_path.is_empty() and status >= 200 and status < 300:
 		file = FileAccess.open(save_path, FileAccess.WRITE)
 		if file == null:
 			client.close()
 			return Common.failure("Nu pot scrie fișierul descărcat.")
 	while client.get_status() == HTTPClient.STATUS_BODY:
-		if _expired(deadline, cancel):
+		if _expired(body_deadline, cancel):
 			client.close()
 			if file != null: file.close()
-			return Common.failure("Oprit sau răspuns expirat.", "cancelled" if cancel.get("cancelled", false) else "timeout")
+			return Common.failure("Oprit sau răspuns expirat.", "cancelled" if cancel.get("cancelled", false) else "timeout").merged({"stage": "body"})
 		client.poll()
 		var chunk = client.read_response_body_chunk()
+		if not chunk.is_empty() and idle_milliseconds > 0: body_deadline = mini(deadline, Time.get_ticks_msec() + idle_milliseconds)
 		total += chunk.size()
 		if total > max_bytes:
 			client.close()

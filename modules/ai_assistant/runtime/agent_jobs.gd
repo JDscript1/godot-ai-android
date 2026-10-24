@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+signal changed(parent: String)
 static var Common: GDScript
 static var Providers: GDScript
 static var Accounts: GDScript
@@ -22,6 +23,7 @@ func spawn(task: String, kind: String, profile: Dictionary, model: String, refer
 	var id = Common.uid()
 	var job = {"id": id, "kind": kind, "task": task, "profile": profile.duplicate(true), "model": model, "parent": parent, "context": references, "status": "running", "text": "", "cancel": {"cancelled": false}, "steps": 0}
 	jobs[id] = job
+	changed.emit(parent)
 	if kind == "Playtest": playtest_busy = true
 	_run.call_deferred(job)
 	_watch.call_deferred(job)
@@ -73,7 +75,7 @@ func _run(job: Dictionary) -> void:
 		core.event.connect(func(value: Dictionary) -> void:
 			if value.get("kind") != "request_started": return
 			job["steps"] = value["step"]
-			if owner.current_turn == job["parent"]: owner.chat.tasks_label.text = "%s · pas %s · %s" % [job["kind"], job["steps"], job["task"]])
+			changed.emit(str(job["parent"])))
 		var complete = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
 			return await service.complete(job["profile"], context, catalog, str(job["model"]), "", stopping, delta)
 		var dispatch = func(name: String, args: Dictionary) -> Dictionary: return await execute(job, name, args)
@@ -87,6 +89,7 @@ func _run(job: Dictionary) -> void:
 func _finish(job: Dictionary, status: String, text: String) -> void:
 	job["status"] = status
 	job["text"] = owner._redact(text)
+	changed.emit(str(job["parent"]))
 	if job["kind"] == "Playtest": playtest_busy = false
 	if owner.current_turn == job["parent"]: owner.chat.activity(str(job["kind"]) + " · " + status, job["text"])
 	Common.atomic_json(owner.project_directory.path_join("jobs").path_join(str(job["id"]) + ".json"), {"id": job["id"], "parent": job["parent"], "kind": job["kind"], "task": owner._redact(str(job["task"])), "status": status, "report": job["text"], "steps": job["steps"]})

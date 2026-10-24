@@ -15,7 +15,11 @@ var _cancel: Dictionary = {}
 var _hooks: Dictionary = {}
 var _messages: Array = []
 var _ledger: Dictionary = {}
+var _effects: Dictionary = {}
+var _deduplicate_tools: Array = []
+var _turn = ""
 var _checkpoint_failed = false
+var _started_msec = 0
 
 func _init(node: Node = null) -> void:
 	owner = node
@@ -27,12 +31,16 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	if _active: return Common.failure("Agentul are deja o sarcină activă.", "busy")
 	if not hooks.get("complete", Callable()).is_valid(): return Common.failure("Lipsește conexiunea modelului.", "invalid_harness")
 	_active = true
+	_started_msec = Time.get_ticks_msec()
 	_cancel = options.get("cancel", {})
 	_hooks = hooks
 	_checkpoint_failed = false
 	_messages = options.get("messages", [])
 	_ledger = _restore_ledger(_messages)
-	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0}
+	_turn = str(options.get("metadata", {}).get("turn_id", options.get("id", "")))
+	_deduplicate_tools = options.get("deduplicate_tools", [])
+	_effects = _restore_effects(_messages)
+	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0, "reused_calls": 0}
 	var definitions: Array = options.get("tools", [])
 	var registry = ToolRegistry.new(definitions, bool(options.get("deferred_tools", false)))
 	if not registry.error.is_empty(): return _finish("failed", registry.error, "invalid_tools")
@@ -40,6 +48,9 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	var retries = clampi(int(options.get("max_retries", 2)), 0, 3)
 	var metadata: Dictionary = options.get("metadata", {})
 	var last_text = ""
+	var empty_rounds = 0
+	var repeated_result = ""
+	var repeated_count = 0
 	_transition("running")
 	for step in range(maximum):
 		if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
@@ -50,6 +61,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		for definition in definitions: declared[definition["name"]] = true
 		var context: Array = _hooks["context"].call() if _hooks.get("context", Callable()).is_valid() else _messages.duplicate(true)
 		var response: Dictionary = {}
+		var response_msec = 0
 		for attempt in range(retries + 1):
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			_transition("running")
@@ -62,7 +74,9 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				if _stopped() or piece.is_empty(): return
 				streamed["text"] = true
 				event.emit({"kind": "text_delta", "text": _redact(piece)})
+			var request_started_msec = Time.get_ticks_msec()
 			response = await _hooks["complete"].call(context, definitions, _cancel, delta)
+			response_msec = Time.get_ticks_msec() - request_started_msec
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			if response.get("ok", false): break
 			# Retry only model requests, before visible text. Tools are never retried.
@@ -82,17 +96,25 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		message["id"] = Common.uid()
 		_messages.append(message)
 		last_text = str(message.get("content", ""))
-		event.emit({"kind": "message", "message": message, "usage": response.get("usage", {}), "finish": response.get("finish", "")})
+		event.emit({"kind": "message", "message": message, "usage": response.get("usage", {}), "finish": response.get("finish", ""), "duration_ms": response_msec})
 		_checkpoint()
 		if calls.is_empty():
 			var finish = str(response.get("finish", ""))
 			if finish in ["length", "MAX_TOKENS", "max_tokens"]:
 				return _finish("limited", "Răspuns oprit la limita modelului.", "output_limit", last_text)
 			if _hooks.get("needs_continuation", Callable()).is_valid() and _hooks["needs_continuation"].call():
+				empty_rounds += 1
+				if empty_rounds >= 3: return _finish("limited", "Agentul nu a făcut progrese în ultimele trei încercări. Verifică pașii rămași înainte de reluare.", "no_progress", last_text)
 				event.emit({"kind": "plan_continuation", "step": step + 1})
 				continue
+			if _hooks.get("blocked_reason", Callable()).is_valid():
+				var reason = str(_hooks["blocked_reason"].call())
+				if not reason.is_empty(): return _finish("blocked", "Sarcină blocată. " + reason, "task_blocked", last_text)
 			return _finish("completed", "Finalizat.", "", last_text)
+		empty_rounds = 0
+		var stalled = false
 		for call in calls:
+			var call_started_msec = Time.get_ticks_msec()
 			var result: Dictionary
 			var executed = false
 			var replayed = false
@@ -100,6 +122,8 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			var name = str(call["name"])
 			if _stopped():
 				result = Common.failure("Operație întreruptă înainte de execuție.", "cancelled")
+			elif stalled:
+				result = Common.failure("Operație amânată deoarece agentul repetă aceeași încercare fără progres.", "no_progress")
 			elif _checkpoint_failed:
 				result = Common.failure("Operația a fost oprită deoarece progresul nu poate fi salvat.", "checkpoint_failed")
 			elif not registry.catalog.has(name):
@@ -108,9 +132,13 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				result = Common.failure("Folosește tool_search sau tool_describe pentru a încărca instrumentul înainte de apel.", "tool_not_loaded")
 			elif not ToolRegistry.validate(registry.catalog[name], call["arguments"]).get("ok", false):
 				result = ToolRegistry.validate(registry.catalog[name], call["arguments"])
-			elif _ledger.has(id):
+			elif _ledger.has(id) and str(_ledger[id]["result"].get("code", "")) not in ["plan_required", "plan_read_only", "tool_not_loaded"]:
 				# Replayed provider IDs receive their recorded result without repeating a write.
 				result = _ledger[id]["result"]
+				replayed = true
+			elif _effects.has(_signature(call)):
+				# Provider call IDs are not idempotency keys for paid/external operations.
+				result = _effects[_signature(call)].duplicate(true)
 				replayed = true
 			elif name in ["tool_search", "tool_describe"]:
 				result = registry.discover(name, call["arguments"])
@@ -118,7 +146,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				result = Common.failure("Execuția instrumentelor nu este disponibilă.", "tool_unavailable")
 			else:
 				_transition("waiting_tool")
-				event.emit({"kind": "tool_started", "id": id, "name": name})
+				event.emit({"kind": "tool_started", "id": id, "name": name, "arguments": _safe(call["arguments"])})
 				if _stopped():
 					result = Common.failure("Operație întreruptă înainte de execuție.", "cancelled")
 				elif _checkpoint_failed:
@@ -128,12 +156,24 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 					stats["tool_calls"] += 1
 					result = await _hooks["execute"].call(name, call["arguments"])
 			var tool_message = _tool_message(call, result, metadata)
+			tool_message["execution_started"] = executed
 			_messages.append(tool_message)
 			_ledger[id] = {"signature": _signature(call), "result": _result_from_message(tool_message)}
-			event.emit({"kind": "tool_result", "id": id, "name": name, "arguments": _safe(call["arguments"]), "result": _ledger[id]["result"], "executed": executed, "replayed": replayed})
+			if replayed: stats["reused_calls"] += 1
+			if executed and (_deduplicate_tools.has(name) or result.get("code") == "permission_denied") and _remember_effect(result): _effects[_signature(call)] = _ledger[id]["result"]
+			if not result.get("ok", false) or replayed or name == "task_update":
+				var fingerprint = _signature(call) + ":" + str(result.get("code", "ok"))
+				repeated_count = repeated_count + 1 if fingerprint == repeated_result else 1
+				repeated_result = fingerprint
+				stalled = stalled or repeated_count >= 3
+			else:
+				repeated_count = 0
+				repeated_result = ""
+			event.emit({"kind": "tool_result", "id": id, "name": name, "arguments": _safe(call["arguments"]), "result": _ledger[id]["result"], "executed": executed, "replayed": replayed, "duration_ms": Time.get_ticks_msec() - call_started_msec})
 			_checkpoint()
 		if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
 		if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
+		if stalled: return _finish("limited", "Aceeași operație se repetă fără progres. Rezultatele au fost păstrate; verifică eroarea înainte de reluare.", "no_progress", last_text)
 	return _finish("limited", "Limita de pași a fost atinsă. Verifică rezultatele înainte de continuare.", "step_limit", last_text)
 
 func _validate_response(response: Dictionary) -> String:
@@ -169,6 +209,25 @@ func _restore_ledger(messages: Array) -> Dictionary:
 			if pending.has(id): ledger[id] = {"signature": pending[id], "result": _result_from_message(message)}
 	return ledger
 
+func _restore_effects(messages: Array) -> Dictionary:
+	var calls = {}
+	var effects = {}
+	if _turn.is_empty(): return effects
+	for message in messages:
+		if message.get("role") == "assistant" and message.get("turn_id", "") == _turn:
+			for call in message.get("tool_calls", []):
+				if call is Dictionary: calls[str(call.get("id", ""))] = call
+		if message.get("role") != "tool" or not calls.has(str(message.get("tool_call_id", ""))): continue
+		var result = _result_from_message(message)
+		var call: Dictionary = calls[str(message["tool_call_id"])]
+		if (_deduplicate_tools.has(str(call.get("name", ""))) or result.get("code") == "permission_denied") and (message.get("execution_started", result.get("ok", false)) or message.get("execution_unknown", false)) and _remember_effect(result):
+			effects[_signature(calls[str(message["tool_call_id"])])] = result
+	return effects
+
+static func _remember_effect(result: Dictionary) -> bool:
+	# A plan or missing credential can be fixed before submission; a user refusal persists for this turn.
+	return str(result.get("code", "")) not in ["plan_required", "plan_read_only", "invalid_arguments", "missing_credentials", "tool_unavailable", "tool_not_loaded"]
+
 static func repair_messages(messages: Array) -> Array:
 	var repaired = []
 	var pending = {}
@@ -183,7 +242,7 @@ static func repair_messages(messages: Array) -> Array:
 	return repaired
 
 static func _interrupted_result(id: String, name: String) -> Dictionary:
-	return {"id": Common.uid(), "role": "tool", "tool_call_id": id, "tool_name": name, "content": JSON.stringify(Common.failure("Operație întreruptă înainte de confirmarea rezultatului. Verifică starea proiectului înainte de continuare.", "cancelled"))}
+	return {"id": Common.uid(), "role": "tool", "tool_call_id": id, "tool_name": name, "execution_unknown": true, "content": JSON.stringify(Common.failure("Operație întreruptă înainte de confirmarea rezultatului. Verifică starea proiectului înainte de continuare.", "cancelled"))}
 
 static func _result_from_message(message: Dictionary) -> Dictionary:
 	var result: Variant = Common.parse_json(str(message.get("content", "")))
@@ -232,6 +291,10 @@ func _transition(next: String) -> void:
 	_checkpoint()
 
 func _finish(status: String, message: String, code: String, text: String = "") -> Dictionary:
+	stats["duration_ms"] = Time.get_ticks_msec() - _started_msec
+	if status == "cancelled":
+		message = {"new_request": "Trec la cererea nouă.", "user": "Oprit la cererea ta."}.get(str(_cancel.get("reason", "")), "Execuția s-a întrerupt.")
+		code = "redirected" if _cancel.get("reason") == "new_request" else code
 	if _checkpoint_failed: status = "failed"
 	state = status
 	_checkpoint()
@@ -245,6 +308,8 @@ func _finish(status: String, message: String, code: String, text: String = "") -
 	_hooks = {}
 	_messages = []
 	_ledger = {}
+	_effects = {}
+	_deduplicate_tools = []
 	_active = false
 	event.emit({"kind": "settled", "result": result})
 	return result

@@ -6,15 +6,15 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-The original harness shipped in APK `12794c4`. The current APK `db5343b` includes
-Auto / Default / Plan and the control/integration changes, built in
-[workflow 39772723053](https://github.com/JDscript1/godot-ai-android/actions/runs/39772723053).
-Delivery evidence is tracked in [the project progress record](../PROGRES_SI_PLAN.md).
+The original harness shipped in APK `12794c4`. The latest delivered APK is
+`36457dd`. The behavioral fixes described below are a subsequent source iteration,
+not yet delivered in an APK. Delivery evidence is tracked in
+[the project progress record](../PROGRES_SI_PLAN.md).
 
 ## Execution boundaries
 
 ```text
-Native chat / queued user requests
+Native chat / latest user request
              |
        Built-in harness
        /             \
@@ -34,6 +34,19 @@ and credentials. Ollama, LM Studio, and llama.cpp profiles connect to an already
 running model endpoint. This harness does not add an inference engine or install
 model weights in the APK.
 
+Local profiles accept an IP or full API URL. **Conectează** saves the endpoint,
+tests its catalog and selects a loaded chat model where the server reports one.
+LM Studio metadata and Ollama's native tags/process endpoints provide loaded
+state and actual loaded context; unavailable metadata does not block the catalog.
+Embedding models are excluded when LM Studio reports their type.
+
+Catalog checks have a short connection deadline. Inference uses independent
+connection, first-response, stream-inactivity and total deadlines: local profiles
+allow 8, 300, 180 and 1,800 seconds respectively. Received bytes refresh the
+inactivity deadline without removing the total cap. Stop remains cancellable.
+A response/body timeout is reported as `inference_timeout`, without an automatic
+retry that could queue another expensive request on a busy local server.
+
 Existing subscription providers that use the companion remain optional
 integrations. They do not back direct API sessions. This change does not turn
 CLI subscription authentication into native Android authentication. MCP
@@ -48,7 +61,8 @@ Each harness instance accepts one active turn. Different instances have separate
 messages, cancellation tokens, statistics, and tool-result ledgers.
 
 Options include `id`, `messages`, `tools`, `cancel`, `metadata`, `max_steps`,
-`max_retries`, `retry_delay_ms`, and `deferred_tools`. The supplied messages array receives the
+`max_retries`, `retry_delay_ms`, `deferred_tools`, and `deduplicate_tools`.
+The supplied messages array receives the
 finalized assistant and tool messages. Hooks are:
 
 | Hook | Responsibility |
@@ -59,16 +73,21 @@ finalized assistant and tool messages. Hooks are:
 | `redact(text)` | Remove known credentials from stored/output data |
 | `checkpoint(snapshot)` | Persist the transcript and run state; `false` stops further execution |
 | `needs_continuation()` | Continue after a tool-free answer while the host has unfinished execution steps, within the same request/step/cancellation limits |
+| `blocked_reason()` | Return the host's unresolved blocker so a tool-free answer settles as blocked rather than completed |
 
 The `event` signal reports state changes, request attempts, streamed text,
 finalized messages, tool starts/results, retries, and settlement. Tool-result
 events distinguish a dispatched call from a recovered result or blocked call.
 Provider-reported usage remains available to the chat.
 
-Outcomes distinguish `completed`, `failed`, `cancelled`, and `limited`.
+Outcomes distinguish `completed`, `blocked`, `failed`, `cancelled`, and `limited`.
 `completed` means that the model ended its tool loop; it is not independent
 proof that the user's whole project works. Step and output limits never report
 completion. Request, retry, step, and dispatched-tool counts are separate.
+Response, tool and total durations are reported without exposing reasoning.
+The panel journals call IDs, arguments, executed/replayed state and errors, as
+well as model requests, retries, usage and settlement. An explicitly blocked
+plan preserves that state in checkpoints and chat, leaving Resume available.
 
 ## Auto, Default and Plan
 
@@ -79,7 +98,9 @@ can perform small tasks directly and plans complex work. Plan inspects and
 publishes a proposal without project mutations. General controls automatic permissions through YOLO; with YOLO off, each
 mutation/external operation requests confirmation. The mode menu contains only
 Auto, Default and Plan. Applying a plan retains the YOLO preference. Existing low-level permission IDs remain internal.
-The active turn freezes its mode, and queued messages retain their selection.
+The active turn freezes its mode. A new message retains its provider/model/mode
+selection, cancels outdated work at the next cancellation boundary, and starts
+after the previous turn settles. Explicit Stop pauses the queue instead.
 
 `planner.gd` owns a per-turn state machine and upgrades the existing `task_update`
 tool without adding another tool name. Steps accept legacy strings or structured
@@ -127,9 +148,20 @@ harness cannot independently prove arbitrary project correctness.
   nonempty unique call IDs, and at most 64 calls. A reused ID with a different
   name or arguments fails before any call from that response is executed.
 - A recorded call ID with matching arguments receives its saved result instead
-  of executing again. This ledger is reconstructed from the supplied transcript.
-  It is deduplication by call ID, not a guarantee that semantically identical
-  actions with newly generated IDs run only once.
+  of executing again. Recoverable plan/discovery preflight failures can be
+  retried after their requirements are fixed. Conflicting IDs still fail.
+- The main chat additionally deduplicates `asset_generate` and
+  `github_create_issue` by tool name and exact argument signature within the
+  same user turn, including a resumed turn. A new provider call ID cannot
+  resubmit the same operation. Generation's optional `variant` distinguishes
+  additional outputs explicitly requested by the user. New user turns can
+  request another output. This does not equate differently worded prompts.
+- A declined operation is remembered for the current turn even if the model
+  changes call IDs, avoiding repeated permission dialogs for the same arguments.
+- Three consecutive tool-free continuations of an unfinished plan, or three
+  repetitions of the same failed/replayed/unchanged-plan operation, stop with
+  `no_progress`. Remaining calls are closed before settlement. This is a bounded
+  recovery mechanism, not an assessment of model intelligence.
 - Model requests may retry HTTP 408/429/500/502/503/504 or transient transport
   failures, up to two retries by default. Backoff is cancellable and bounded;
   numeric Retry-After is considered. A visible partial answer is not silently
@@ -148,14 +180,23 @@ harness cannot independently prove arbitrary project correctness.
   between an operation and result persistence, the project needs inspection
   before a new operation is proposed. Run snapshots are evidence, not an
   automatic background-resume queue.
+- Resume keeps the original user turn, restores its paused plan and confirmed
+  tool results, and preserves the current draft. It does not insert a synthetic
+  user message. Completed tasks cannot be replayed with Resume; older turns
+  require branching. An unknown interrupted generation is not blindly resubmitted.
+- Generation jobs are checkpointed before submission. Missing responses and
+  interrupted `submitting` records become `submission_unknown`; Runware retains
+  its locally assigned task UUID. Jobs without a provider ID require checking
+  provider history. A local Stop does not claim remote cancellation or a refund.
 
 Conversation queues, project guidance, memories, manual `/compact`, native Undo,
 file recovery, generation jobs, and MCP discovery remain host services. Automatic
 token-budget compaction and autonomous restart of interrupted turns are not
 introduced by this change.
 
-See [control, integrations and project skills](AI_INTEGRATIONS.md) for the newer
-source-only changes. These were not added to the delivered APK below.
+See [behavioral evaluation](AI_BEHAVIOR_TESTS.md) for current tests and limitations,
+and [live API evaluation](AI_API_EVALUATION.md) for measured DeepSeek tool use,
+and [control, integrations and project skills](AI_INTEGRATIONS.md) for settings.
 
 ## Verification of delivered APK `9a019f6`
 

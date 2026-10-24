@@ -1,6 +1,6 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **23 octombrie 2026**.
+Ultima actualizare: **24 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
@@ -27,7 +27,370 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — Store, rețea locală și generare, 23.10.2026
+## Etapa curentă — compilare APK cu modificările noi, 24.10.2026
+
+Compilarea și înlocuirea instalatorului au fost autorizate explicit de utilizator.
+Se construiește un snapshot al tuturor modificărilor AI acumulate după `36457dd`,
+inclusiv comportament, conectare locală, bara de activitate, control 3D, reguli
+pentru imagini și integrarea Blender/Termux. Este folosit workflow-ul existent
+al proiectului, care a produs și versiunile anterioare; compilarea locală a
+întregului motor este incompletă. Semnătura personală a APK-ului curent și cheia
+locală au fost comparate: SHA-256 certificat
+`2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
+
+Instalatorul din Download rămâne cel existent până la verificarea pachetului
+nou: succesul build-ului, semnătura, pachetul, ABI ARM64, scripturile încorporate,
+clasele Android și worker-ul Blender. Copierea va fi atomică, cu checksum și
+timestamp actualizat. Nu există dispozitiv conectat prin ADB în această sesiune;
+instalarea și verificarea fizică rămân distincte.
+
+## Etapa precedentă — configurare Blender și conector Termux, 24.10.2026
+
+**Implementat în surse; APK-ul livrat rămâne `36457dd`.** Card Blender pe
+Android în Integrări: detectare Termux, instalare prin distribuția oficială,
+permisiune Android, activare ghidată a comenzilor externe, conectare, instalare
+Blender, verificare, recuperare, reparare și jurnal extensibil. Activarea pentru
+agent este salvată separat pentru fiecare proiect, independent de GitHub.
+
+- Conector Kotlin/JNI dedicat, `RUN_COMMAND` cu țintă explicită și callback
+  neexportat, identificat prin nonce. Procesul auxiliar Python este inclus în
+  assets; conexiunea rămâne pe loopback și folosește un token din seiful Android.
+- Reutilizare a instalării existente, inclusiv Debian PRoot în structura nouă
+  și veche. Instalarea nouă folosește PRoot-Distro 5.x și Debian 13 ARM64 într-un
+  mediu propriu. Nu există upgrade general, migrare automată sau reset al
+  mediilor utilizatorului. Repararea imaginii incomplete a aplicației cere un
+  buton explicit; instalarea se poate opri după tranzacția curentă.
+- `blender_run` pe Android, expus numai după verificare și activare. Fișierele de
+  intrare sunt declarate explicit; scripturile folosesc `GODOT_AI_PROJECT_DIR`
+  și `GODOT_AI_OUTPUT_DIR`. Transfer prin streaming, hash-uri, validare a
+  modelelor/imaginilor/dependențelor și refuz al căilor externe sau simbolice.
+- Rezultate importate într-un folder numit după script și ID, fără suprascrieri,
+  apoi disponibile în chat. Sursa BLEND primește `importer="keep"`; GLB-ul
+  furnizează scena și preview-ul, fără pornirea importerului desktop pe Android.
+- O singură sarcină simultană, două fire Blender, timeout, anularea proceselor
+  proprii, checkpoint și recuperare fără reexecutarea ID-ului. După importul
+  confirmat se eliberează copiile temporare; metadatele rămân pentru deduplicare.
+  Reconectarea unei instalări verificate nu reinstalează pachete. Modificarea
+  executabilului invalidează capacitățile; procesul auxiliar expiră după repaus.
+- Testele backend sunt incluse în workflow. Corectată și izolarea XDG a suitei
+  generale în PRoot, care anterior putea refolosi cache-ul unei probe vechi.
+
+Verificări locale încheiate:
+
+| Nivel | Rezultat și dovezi |
+| --- | --- |
+| Backend, HTTP și instalator | **18 teste trecute**: validare, token, origini web, upload, hash, un singur proces, anulare, tranzacții, imagini incomplete și reparare explicită, protejarea mediilor existente, curățare, proces real și lock unic; `.ai-qa/blender-worker-unit.log`. Instalatorul nou este verificat aici prin comenzi simulate, nu prin instalarea unui Debian nou. |
+| Godot → HTTP → Blender existent | **21 aserțiuni trecute** cu Blender **4.3.2** real: detectare/reutilizare, probă GLB și import Godot, randare CPU, transfer script/dependență Python, exporturi GLB, glTF + BIN, FBX și BLEND, recuperare după pierderea transferului și anulare. `.ai-qa/blender-connector-final/report.json`, `jobs.json`, `godot.log` și logurile sarcinilor. |
+| Runtime general | **412 aserțiuni, 0 erori**; `.ai-qa/blender-runtime-final.log`. Serviciile cloud rămân fixtures locale în această suită. |
+| Panou Blender redat | **41 verificări × 5 dimensiuni**, fără erori; `.ai-qa/blender-ui-final/`. Capturi desktop și telefon inspectate vizual. Frontiera Android este substituită pentru aceste stări UI. |
+| Regresie editor desktop | **364 verificări, 0 erori**; `.ai-qa/blender-regression/desktop/editor-report.json`. |
+| Surse native | Kotlin compilat cu SDK Android 36 și obiectul C++ compilat pentru Android ARM64; `.ai-qa/blender-kotlin.log`, `.ai-qa/blender-cpp-build.log`. Manifestul și includerea sursei worker în assets verificate separat. |
+| Livrare | Cele **3 teste de livrare** trecute; nu s-a creat sau înlocuit vreun APK în această etapă. |
+
+**Limite:** raportul probei reale păstrează `android_intent_tested=false`.
+Nu au fost testate pornirea din APK prin `RUN_COMMAND`, instalarea pe Termux gol,
+dialogurile Android de permisiuni, instalarea reală a unui mediu Debian nou sau
+comportamentul producătorului la oprirea proceselor în fundal. Acestea necesită
+un APK nou și probe fizice; compilarea obiectelor native nu le substituie.
+Nu s-au rulat scripturile utilizatorului și nu s-au modificat modelele existente.
+
+Documentație: [`docs/AI_TERMUX_BLENDER.md`](docs/AI_TERMUX_BLENDER.md).
+
+Jurnal: 24.10.2026 — implementat setup Blender în Integrări, conectorul opțional
+Android–Termux și transferul sarcinilor; exporturi reale GLB/glTF/FBX/BLEND,
+randare CPU, recuperare și anulare verificate prin clientul Godot, cu frontiera
+Intent substituită. Validarea din APK și instalarea pe un Termux gol rămân separate.
+
+## Etapa precedentă — verificarea Blender existent în Termux, 24.10.2026
+
+**Runtime verificat local; conectorul dintre APK și Termux nu este încă
+implementat.** Blender **4.3.2** este instalat în containerul Debian PRoot,
+la `/usr/bin/blender`. Containerul folosește structura actuală
+`$PREFIX/var/lib/proot-distro/containers/debian/rootfs/`; căutarea anterioară
+în PATH-ul Termux și în vechea structură `installed-rootfs/` a fost incompletă.
+
+- Confirmată versiunea prin `proot-distro login debian -- /usr/bin/blender --version`.
+- Rulată o probă separată în fundal cu pornire curată și script Python propriu:
+  creat un cub cu material, salvate fișiere `.blend` și `.glb` într-un director QA
+  unic. Nu au fost rulate scripturile care scriu peste modelele utilizatorului.
+- Godot 4.7.2 a încărcat GLB-ul prin `GLTFDocument`, într-un proces headless:
+  **1 mesh / 12 triunghiuri**, rezultat reușit. Blender a raportat 8 vârfuri
+  și 6 fețe înainte de triangularea exportului. Hash-urile fișierelor sunt în raport.
+- Adaptarea aplicației poate reutiliza acest runtime existent: lansator PRoot,
+  transfer și mapare de fișiere, sarcini cu loguri și rezultate și import în Godot.
+  Harness-ul nativ rămâne independent; Termux ar fi un backend opțional pentru unelte.
+
+Dovezi: `.ai-qa/termux-blender-311jvngq/report.json`, `blender.log`, `godot.log`,
+`probe.blend` și `probe.glb`; indexul ultimei probe este
+`.ai-qa/termux-blender-probe-latest.json`. Aceste dovezi confirmă execuția prin
+CLI în mediul local și importul headless, nu lansarea din aplicația Android.
+Nu s-au instalat pachete, nu s-au modificat modelele existente și nu s-a
+recompilat sau înlocuit APK-ul.
+
+Jurnal: 24.10.2026 — găsit și verificat Blender 4.3.2 existent în Debian PRoot;
+export GLB și import Godot reușite într-o probă izolată. Conectorul APK–Termux
+rămâne de implementat.
+
+## Etapa precedentă — control 3D și reguli pentru imagini, 24.10.2026
+
+**Implementat în surse; APK-ul livrat rămâne `36457dd`.** Lucrul asupra rotirii
+vizează previzualizarea GLB/glTF din chat și Generare; transformările mesh-ului
+din scena proiectului nu se modifică. În Generare a fost găsit un viewport
+static fără controale de rotire și a fost înlocuit cu viewer-ul comun.
+
+- Previzualizarea are un strat GUI dedicat de navigare peste viewport, cu
+  orbitare orizontală/verticală, zoom și deplasare cu două degete, roată mouse,
+  săgeți din tastatură și Home pentru reset. Patru butoane compacte oferă
+  rotire stânga/dreapta/sus/jos. Sensibilitatea ține cont de scalarea editorului;
+  pierderea focusului și ascunderea ferestrei eliberează gesturile active.
+- `asset_generate` și instrucțiunile agentului separă explicit referința pentru
+  reconstrucție 3D, sprite-ul 2D, textura repetabilă, decorul și imaginea generică.
+  Referințele 3D și sprite-urile cer implicit transparență; textura și decorul
+  păstrează suprafețe opace. Alegerea explicită a utilizatorului are prioritate.
+  Opțiunile sunt disponibile și în generarea manuală, numai pentru imagini.
+- Se păstrează promptul original și separat cererea completată cu reguli.
+  La descărcare se verifică alfa efectiv și conținutul vizibil: un PNG opac sau
+  complet transparent nu este etichetat drept cutout utilizabil. Imaginea se
+  păstrează, cu avertisment și starea vizuală „Necesită verificare”.
+- Conversia 3D recitește referințele generate recunoscute și blochează trimiterea
+  unui rezultat care nu respectă fundalul cerut. Fișierele utilizatorului nu
+  primesc automat cerința de cutout. Verificarea alfa nu certifică încadrarea,
+  perspectiva, identitatea obiectului sau calitatea segmentării.
+- Tool nativ `asset_remove_background`, prin Runware RemBG: procesează imaginea
+  existentă, păstrează originalul și salvează separat PNG-ul decupat. Are cost la
+  furnizor, autorizare, checkpoint anterior POST-ului, UUID stabil, deduplicare
+  în harness-ul principal și verificarea alfa la final. Nu regenerează imaginea
+  și nu inventează parametri de transparență pentru furnizori incompatibili.
+- Viewer-ul arată un fundal în carouri pentru imaginile cu alfa real, fără a-l
+  scrie în imagine sau în export. Zona desenată este încadrată în canvas;
+  previzualizarea imaginilor din Generare folosește același canvas.
+
+**Verificări runtime finale:** **413 aserțiuni, zero eșecuri**, cu server HTTP local.
+Proba include PNG opac păstrat și marcat necorespunzător, conversie 3D blocată
+înainte de POST, eliminare de fundal pe aceeași imagine, alfa real verificat,
+original păstrat după hash, reluare fără POST nou și conversie cu referința
+corectată. Nu s-au folosit chei reale sau servicii plătite.
+
+**Verificări în editor:** **363 verificări la fiecare dintre cele cinci
+configurații**, fără eșecuri. Proba dedicată preview-ului a fost repetată pe
+desktop: **60 verificări, zero eșecuri**. Sunt verificate gesturile touch/mouse,
+zoom-ul cu două degete, resetarea, eliberarea focusului, butoanele de rotire,
+preview-ul interactiv din Generare și păstrarea alfa în exportul imaginii.
+Au fost inspectate capturile desktop, înguste și cu scalare pentru telefon.
+
+Testul anterior al rotirii apela `_orbit()` direct; noile probe trimit input
+prin fereastra reală și verifică transformarea camerei. Gestul touch a trecut
+și în proba Linux a viewer-ului din chat dinaintea schimbării. Preview-ul separat
+din Generare nu avea însă tratarea gesturilor; noua probă verifică rotirea pe
+ambele axe prin fereastra reală a setărilor. În controlul randării au fost depistate și corectate
+marginile temei care împingeau în afara ferestrei ultimul buton de rotire.
+
+Detalii și limite: [Control 3D și reguli pentru imagini](docs/AI_ASSET_RULES.md).
+Dovezi: `.ai-qa/mesh-input-before/`, `.ai-qa/mesh-input-after/`,
+`.ai-qa/mesh-image-contract-runtime-final.log`, `.ai-qa/mesh-preview-capture/` și
+`.ai-qa/mesh-image-contract-verified/`. Validarea touch pe Android fizic și
+rezultatele serviciilor reale rămân distincte de aceste probe. APK-ul nu a fost
+recompilat, iar installerul din Download nu a fost înlocuit.
+
+Jurnal: 24.10.2026 — adăugate controalele explicite ale preview-ului 3D,
+contracte separate pentru utilizarea imaginilor, verificarea alfa și eliminarea
+fundalului existent prin Runware; 413 aserțiuni runtime și 363 verificări în
+editor pentru fiecare dintre cele cinci dimensiuni trecute fără servicii
+plătite. Modificări în surse.
+
+## Etapa precedentă — bara de activitate deasupra mesajului, 24.10.2026
+
+**Implementat în surse; APK-ul din Download rămâne `36457dd`.** Bara de status
+este fixată imediat deasupra câmpului de mesaj, în afara istoricului derulabil.
+Apăsarea ei deschide un sertar cu pașii planului, sarcinile secundare existente
+și operațiile harness-ului nativ. Forma compactă arată activitatea curentă și
+progresul real, de exemplu `2/5`.
+
+- Stări distincte pentru finalizat, în lucru, de făcut, blocat, eșuat și
+  întrerupt. Oprirea păstrează pașii rămași; refuzul unei permisiuni nu apare
+  ca succes. După finalizare, lista rămâne disponibilă pentru consultare.
+- Detaliile au derulare proprie și înălțime limitată; câmpul de mesaj rămâne
+  accesibil. Sunt păstrate toate etapele și ultimele 24 de operații, cu numărul
+  total indicat. Textele lungi se încadrează în lățimea disponibilă.
+- Progresul se actualizează din evenimente, fără interogări suplimentare către
+  furnizor. O cerere nouă curăță activitatea precedentă și ignoră notificările
+  sarcinilor vechi. Ultimul plan și rezultatele se refac din conversația salvată,
+  fără a executa tool-uri la încărcare.
+- Indicator discret de lucru, preferința pentru mișcare redusă, focus din
+  tastatură și widget-uri native pentru apăsare/derulare. Controlul capturilor
+  a identificat etichete de stare comprimate; ele păstrează acum lățimea necesară.
+
+**Verificări:** suita completă a editorului a trecut **353 verificări la fiecare
+dintre cele cinci dimensiuni**, fără eșecuri, înaintea ajustării finale a
+etichetelor de stare. După ajustare, scenariul dedicat a trecut **40 verificări
+la fiecare dintre cele cinci dimensiuni**, fără eșecuri; au fost inspectate
+capturile desktop, înguste și cu scalare pentru telefon. Suita completă desktop
+a fost repetată pe sursele finale: **354 verificări, zero eșecuri**. Testele runtime au
+trecut **398 aserțiuni, zero eșecuri**
+în rularea izolată. O rulare concurentă cu randările a depășit termenul scurt
+al probei de streaming; nu s-a modificat transportul sau pragul testului.
+Rezultatele ajustării finale și capturile sunt detaliate în
+[Bara de activitate](docs/AI_ACTIVITY_DRAWER.md).
+
+Dovezi: `.ai-qa/activity-drawer-final/`, `.ai-qa/activity-drawer-verified/`,
+`.ai-qa/activity-drawer-release-check/`,
+`.ai-qa/activity-drawer-runtime-isolated.log` și
+`.ai-qa/activity-drawer-runtime-final.log`. Probele folosesc editorul Linux ARM64
+prin proot/Xvfb și fixturi locale. Nu s-au făcut apeluri API plătite, compilări
+APK sau probe touch pe Android fizic în această etapă.
+
+Jurnal: 24.10.2026 — mutată bara de activitate deasupra mesajului, adăugat
+sertarul pentru pași/sarcini/operații, progres parțial și refacere din istoric;
+verificate randările la cinci dimensiuni. Installerul nu a fost înlocuit.
+
+## Etapa precedentă — probe reale DeepSeek și contractul tool-urilor, 23.10.2026
+
+**Implementat și testat în surse; APK-ul din Download rămâne `36457dd`.**
+Utilizatorul a ales explicit cheia din configurația locală DeepSeek și modelul
+`deepseek-v4-flash`. Catalogul real oferă acum `deepseek-flash`; identificatorul
+ales este acceptat ca alias pentru modelul Flash actual, conform documentației
+furnizorului. Nu a fost folosită cheia din spațiul privat al APK-ului.
+
+- Adăugat evaluatorul opțional `modules/ai_assistant/tests/evaluate.py`, separat
+  de CI. Rulează panoul și contextul aplicației, harness-ul, API-ul real și
+  tool-urile editorului într-un proiect temporar, cu setări izolate. Driverul
+  și criteriile sunt în afara `res://`, inaccesibile tool-urilor de fișiere.
+- Zece scenarii: identitate, citire, patch și recitire, depanare GDScript, scenă
+  în Auto, propunere în Plan, refuz de permisiune, curățare, fișier lipsă și
+  căutare Terrain3D în Asset Store. Hash-urile verifică păstrarea celorlalte
+  fișiere; scena este verificată în editor și în conținutul salvat.
+- Reprodus un defect real: setarea unui mesh cu Dictionary în loc de Object
+  putea lăsa mesh-ul gol și raporta succes; apelul generic `set_mesh` putea
+  raporta succes după o eroare de conversie Godot. Tool-urile returnează acum
+  referințe explicite `{"$handle":"obj_..."}`, verifică referințele, tipurile
+  și clasele Resource înainte de mutație și recitesc proprietatea după setare.
+  Metadatele păstrează clasele și argumentele reflectate, inclusiv în JSON.
+- Reprodusă o diferență între sfârșitul buclei și finalizarea sarcinii: un plan
+  declarat blocat era etichetat `completed`. Hook-ul `blocked_reason` păstrează
+  acum statusul `blocked` în harness, checkpoint și chat; reluarea rămâne
+  disponibilă. Regresia este verificată automat cu un furnizor determinist.
+- Jurnalul are acum ID-uri de apel, argumente, durate, execuție/reutilizare,
+  coduri de eroare, cereri/răspunsuri, încercări și usage. Sunt înregistrate și
+  apelurile blocate înainte de operație. Rapoartele API salvează jurnalul real
+  al panoului și traseul evenimentelor; nu includ cheia sau raționamentul intern.
+- Instrucțiunile cer folosirea căilor exacte `res://`, referințelor returnate
+  de tool-uri și rezultate finale compacte, cu verificări și blocaje concrete.
+
+**Rezultate live:** runda completă a încheiat **10 scenarii / 57 cereri reale**;
+nouă au îndeplinit integral criteriile. Depanarea a reparat corect codul, dar
+bridge-ul nativ indisponibil în editorul upstream a produs un plan blocat,
+etichetat greșit ca finalizat. După corecții, **editarea, depanarea și scena au
+fost repetate: 3/3 reușite, 26 cereri**, aproximativ 11,1 / 27,1 / 24,4 secunde.
+Ultimul rezultat al fiecăruia dintre cele zece scenarii este reușit pe parcursul
+acestor runde; aceasta nu este o singură rundă finală 10/10 sau un benchmark
+statistic. În repetarea de scenă a existat BoxMesh real, transformarea cerută,
+fișier salvat corect și plan finalizat. Căutarea publică Terrain3D a funcționat;
+nu a fost cerută sau efectuată instalarea.
+
+**Verificări finale ale surselor:** **398 aserțiuni runtime**, zero eșecuri,
+și **340 verificări în editorul desktop**, zero eșecuri. Hash-urile celor 27 de
+surse runtime din ultima probă live corespundeau surselor acestei etape; artefactele
+evaluării au fost verificate pentru absența cheii API. Nu s-au modificat
+proiectele utilizatorului și nu s-au trimis generări plătite.
+
+**Limite:** probe Linux ARM64 prin proot/Xvfb, fără compilarea unui APK nou sau
+test fizic Android. Diagnosticul structurat al bridge-ului nativ nu există în
+acest editor upstream; scriptul reparat a trecut separat parserul GDScript.
+Lipsa bridge-ului în evaluator nu dovedește lipsa lui din APK. Modelul încă
+poate face apeluri redundante sau încerca o operație înaintea planului, pe care
+host-ul o respinge; un singur model/nivel implicit nu validează toți furnizorii.
+Jurnalul istoric al APK-ului este privat și nu a putut fi citit fără export;
+nu există dispozitiv conectat prin ADB. S-a cerut utilizatorului textul jurnalului
+pentru analiza încercărilor sale. Nu s-a integrat un harness extern.
+
+Raport: [Evaluarea agentului cu API real](docs/AI_API_EVALUATION.md).
+Dovezi: `.ai-qa/deepseek-api-review/REPORT.md`,
+`.ai-qa/deepseek-api-review/report.json`, `.ai-qa/deepseek-api-verified/`,
+`.ai-qa/deepseek-api-corrections/`, `.ai-qa/api-behavior-runtime-settled.log`
+și `.ai-qa/api-behavior-editor-settled/`. Rulările inițiale de diagnostic și
+runda întreruptă sunt identificate separat în raport.
+
+Jurnal: 23.10.2026 — evaluate zece sarcini cu DeepSeek real, corectate rezultate
+false de succes pentru mesh/apeluri reflectate și planuri blocate, completată
+telemetria tool-urilor; trei scenarii repetate cu succes. Surse testate;
+installerul din Download nu a fost înlocuit.
+
+## Etapa precedentă — comportament și conectare locală simplificată, 23.10.2026
+
+**Implementat și testat în surse, după APK-ul `36457dd`; această etapă nu a fost
+compilată sau înlocuită în Download.** Raportul detaliat este în
+[Evaluarea comportamentului agentului](docs/AI_BEHAVIOR_TESTS.md).
+
+- Harness-ul recunoaște aceeași generare sau creare de issue GitHub după
+  nume/argumente în același turn, chiar dacă modelul schimbă ID-ul apelului.
+  Refolosește rezultatul și la reluare. O variantă suplimentară explicită are
+  argumentul `variant`; o cerere nouă a utilizatorului rămâne distinctă.
+- Refuzul unei permisiuni este păstrat pentru operația respectivă în acel turn.
+  Cerințele remediabile, precum publicarea unui plan înaintea unei modificări,
+  nu blochează definitiv operația. După trei continuări fără progres sau aceeași
+  operație repetată fără progres, execuția se oprește și închide batch-ul rămas.
+- Un mesaj nou în timpul lucrului oprește cererea depășită și pornește mesajul
+  nou după încheierea operației curente. Stop explicit păstrează coada oprită.
+  Reluarea folosește cererea și planul inițial, rezultatele confirmate și ID-ul
+  turnului; nu adaugă mesaj artificial și nu șterge ciorna. Sarcinile încheiate
+  nu pot fi executate încă o dată prin butonul de reluare.
+- Sarcina de generare este salvată înainte de POST. Un răspuns pierdut sau o
+  întrerupere înainte de confirmare păstrează starea „Trimitere neconfirmată”,
+  inclusiv UUID-ul Runware. Fără ID de la furnizor nu se trimite automat din nou;
+  stocarea indisponibilă împiedică trimiterea. Stop local nu anulează implicit
+  o sarcină deja primită de furnizor.
+- Chatul afișează planul în lucru compact, cu pasul activ și extindere la apăsare.
+  Statusurile operațiilor au texte pentru utilizator. Reasoning-ul implicit
+  este etichetat „Implicit”, separat de modul de lucru Auto/Default/Plan.
+- LM Studio, Ollama și llama.cpp au conectare prin IP simplu sau URL complet.
+  Butonul **Conectează** salvează, verifică serverul și selectează un model
+  încărcat, unde este raportat. IP-ul simplu primește portul serviciului și `/v1`.
+  Tokenul este opțional și vizibil direct; opțiunile avansate nu sunt necesare.
+  Un URL HTTP explicit păstrează portul indicat sau portul standard 80.
+- Catalogul LM Studio este completat cu metadatele modelelor; embeddings nu
+  apar în chat, iar contextul folosește capacitatea efectiv încărcată. Ollama
+  folosește `/api/tags` și `/api/ps`. Metadatele suplimentare sunt opționale.
+  Conectarea, primul răspuns, inactivitatea streamului și durata totală au
+  termene distincte; răspunsul lent nu este confundat cu serverul inaccesibil.
+  Un timeout de inferență nu declanșează automat încă o cerere către model.
+
+**Verificări automate:** patru probleme au fost reproduse înaintea corecțiilor.
+Același set a trecut ulterior. Suita finală a încheiat **396 aserțiuni runtime**,
+zero eșecuri, și **329 verificări randate × 5 configurații**, zero eșecuri.
+Configurații: desktop, îngust, lat, telefon landscape și compact. Inspectate
+vizual planul compact, bara chatului și formularul conectării locale pe desktop
+și în configurația compactă. Serverele acestor teste sunt fixturi deterministe;
+nu reprezintă inferență cu un model real sau test fizic Android.
+
+**LM Studio live:** după identificarea IPv4-ului adaptorului Wi-Fi activ, accesul
+a funcționat între dispozitivele conectate la hotspotul unui telefon. Adaptorul
+nativ Godot a trecut **10 citiri consecutive** ale catalogului, între **95 și
+368 ms**, mediană **164 ms**. A detectat `prism-ml/bonsai-27b` încărcat, context
+activ **4.096 tokeni**, și a exclus modelul de embeddings. După repornirea Wi-Fi,
+adresa a răspuns din nou în **0,24 secunde**. Acest rezultat confirmă conectarea
+în timpul probelor; IP-ul se poate schimba la reconectarea la hotspot.
+
+**Limite și probe rămase:** prima inferență a modelului mare nu s-a încheiat în
+timpul probei, iar clientul nostru de test a fost oprit. O cerere scurtă separată
+a expirat după 25 de secunde. Nu avem un benchmark finalizat al calității sau
+tool use-ului acelui model. Ollama nu a răspuns pe portul 11434 al calculatorului;
+proba sa live rămâne de efectuat când serverul este pornit și accesibil.
+Nu s-au modificat serverul, modelul încărcat sau firewall-ul. Nu s-au folosit
+chei plătite pentru generare. Compilarea noilor surse și testul fizic în APK
+rămân separate de aceste rezultate.
+
+Dovezi: `.ai-qa/behavior-before.log`, `.ai-qa/behavior-harness.log`,
+`.ai-qa/local-connections-runtime.log`, `.ai-qa/local-connections-render-final/`,
+`.ai-qa/live-lmstudio-connection.json`, `.ai-qa/lmstudio-after-wifi-restart.json`
+și `.ai-qa/lmstudio-plain-chat.json`. Nu s-a adăugat niciun runtime extern;
+Deep Agents rămâne un candidat pentru comparație, nu o integrare implementată.
+
+Jurnal: 23.10.2026 — corectate reluarea, repetarea generărilor și schimbarea
+cererii active; simplificată conectarea LM Studio/Ollama, separați timpii de
+conectare și inferență; verificate sursele, cinci configurații randate și
+10 conexiuni native consecutive la LM Studio. APK-ul livrat rămâne `36457dd`.
+
+## Etapa precedentă — Store, rețea locală și generare, 23.10.2026
 
 Implementat în surse, compilat și livrat în APK-ul **`36457dd`**:
 

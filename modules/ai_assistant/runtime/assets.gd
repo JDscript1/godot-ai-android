@@ -15,6 +15,8 @@ var api_urls = {"runware": "https://api.runware.ai/v1", "meshy": "https://api.me
 var test_http = false
 const KINDS = ["runware", "comfy", "meshy", "tripo", "openai_image"]
 const LABELS = ["Runware", "ComfyUI local", "Meshy", "Tripo", "OpenAI Images"]
+const IMAGE_PURPOSES = ["generic", "reference_3d", "sprite", "texture", "background"]
+const IMAGE_PURPOSE_LABELS = ["Imagine obișnuită", "Referință pentru 3D", "Sprite 2D", "Textură", "Fundal"]
 
 func _init(node: Node = null, secret_store: RefCounted = null) -> void:
 	owner = node
@@ -25,9 +27,53 @@ func configure(directory: String) -> void:
 	cache_directory = directory
 	DirAccess.make_dir_recursive_absolute(cache_directory)
 	jobs = Common.read_json(cache_directory.path_join("jobs.json"), [])
+	var interrupted = false
+	for job in jobs:
+		if job.get("status") == "submitting":
+			job["status"] = "submission_unknown"
+			job["error"] = "Trimitere întreruptă înainte de confirmare. Verifică sarcina existentă la furnizor înainte de o generare nouă."
+			interrupted = true
+	if interrupted: _save()
 
 func definitions() -> Array:
-	return [Common.tool("asset_export", "Export a completed 3D job into its named project folder. GLB is the immutable original; glTF is a ZIP with dependencies; OBJ/STL/PLY are static geometry only. FBX, USDZ, 3MF and Meshy BLEND use explicit provider conversion and may consume credits. Resume with the same job and format to avoid duplicate conversions. If a submission response was lost, obtain the existing conversion task_id from the user/provider dashboard to recover; never invent an ID or resubmit blindly. Never overwrite project files.", {"job": Common.string_field(), "task_id": Common.string_field(), "format": {"type": "string", "enum": ["glb", "gltf", "fbx", "obj", "stl", "ply", "usdz", "blend", "3mf"]}}, ["job", "format"], "external"), Common.tool("asset_generate", "Generate an image or GLB with a configured Runware, ComfyUI, Meshy, Tripo or OpenAI Images profile. Cloud generation consumes provider credits. The completed original is automatically imported into its own named folder under the profile destination; use asset_wait to obtain it.", {"profile": Common.string_field(), "prompt": Common.string_field(), "reference": Common.string_field()}, ["profile", "prompt"], "external"), Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]), Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]), Common.tool("asset_import", "Import a validated generated artifact into a dedicated named folder under res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
+	return [
+		Common.tool("asset_export", "Export a completed 3D job into its named project folder. GLB is the immutable original; glTF is a ZIP with dependencies; OBJ/STL/PLY are static geometry only. FBX, USDZ, 3MF and Meshy BLEND use explicit provider conversion and may consume credits. Resume with the same job and format to avoid duplicate conversions. If a submission response was lost, obtain the existing conversion task_id from the user/provider dashboard to recover; never invent an ID or resubmit blindly. Never overwrite project files.", {"job": Common.string_field(), "task_id": Common.string_field(), "format": {"type": "string", "enum": ["glb", "gltf", "fbx", "obj", "stl", "ply", "usdz", "blend", "3mf"]}}, ["job", "format"], "external"),
+		Common.tool("asset_generate", "Generate an image or GLB with a saved profile. For images always specify purpose: reference_3d for an isolated reconstruction reference, sprite for a 2D game asset, texture for a tileable surface, background for scenery, generic for an illustration. reference_3d and sprite default to transparent; override background only for an explicit user requirement. Inspect quality.ready_for_use after asset_wait: PNG alone does not prove transparency. Use asset_remove_background on an opaque cutout instead of generating it again. Cloud generation consumes credits. Originals are auto-imported into named folders. Keep arguments and variant unchanged on retries; a new variant requires an explicit user request.", {"profile": Common.string_field(), "prompt": Common.string_field(), "purpose": {"type": "string", "enum": IMAGE_PURPOSES}, "background": {"type": "string", "enum": ["auto", "transparent", "opaque"]}, "reference": Common.string_field(), "variant": Common.string_field()}, ["profile", "prompt"], "external"),
+		Common.tool("asset_remove_background", "Remove an existing image's background through a saved Runware profile. Uses provider credits, preserves the original, and creates a separate PNG job. Wait with asset_wait and inspect quality.ready_for_use. Reuse the same reference on retries; never generate the source again merely to remove its background.", {"profile": Common.string_field(), "reference": Common.string_field(), "purpose": {"type": "string", "enum": ["reference_3d", "sprite", "generic"]}}, ["profile", "reference"], "external"),
+		Common.tool("asset_status", "Refresh an existing generation job and download its completed result.", {"job": Common.string_field()}, ["job"]),
+		Common.tool("asset_wait", "Wait for a generation job without consuming repeated model turns. Cancellable; defaults to 300 seconds, maximum 600. Returns processing if the deadline expires.", {"job": Common.string_field(), "max_seconds": {"type": "integer"}}, ["job"]),
+		Common.tool("asset_import", "Import a validated generated artifact into a dedicated named folder under res:// without overwriting existing files.", {"job": Common.string_field(), "directory": Common.string_field()}, ["job", "directory"], "write")]
+
+static func generation_contract(profile: Dictionary, prompt: String, options: Dictionary = {}) -> Dictionary:
+	var purpose = str(options.get("purpose", profile.get("purpose", "generic")))
+	var background = str(options.get("background", profile.get("background", "auto")))
+	if purpose not in IMAGE_PURPOSES or background not in ["auto", "transparent", "opaque"]: return Common.failure("Utilizare sau fundal de imagine invalid.", "invalid_generation_options")
+	if profile.get("asset_kind", "image") == "mesh":
+		if purpose != "generic" or background != "auto": return Common.failure("Scopul imaginii și fundalul se aplică profilului de imagini, nu mesh-ului.", "image_profile_required")
+		return Common.success({"purpose": "mesh", "background": "none", "generation_prompt": prompt})
+	if background == "auto":
+		if purpose in ["reference_3d", "sprite"]: background = "transparent"
+		elif purpose in ["texture", "background"]: background = "opaque"
+	var rules = ""
+	match purpose:
+		"reference_3d": rules = "Image for 3D reconstruction: one isolated complete subject, centered with padding, all parts visible, readable volume, a clear three-quarter view unless a different view was requested. No scenery, floor, pedestal, cast shadow, labels, text, watermark, collage or multiple views unless explicitly requested. Preserve the requested style and object details."
+		"sprite": rules = "2D game sprite: preserve the requested art style, camera direction and framing; clean readable silhouette and consistent scale. Follow exactly the requested frame count and sheet layout, if any. No scene, floor, pedestal, cast shadow, labels or watermark. Do not turn the sprite into a 3D reconstruction reference."
+		"texture": rules = "Game surface texture: flat orthographic material surface, seamless and tileable in both directions unless requested otherwise. No staged object, perspective, scene, borders, labels or watermark."
+		"background": rules = "Game background or scenery: complete composition suitable for the requested scene. Preserve the environment and requested aspect ratio; do not isolate or cut out the scene as an object. No unrequested text or watermark."
+	if background == "transparent": rules += " Output a transparent PNG with real alpha around the subject. No colored backdrop, no painted checkerboard, no fake transparency."
+	elif background == "opaque": rules += " Output an opaque image." + (" Use a plain neutral backdrop behind the isolated subject." if purpose in ["reference_3d", "sprite"] else "")
+	return Common.success({"purpose": purpose, "background": background, "generation_prompt": prompt + ("\n\nAsset requirements: " + rules.strip_edges() if not rules.is_empty() else "")})
+
+static func image_quality(path: String, expected: String) -> Dictionary:
+	var image = Image.load_from_file(path)
+	if image == null: return {"ready_for_use": false, "warning": "Imaginea nu poate fi citită."}
+	var transparent = image.detect_alpha() != Image.ALPHA_NONE
+	var empty = image.is_invisible()
+	var ready = not empty and (transparent if expected == "transparent" else (not transparent if expected == "opaque" else true))
+	var warning = ""
+	if empty: warning = "Imaginea este complet transparentă; nu există un subiect vizibil."
+	elif not ready: warning = "Lipsește transparența reală. Elimină fundalul imaginii existente înainte de utilizare; nu regenera automat." if expected == "transparent" else "Imaginea conține transparență, dar a fost cerut un rezultat opac."
+	return {"ready_for_use": ready, "background_expected": expected, "has_transparency": transparent, "empty": empty, "warning": warning}
 
 func verify_key(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	if str(profile.get("kind", "")) == "runware":
@@ -67,11 +113,23 @@ func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 		if suitable: available.append(model)
 	return {"ok": true, "result": available, "source": "public_catalog", "credential_verified": false}
 
-func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dictionary) -> Dictionary:
-	if str(profile.get("kind", "runware")) in ["meshy", "tripo", "openai_image"]: return await _cloud_submit(profile, prompt, reference, cancel)
+func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dictionary, options: Dictionary = {}) -> Dictionary:
+	if cancel.get("cancelled", false): return Common.failure("Generarea nu a fost trimisă.", "cancelled")
+	var checked = generation_contract(profile, prompt, options)
+	if not checked.get("ok", false): return checked
+	var contract: Dictionary = checked["result"]
+	if profile.get("asset_kind") == "mesh" and not reference.is_empty():
+		var reference_path = Common.project_path(reference)
+		for source in jobs:
+			if reference == str(source.get("file", "")) or (not reference_path.is_empty() and reference_path == Common.project_path(str(source.get("imported_path", "")))):
+				if source.get("kind") == "image" and not image_quality(reference_path if not reference_path.is_empty() else reference, str(source.get("background", "auto"))).get("ready_for_use", false):
+					return Common.failure("Referința generată nu respectă fundalul cerut. Corectează imaginea existentă înainte de conversia 3D.", "reference_needs_review")
+	if str(profile.get("kind", "runware")) in ["meshy", "tripo", "openai_image"]: return await _cloud_submit(profile, prompt, reference, cancel, contract)
 	var id = Common.uid()
 	var kind = str(profile.get("asset_kind", "image"))
 	var job = {"id": id, "profile_id": profile["id"], "kind": kind, "provider": profile.get("kind", "runware"), "external_id": id, "status": "submitting", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "destination": profile.get("destination", "res://ai_assets"), "file": ""}
+	job.merge(contract)
+	if profile.get("kind") == "comfy": job["external_id"] = ""
 	var result: Dictionary
 	if profile.get("kind") == "comfy":
 		var workflow: Variant = profile.get("workflow", {})
@@ -83,7 +141,8 @@ func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dict
 		if not workflow.has(output_node): return Common.failure("Nodul de rezultat nu există în workflow.")
 		if not prompt_node.is_empty():
 			if not workflow.has(prompt_node) or not workflow[prompt_node].get("inputs", {}).has(prompt_input): return Common.failure("Câmpul pentru prompt nu există în workflow.")
-			workflow[prompt_node]["inputs"][prompt_input] = prompt
+			workflow[prompt_node]["inputs"][prompt_input] = contract["generation_prompt"]
+		elif contract["purpose"] != "generic" and kind == "image": return Common.failure("Configurează nodul de prompt pentru a aplica regulile imaginii în workflow.", "prompt_binding_required")
 		var catalog = await transport.request(str(profile["url"]).trim_suffix("/") + "/object_info", HTTPClient.METHOD_GET, _headers(profile), null, _options(profile, cancel))
 		if not catalog.get("ok", false): return catalog
 		if not catalog.get("json") is Dictionary: return Common.failure("Serverul nu a returnat definițiile nodurilor.")
@@ -95,22 +154,66 @@ func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dict
 			var reference_node = str(profile.get("reference_node", ""))
 			if not workflow.has(reference_node): return Common.failure("Configurează nodul imaginii de referință.")
 			workflow[reference_node]["inputs"][str(profile.get("reference_input", "image"))] = upload["result"]
+		if not _begin_submission(job): return Common.failure("Nu pot salva sarcina înainte de trimitere.", "checkpoint_failed")
 		result = await transport.request(str(profile["url"]).trim_suffix("/") + "/prompt", HTTPClient.METHOD_POST, _headers(profile), {"prompt": workflow, "client_id": id}, _options(profile, cancel))
-		if not result.get("ok", false): return result
-		if not result.get("json") is Dictionary or not result["json"].has("prompt_id"): return Common.failure("ComfyUI nu a acceptat workflowul.")
+		if not result.get("ok", false): return _submission_failed(job, result)
+		if not result.get("json") is Dictionary or not result["json"].has("prompt_id"): return _submission_failed(job, Common.failure("ComfyUI nu a confirmat identificatorul sarcinii."))
 		job["external_id"] = result["json"]["prompt_id"]
 		job["output_node"] = output_node
 	else:
 		var reference_data = _reference_data(reference) if not reference.is_empty() else ""
 		if not reference.is_empty() and reference_data.is_empty(): return Common.failure("Imagine de referință invalidă.")
-		var built = build_runware_task(profile, prompt, reference_data, id)
+		var built = build_runware_task(profile, str(contract["generation_prompt"]), reference_data, id)
 		if not built.get("ok", false): return built
+		if not _begin_submission(job): return Common.failure("Nu pot salva sarcina înainte de trimitere.", "checkpoint_failed")
 		result = await _runware(profile, [built["result"]], cancel)
-		if not result.get("ok", false): return result
+		if not result.get("ok", false): return _submission_failed(job, result)
 	job["status"] = "processing"
-	jobs.append(job)
-	_save()
+	if not _save(): return Common.failure("Cererea a fost trimisă, dar confirmarea nu a putut fi salvată. Verifică sarcina existentă înainte de a genera din nou.", "checkpoint_failed").merged({"result": job.duplicate(true)})
 	return Common.success(job.duplicate(true))
+
+func remove_background(profile: Dictionary, reference: String, cancel: Dictionary, purpose: String = "generic") -> Dictionary:
+	if cancel.get("cancelled", false): return Common.failure("Operația nu a fost trimisă.", "cancelled")
+	if profile.get("kind") != "runware": return Common.failure("Eliminarea fundalului necesită un profil Runware salvat.", "unsupported_provider")
+	if _headers(profile).is_empty(): return Common.failure("Adaugă cheia Runware.", "missing_credentials")
+	if purpose not in ["reference_3d", "sprite", "generic"]: return Common.failure("Utilizare de imagine invalidă.")
+	var source_path = reference
+	var subject = reference.get_file().get_basename()
+	for source in jobs:
+		if reference in [str(source.get("file", "")), str(source.get("imported_path", ""))]:
+			subject = str(source.get("prompt", subject))
+			if source.get("file") == reference and not str(source.get("imported_path", "")).is_empty(): source_path = str(source["imported_path"])
+	var data = _reference_data(source_path)
+	if data.is_empty(): return Common.failure("Imagine de referință invalidă.")
+	var source_hash = FileAccess.get_sha256(source_path)
+	for existing in jobs:
+		if existing.get("operation") == "remove_background" and existing.get("profile_id") == profile["id"] and existing.get("source_sha256") == source_hash and existing.get("purpose") == purpose and existing.get("status") != "failed":
+			if existing.get("status") in ["submitting", "submission_unknown"]: return Common.failure("Eliminarea fundalului a fost deja trimisă, fără confirmare. Verifică sarcina existentă.", "submission_unknown").merged({"result": existing.duplicate(true)})
+			return Common.success(existing.duplicate(true))
+	var id = Common.uid()
+	var job = {"id": id, "profile_id": profile["id"], "kind": "image", "provider": "runware", "external_id": id, "status": "submitting", "created": Time.get_datetime_string_from_system(true), "prompt": subject + " cutout", "purpose": purpose, "background": "transparent", "operation": "remove_background", "source": reference, "source_sha256": source_hash, "destination": profile.get("destination", "res://ai_assets"), "file": ""}
+	var task = {"taskType": "removeBackground", "taskUUID": id, "model": "runware:109@1", "deliveryMethod": "async", "outputFormat": "PNG", "includeCost": true, "inputs": {"image": data}, "settings": {"alphaMatting": true, "postProcessMask": true, "returnOnlyMask": false, "rgba": [255, 255, 255, 0]}}
+	if not _begin_submission(job): return Common.failure("Nu pot salva sarcina înainte de trimitere.", "checkpoint_failed")
+	var result = await _runware(profile, [task], cancel)
+	if not result.get("ok", false): return _submission_failed(job, result)
+	job["status"] = "processing"
+	if not _save(): return Common.failure("Cererea a fost trimisă, dar confirmarea nu a putut fi salvată.", "checkpoint_failed").merged({"result": job.duplicate(true)})
+	return Common.success(job.duplicate(true))
+
+func _begin_submission(job: Dictionary) -> bool:
+	jobs.append(job)
+	if _save(): return true
+	jobs.erase(job)
+	return false
+
+func _submission_failed(job: Dictionary, failure: Dictionary) -> Dictionary:
+	var rejected = int(failure.get("status", 0)) in [400, 401, 403, 404, 405, 413, 415, 422, 429]
+	rejected = rejected or str(failure.get("code", "")) in ["generation_failed", "missing_credentials"]
+	job["status"] = "failed" if rejected else "submission_unknown"
+	job["error"] = str(failure.get("error", "Confirmarea furnizorului lipsește.")).left(1600)
+	_save()
+	if rejected: return failure.merged({"result": job.duplicate(true)})
+	return Common.failure("Trimitere neconfirmată. Sarcina poate exista la furnizor; verifică rezultatul existent înainte de o generare nouă.", "submission_unknown").merged({"result": job.duplicate(true)})
 
 static func build_runware_task(profile: Dictionary, prompt: String, reference_data: String, id: String) -> Dictionary:
 	var kind = str(profile.get("asset_kind", "image"))
@@ -140,6 +243,7 @@ func refresh(id: String, profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	if str(job.get("profile_id", "")) != str(profile.get("id", "")) or job.get("provider") != profile.get("kind", "runware"): return Common.failure("Profilul nu corespunde sarcinii salvate.")
 	if job.get("status") == "failed": return Common.failure(str(job.get("error", "Generarea a eșuat.")), "generation_failed")
 	if job["status"] == "completed" and FileAccess.file_exists(str(job["file"])): return Common.success(job.duplicate(true))
+	if str(job.get("external_id", "")).is_empty(): return Common.failure("Trimitere neconfirmată, fără ID de la furnizor. Verifică istoricul furnizorului înainte de o generare nouă.", "submission_unknown").merged({"result": job.duplicate(true)})
 	var download_url = ""
 	if job["provider"] in ["meshy", "tripo", "openai_image"]:
 		var polled = await _cloud_poll(job, profile, cancel)
@@ -188,13 +292,13 @@ func refresh(id: String, profile: Dictionary, cancel: Dictionary) -> Dictionary:
 				_save()
 				return Common.failure("Furnizorul a finalizat sarcina fără o adresă de rezultat recunoscută.", "missing_artifact")
 		if not download_url.is_empty():
-			var parsed = Common.parse_url(download_url)
-			if not parsed.get("ok", false) or not (str(parsed["host"]) == "runware.ai" or str(parsed["host"]).ends_with(".runware.ai")): return Common.failure("Destinație de descărcare Runware nevalidată.")
+			var parsed = Common.parse_url(download_url, test_http)
+			if not parsed.get("ok", false) or not (str(parsed["host"]) == "runware.ai" or str(parsed["host"]).ends_with(".runware.ai") or (test_http and str(parsed["host"]) == "127.0.0.1")): return Common.failure("Destinație de descărcare Runware nevalidată.")
 	if download_url.is_empty(): return Common.success(job.duplicate(true))
 	var extension = ".glb" if job["kind"] == "mesh" else ".png"
 	var temporary = cache_directory.path_join(id + extension + ".part")
 	var options = _options(profile, cancel)
-	if job["provider"] in ["meshy", "tripo"]: options["allow_http"] = test_http
+	if job["provider"] in ["meshy", "tripo", "runware"]: options["allow_http"] = test_http
 	options["save_path"] = temporary
 	options["max_bytes"] = Common.MAX_ASSET_BYTES
 	options["timeout"] = 120
@@ -213,6 +317,7 @@ func _finish_download(job: Dictionary, temporary: String) -> Dictionary:
 	if DirAccess.rename_absolute(temporary, path) != OK: return Common.failure("Nu pot păstra rezultatul descărcat.")
 	job["file"] = path
 	job["status"] = "completed"
+	if job["kind"] == "image": job["quality"] = image_quality(path, str(job.get("background", "auto")))
 	var imported = import_job(str(job["id"]), str(job.get("destination", "res://ai_assets")))
 	if not imported.get("ok", false): job["import_error"] = str(imported.get("error", "Import automat eșuat."))
 	_save()
@@ -380,7 +485,7 @@ func _cloud_request(profile: Dictionary, endpoint: String, body: Variant, cancel
 	if not data is Dictionary: return Common.failure("Răspuns de generare invalid.")
 	return Common.success(data)
 
-func _cloud_submit(profile: Dictionary, prompt: String, reference: String, cancel: Dictionary) -> Dictionary:
+func _cloud_submit(profile: Dictionary, prompt: String, reference: String, cancel: Dictionary, contract: Dictionary = {}) -> Dictionary:
 	var provider = str(profile["kind"])
 	var reference_value = ""
 	if not reference.is_empty():
@@ -392,24 +497,25 @@ func _cloud_submit(profile: Dictionary, prompt: String, reference: String, cance
 			if not upload.get("ok", false): return upload
 			reference_value = str(upload["result"])
 		else: return Common.failure("Acest profil generează imagini din text; nu acceptă referințe.")
-	var built = cloud_payload(profile, prompt, reference_value)
+	var built = cloud_payload(profile, str(contract.get("generation_prompt", prompt)), reference_value)
 	if not built.get("ok", false): return built
-	var result = await _cloud_request(profile, str(built["result"]["endpoint"]), built["result"]["body"], cancel)
-	if not result.get("ok", false): return result
-	var data: Dictionary = result["result"]
 	var id = Common.uid()
-	var job = {"id": id, "profile_id": profile["id"], "kind": profile.get("asset_kind", "image"), "provider": provider, "external_id": "", "status": "processing", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "destination": profile.get("destination", "res://ai_assets"), "file": "", "endpoint": built["result"]["endpoint"]}
+	var job = {"id": id, "profile_id": profile["id"], "kind": profile.get("asset_kind", "image"), "provider": provider, "external_id": "", "status": "submitting", "created": Time.get_datetime_string_from_system(true), "prompt": prompt, "destination": profile.get("destination", "res://ai_assets"), "file": "", "endpoint": built["result"]["endpoint"]}
+	job.merge(contract)
+	if not _begin_submission(job): return Common.failure("Nu pot salva sarcina înainte de trimitere.", "checkpoint_failed")
+	var result = await _cloud_request(profile, str(built["result"]["endpoint"]), built["result"]["body"], cancel)
+	if not result.get("ok", false): return _submission_failed(job, result)
+	var data: Dictionary = result["result"]
 	if provider == "openai_image":
 		var images: Variant = data.get("data", [])
-		if not images is Array or images.is_empty() or not images[0] is Dictionary: return Common.failure("OpenAI nu a returnat o imagine.", "missing_artifact")
+		if not images is Array or images.is_empty() or not images[0] is Dictionary: return _submission_failed(job, Common.failure("OpenAI nu a returnat o imagine.", "missing_artifact"))
 		var bytes = Marshalls.base64_to_raw(str(images[0].get("b64_json", "")))
-		if bytes.is_empty() or bytes.size() > Common.MAX_ASSET_BYTES: return Common.failure("Rezultat imagine lipsă sau prea mare.")
+		if bytes.is_empty() or bytes.size() > Common.MAX_ASSET_BYTES: return _submission_failed(job, Common.failure("Rezultat imagine lipsă sau prea mare."))
 		var temporary = cache_directory.path_join(id + ".png.part")
 		var file = FileAccess.open(temporary, FileAccess.WRITE)
-		if file == null: return Common.failure("Nu pot păstra imaginea generată.")
+		if file == null: return _submission_failed(job, Common.failure("Nu pot păstra imaginea generată."))
 		file.store_buffer(bytes)
 		file.close()
-		jobs.append(job)
 		var finished = _finish_download(job, temporary)
 		if not finished.get("ok", false):
 			job["status"] = "failed"
@@ -417,9 +523,9 @@ func _cloud_submit(profile: Dictionary, prompt: String, reference: String, cance
 			_save()
 		return finished
 	job["external_id"] = str(data.get("result", "")) if provider == "meshy" else str(data.get("task_id", ""))
-	if str(job["external_id"]).is_empty(): return Common.failure("Furnizorul nu a returnat identificatorul sarcinii.")
-	jobs.append(job)
-	_save()
+	if str(job["external_id"]).is_empty(): return _submission_failed(job, Common.failure("Furnizorul nu a returnat identificatorul sarcinii."))
+	job["status"] = "processing"
+	if not _save(): return Common.failure("Cererea a fost trimisă, dar confirmarea nu a putut fi salvată.", "checkpoint_failed").merged({"result": job.duplicate(true)})
 	return Common.success(job.duplicate(true))
 
 func _cloud_poll(job: Dictionary, profile: Dictionary, cancel: Dictionary) -> Dictionary:

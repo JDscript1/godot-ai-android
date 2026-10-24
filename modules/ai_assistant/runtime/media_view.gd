@@ -21,6 +21,7 @@ class ImageCanvas:
 	signal pose_changed(value: Dictionary)
 	var image: Image
 	var texture: ImageTexture
+	var checker: ImageTexture
 	var zoom = 1.0
 	var offset = Vector2.ZERO
 	var touches = {}
@@ -37,6 +38,13 @@ class ImageCanvas:
 	func setup(value: Image) -> void:
 		image = value
 		texture = ImageTexture.create_from_image(image)
+		if image.detect_alpha() != Image.ALPHA_NONE:
+			var cell = maxi(8, int(12 * EditorInterface.get_editor_scale()))
+			var board = Image.create(cell * 2, cell * 2, false, Image.FORMAT_RGB8)
+			board.fill(Color("1c2432"))
+			for origin in [Vector2i.ZERO, Vector2i(cell, cell)]: board.fill_rect(Rect2i(origin, Vector2i(cell, cell)), Color("2b3444"))
+			checker = ImageTexture.create_from_image(board)
+		clip_contents = true
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		size_flags_vertical = Control.SIZE_EXPAND_FILL
 		mouse_filter = Control.MOUSE_FILTER_STOP
@@ -57,6 +65,7 @@ class ImageCanvas:
 		draw_rect(Rect2(Vector2.ZERO, size), Color("111522"))
 		if texture == null: return
 		var rect = display_rect()
+		if checker != null: draw_texture_rect(checker, rect, true)
 		draw_texture_rect(texture, rect, false)
 		if selection.has_area():
 			var ratio = rect.size / image.get_size()

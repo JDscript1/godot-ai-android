@@ -19,12 +19,14 @@ var dragging = false
 var players: Array = []
 var active_animation = -1
 var grid: MeshInstance3D
+var input_surface: Control
 
 func _ready() -> void:
 	stretch = false
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_target = true
 	viewport = SubViewport.new()
 	viewport.size = Vector2i(512, 512)
 	viewport.own_world_3d = true
@@ -47,9 +49,50 @@ func _ready() -> void:
 	environment.ambient_light_energy = 0.7
 	holder.environment = environment
 	world.add_child(holder)
+	# Keep navigation in the viewer's GUI, above the rendered SubViewport.
+	# Embedded editor windows must not send these gestures into the 3D scene.
+	viewport.gui_disable_input = true
+	input_surface = Control.new()
+	input_surface.name = "ModelNavigation"
+	input_surface.mouse_filter = Control.MOUSE_FILTER_STOP
+	input_surface.focus_mode = Control.FOCUS_ALL
+	input_surface.mouse_default_cursor_shape = Control.CURSOR_DRAG
+	input_surface.tooltip_text = "Trage pentru rotire · două degete pentru zoom și deplasare · săgeți pentru rotire · Home pentru reset"
+	add_child(input_surface)
+	input_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	input_surface.gui_input.connect(_navigation_input)
+	var directions = HBoxContainer.new()
+	input_surface.add_child(directions)
+	directions.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	var scale = EditorInterface.get_editor_scale()
+	directions.offset_left = -152 * scale
+	directions.offset_top = -40 * scale
+	directions.offset_right = -8 * scale
+	directions.offset_bottom = -8 * scale
+	directions.add_theme_constant_override("separation", int(4 * scale))
+	for entry in [["←", "stânga", Vector2(-24, 0)], ["→", "dreapta", Vector2(24, 0)], ["↑", "sus", Vector2(0, -24)], ["↓", "jos", Vector2(0, 24)]]:
+		var control = Button.new()
+		control.name = "Orbit_" + str(entry[1])
+		control.text = str(entry[0])
+		control.tooltip_text = "Rotește " + str(entry[1])
+		control.custom_minimum_size = Vector2(32, 32) * scale
+		control.add_theme_font_size_override("font_size", int(16 * scale))
+		for state in ["normal", "hover", "pressed"]:
+			var compact = StyleBoxFlat.new()
+			compact.bg_color = Color("252939") if state == "normal" else Color("393450" if state == "hover" else "59458c")
+			compact.set_corner_radius_all(int(6 * scale))
+			compact.set_content_margin_all(4 * scale)
+			control.add_theme_stylebox_override(state, compact)
+		control.pressed.connect(func() -> void:
+			_orbit(entry[2] * scale)
+			_update_camera()
+			pose_changed.emit(pose()))
+		directions.add_child(control)
+	get_window().focus_exited.connect(_release_navigation)
 	visibility_changed.connect(func() -> void:
 		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE if is_visible_in_tree() else SubViewport.UPDATE_DISABLED
 		if not is_visible_in_tree():
+			_release_navigation()
 			for player in players:
 				if is_instance_valid(player): player.pause())
 
@@ -188,14 +231,26 @@ func _update_camera() -> void:
 	camera.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * distance
 	camera.look_at(target)
 
-func _gui_input(event: InputEvent) -> void:
+func _release_navigation() -> void:
+	touches.clear()
+	dragging = false
+
+func _navigation_input(event: InputEvent) -> void:
 	if event.device == -1: return
 	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_LEFT: dragging = event.pressed
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			dragging = event.pressed
+			if dragging: input_surface.grab_focus()
 		elif event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]: distance *= 0.85 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.15
-	elif event is InputEventMouseMotion and dragging: _orbit(event.relative)
+		else: return
+	elif event is InputEventMouseMotion:
+		if not dragging or not touches.is_empty(): return
+		_orbit(event.relative)
 	elif event is InputEventScreenTouch:
-		if event.pressed: touches[event.index] = event.position
+		if event.pressed:
+			dragging = false
+			touches[event.index] = event.position
+			input_surface.grab_focus()
 		else: touches.erase(event.index)
 	elif event is InputEventScreenDrag and touches.has(event.index):
 		var previous: Array = touches.values()
@@ -205,16 +260,27 @@ func _gui_input(event: InputEvent) -> void:
 			var old = Vector2(previous[0]).distance_to(previous[1])
 			var now = Vector2(after[0]).distance_to(after[1])
 			if now > 1: distance *= old / now
-			target += (-camera.global_basis.x * event.relative.x + camera.global_basis.y * event.relative.y) * radius / 300
-		else: _orbit(event.relative)
+			var movement = ((Vector2(after[0]) + Vector2(after[1])) - (Vector2(previous[0]) + Vector2(previous[1]))) * 0.5
+			target += (-camera.global_basis.x * movement.x + camera.global_basis.y * movement.y) * radius / (300 * EditorInterface.get_editor_scale())
+		elif after.size() == 1: _orbit(event.relative)
+	elif event is InputEventKey and event.pressed:
+		match event.keycode:
+			KEY_LEFT: _orbit(Vector2(-12, 0))
+			KEY_RIGHT: _orbit(Vector2(12, 0))
+			KEY_UP: _orbit(Vector2(0, -12))
+			KEY_DOWN: _orbit(Vector2(0, 12))
+			KEY_HOME: preset("reset")
+			_: return
+	else: return
 	distance = clampf(distance, radius * 0.2, radius * 30)
 	_update_camera()
 	pose_changed.emit(pose())
-	accept_event()
+	input_surface.accept_event()
 
 func _orbit(relative: Vector2) -> void:
-	yaw -= relative.x * 0.008
-	pitch = clampf(pitch + relative.y * 0.008, -1.55, 1.55)
+	var sensitivity = 0.008 / EditorInterface.get_editor_scale()
+	yaw -= relative.x * sensitivity
+	pitch = clampf(pitch + relative.y * sensitivity, -1.55, 1.55)
 
 func capture() -> Image:
 	if not is_visible_in_tree():

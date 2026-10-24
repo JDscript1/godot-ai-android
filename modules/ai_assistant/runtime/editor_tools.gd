@@ -44,8 +44,8 @@ func definitions() -> Array:
 		Common.tool("godot_open_scene", "Open a project scene.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_describe", "Discover methods, properties and signals of a class or object handle. Script-defined methods are included for objects.", {"class": string, "handle": string, "filter": string}, []),
 		Common.tool("godot_get", "Read an object's property by handle.", {"handle": string, "property": string}, ["handle", "property"]),
-		Common.tool("godot_set", "Set an object property with Undo. Typed values use {$type:Vector3,value:[x,y,z]} and analogous Vector2, Color, Quaternion forms.", {"handle": string, "property": string, "value": {}}, ["handle", "property", "value"], "write"),
-		Common.tool("godot_call", "Call a discovered Godot method. All generic calls require modification permission; resolve objects using handles, never raw instance IDs.", {"handle": string, "method": string, "arguments": array}, ["handle", "method", "arguments"], "write"),
+		Common.tool("godot_set", "Set an object property with Undo and verify its resulting value. Object/resource values use {\"$handle\":\"obj_...\"}, available as reference in object results. Typed values use {$type:Vector3,value:[x,y,z]} and analogous Vector2, Color, Quaternion forms. Do not pass the handle string or a plain descriptor as the value.", {"handle": string, "property": string, "value": {}}, ["handle", "property", "value"], "write"),
+		Common.tool("godot_call", "Call a discovered Godot method. All generic calls require modification permission. Pass object/resource arguments as {\"$handle\":\"obj_...\"} using the reference from object results; never raw instance IDs. Reflected argument types are checked before calling. Inspect the result and editor output for effects or errors inside the method.", {"handle": string, "method": string, "arguments": array}, ["handle", "method", "arguments"], "write"),
 		Common.tool("godot_load_resource", "Load and inspect a project resource, including materials, animation libraries and scripts.", {"path": string}, ["path"]),
 		Common.tool("godot_create_resource", "Create an instantiable Resource class and return its handle.", {"class": string}, ["class"], "write"),
 		Common.tool("godot_save_resource", "Save a Resource handle to the project, with a recovery copy of any previous file.", {"handle": string, "path": string}, ["handle", "path"], "write"),
@@ -249,7 +249,7 @@ func _encode(value: Variant, depth: int = 0) -> Variant:
 		if value == panel or value == plugin: return {"unavailable": "AI assistant internals"}
 		var handle = "obj_" + str(value.get_instance_id())
 		handles[handle] = weakref(value)
-		return {"handle": handle, "class": value.get_class(), "name": str(value.name) if value is Node else ""}
+		return {"handle": handle, "reference": {"$handle": handle}, "class": value.get_class(), "name": str(value.name) if value is Node else ""}
 	if value is Array:
 		var output = []
 		for item in value.slice(0, 1000): output.append(_encode(item, depth + 1))
@@ -269,11 +269,58 @@ func _resolve(handle: String) -> Object:
 
 func _decode(value: Variant) -> Variant:
 	if value is Dictionary and value.has("$handle"): return _resolve(str(value["$handle"]))
+	if value is Dictionary and value.get("$type") == "Object": return _resolve(str(value.get("handle", "")))
 	if value is Array:
 		var result = []
 		for item in value: result.append(_decode(item))
 		return result
-	return Common.decode_variant(value)
+	var decoded: Variant = Common.decode_variant(value)
+	if decoded is Dictionary:
+		var result = {}
+		for key in decoded: result[key] = _decode(decoded[key])
+		return result
+	return decoded
+
+func _reference_error(value: Variant) -> String:
+	if value is Dictionary:
+		if value.has("$handle") or value.get("$type") == "Object":
+			var handle = str(value.get("$handle", value.get("handle", "")))
+			if _resolve(handle) == null: return "Referința obiectului nu mai este validă. Inspectează din nou obiectul și folosește reference: {\"$handle\":\"obj_...\"}."
+		for child in value.values():
+			var problem = _reference_error(child)
+			if not problem.is_empty(): return problem
+	elif value is Array:
+		for child in value:
+			var problem = _reference_error(child)
+			if not problem.is_empty(): return problem
+	return ""
+
+func _type_error(value: Variant, specification: Dictionary) -> String:
+	var expected = int(specification.get("type", TYPE_NIL))
+	if expected == TYPE_NIL: return "" # Unspecified/Variant script argument.
+	var actual = typeof(value)
+	if expected == TYPE_OBJECT:
+		if value == null: return ""
+		if not value is Object: return "Este necesar un obiect/resursă. Folosește reference: {\"$handle\":\"obj_...\"}."
+		var type = str(specification.get("class_name", ""))
+		if not type.is_empty() and ClassDB.class_exists(type) and not value.is_class(type): return "Obiectul trebuie să fie de tip " + type + "."
+		return ""
+	if expected == actual: return ""
+	if expected == TYPE_FLOAT and actual == TYPE_INT: return ""
+	if expected == TYPE_INT and actual == TYPE_FLOAT and is_finite(value) and value == floor(value): return ""
+	if expected in [TYPE_STRING, TYPE_STRING_NAME, TYPE_NODE_PATH] and actual in [TYPE_STRING, TYPE_STRING_NAME, TYPE_NODE_PATH]: return ""
+	var element_types = {TYPE_PACKED_BYTE_ARRAY: TYPE_INT, TYPE_PACKED_INT32_ARRAY: TYPE_INT, TYPE_PACKED_INT64_ARRAY: TYPE_INT, TYPE_PACKED_FLOAT32_ARRAY: TYPE_FLOAT, TYPE_PACKED_FLOAT64_ARRAY: TYPE_FLOAT, TYPE_PACKED_STRING_ARRAY: TYPE_STRING, TYPE_PACKED_VECTOR2_ARRAY: TYPE_VECTOR2, TYPE_PACKED_VECTOR3_ARRAY: TYPE_VECTOR3, TYPE_PACKED_COLOR_ARRAY: TYPE_COLOR, TYPE_PACKED_VECTOR4_ARRAY: TYPE_VECTOR4}
+	if actual == TYPE_ARRAY and element_types.has(expected):
+		for item in value:
+			var problem = _type_error(item, {"type": element_types[expected]})
+			if not problem.is_empty(): return problem
+		return ""
+	return "Tip incompatibil: este necesar %s, primit %s. Consultă godot_describe." % [type_string(expected), type_string(actual)]
+
+func _convert_argument(value: Variant, specification: Dictionary) -> Variant:
+	var expected = int(specification.get("type", TYPE_NIL))
+	if value is Array and expected in [TYPE_PACKED_BYTE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, TYPE_PACKED_STRING_ARRAY, TYPE_PACKED_VECTOR2_ARRAY, TYPE_PACKED_VECTOR3_ARRAY, TYPE_PACKED_COLOR_ARRAY, TYPE_PACKED_VECTOR4_ARRAY]: return type_convert(value, expected)
+	return type_convert(value, expected) if expected in [TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME, TYPE_NODE_PATH] and typeof(value) != expected else value
 
 func _describe(args: Dictionary) -> Dictionary:
 	var object = _resolve(str(args.get("handle", "")))
@@ -312,6 +359,8 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 		if method.begins_with("_") or method in ["free", "set_script", "set_meta", "set", "set_indexed", "call", "callv", "call_deferred", "call_thread_safe", "emit_signal"]:
 			return Common.failure("Folosește operațiile dedicate pentru această modificare; metodele interne nu sunt expuse.")
 		if not object.has_method(method): return Common.failure("Metoda nu există.")
+		var reference_error = _reference_error(args["arguments"])
+		if not reference_error.is_empty(): return Common.failure(reference_error, "stale_handle")
 		var arguments: Array = _decode(args["arguments"])
 		for specification in object.get_method_list():
 			if specification["name"] == method:
@@ -319,6 +368,11 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 				var defaults = specification.get("default_args", []).size()
 				if arguments.size() < count - defaults or (arguments.size() > count and not (int(specification.get("flags", 0)) & METHOD_FLAG_VARARG)):
 					return Common.failure("Număr invalid de argumente. Consultă godot_describe.")
+				for index in range(mini(count, arguments.size())):
+					var argument_spec: Dictionary = specification["args"][index]
+					var problem = _type_error(arguments[index], argument_spec)
+					if not problem.is_empty(): return Common.failure("Argument %s (%s): %s" % [index + 1, argument_spec.get("name", ""), problem], "invalid_arguments")
+					arguments[index] = _convert_argument(arguments[index], argument_spec)
 				break
 		return Common.success(_encode(object.callv(method, arguments)))
 	if name == "godot_save_resource":
@@ -331,13 +385,18 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 		_finalize_snapshot(recovery)
 		return Common.success(path) if error == OK else Common.failure(error_string(error))
 	var property = str(args["property"])
-	var found = false
+	var property_spec = {}
 	for specification in object.get_property_list():
-		if specification["name"] == property: found = true
-	if not found: return Common.failure("Proprietate inexistentă.")
+		if specification["name"] == property: property_spec = specification
+	if property_spec.is_empty(): return Common.failure("Proprietate inexistentă.")
 	if name == "godot_get": return Common.success(_encode(object.get(property)))
 	if property in ["script", "owner", "scene_file_path"] or property.begins_with("_"): return Common.failure("Proprietatea necesită o operație dedicată.")
+	var reference_error = _reference_error(args.get("value"))
+	if not reference_error.is_empty(): return Common.failure(reference_error, "stale_handle")
 	var value: Variant = _decode(args.get("value"))
+	var problem = _type_error(value, property_spec)
+	if not problem.is_empty(): return Common.failure(problem, "invalid_arguments")
+	value = _convert_argument(value, property_spec)
 	var undo = plugin.get_undo_redo()
 	_begin_scene_change("Proprietate: " + property)
 	undo.create_action("AI: set " + property)
@@ -345,7 +404,9 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 	undo.add_undo_property(object, property, object.get(property))
 	undo.commit_action()
 	_end_scene_change()
-	return Common.success(_encode(object.get(property)))
+	var actual: Variant = object.get(property)
+	if actual != value: return Common.failure("Proprietatea nu are valoarea cerută după modificare. Verifică rezultatul înainte de continuare.", "property_not_applied").merged({"result": _encode(actual)})
+	return Common.success(_encode(actual))
 
 func _scene_tree(node: Node, root: Node, depth: int) -> Variant:
 	if node == null: return null

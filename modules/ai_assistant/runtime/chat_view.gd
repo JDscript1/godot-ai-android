@@ -79,6 +79,24 @@ var status_revision = 0
 var streaming_dirty: Array = []
 var stream_clock = 0.0
 var attachment_signature = ""
+var activity_panel: PanelContainer
+var activity_toggle: Button
+var activity_counter: Label
+var activity_chevron: Label
+var activity_indicator: Control
+var activity_details: ScrollContainer
+var activity_rows: VBoxContainer
+var activity_expanded = false
+var work_turn = ""
+var work_plan: Dictionary = {}
+var work_operations: Dictionary = {}
+var work_jobs: Array = []
+var work_outcome = ""
+var work_live = false
+var work_message = ""
+var work_notice_running = false
+var activity_clock = 0.0
+var activity_dirty = true
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -159,6 +177,7 @@ func _ready() -> void:
 	reference_label = label(root_column, "")
 	reference_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	reference_label.hide()
+	_build_activity_panel()
 	compose_panel = PanelContainer.new()
 	var compose_style = style(Color("1d2130"), 18)
 	compose_style.set_content_margin_all(8 * EditorInterface.get_editor_scale())
@@ -277,10 +296,6 @@ func _ready() -> void:
 		choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		mode_buttons.append(choice)
 	effort_picker.item_selected.connect(func(_index: int) -> void: sync_selection())
-	status = label(root_column, "")
-	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status.add_theme_color_override("font_color", Color("b4bdd1"))
-	status.hide()
 	_build_drawer()
 	visibility_changed.connect(func() -> void:
 		if not is_visible_in_tree() and picker.visible: _close_drawer())
@@ -314,6 +329,280 @@ func _layout_composer() -> void:
 	voice_button.visible = not stop_button.visible
 	_size_selection_chips()
 	_layout_drawer()
+	_layout_activity.call_deferred()
+
+func _build_activity_panel() -> void:
+	var scale = EditorInterface.get_editor_scale()
+	activity_panel = PanelContainer.new()
+	activity_panel.name = "AgentActivity"
+	var surface = style(Color("1a1d2a"), 10)
+	surface.set_content_margin_all(0)
+	surface.border_color = Color("39364b")
+	surface.set_border_width_all(1)
+	activity_panel.add_theme_stylebox_override("panel", surface)
+	root_column.add_child(activity_panel)
+	var body = VBoxContainer.new()
+	body.add_theme_constant_override("separation", 0)
+	activity_panel.add_child(body)
+	activity_toggle = button(body, "", _toggle_activity)
+	activity_toggle.name = "ActivityToggle"
+	activity_toggle.toggle_mode = true
+	activity_toggle.custom_minimum_size.y = 34 * scale
+	activity_toggle.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+	activity_toggle.add_theme_stylebox_override("pressed", _compact_style(Color("252536")))
+	activity_toggle.add_theme_stylebox_override("hover", _compact_style(Color("29283b")))
+	var inset = MarginContainer.new()
+	inset.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	activity_toggle.add_child(inset)
+	inset.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	inset.offset_left = 10 * scale
+	inset.offset_right = -10 * scale
+	var header = HBoxContainer.new()
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_theme_constant_override("separation", int(8 * scale))
+	inset.add_child(header)
+	activity_indicator = Control.new()
+	activity_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	activity_indicator.custom_minimum_size = Vector2(14, 14) * scale
+	activity_indicator.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	header.add_child(activity_indicator)
+	activity_indicator.draw.connect(func() -> void:
+		var center = activity_indicator.size / 2
+		var running = _work_running()
+		var ink = Color("b29ae9") if running else (Color("98c9a8") if work_outcome == "completed" else Color("9ba7bf"))
+		if work_outcome in ["failed", "limited"]: ink = Color("e4979f")
+		elif work_outcome in ["blocked", "cancelled"] or work_plan.get("phase") in ["paused", "blocked"]: ink = Color("d8b47a")
+		if running:
+			var angle = float(Time.get_ticks_msec()) / 700.0 if motion_enabled else -PI / 2
+			activity_indicator.draw_arc(center, 4.5 * scale, angle, angle + PI * 1.4, 20, ink, 1.7 * scale, true)
+		else: activity_indicator.draw_circle(center, 3 * scale, ink, true, -1, true))
+	status = label(header, "")
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	status.add_theme_font_size_override("font_size", int(12 * scale))
+	status.add_theme_color_override("font_color", Color("c5cbda"))
+	activity_counter = label(header, "")
+	activity_counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	activity_counter.add_theme_font_size_override("font_size", int(11 * scale))
+	activity_counter.add_theme_color_override("font_color", Color("bda6e9"))
+	activity_chevron = label(header, "▾")
+	activity_chevron.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	activity_chevron.add_theme_font_size_override("font_size", int(12 * scale))
+	activity_details = ScrollContainer.new()
+	activity_details.name = "ActivityDetails"
+	activity_details.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	activity_details.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	body.add_child(activity_details)
+	activity_rows = VBoxContainer.new()
+	activity_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	activity_rows.add_theme_constant_override("separation", int(6 * scale))
+	var details_inset = MarginContainer.new()
+	details_inset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for edge in ["left", "right"]: details_inset.add_theme_constant_override("margin_" + edge, int(10 * scale))
+	details_inset.add_theme_constant_override("margin_bottom", int(8 * scale))
+	activity_details.add_child(details_inset)
+	details_inset.add_child(activity_rows)
+	activity_rows.resized.connect(func() -> void: _layout_activity.call_deferred())
+	activity_toggle.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and activity_expanded:
+			_toggle_activity()
+			activity_toggle.accept_event())
+	activity_panel.hide()
+	activity_details.hide()
+	status.hide()
+
+func _toggle_activity() -> void:
+	activity_expanded = not activity_expanded
+	activity_toggle.set_pressed_no_signal(activity_expanded)
+	_refresh_activity()
+
+func reset_work() -> void:
+	status_revision += 1
+	work_turn = ""
+	work_plan = {}
+	work_operations.clear()
+	work_jobs = []
+	work_outcome = ""
+	work_message = ""
+	work_live = false
+	work_notice_running = false
+	activity_expanded = false
+	if activity_toggle != null: activity_toggle.set_pressed_no_signal(false)
+	_refresh_activity()
+
+func begin_work(turn: String, snapshot: Dictionary = {}, resuming: bool = false) -> void:
+	if not resuming or work_turn != turn: reset_work()
+	work_turn = turn
+	work_live = true
+	work_outcome = ""
+	work_plan = snapshot.duplicate(true)
+	_refresh_activity(true)
+
+func finish_work(turn: String, outcome: String) -> void:
+	if work_turn != turn: return
+	work_live = false
+	work_notice_running = false
+	work_outcome = outcome
+	work_message = ""
+	for operation in work_operations.values():
+		if operation.state == "in_progress": operation.state = "blocked" if outcome == "blocked" else "cancelled"
+	_refresh_activity(true)
+
+func show_work_plan(snapshot: Dictionary) -> void:
+	var turn = str(snapshot.get("turn", ""))
+	if not work_turn.is_empty() and work_turn != turn: return
+	work_turn = turn
+	work_plan = snapshot.duplicate(true)
+	_refresh_activity(true)
+
+func start_operation(id: String, title_text: String, detail: String = "") -> void:
+	work_operations[id] = {"id": id, "title": title_text.trim_suffix("…"), "detail": detail, "state": "in_progress"}
+	_refresh_activity(true)
+
+func finish_operation(id: String, title_text: String, detail: String, result: Dictionary, replayed: bool = false) -> void:
+	var state = "completed" if result.get("ok", false) else "failed"
+	if result.get("code") in ["permission_denied", "plan_required", "plan_read_only"]: state = "blocked"
+	elif result.get("code") in ["cancelled", "redirected"]: state = "cancelled"
+	work_operations[id] = {"id": id, "title": title_text.trim_suffix("…"), "detail": detail, "state": state, "replayed": replayed, "error": str(result.get("error", "")).left(600)}
+	_refresh_activity(true)
+
+func show_work_jobs(jobs: Array) -> void:
+	if work_jobs == jobs: return
+	work_jobs = jobs.duplicate(true)
+	_refresh_activity(true)
+
+func restore_work(turn: String, snapshot: Dictionary, operations: Array, outcome: String, running: bool = false) -> void:
+	reset_work()
+	work_turn = turn
+	work_plan = snapshot.duplicate(true)
+	work_outcome = outcome
+	work_live = running
+	if not running and work_plan.get("phase") in ["planning", "executing", "verifying"]:
+		work_plan["phase"] = "paused"
+	for item in operations: work_operations[str(item.id)] = item.duplicate(true)
+	_refresh_activity(true)
+
+func _work_running() -> bool:
+	return work_live or work_notice_running or work_jobs.any(func(job: Dictionary) -> bool: return job.get("status") == "running")
+
+func _refresh_activity(rebuild: bool = false) -> void:
+	if activity_panel == null: return
+	var steps: Array = work_plan.get("steps", [])
+	var details = not steps.is_empty() or not work_operations.is_empty() or not work_jobs.is_empty() or work_message.length() > 100
+	activity_panel.visible = details or _work_running() or not work_message.is_empty()
+	status.visible = activity_panel.visible
+	var heading = work_message
+	var active = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "in_progress")
+	if heading.is_empty() or " · lucrează" in heading or " · continuă pașii" in heading:
+		if work_outcome == "blocked" or work_plan.get("phase") == "blocked": heading = "Sarcină blocată"
+		elif work_outcome in ["failed", "limited"]: heading = "Necesită verificare"
+		elif work_outcome == "cancelled" or work_plan.get("phase") == "paused": heading = "Sarcină întreruptă"
+		elif work_outcome == "completed": heading = "Plan pregătit" if work_plan.get("intent") == "propose" else "Finalizat"
+		elif not active.is_empty(): heading = str(active[0].get("step", ""))
+		else: heading = "Agentul lucrează…" if _work_running() else "Activitate"
+	status.text = heading
+	status.tooltip_text = heading
+	var done = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "completed").size()
+	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s operații" % work_operations.size() if not work_operations.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else ""))
+	activity_counter.visible = not activity_counter.text.is_empty()
+	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else "Operațiile și sarcinile acestei cereri"
+	activity_chevron.visible = details
+	activity_chevron.text = "▴" if activity_expanded else "▾"
+	activity_toggle.disabled = not details
+	activity_toggle.tooltip_text = ("Restrânge activitatea" if activity_expanded else "Vezi pașii și operațiile") if details else heading
+	activity_toggle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if details else Control.CURSOR_ARROW
+	activity_details.visible = activity_expanded and details
+	activity_indicator.queue_redraw()
+	activity_dirty = activity_dirty or rebuild
+	if activity_expanded and activity_dirty:
+		_rebuild_activity()
+		activity_dirty = false
+	_layout_activity.call_deferred()
+
+func _activity_heading(text: String) -> void:
+	var heading = label(activity_rows, text)
+	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	heading.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+	heading.add_theme_color_override("font_color", Color("9ca6bc"))
+
+func _activity_row(title_text: String, state: String, detail: String = "", replayed: bool = false) -> void:
+	var scale = EditorInterface.get_editor_scale()
+	var row = HBoxContainer.new()
+	row.set_meta("state", state)
+	row.add_theme_constant_override("separation", int(8 * scale))
+	activity_rows.add_child(row)
+	var mark = label(row, str({"completed": "✓", "in_progress": "›", "pending": "○", "blocked": "!", "failed": "!", "cancelled": "Ⅱ"}.get(state, "○")))
+	mark.custom_minimum_size.x = 14 * scale
+	mark.add_theme_color_override("font_color", Color("9dd0ad") if state == "completed" else (Color("dcb57d") if state in ["blocked", "failed", "cancelled"] else Color("bca1ed")))
+	var body = VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 0)
+	row.add_child(body)
+	var title_text_label = label(body, title_text)
+	title_text_label.add_theme_font_size_override("font_size", int(12 * scale))
+	title_text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title_text_label.max_lines_visible = 2
+	title_text_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title_text_label.tooltip_text = title_text + ("\n" + detail if not detail.is_empty() else "")
+	var state_text = "Recuperat" if replayed else str({"completed": "Finalizat", "in_progress": "În lucru", "pending": "De făcut", "blocked": "Blocat", "failed": "Eșuat", "cancelled": "Întrerupt"}.get(state, "De făcut"))
+	var caption = label(body, state_text + (" · " + detail.get_slice("\n", 0).left(100) if not detail.is_empty() else ""))
+	caption.add_theme_font_size_override("font_size", int(10 * scale))
+	caption.add_theme_color_override("font_color", Color("96a2b9"))
+	caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	caption.tooltip_text = state_text + ("\n" + detail if not detail.is_empty() else "")
+	if detail.is_empty():
+		body.remove_child(caption)
+		row.add_child(caption)
+		caption.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		caption.size_flags_horizontal = Control.SIZE_SHRINK_END
+		caption.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	if state in ["failed", "blocked"] and "\n" in detail:
+		var error = label(body, detail.substr(detail.find("\n") + 1))
+		error.add_theme_font_size_override("font_size", int(11 * scale))
+		error.add_theme_color_override("font_color", Color("d8b47a"))
+		error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		error.max_lines_visible = 2
+		error.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		error.tooltip_text = error.text
+
+func _rebuild_activity() -> void:
+	for child in activity_rows.get_children():
+		activity_rows.remove_child(child)
+		child.queue_free()
+	var steps: Array = work_plan.get("steps", [])
+	if not steps.is_empty():
+		_activity_heading("Pași")
+		for item in steps: _activity_row(str(item.get("step", "")), str(item.get("status", "pending")))
+		if work_plan.get("phase") in ["blocked", "paused"] and not str(work_plan.get("explanation", "")).is_empty():
+			var reason = label(activity_rows, str(work_plan["explanation"]))
+			reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			reason.max_lines_visible = 3
+			reason.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			reason.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+			reason.tooltip_text = reason.text
+	if not work_jobs.is_empty():
+		_activity_heading("Sarcini secundare")
+		for job in work_jobs: _activity_row(str(job.get("task", "Sarcină")), "in_progress" if job.get("status") == "running" else str(job.get("status", "pending")), str(job.get("kind", "")))
+	if not work_operations.is_empty():
+		_activity_heading("Operații" + (" · ultimele 24 din %s" % work_operations.size() if work_operations.size() > 24 else ""))
+		for item in work_operations.values().slice(-24): _activity_row(str(item.title), str(item.state), str(item.get("detail", "")) + ("\n" + str(item.error) if not str(item.get("error", "")).is_empty() else ""), bool(item.get("replayed", false)))
+	if work_message.length() > 100:
+		var notice = label(activity_rows, work_message)
+		notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		notice.add_theme_font_size_override("font_size", int(12 * EditorInterface.get_editor_scale()))
+
+func _layout_activity() -> void:
+	if activity_details == null or not activity_details.visible: return
+	var scale = EditorInterface.get_editor_scale()
+	for row in activity_rows.get_children():
+		if not row.has_meta("state"): continue
+		var title_text_label: Label = row.get_child(1).get_child(0)
+		var text_width = title_text_label.get_theme_font("font").get_string_size(title_text_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, title_text_label.get_theme_font_size("font_size")).x
+		title_text_label.max_lines_visible = 2 if text_width > maxf(60 * scale, title_text_label.get_parent().size.x) else 1
+	var cap = maxf(48 * scale, minf(200 * scale, root_column.size.y * 0.30))
+	activity_details.custom_minimum_size.y = minf(cap, activity_rows.get_combined_minimum_size().y + 8 * scale)
+	activity_details.custom_maximum_size.y = cap
 
 func _compact_style(color: Color) -> StyleBoxFlat:
 	var box = style(color, 8)
@@ -341,7 +630,8 @@ func _size_selection_chips() -> void:
 	var very_narrow = width < 230.0
 	var compact_reasoning = width < 340.0
 	reasoning_button.visible = not very_narrow and not reasoning_button.disabled
-	reasoning_button.text = "" if compact_reasoning else effort_label(str(_current_selection().get("effort", "")))
+	var effort = str(_current_selection().get("effort", ""))
+	reasoning_button.text = "" if compact_reasoning else ("Implicit" if effort.is_empty() else effort_label(effort))
 	reasoning_button.tooltip_text = "Raționament · " + effort_label(str(_current_selection().get("effort", ""))) + " · schimbă nivelul"
 	var effort_width = (32.0 if compact_reasoning else minf(104.0, 34.0 + reasoning_button.get_theme_font("font").get_string_size(reasoning_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, reasoning_button.get_theme_font_size("font_size")).x)) if reasoning_button.visible else 0.0
 	reasoning_button.custom_minimum_size.x = effort_width * scale
@@ -675,6 +965,7 @@ func _update_history_controls() -> void:
 	for key in ["new", "new_history"]: navigation_buttons[key].disabled = history_working
 
 func clear_messages() -> void:
+	reset_work()
 	change_cards.clear()
 	plan_cards.clear()
 	message_records.clear()
@@ -690,6 +981,7 @@ func show_plan(snapshot: Dictionary) -> void:
 	var proposal = snapshot.get("intent") == "propose"
 	var entries: Array = snapshot.get("steps", [])
 	if entries.is_empty(): return
+	if not restoring: show_work_plan(snapshot)
 	if not plan_cards.has(id) or not is_instance_valid(plan_cards[id]["node"]):
 		var panel = PanelContainer.new()
 		var surface = style(Color("1c2030"), 12)
@@ -700,8 +992,10 @@ func show_plan(snapshot: Dictionary) -> void:
 		var body = VBoxContainer.new()
 		panel.add_child(body)
 		var rows = VBoxContainer.new()
+		var summary = Label.new()
 		var toggle = button(body, "", func() -> void:
 			rows.visible = not rows.visible
+			summary.visible = not rows.visible and panel.get_meta("phase", "") != "completed" and not summary.text.is_empty()
 			panel.set_meta("expanded_by_user", rows.visible))
 		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		toggle.clip_text = true
@@ -710,10 +1004,18 @@ func show_plan(snapshot: Dictionary) -> void:
 		_compact_button(toggle)
 		var reason = label(body, "")
 		reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		reason.max_lines_visible = 2
+		reason.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		reason.add_theme_color_override("font_color", Color("aab5c9"))
+		summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		summary.max_lines_visible = 2
+		summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		summary.add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
+		body.add_child(summary)
 		body.add_child(rows)
-		plan_cards[id] = {"node": panel, "toggle": toggle, "rows": rows, "reason": reason}
+		plan_cards[id] = {"node": panel, "toggle": toggle, "rows": rows, "reason": reason, "summary": summary}
 	var card: Dictionary = plan_cards[id]
+	card["node"].set_meta("phase", phase)
 	for row in card["rows"].get_children():
 		card["rows"].remove_child(row)
 		row.queue_free()
@@ -734,8 +1036,18 @@ func show_plan(snapshot: Dictionary) -> void:
 	var heading = {"planning": "Pregătește planul", "executing": "Plan în lucru", "verifying": "Verifică rezultatele", "completed": "Plan propus" if proposal else "Plan finalizat", "paused": "Plan întrerupt", "blocked": "Plan blocat"}.get(phase, "Plan")
 	card["toggle"].text = str(heading) + (" · %s pași" % entries.size() if proposal else " · %s/%s" % [done, entries.size()])
 	card["reason"].text = str(snapshot.get("explanation", ""))
+	card["reason"].tooltip_text = card["reason"].text
 	card["reason"].visible = not card["reason"].text.is_empty()
-	card["rows"].visible = card["node"].get_meta("expanded_by_user", phase != "completed")
+	card["rows"].visible = card["node"].get_meta("expanded_by_user", proposal or phase in ["planning", "blocked"])
+	var active_step = ""
+	for item in entries:
+		if item.get("status") == "in_progress": active_step = str(item.get("step", "")); break
+	if active_step.is_empty():
+		for item in entries:
+			if item.get("status") == "pending": active_step = str(item.get("step", "")); break
+	card["summary"].text = active_step
+	card["summary"].tooltip_text = active_step
+	card["summary"].visible = not card["rows"].visible and phase != "completed" and not active_step.is_empty()
 	_follow.call_deferred()
 
 func append_message(role: String, text: String, metadata: Dictionary = {}, rich: bool = true) -> RichTextLabel:
@@ -901,6 +1213,10 @@ func finish_stream(anchor: RichTextLabel, metadata: Dictionary) -> void:
 	_refresh_message_controls(record)
 
 func _process(delta: float) -> void:
+	activity_clock += delta
+	if activity_clock >= 0.08:
+		activity_clock = 0.0
+		if activity_indicator != null and motion_enabled and _work_running(): activity_indicator.queue_redraw()
 	stream_clock += delta
 	if stream_clock < 0.08 or streaming_dirty.is_empty(): return
 	stream_clock = 0.0
@@ -913,7 +1229,7 @@ func _message_actions(record: Dictionary) -> void:
 	var actions = HBoxContainer.new()
 	record["column"].add_child(actions)
 	record["actions"] = []
-	for pair in [["Copy", "Copiază răspunsul", "copy"], ["Retry", "Continuă răspunsul", "retry"], ["Changes", "Modificări / Undo", "changes"]]:
+	for pair in [["Copy", "Copiază răspunsul", "copy"], ["Retry", "Reia sarcina întreruptă", "retry"], ["Changes", "Modificări / Undo", "changes"]]:
 		var control = icon_button(actions, pair[0], pair[1], func() -> void: _message_action(record, pair[2]))
 		control.set_meta("message_action", pair[2])
 		_compact_button(control)
@@ -942,6 +1258,15 @@ func _refresh_message_controls(record: Dictionary) -> void:
 		var name = str(control.get_meta("message_action", ""))
 		control.disabled = record["streaming"] or (name == "copy" and str(record["text"]).is_empty()) or (name == "changes" and not change_cards.has(str(record["metadata"].get("turn_id", ""))) and record["metadata"].get("changes", []).is_empty())
 		if name == "changes": control.visible = not control.disabled
+		if name == "retry":
+			control.disabled = control.disabled or record["metadata"].get("run_status") == "completed"
+			control.visible = record["metadata"].get("run_status") != "completed"
+
+func set_turn_outcome(turn: String, status: String) -> void:
+	for record in message_records:
+		if record["metadata"].get("turn_id") != turn: continue
+		record["metadata"]["run_status"] = status
+		_refresh_message_controls(record)
 
 func _message_action(record: Dictionary, name: String) -> void:
 	var metadata: Dictionary = record["metadata"]
@@ -1022,12 +1347,15 @@ func _toggle_expanded() -> void:
 func show_status(message: String, working: bool = false) -> void:
 	status_revision += 1
 	var revision = status_revision
-	status.text = message
-	status.modulate.a = 1.0
-	status.visible = not message.is_empty()
+	var changed = work_message != message
+	work_message = message
+	work_notice_running = working
+	_refresh_activity(changed)
 	if working or message.is_empty(): return
 	await get_tree().create_timer(4.0).timeout
-	if revision == status_revision: status.hide()
+	if revision == status_revision:
+		work_message = ""
+		_refresh_activity(true)
 
 func show_attachments(images: Array, references: Array, file_ids: Array = []) -> void:
 	var signature = JSON.stringify(images.map(func(item: Dictionary) -> String: return str(item.get("name", "")) + str(str(item.get("data", "")).length()))) + JSON.stringify(references) + JSON.stringify(file_ids) + file_scope
@@ -1074,6 +1402,8 @@ func set_working(working: bool) -> void:
 	if history_working != working:
 		history_working = working
 		_update_history_controls()
+		if not working and not work_live: work_notice_running = false
+		_refresh_activity()
 	if stop_button != null and stop_button.visible != working:
 		stop_button.visible = working
 		_layout_composer()

@@ -84,7 +84,8 @@ static func read_json(path: String, fallback: Variant = {}) -> Variant:
 	return fallback if value == null else value
 
 static func json_safe(value: Variant, depth: int = 0) -> Variant:
-	if depth > 6: return "[depth limit]"
+	# A reflected method's arguments are nested beneath result/methods/args.
+	if depth > 12: return "[depth limit]"
 	if value is Dictionary:
 		var output = {}
 		for key in value:
@@ -99,6 +100,7 @@ static func json_safe(value: Variant, depth: int = 0) -> Variant:
 	if value is Vector3: return {"$type": "Vector3", "value": [value.x, value.y, value.z]}
 	if value is Color: return {"$type": "Color", "value": [value.r, value.g, value.b, value.a]}
 	if value is Quaternion: return {"$type": "Quaternion", "value": [value.x, value.y, value.z, value.w]}
+	if typeof(value) in [TYPE_STRING_NAME, TYPE_NODE_PATH]: return str(value)
 	if typeof(value) in [TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING]: return value
 	return var_to_str(value)
 

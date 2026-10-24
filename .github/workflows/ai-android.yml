@@ -34,6 +34,7 @@ jobs:
           unzip -q /tmp/godot.zip -d /tmp/godot-ai
           python modules/ai_assistant/tests/run.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
           python modules/ai_assistant/tests/test_delivery.py
+          python modules/ai_assistant/tests/test_termux_blender.py
       - name: Render desktop and narrow editor panels
         run: |
           sudo apt-get update -qq

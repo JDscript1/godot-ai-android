@@ -5,6 +5,7 @@
 
     <queries>
         <package android:name="org.godotengine.godot_gradle_build_environment" />
+        <package android:name="com.termux" />
     </queries>
 
     <supports-screens
@@ -38,6 +39,7 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -58,6 +60,8 @@
             android:shell="true"
             android:enabled="true"
             tools:targetApi="29" />
+
+        <receiver android:name=".AITermuxBlenderResult" android:exported="false" />
 
         <activity
             android:name=".GodotEditor"

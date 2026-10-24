@@ -16,10 +16,11 @@ import urllib.parse
 import zlib
 
 
-def png():
+def png(cutout=False):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress((b"\x00" + b"\xff\x30\x20\xff" * 2) * 2)) + chunk(b"IEND", b"")
+    row = b"\x00" + b"\xff\x30\x20\xff" + (b"\x00\x00\x00\x00" if cutout else b"\xff\x30\x20\xff")
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(row * 2)) + chunk(b"IEND", b"")
 
 
 def glb():
@@ -31,8 +32,10 @@ def glb():
 
 
 class Fixtures(http.server.BaseHTTPRequestHandler):
+    generation_submissions = {}
     conversion_posts = {}
     conversion_polls = {}
+    background_jobs = set()
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *args):
@@ -59,6 +62,39 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
+        if location.path in ["/drip", "/idle-drip"]:
+            chunks = [("data: " + json.dumps({"tick": index}) + "\n\n").encode() for index in range(4)]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(sum(map(len, chunks))))
+            self.end_headers()
+            try:
+                for chunk in chunks:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    time.sleep(0.7 if location.path == "/idle-drip" else 0.12)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        if location.path == "/local-lm/v1/models":
+            self.reply({"data": [{"id": "local-code"}, {"id": "local-embedding"}]})
+            return
+        if location.path == "/local-lm/api/v0/models":
+            self.reply({"data": [{"id": "local-code", "type": "llm", "state": "loaded", "loaded_context_length": 4096, "max_context_length": 262144}, {"id": "local-embedding", "type": "embeddings", "state": "not-loaded", "loaded_context_length": None}]})
+            return
+        if location.path == "/local-ollama/api/tags":
+            self.reply({"models": [{"name": "local-code:latest"}, {"name": "unloaded-code:latest"}]})
+            return
+        if location.path == "/local-ollama/api/ps":
+            self.reply({"models": [{"name": "local-code:latest", "context_length": 4096}]})
+            return
+        if location.path == "/auth-lm/v1/models":
+            valid = self.headers.get("Authorization") == "Bearer local-fixture-token"
+            self.reply({"data": [{"id": "authorized-code"}]} if valid else {"error": "Authentication required"}, 200 if valid else 401)
+            return
+        if location.path == "/fixture-submissions":
+            self.reply(self.generation_submissions)
+            return
         if location.path == "/user":
             valid = self.headers.get("Authorization") == "Bearer github-fixture-token"
             self.reply({"login": "fixture", "id": 42, "name": "Fixture user"} if valid else {"error": "unauthorized"}, 200 if valid else 401)
@@ -127,7 +163,7 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
                         self.reply(data.getvalue(), content_type="application/octet-stream")
                     return
                 mesh = location.path.endswith(".glb")
-                self.reply(glb() if mesh else png(), content_type="model/gltf-binary" if mesh else "image/png")
+                self.reply(glb() if mesh else png(cutout=location.path.endswith("cutout.png")), content_type="model/gltf-binary" if mesh else "image/png")
         elif location.path == "/repos/fixture/project":
             self.reply({"full_name": "fixture/project", "default_branch": "main", "private": False})
         elif location.path == "/repos/fixture/project/contents/script.gd":
@@ -157,6 +193,24 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         payload = ({key: values[0] for key, values in urllib.parse.parse_qs(raw.decode()).items()} if self.headers.get("Content-Type", "").startswith("application/x-www-form-urlencoded") else json.loads(raw or b"{}"))
         location = urllib.parse.urlparse(self.path)
         if location.path == "/runware":
+            authorized = self.headers.get("Authorization") == "Bearer generation-fixture-key"
+            task = payload[0] if isinstance(payload, list) and len(payload) == 1 else {}
+            if authorized and task.get("taskType") == "removeBackground":
+                self.generation_submissions["remove_background"] = self.generation_submissions.get("remove_background", 0) + 1
+                valid = task.get("model") == "runware:109@1" and task.get("outputFormat") == "PNG" and task.get("inputs", {}).get("image", "").startswith("data:image/png;base64,") and task.get("settings", {}).get("rgba") == [255, 255, 255, 0]
+                if valid:
+                    self.background_jobs.add(task["taskUUID"])
+                self.reply({"data": [{"taskUUID": task.get("taskUUID"), "status": "processing"}]} if valid else {"errors": [{"message": "wrong background removal schema"}]})
+                return
+            if authorized and task.get("taskType") == "getResponse" and task.get("taskUUID") in self.background_jobs:
+                self.reply({"data": [{"taskUUID": task["taskUUID"], "status": "success", "imageURL": f"http://127.0.0.1:{self.server.server_port}/artifact/cutout.png"}]})
+                return
+            if isinstance(payload, list) and payload and payload[0].get("taskType") in ["imageInference", "3dInference"]:
+                prompt = payload[0].get("positivePrompt", "")
+                self.generation_submissions[prompt] = self.generation_submissions.get(prompt, 0) + 1
+                if prompt == "lost-runware-submit":
+                    self.close_connection = True
+                    return
             valid = self.headers.get("Authorization") == "Bearer generation-fixture-key" and isinstance(payload, list) and payload == [{"taskType": "ping", "ping": True}]
             self.reply({"data": [{"taskType": "ping", "pong": True}]} if valid else {"errors": [{"code": "invalidApiKey", "message": "Invalid API key"}]}, 200 if valid else 401)
             return
@@ -172,6 +226,11 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         if location.path.startswith(("/meshy/", "/tripo/", "/openai_image/")):
             if self.headers.get("Authorization") != "Bearer generation-fixture-key":
                 self.reply({"error": "missing fixture authorization"}, 401)
+                return
+            prompt = payload.get("prompt", "")
+            self.generation_submissions[prompt] = self.generation_submissions.get(prompt, 0) + 1
+            if prompt == "lost-submit":
+                self.close_connection = True
                 return
             task = "failed-task" if payload.get("prompt") == "fail" else ("foreign-task" if payload.get("prompt") == "foreign" else "mesh-task")
             if location.path.startswith("/openai_image/"):
@@ -249,6 +308,9 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="godot-ai-qa-") as scratch:
             env = dict(os.environ, XDG_CONFIG_HOME=scratch, XDG_DATA_HOME=scratch, XDG_CACHE_HOME=scratch)
+            if args.proot:
+                entry = command.index(args.godot)
+                command[entry:entry] = ["env", "XDG_CONFIG_HOME=" + scratch, "XDG_DATA_HOME=" + scratch, "XDG_CACHE_HOME=" + scratch]
             return subprocess.run(command, env=env, check=False).returncode
     finally:
         server.shutdown()

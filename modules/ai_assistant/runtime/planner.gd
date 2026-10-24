@@ -49,6 +49,20 @@ func update(args: Dictionary, propose: bool = false) -> Dictionary:
 func snapshot() -> Dictionary:
 	return {"turn": turn, "phase": phase, "intent": intent, "steps": steps.duplicate(true), "explanation": explanation, "revision": revision}
 
+func restore(saved: Dictionary, resuming: bool = false) -> Dictionary:
+	var saved_phase = str(saved.get("phase", "idle"))
+	if saved_phase == "idle":
+		reset(str(saved.get("turn", "")), saved.get("intent") == "propose")
+		return Common.success(snapshot())
+	if saved_phase not in ["planning", "executing", "verifying", "completed", "blocked", "paused"]: return Common.failure("Planul salvat are o stare invalidă.", "invalid_plan")
+	var next_phase = "planning" if saved_phase == "paused" or (resuming and saved_phase == "blocked") else saved_phase
+	var result = update({"tasks": saved.get("steps", []), "phase": next_phase, "intent": saved.get("intent", "execute"), "explanation": saved.get("explanation", "")}, saved.get("intent") == "propose")
+	if not result.get("ok", false): return result
+	turn = str(saved.get("turn", ""))
+	revision = maxi(0, int(saved.get("revision", 0)))
+	if not resuming: phase = saved_phase
+	return Common.success(snapshot())
+
 func can_write() -> bool:
 	return phase == "idle" or (intent == "execute" and phase in ["executing", "verifying"])
 
