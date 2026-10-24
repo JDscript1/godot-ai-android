@@ -747,15 +747,20 @@ func _build_termux_blender(parent: Node) -> void:
 	b["cancel"] = _button(b["actions"], "Oprește", func() -> void: integrations.termux.stop())
 	b["guide"] = VBoxContainer.new()
 	card.add_child(b["guide"])
-	var hint = _label(b["guide"], "La prima conectare: deschide Termux, acordă permisiunea Android și activează comenzile externe.")
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var guide = _row(b["guide"])
-	_button(guide, "Permisiune", func() -> void: integrations.termux.native("permission"))
-	_button(guide, "Setări Android", func() -> void: integrations.termux.native("settings"))
+	b["hint"] = _label(b["guide"], "La prima conectare: deschide Termux, acordă permisiunea Android și activează comenzile externe.")
+	b["hint"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b["permission_actions"] = _row(b["guide"])
+	_button(b["permission_actions"], "Permisiune", func() -> void: integrations.termux.native("permission"))
+	_button(b["permission_actions"], "Setări Android", func() -> void: integrations.termux.native("settings"))
 	var activation = _row(b["guide"])
 	_button(activation, "Copiază comanda", func() -> void:
-		DisplayServer.clipboard_set(integrations.termux.ACTIVATION)
-		_status("Comanda de activare a fost copiată. Lipește-o și ruleaz-o o dată în Termux."))
+		if integrations.termux.manual_mode():
+			var copied = integrations.termux.native("copy_bootstrap", {"install_python": true})
+			if copied.get("ok", false): integrations.termux.manual_setup_pending = true
+			_status("Lipește comanda în Termux, apasă Enter și revino în Godot." if copied.get("ok", false) else str(copied.get("error", "Copierea a eșuat.")))
+		else:
+			DisplayServer.clipboard_set(integrations.termux.ACTIVATION)
+			_status("Comanda de activare a fost copiată. Lipește-o și ruleaz-o o dată în Termux."))
 	_button(activation, "Deschide Termux", func() -> void: integrations.termux.native("open_termux"))
 	var log_actions = _row(card)
 	var disclosure = _button(log_actions, "Jurnal", func() -> void:
@@ -778,9 +783,10 @@ func _refresh_blender_card() -> void:
 	var device: Dictionary = backend.state
 	var installed = bool(device.get("installed", false))
 	var ready = backend.available()
-	var operation = "install_termux" if not installed else "permission" if not device.get("permission", false) else "resume" if not backend.pending.is_empty() else "verify" if ready else "install" if backend.connected and backend.runtime.is_empty() else "connect"
+	var manual = backend.manual_mode()
+	var operation = "install_termux" if not installed else "manual_start" if manual and not backend.connected else "permission" if not manual and not device.get("permission", false) else "resume" if not backend.pending.is_empty() else "verify" if ready else "install" if backend.connected and backend.discovery_complete and backend.runtime.is_empty() else "connect"
 	if backend.connected and not backend.working and backend.pending.is_empty() and device.get("error_code") == "incomplete_image": operation = "repair"
-	var labels = {"install_termux": "Instalează Termux", "permission": "Acordă permisiunea", "resume": "Recuperează", "verify": "Verifică", "install": "Instalează Blender", "connect": "Conectează", "repair": "Repară instalarea"}
+	var labels = {"install_termux": "Instalează Termux", "permission": "Acordă permisiunea", "resume": "Recuperează", "verify": "Verifică", "install": "Instalează Blender", "connect": "Conectează", "repair": "Repară instalarea", "manual_start": "Pornește în Termux"}
 	b["primary"].text = labels[operation]
 	b["primary"].set_meta("operation", operation)
 	b["primary"].disabled = backend.working or backend.refreshing or busy
@@ -788,6 +794,8 @@ func _refresh_blender_card() -> void:
 	b["verify"].disabled = backend.working or busy
 	b["cancel"].visible = backend.working or not backend.pending.is_empty()
 	b["guide"].visible = installed and not ready and (not backend.working or not backend.connected)
+	b["permission_actions"].visible = not manual
+	b["hint"].text = "Termux cu pornire din terminal: apasă Pornește în Termux, lipește comanda și apasă Enter. Revino în Godot pentru verificare." if manual else "La prima conectare: deschide Termux, acordă permisiunea Android și activează comenzile externe."
 	var detail = str(backend.runtime.get("version", ""))
 	if backend.runtime.get("kind") == "proot": detail += " · " + str(backend.runtime.get("container", ""))
 	b["status"].text = ("Disponibil · " + detail) if ready and not backend.working else str(device.get("stage", "Termux conectat" if backend.connected else "Termux detectat" if installed else "Termux nu este instalat"))
@@ -816,6 +824,11 @@ func _blender_setup(operation: String) -> void:
 	if busy or integrations.termux.working: return
 	if operation in ["install_termux", "permission"]:
 		integrations.termux.native(operation)
+		return
+	if operation == "manual_start":
+		var prepared = integrations.termux.prepare_manual()
+		_status("Lipește comanda în Termux, apasă Enter și revino în Godot." if prepared.get("ok", false) else str(prepared.get("error", "Pregătirea a eșuat.")))
+		_refresh_blender_card()
 		return
 	var result = await integrations.termux.setup(operation)
 	_refresh_secrets()
@@ -2535,9 +2548,11 @@ func _process(_delta: float) -> void:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
 		if busy: chat._follow()
 	if settings_window != null and settings_window.visible: _update_settings_controls()
-	if integrations != null and integrations.termux != null and settings_window != null and settings_window.visible:
+	if integrations != null and integrations.termux != null:
 		var backend = integrations.termux
-		if Time.get_ticks_msec() - backend.last_check > 5000 and not backend.working and not backend.refreshing:
+		var viewing = settings_window != null and settings_window.visible
+		var keep_manual = backend.manual_mode() and integration_settings.get("blender_enabled", false) and not backend.verified.is_empty()
+		if (viewing or keep_manual) and Time.get_ticks_msec() - backend.last_check > (5000 if viewing else 60000) and not backend.working and not backend.refreshing:
 			backend.last_check = Time.get_ticks_msec()
 			backend.refresh.call_deferred()
 	if speech != null: speech.poll(config.get("preferences", {}))

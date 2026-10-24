@@ -1,11 +1,14 @@
 """Backend tests use isolated directories; no package installation or user assets."""
 import hashlib
+import base64
 import http.server
 import importlib.util
 import io
 import json
 import os
 import socket
+import shutil
+import signal
 import subprocess
 from pathlib import Path
 import sys
@@ -24,6 +27,61 @@ WORKER = ROOT / "platform/android/java/editor/src/main/assets/godot_ai/blender_w
 spec = importlib.util.spec_from_file_location("blender_worker", WORKER)
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
+
+
+class BootstrapTests(unittest.TestCase):
+    def script(self, port, token):
+        template = WORKER.with_name("blender_bootstrap.sh").read_text()
+        return (template.replace("__GODOT_INSTALL_PYTHON__", "false")
+                .replace("__GODOT_WORKER_BASE64__", base64.b64encode(WORKER.read_bytes()).decode())
+                .replace("__GODOT_PORT__", str(port)).replace("__GODOT_TOKEN__", token))
+
+    def test_pasted_command_starts_authenticated_worker_without_android_intent(self):
+        with tempfile.TemporaryDirectory(prefix="godot-blender-pairing-") as home:
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            token = "c" * 64
+            encoded = base64.b64encode(self.script(port, token).encode()).decode()
+            command = f"printf '%s' '{encoded}' | base64 -d | bash"
+            process = subprocess.Popen([shutil.which("bash"), "-c", command],
+                                       env={**os.environ, "HOME": home}, start_new_session=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 10
+                request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/health",
+                                                 headers={"Authorization": "Bearer " + token})
+                while True:
+                    try:
+                        with urllib.request.urlopen(request, timeout=1) as response:
+                            health = json.load(response)
+                        break
+                    except urllib.error.URLError:
+                        self.assertIsNone(process.poll(), "Bootstrap exited before serving health")
+                        self.assertLess(time.monotonic(), deadline)
+                        time.sleep(.05)
+                self.assertEqual(health["protocol"], 1)
+                self.assertTrue(health["ok"])
+                installed = Path(home)/".local/share/godot-ai/blender/worker.py"
+                self.assertEqual(installed.read_bytes(), WORKER.read_bytes())
+                self.assertEqual(installed.stat().st_mode & 0o777, 0o600)
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/health", timeout=1)
+                self.assertEqual(error.exception.code, 401)
+            finally:
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
+                stdout, stderr = process.communicate(timeout=5)
+                self.assertNotIn(token.encode(), stdout + stderr)
+
+    def test_missing_python_reports_failure_without_installation(self):
+        with tempfile.TemporaryDirectory(prefix="godot-blender-no-python-") as home:
+            result = subprocess.run([shutil.which("bash"), "-s"], input=self.script(12345, "d" * 64),
+                                    text=True, capture_output=True, timeout=5,
+                                    env={**os.environ, "HOME": home, "PATH": str(Path(home)/"empty")})
+            self.assertEqual(result.returncode, 42)
+            self.assertIn("Python lipsește", result.stderr)
+            self.assertFalse((Path(home)/".local").exists())
 
 
 class BackendTests(unittest.TestCase):

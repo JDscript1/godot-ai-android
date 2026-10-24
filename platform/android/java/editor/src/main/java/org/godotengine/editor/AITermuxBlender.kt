@@ -3,14 +3,19 @@ package org.godotengine.editor
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.PermissionInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PersistableBundle
 import android.provider.Settings
 import android.util.Base64
 import org.json.JSONObject
@@ -24,6 +29,7 @@ import java.util.UUID
 object AITermuxBlender {
     private const val PACKAGE = "com.termux"
     private const val PERMISSION = "com.termux.permission.RUN_COMMAND"
+    private const val SERVICE = "com.termux.app.RunCommandService"
     private const val SECRET = "integration_termux_blender"
     private var activity = WeakReference<Activity>(null)
     private val main = Handler(Looper.getMainLooper())
@@ -38,9 +44,16 @@ object AITermuxBlender {
         val result = JSONObject().put("ok", true).put("installed", false).put("permission", false)
             .put("supported", Build.SUPPORTED_ABIS.contains("arm64-v8a"))
         try {
-            val info = current.packageManager.getPackageInfo(PACKAGE, 0)
+            val info = current.packageManager.getPackageInfo(PACKAGE, PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES)
+            val permission = info.permissions?.firstOrNull { it.name == PERMISSION }
+            val service = info.services?.firstOrNull { it.name == SERVICE }
+            val protection = permission?.protectionLevel?.and(PermissionInfo.PROTECTION_MASK_BASE)
+            val direct = service?.exported == true && service.enabled && service.permission == PERMISSION &&
+                protection in listOf(PermissionInfo.PROTECTION_NORMAL, PermissionInfo.PROTECTION_DANGEROUS) &&
+                (if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()) >= 118
             result.put("installed", true).put("version", info.versionName)
-            result.put("compatible", (if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()) >= 118)
+                .put("permission_declared", permission != null).put("external_commands", direct)
+                .put("launch_mode", if (direct) "direct" else "manual").put("compatible", true)
         } catch (_: PackageManager.NameNotFoundException) { }
         result.put("permission", current.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED)
         result.put("launching", preferences(current).getLong("launch_started", 0L) > System.currentTimeMillis() - 180_000)
@@ -73,11 +86,29 @@ object AITermuxBlender {
                     JSONObject().put("ok", true).put("url", "http://127.0.0.1:$port").put("token", token)
                 }
                 "permission" -> {
+                    if (!status(current).optBoolean("external_commands"))
+                        return failure("Această versiune Termux nu oferă permisiunea RUN_COMMAND. Folosește Pornește în Termux.")
+                            .put("code", "manual_start_required").toString()
                     main.post {
                         if (current.checkSelfPermission(PERMISSION) != PackageManager.PERMISSION_GRANTED)
                             current.requestPermissions(arrayOf(PERMISSION), 0x424c)
                     }
                     status(current)
+                }
+                "copy_bootstrap" -> {
+                    val state = status(current)
+                    if (!state.optBoolean("installed") || !state.optBoolean("supported"))
+                        return failure("Configurarea necesită Termux instalat pe Android ARM64.").toString()
+                    val script = bootstrap(current, args.optBoolean("install_python", true))
+                    val encoded = Base64.encodeToString(script.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                    // The command contains a local pairing token. Keep it out of GDScript/model/log results.
+                    val clip = ClipData.newPlainText("Godot Blender", "printf '%s' '$encoded' | base64 -d | bash")
+                    clip.description.extras = PersistableBundle().apply {
+                        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
+                    val clipboard = current.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    main.post { clipboard.setPrimaryClip(clip) }
+                    JSONObject().put("ok", true)
                 }
                 "settings", "open_termux", "install_termux" -> {
                     val intent = when (action) {
@@ -100,36 +131,31 @@ object AITermuxBlender {
         }
     }
 
+    private fun bootstrap(current: Activity, installPython: Boolean): String {
+        val connection = JSONObject(command("connection", "{}"))
+        check(connection.optBoolean("ok"))
+        val port = Uri.parse(connection.getString("url")).port
+        val token = connection.getString("token")
+        check(port in 1024..65535 && token.matches(Regex("[a-f0-9]{64}")))
+        val worker = current.assets.open("godot_ai/blender_worker.py").use { it.readBytes() }
+        val encoded = Base64.encodeToString(worker, Base64.NO_WRAP)
+        val script = current.assets.open("godot_ai/blender_bootstrap.sh").bufferedReader(Charsets.UTF_8).use { it.readText() }
+            .replace("__GODOT_INSTALL_PYTHON__", installPython.toString())
+            .replace("__GODOT_WORKER_BASE64__", encoded)
+            .replace("__GODOT_PORT__", port.toString())
+            .replace("__GODOT_TOKEN__", token)
+        check(script.toByteArray().size < 120_000)
+        return script
+    }
+
     private fun start(current: Activity, installPython: Boolean): JSONObject {
         val state = status(current)
         if (!state.optBoolean("supported")) return failure("Configurarea automată Blender necesită Android ARM64.")
         if (!state.optBoolean("installed")) return failure("Instalează și deschide Termux o dată.")
-        if (!state.optBoolean("compatible")) return failure("Este necesar Termux 0.118 sau mai nou.")
+        if (!state.optBoolean("external_commands")) return failure("Această versiune Termux necesită pornire din terminal.").put("code", "manual_start_required")
         if (!state.optBoolean("permission")) return failure("Acordă permisiunea de rulare a comenzilor în Termux.")
         if (state.optBoolean("launching")) return JSONObject().put("ok", true).put("launching", true)
-        val connection = JSONObject(command("connection", "{}"))
-        if (!connection.optBoolean("ok")) return connection
-        val port = Uri.parse(connection.getString("url")).port
-        val token = connection.getString("token")
-        val worker = current.assets.open("godot_ai/blender_worker.py").use { it.readBytes() }
-        val encoded = Base64.encodeToString(worker, Base64.NO_WRAP)
-        val packageStep = if (installPython) "pkg install -y python" else "printf '%s\\n' 'Python lipsește. Apasă Conectează în Integrări.' >&2; exit 42"
-        // Only fixed commands, numeric port and hex token. User scripts are transferred over the authenticated bridge.
-        val script = """
-            set -eu
-            umask 077
-            if ! command -v python >/dev/null 2>&1; then
-                $packageStep
-            fi
-            task_root="${'$'}HOME/.local/share/godot-ai/blender"
-            mkdir -p "${'$'}task_root"
-            printf '%s' '$encoded' | base64 -d > "${'$'}task_root/worker.py.tmp"
-            mv "${'$'}task_root/worker.py.tmp" "${'$'}task_root/worker.py"
-            exec python "${'$'}task_root/worker.py" --root "${'$'}task_root" --port $port <<'GODOT_BLENDER_TOKEN'
-            $token
-            GODOT_BLENDER_TOKEN
-        """.trimIndent()
-        check(script.toByteArray().size < 120_000)
+        val script = bootstrap(current, installPython)
         val nonce = UUID.randomUUID().toString()
         val prefs = preferences(current)
         check(prefs.edit().putString("nonce", nonce).putString("error", "").putLong("launch_started", System.currentTimeMillis()).commit())
@@ -139,7 +165,7 @@ object AITermuxBlender {
         val callback = PendingIntent.getBroadcast(current, nonce.hashCode(), resultIntent,
             PendingIntent.FLAG_ONE_SHOT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0))
         val intent = Intent("com.termux.RUN_COMMAND").apply {
-            component = ComponentName(PACKAGE, "com.termux.app.RunCommandService")
+            component = ComponentName(PACKAGE, SERVICE)
             putExtra("com.termux.RUN_COMMAND_PATH", "\$PREFIX/bin/bash")
             putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-s"))
             putExtra("com.termux.RUN_COMMAND_STDIN", script)

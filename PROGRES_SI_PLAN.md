@@ -31,7 +31,64 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — jurnal Blender înainte de pornire, 24.10.2026
+## Etapa curentă — compatibilitate Termux Google Play, 24.10.2026
+
+După jurnalul nou, utilizatorul a confirmat că butonul Permisiune nu deschide
+dialog, iar setările aplicației nu afișează permisiunea Termux. Inspectat APK-ul
+Termux instalat: **`googleplay.2026.10.09`, versionCode 142**, fără declarația
+`com.termux.permission.RUN_COMMAND` și fără `RunCommandService`. Există numai
+permisiunea internă cu protecție de semnătură, care nu poate fi cerută de Godot.
+Verificarea anterioară bazată pe `versionCode >= 118` era insuficientă.
+Activarea `allow-external-apps` nu adaugă un serviciu absent din această variantă.
+Dovadă: `.ai-qa/installed-termux-manifest.txt`; sursa oficială:
+[manifest Google Play](https://github.com/termux-play-store/termux-apps/blob/main/termux-app/src/main/AndroidManifest.xml).
+
+- Conectorul inspectează declarațiile de permisiuni, protecția lor, serviciul
+  exportat și versiunea înainte să aleagă pornirea directă. Variantele fără
+  interfața externă primesc modul de pornire din terminal; nu se cere o
+  permisiune nedefinită și nu se încearcă ocolirea permisiunii interne.
+- Pentru Google Play, **Pornește în Termux** copiază comanda fixă de conectare,
+  marcată privată în clipboard, și deschide Termux. Utilizatorul lipește comanda
+  și apasă Enter. La revenire, Godot detectează procesul, caută Blender existent
+  și verifică automat exportul/importul. Instalarea Blender rămâne acțiune separată
+  numai după constatarea absenței sale. Instalarea Termux existentă este păstrată.
+- Același script bootstrap inclus în APK este folosit și de pornirea directă.
+  Worker-ul este transferat din assets, conexiunea rămâne pe loopback cu token
+  de 256 biți, iar comanda privată nu este returnată modelului sau jurnalelor.
+  Python este instalat numai dacă lipsește, la pregătirea explicită a utilizatorului.
+- Pentru modul manual verificat și activat, un ping la 60 secunde păstrează
+  procesul disponibil cât editorul rulează. După închiderea editorului rămâne
+  valabilă expirarea de 10 minute fără activitate. După oprirea procesului de
+  Android, utilizatorul pornește din nou conectorul din același panou.
+
+Verificări locale:
+
+- **427 aserțiuni runtime**, zero eșecuri: `.ai-qa/termux-play-runtime.log`.
+- **20 teste backend/bootstrap**, zero eșecuri, inclusiv execuția comenzii reale
+  prin Bash → Python, worker identic sursei cu mod 0600, health autentificat,
+  refuz fără token, lipsă Python fără instalare și token absent din stdout/stderr:
+  `.ai-qa/termux-play-bootstrap-unit.log`. Mediul de probă este izolat.
+- **22 aserțiuni Godot → HTTP → Blender 4.3.2 real**, cu permisiune Android falsă
+  și mod manual: verificare automată după revenire, zero apeluri `start` sau
+  `permission`, exporturi, recuperare și anulare;
+  `.ai-qa/termux-play-connector/report.json`.
+- **48 verificări UI pentru telefon**, zero eșecuri; captură inspectată, butoanele
+  de permisiune ascunse și instrucțiuni pentru pornirea din terminal:
+  `.ai-qa/termux-play-ui/phone_compact/blender-manual.png`.
+- Conectorul Kotlin și seiful au compilat cu SDK Android 36:
+  `.ai-qa/termux-play-kotlin.log`. `git diff --check` trecut.
+
+**APK nou în pregătire; cel livrat rămâne `2287ae5` până la verificare.**
+Nu sunt validate fizic butonul de clipboard, lansarea activității Termux și
+revenirea în APK; clientul de probă substituie frontiera Android și păstrează
+`android_intent_tested=false`. Nu s-a înlocuit Termux și nu s-au instalat pachete
+sau modificat containerele Blender ale utilizatorului.
+
+Jurnal: 24.10.2026 — identificată cauza reală a dialogului absent în Termux Google
+Play, înlocuită verificarea numai după număr cu inspecția capabilităților și
+adăugată pornirea explicită din terminal cu verificare Godot automată.
+
+## Etapa precedentă — jurnal Blender înainte de pornire, 24.10.2026
 
 Utilizatorul a raportat un jurnal gol după răspunsul agentului cu Blender
 activat, dar `ready=false`. Reprodusă cauza în surse: jurnalul integrării era

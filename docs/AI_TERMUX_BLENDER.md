@@ -9,6 +9,34 @@ Intent și configurarea inițială trebuie verificate din aplicația instalată
 
 ## Configurare
 
+### Termux din Google Play
+
+Iterația următoare APK-ului `2287ae5` verifică manifestul Termux, nu numai
+numărul versiunii. Distribuția Google Play verificată (`googleplay.2026.10.09`)
+nu declară `RUN_COMMAND` și nu include serviciul extern. În acest caz nu există
+un dialog Android pentru acea permisiune. Vezi
+[manifestul distribuției](https://github.com/termux-play-store/termux-apps/blob/main/termux-app/src/main/AndroidManifest.xml).
+
+În **Setări → Integrări → Blender**:
+
+1. Apasă **Pornește în Termux**. Comanda de conectare este copiată în clipboard
+   și se deschide terminalul.
+2. Lipește comanda și apasă Enter; păstrează sesiunea deschisă.
+3. Revino în Godot. Editorul detectează conectorul, caută instalarea Blender
+   existentă și verifică exportul GLB/importul Godot. Dacă Blender lipsește,
+   instalarea este propusă separat.
+4. Activează **Permite agentului să utilizeze Blender** după verificare.
+
+Butonul **Copiază comanda** permite repetarea pasului. Comanda este privată și
+conține un token local de conectare, nu cheile furnizorilor AI. Scriptul și
+worker-ul provin din assets ale APK-ului. Python este instalat dacă lipsește,
+la această acțiune explicită. Instalarea Termux și containerele existente se
+păstrează. Pe durata folosirii editorului, integrarea manuală activată și
+verificată menține o conexiune prin ping periodic. După oprirea procesului,
+repetă pornirea din panou; tokenul și rezultatele existente sunt păstrate.
+
+### Termux cu serviciu RUN_COMMAND
+
 În **Setări → Integrări → Blender**:
 
 1. **Instalează Termux** deschide distribuția oficială. Instalarea aplicației

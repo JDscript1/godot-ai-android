@@ -95,6 +95,16 @@ func _blender_diagnostic_tests(node: Node) -> void:
 	check(reopened.log_text == backend.log_text and not reopened.log_text.contains(secret), "Reopening the editor restores the redacted Blender journal")
 	var persisted = FileAccess.get_file_as_string(base.path_join("blender/diagnostics.json"))
 	check(not persisted.contains(secret) and not persisted.contains("fixture-redaction-key"), "The diagnostics file never stores the fixture credentials")
+	calls.clear()
+	device["launch_mode"] = "manual"
+	device["permission"] = false
+	await backend.refresh()
+	check(backend.diagnostics().get("code") == "manual_start_required", "A Termux variant without RUN_COMMAND requests terminal pairing instead of an undefined Android permission")
+	result = await backend.setup("connect")
+	check(result.get("code") == "manual_start_required" and not calls.has("start") and not calls.has("permission"), "Manual connection never requests an unavailable permission or sends RUN_COMMAND")
+	result = backend.prepare_manual()
+	check(result.get("ok", false) and calls.has("copy_bootstrap") and calls.has("open_termux") and backend.manual_setup_pending, "Explicit manual setup copies the private bootstrap and opens Termux for user execution")
+	check(not backend.log_text.contains(secret) and not JSON.stringify(result).contains(secret), "Manual pairing does not return its private command or token to GDScript results or logs")
 
 func _initialize() -> void:
 	_run.call_deferred()

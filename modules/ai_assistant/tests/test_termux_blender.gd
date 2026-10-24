@@ -54,14 +54,19 @@ func _run() -> void:
 	var host = Node.new()
 	root.add_child(host)
 	var client = scripts["termux_blender"].new(host)
+	var native_actions = []
 	client.native_override = func(action: String, _args: Dictionary) -> Dictionary:
+		native_actions.append(action)
 		if action == "connection": return {"ok": true, "url": endpoint, "token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
-		return {"ok": true, "installed": true, "permission": true, "supported": true, "compatible": true}
+		return {"ok": true, "installed": true, "permission": false, "supported": true, "compatible": true, "launch_mode": "manual"}
 	client.configure(OS.get_user_data_dir(), OS.get_user_data_dir().path_join("project"))
 	check(not client.available(), "Unverified backend is unavailable")
 	check(not client.valid_relative("a/../b.glb") and not client.valid_relative("/outside") and client.valid_relative("models/tree.glb"), "Artifact paths stay within their folder")
-	var result = await client.setup("connect")
-	check(result.get("ok", false) and client.available(), "Discovery, real Blender export, transfer and Godot import establish readiness: " + str(result.get("error", "")))
+	client.manual_setup_pending = true
+	await client.refresh()
+	check(client.available(), "Returning after manual pairing discovers Blender, verifies real export and Godot import automatically")
+	check(not native_actions.has("start") and not native_actions.has("permission"), "The real manual connection works without RUN_COMMAND or its Android permission")
+	var result = {}
 	var detected = client.runtime.duplicate(true)
 	if not client.available():
 		_finish(detected)

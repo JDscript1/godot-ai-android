@@ -1042,6 +1042,7 @@ func _termux_blender_card_tests() -> void:
 	form["logs"].hide()
 	backend.state = device.duplicate()
 	backend.connected = true
+	backend.discovery_complete = true
 	panel._refresh_blender_card()
 	_check(form["primary"].text == "Instalează Blender", "Connected Termux without Blender offers installation")
 	backend.state["error_code"] = "incomplete_image"
@@ -1073,6 +1074,24 @@ func _termux_blender_card_tests() -> void:
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-logs.png"))
 	for node in [form["primary"], form["status"], form["logs"]]:
 		_check(node.size.x <= panel.settings_window.size.x, "Blender card content stays inside the settings window")
+	backend.connected = false
+	backend.runtime = {}
+	backend.verified = {}
+	backend.state = {"ok": true, "installed": true, "supported": true, "permission": false, "launch_mode": "manual", "version": "googleplay.2026.10.09"}
+	backend.discovery_complete = false
+	backend._report_state()
+	panel._refresh_blender_card()
+	form["logs"].hide()
+	_check(form["primary"].text == "Pornește în Termux" and not form["permission_actions"].visible and form["hint"].text.contains("lipește comanda"), "Google Play Termux exposes terminal pairing and hides unavailable Android permission actions")
+	backend.connected = true
+	panel._refresh_blender_card()
+	_check(form["primary"].text == "Conectează", "A newly paired worker discovers existing Blender before offering installation")
+	backend.connected = false
+	panel._refresh_blender_card()
+	await get_tree().create_timer(.2).timeout
+	panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).scroll_vertical = 10000
+	await get_tree().create_timer(.1).timeout
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-manual.png"))
 	panel.settings_window.hide()
 	panel.integrations.termux = null
 

@@ -27,6 +27,8 @@ var log_entries: Array = []
 var job_log = ""
 var last_diagnostic = ""
 var last_check = 0
+var manual_setup_pending = false
+var discovery_complete = false
 
 const ACTIVATION = "mkdir -p ~/.termux && touch ~/.termux/termux.properties && sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties && printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties && termux-reload-settings"
 const TERMINAL = ["completed", "failed", "cancelled", "interrupted"]
@@ -82,11 +84,12 @@ func diagnostics() -> Dictionary:
 	if not state.get("supported", true): return {"code": "unsupported_arch", "message": "Configurarea automată necesită Android ARM64.", "next_action": ""}
 	if not state.get("installed", false): return {"code": "missing_termux", "message": "Termux nu este instalat sau nu este vizibil editorului.", "next_action": "Instalează și deschide Termux o dată."}
 	if not state.get("compatible", true): return {"code": "incompatible_termux", "message": "Este necesar Termux 0.118 sau mai nou.", "next_action": "Actualizează Termux."}
-	if not state.get("permission", false): return {"code": "permission_required", "message": "Permisiunea Android pentru comenzi Termux nu este acordată.", "next_action": "Apasă Acordă permisiunea în Integrări → Blender."}
+	if manual_mode() and not connected: return {"code": "manual_start_required", "message": "Această versiune Termux necesită pornirea conectorului din terminal.", "next_action": "Apasă Pornește în Termux, lipește comanda, apasă Enter și revino în Godot."}
+	if not manual_mode() and not state.get("permission", false): return {"code": "permission_required", "message": "Permisiunea Android pentru comenzi Termux nu este acordată.", "next_action": "Apasă Acordă permisiunea în Integrări → Blender."}
 	if not str(state.get("error", "")).is_empty(): return {"code": "termux_start_failed", "message": _safe(str(state["error"])).left(6000), "next_action": "Verifică jurnalul și activarea comenzilor externe în Termux."}
 	if not str(state.get("error_code", "")).is_empty(): return {"code": str(state["error_code"]), "message": _safe(str(state.get("stage", "Conectarea Blender a eșuat."))), "next_action": "Deschide Integrări → Blender și verifică jurnalul."}
 	if not pending.is_empty(): return {"code": "pending_job", "message": "Există o sarcină Blender de recuperat.", "next_action": "Apasă Recuperează în Integrări → Blender."}
-	if connected and runtime.is_empty(): return {"code": "runtime_missing", "message": "Conectorul răspunde, dar Blender nu a fost detectat.", "next_action": "Apasă Instalează Blender în Integrări → Blender."}
+	if connected and discovery_complete and runtime.is_empty(): return {"code": "runtime_missing", "message": "Conectorul răspunde, dar Blender nu a fost detectat.", "next_action": "Apasă Instalează Blender în Integrări → Blender."}
 	if verified.is_empty(): return {"code": "setup_required", "message": "Configurarea inițială Blender nu a fost finalizată.", "next_action": "Apasă Conectează în Integrări → Blender."}
 	if not connected: return {"code": "disconnected", "message": "Conectorul Blender nu răspunde.", "next_action": "Deschide Termux, apoi apasă Conectează în Integrări → Blender."}
 	return {"code": "verification_required", "message": "Instalarea Blender necesită verificare.", "next_action": "Apasă Verifică în Integrări → Blender."}
@@ -109,11 +112,23 @@ func native(action: String, args: Dictionary = {}) -> Dictionary:
 	if native_override.is_valid(): result = native_override.call(action, args)
 	elif bridge == null or not bridge.has_method("termux_blender_request"): result = Common.failure("Conectorul necesită un APK Android actualizat.", "missing_bridge")
 	else: result = bridge.termux_blender_request(action, args)
-	var labels = {"permission": "Permisiune Android solicitată. Confirmă dialogul Android sau verifică Setări Android.", "settings": "Setările Android au fost solicitate.", "open_termux": "Deschiderea Termux a fost solicitată.", "install_termux": "Pagina oficială de instalare Termux a fost solicitată."}
+	var labels = {"permission": "Permisiune Android solicitată. Confirmă dialogul Android sau verifică Setări Android.", "settings": "Setările Android au fost solicitate.", "open_termux": "Deschiderea Termux a fost solicitată.", "install_termux": "Pagina oficială de instalare Termux a fost solicitată.", "copy_bootstrap": "Comanda privată de conectare a fost copiată. Lipește-o în Termux, apasă Enter și revino în Godot."}
 	if labels.has(action):
 		if result.get("ok", false): note(labels[action], action)
 		else: _failure(result)
 	return result
+
+func manual_mode() -> bool:
+	return state.get("launch_mode", "direct") == "manual"
+
+func prepare_manual() -> Dictionary:
+	if working or refreshing: return Common.failure("Blender este ocupat.", "busy")
+	var result = native("copy_bootstrap", {"install_python": true})
+	if not result.get("ok", false): return result
+	manual_setup_pending = true
+	state.erase("error_code")
+	state.erase("error")
+	return native("open_termux")
 
 static func fingerprint(value: Dictionary) -> String:
 	return "%s|%s|%s|%s|%s" % [value.get("kind", ""), value.get("container", ""), value.get("executable", ""), value.get("version", ""), value.get("binary_stamp", "")]
@@ -145,6 +160,9 @@ func _health(timeout: float = 1.0) -> bool:
 	connected = reply.get("ok", false) and int(reply.get("protocol", 0)) == 1
 	if connected:
 		runtime = reply.get("runtime", {})
+		if not runtime.is_empty(): discovery_complete = true
+		if state.get("error_code") in ["permission_required", "manual_start_required", "connection_failed", "termux_start_failed"]: state.erase("error_code")
+		state.erase("error")
 		native("connected")
 	return connected
 
@@ -153,9 +171,12 @@ func refresh() -> void:
 	refreshing = true
 	state.merge(native("status"), true)
 	connected = false
-	if state.get("installed", false) and state.get("permission", false) and _credentials(): await _health()
+	if state.get("installed", false) and (manual_mode() or state.get("permission", false)) and _credentials(): await _health()
 	last_check = Time.get_ticks_msec()
 	refreshing = false
+	if manual_mode() and connected and manual_setup_pending:
+		manual_setup_pending = false
+		if pending.is_empty(): await setup("connect")
 	_report_state()
 	changed.emit()
 
@@ -163,13 +184,14 @@ func _connect(prepare: bool = false) -> Dictionary:
 	note("Verificare Termux și permisiune Android.", "preflight")
 	state = native("status")
 	if not state.get("ok", false): return state
-	note("Termux: %s · Permisiune: %s." % [str(state.get("version", "detectat")) if state.get("installed", false) else "absent", "acordată" if state.get("permission", false) else "neacordată"], "device")
+	note("Termux: %s · Pornire: %s." % [str(state.get("version", "detectat")) if state.get("installed", false) else "absent", "din terminal" if manual_mode() else "directă, permisiune " + ("acordată" if state.get("permission", false) else "neacordată")], "device")
 	if not state.get("installed", false): return Common.failure("Instalează și deschide Termux o dată.", "missing_termux")
-	if not state.get("permission", false): return Common.failure("Acordă permisiunea de rulare a comenzilor în Termux.", "permission_required")
+	if not manual_mode() and not state.get("permission", false): return Common.failure("Acordă permisiunea de rulare a comenzilor în Termux.", "permission_required")
 	if not _credentials(): return Common.failure("Conexiunea locală nu poate fi pregătită.", "missing_bridge")
 	if await _health():
 		note("Conectorul local răspunde.", "connected")
 		return Common.success(runtime)
+	if manual_mode(): return Common.failure("Pornește conectorul din Termux: copiază comanda din Integrări → Blender, lipește-o în terminal și apasă Enter.", "manual_start_required")
 	note("Pornire conector local prin Android → Termux.", "starting")
 	var launched = native("start", {"install_python": prepare})
 	if not launched.get("ok", false): return launched
@@ -274,6 +296,7 @@ func setup(action: String) -> Dictionary:
 			if response.get("ok", false):
 				if kind == "verify": response = await _accept_verification(response["result"], setup_cancel)
 				else:
+					discovery_complete = true
 					runtime = response["result"] if response["result"].get("found", false) else {}
 					_clear_pending()
 					if not runtime.is_empty():
