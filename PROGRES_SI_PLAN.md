@@ -33,7 +33,50 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — compatibilitate Termux Google Play, 24.10.2026
+## Etapa curentă — validare mesh Blender în editor, 24.10.2026
+
+Jurnalul utilizatorului confirmă conectarea manuală Android → Termux,
+descoperirea Blender **4.3.2**, exportul GLB și randarea CPU. Blocajul rămas era
+`empty_mesh` în confirmarea Godot. Inspectat fără modificare GLB-ul real al
+sarcinii `ed7bb244-bbd4-4047-961b-c54ec502a3f8`: **1.732 bytes**, un cub cu
+geometrie, fără extensii Draco. SHA-256:
+`26bebf89bbf4dcf598dd5ad1596865837e29c6c56b550e6eeb4f0d0028984b7f`.
+Mesajul despre biblioteca Draco nu a împiedicat acest export necomprimat.
+
+Cauza a fost reprodusă cu exact același fișier în Godot 4.7.2: în modul joc
+este generat un `MeshInstance3D`, iar în editor un `ImporterMeshInstance3D`.
+Validatorul căuta doar primul tip și întorcea incorect zero mesh-uri în editor.
+Proba anterioară completă cu Blender rula în modul joc, deci nu acoperea această
+diferență. Raport: `.ai-qa/blender-empty-mesh/report.json`, loguri înainte și
+după corecție în același director. Copia QA este separată; sarcina reală și
+fișierele utilizatorului nu au fost modificate sau confirmate prin `ack`.
+
+- Validatorul parcurge scena, inclusiv rădăcina, și acceptă ambele tipuri de
+  instanță numai dacă resursa mesh are suprafețe. Nodurile fără geometrie sunt
+  refuzate. Jurnalul arată numărul de mesh-uri validate înainte de confirmare.
+- Adăugate **7 verificări în editorul real**, rulate în toate scenariile UI și
+  în fork-ul nativ CI: geometrie la rădăcină, resursă goală refuzată, GLB real,
+  tipul de nod importat și recuperarea aceleiași sarcini terminate. Proba de
+  recuperare apelează codul de producție, salvează readiness și face `ack`,
+  fără altă cerere de execuție; numai transportul este fixture în această probă.
+- **55 verificări UI desktop și 55 pentru telefon**, zero eșecuri;
+  `.ai-qa/blender-editor-mesh-ui/` și logurile dedicate. **427 aserțiuni runtime**
+  trecute, `.ai-qa/blender-editor-mesh-runtime.log`. Proba completă cu Blender
+  real a trecut din nou **22 aserțiuni**,
+  `.ai-qa/blender-editor-mesh-connector/report.json`; frontiera Android rămâne
+  substituită în acea suită, conform raportului.
+
+**APK nou în pregătire; cel din Download rămâne `4236902` până la verificare.**
+După actualizare, sarcina de verificare deja terminată poate fi recuperată din
+Integrări → Blender, fără reinstalarea Blender. Dacă procesul auxiliar a expirat,
+se pornește din nou prin Termux înainte de recuperare. Validarea din APK-ul
+corectat rămâne o probă fizică distinctă.
+
+Jurnal: 24.10.2026 — reprodus `empty_mesh` cu GLB-ul real al utilizatorului,
+corectată validarea nodurilor de import ale editorului și adăugată regresie
+pentru recuperarea verificării existente, fără reexecutare Blender.
+
+## Etapa precedentă — compatibilitate Termux Google Play, 24.10.2026
 
 După jurnalul nou, utilizatorul a confirmat că butonul Permisiune nu deschide
 dialog, iar setările aplicației nu afișează permisiunea Termux. Inspectat APK-ul

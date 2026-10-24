@@ -68,6 +68,14 @@ iar profilul nou utilizează [Blender Debian ARM64](https://packages.debian.org/
 
 ## Jurnal și diagnostic
 
+În iterația următoare APK-ului `4236902`, validarea GLB acceptă atât
+`MeshInstance3D`, cât și `ImporterMeshInstance3D`, folosit de Godot în editor.
+Un GLB valid putea primi anterior `empty_mesh`, deși Blender terminase exportul
+și randarea. Corecția verifică suprafețele reale, inclusiv geometria la rădăcină,
+și permite **Recuperează** pentru verificarea deja terminată. Nu este necesară
+o nouă instalare sau generare. Regresia rulează în editorul real, deoarece
+probele în modul joc nu expun aceeași clasă de import.
+
 APK-ul `2287ae5` înregistrează și pașii anteriori pornirii
 unei sarcini: detectare Termux, permisiune, configurare inițială, pornire și
 reconectare. **Activat** pentru agent și **Disponibil** sunt stări separate.

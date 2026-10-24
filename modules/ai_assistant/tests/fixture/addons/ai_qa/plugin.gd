@@ -70,6 +70,24 @@ class FixtureLocalCatalog:
 		requests += 1
 		return {"ok": true, "result": [{"id": "unloaded-code", "loaded": false, "capabilities": {}}, {"id": "loaded-code", "loaded": true, "context": 4096, "capabilities": {}}]}
 
+class FixtureBlenderVerification:
+	extends RefCounted
+	var data = PackedByteArray()
+	var verification: Dictionary = {}
+	var acknowledged = false
+	var submissions = 0
+	func request(url: String, _method: int, _headers: PackedStringArray, _body: Variant, options: Dictionary) -> Dictionary:
+		if url.ends_with("/ack"):
+			acknowledged = true
+			return {"ok": true}
+		if _method == HTTPClient.METHOD_POST: submissions += 1
+		if not options.has("save_path"): return {"ok": true, "json": {"ok": true, "result": {"status": "completed", "kind": "verify", "result": verification}}}
+		var file = FileAccess.open(str(options.get("save_path", "")), FileAccess.WRITE)
+		if file == null: return {"ok": false, "error": "Fixture download could not be written"}
+		file.store_buffer(data)
+		file.close()
+		return {"ok": true}
+
 class FixtureResumeProvider:
 	extends RefCounted
 	var requests = 0
@@ -161,6 +179,7 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	await _blender_mesh_verification_tests()
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "blender":
 		await _termux_blender_card_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -1001,6 +1020,49 @@ func _control_settings_tests() -> void:
 	panel.journal_filter.text_changed.emit("")
 	panel.full_control.button_pressed = false
 	panel.planner.reset()
+
+func _blender_mesh_verification_tests() -> void:
+	_check(Engine.is_editor_hint(), "Blender GLB readiness is tested inside the real editor")
+	var root_mesh = MeshInstance3D.new()
+	root_mesh.mesh = BoxMesh.new()
+	_check(embedded["termux_blender"].scene_mesh_count(root_mesh) == 1, "A geometry-bearing root mesh is included in readiness checks")
+	root_mesh.mesh = ArrayMesh.new()
+	_check(embedded["termux_blender"].scene_mesh_count(root_mesh) == 0, "An empty mesh resource cannot establish readiness")
+	root_mesh.free()
+	var scene = Node3D.new()
+	var cube = MeshInstance3D.new()
+	cube.mesh = BoxMesh.new()
+	scene.add_child(cube)
+	cube.owner = scene
+	var directory = panel.data_directory.path_join("qa-blender-import")
+	DirAccess.make_dir_recursive_absolute(directory)
+	var path = directory.path_join("probe.glb")
+	var document = GLTFDocument.new()
+	var state = GLTFState.new()
+	var exported = document.append_from_scene(scene, state) == OK and document.write_to_filesystem(state, path) == OK
+	scene.free()
+	_check(exported, "Create a real cube GLB for editor-mode Blender verification")
+	if not exported: return
+	state = GLTFState.new()
+	var parsed = document.append_from_file(path, state) == OK
+	var imported = document.generate_scene(state) if parsed else null
+	_check(imported != null and not imported.find_children("*", "ImporterMeshInstance3D", true, false).is_empty(), "Editor GLB imports expose ImporterMeshInstance3D, reproducing the reported false empty_mesh")
+	if imported != null: imported.free()
+	var backend = embedded["termux_blender"].new(panel)
+	backend.configure(directory, directory.path_join("project"))
+	backend.connected = true
+	backend.pending = {"id": panel.Common.uid(), "kind": "verify"}
+	var transport = FixtureBlenderVerification.new()
+	transport.data = FileAccess.get_file_as_bytes(path)
+	backend.transport = transport
+	var runtime = {"kind": "fixture", "executable": "/fixture/blender", "version": "fixture", "capabilities": {"formats": ["glb"]}}
+	transport.verification = {"runtime": runtime, "artifacts": [{"path": "probe.glb", "bytes": transport.data.size(), "sha256": FileAccess.get_sha256(path)}]}
+	var result = await backend._resume({})
+	_check(result.get("ok", false) and backend.available() and backend.pending.is_empty() and transport.acknowledged and transport.submissions == 0, "Recovering the completed verification accepts editor mesh geometry and saves readiness without another Blender submission")
+	var empty_importer = ImporterMeshInstance3D.new()
+	empty_importer.mesh = ImporterMesh.new()
+	_check(embedded["termux_blender"].scene_mesh_count(empty_importer) == 0, "An importer node without mesh surfaces stays unavailable")
+	empty_importer.free()
 
 func _termux_blender_card_tests() -> void:
 	var old_card = panel.forms["blender"]["container"].get_parent().get_parent()

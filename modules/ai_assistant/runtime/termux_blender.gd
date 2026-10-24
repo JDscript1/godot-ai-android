@@ -385,9 +385,10 @@ func _accept_verification(result: Dictionary, cancel: Dictionary) -> Dictionary:
 	if document.append_from_file(glb, gltf) != OK: return Common.failure("Godot nu poate importa GLB-ul de probă.", "import_failed")
 	var scene = document.generate_scene(gltf)
 	if scene == null: return Common.failure("Scena GLB de probă este invalidă.", "import_failed")
-	var meshes = scene.find_children("*", "MeshInstance3D", true, false)
+	var meshes = scene_mesh_count(scene)
 	scene.free()
-	if meshes.is_empty(): return Common.failure("Proba nu conține un mesh.", "empty_mesh")
+	if meshes == 0: return Common.failure("Proba nu conține un mesh.", "empty_mesh")
+	note("GLB verificat în Godot: %d mesh-uri cu geometrie." % meshes, "import_verified")
 	runtime = result.get("runtime", {})
 	verified = {"fingerprint": fingerprint(runtime), "verified_at": Time.get_unix_time_from_system(), "protocol": 1}
 	if Common.atomic_json(directory.path_join("verified.json"), verified) != OK: return Common.failure("Nu pot salva verificarea Blender.", "checkpoint_failed")
@@ -396,6 +397,18 @@ func _accept_verification(result: Dictionary, cancel: Dictionary) -> Dictionary:
 	await _http("/v1/jobs/" + id + "/ack", HTTPClient.METHOD_POST, {})
 	_release_downloads(downloaded["result"])
 	return Common.success(runtime)
+
+static func scene_mesh_count(scene: Node) -> int:
+	# Editor imports keep ImporterMeshInstance3D; game runtime imports use MeshInstance3D.
+	# Include the root itself, and only count instances with actual mesh surfaces.
+	var queue = [scene] if scene != null else []
+	var count = 0
+	while not queue.is_empty():
+		var node: Node = queue.pop_back()
+		if node is MeshInstance3D or node is ImporterMeshInstance3D:
+			if node.mesh != null and node.mesh.get_surface_count() > 0: count += 1
+		queue.append_array(node.get_children())
+	return count
 
 func run(args: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 	if working or refreshing: return Common.failure("Blender este ocupat.", "busy")
