@@ -1,9 +1,11 @@
 # Blender în Integrări, prin Termux
 
-Implementare în surse pentru editorul Android ARM64. Harness-ul AI rulează în
-Godot; Termux și Python sunt dependențe numai ale integrării opționale Blender.
-Legătura Android prin Intent trebuie verificată într-un APK nou înainte ca
-funcția să fie declarată validată pe dispozitiv.
+Inclus în APK-ul Android ARM64 `45ea380`, livrat la 24 octombrie 2026.
+Clasele Android, permisiunea, intrarea JNI, cele 27 scripturi și worker-ul inclus
+au fost verificate în pachet. Harness-ul AI rulează în Godot; Termux și Python
+sunt dependențe numai ale integrării opționale Blender. Legătura Android prin
+Intent și configurarea inițială trebuie verificate din aplicația instalată
+înainte ca funcția să fie declarată validată pe dispozitiv.
 
 ## Configurare
 

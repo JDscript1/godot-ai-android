@@ -12,14 +12,17 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`36457dd`**
-  (`36457dd4569ac787ad5888599e6ba2c1c573e095`).
+- Ultimul commit livrat și verificat ca pachet: **`45ea380`**
+  (`45ea3801af6429de9b3eaa2d6617bb8be1b20484`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
   Include exporturi 3D extinse, GitHub cu token personal,
   separatoare Cloud/Local și căutare LAN explicită.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `978a6d3` a fost
+- Include și corecțiile harness-ului, conectarea locală simplificată, bara de
+  activitate deasupra composer-ului, controlul rotirii 3D, regulile pentru
+  imagini și integrarea opțională Blender/Termux.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `36457dd` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -27,22 +30,44 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — compilare APK cu modificările noi, 24.10.2026
+## Etapa curentă — APK compilat și livrat, 24.10.2026
 
-Compilarea și înlocuirea instalatorului au fost autorizate explicit de utilizator.
-Se construiește un snapshot al tuturor modificărilor AI acumulate după `36457dd`,
-inclusiv comportament, conectare locală, bara de activitate, control 3D, reguli
-pentru imagini și integrarea Blender/Termux. Este folosit workflow-ul existent
-al proiectului, care a produs și versiunile anterioare; compilarea locală a
-întregului motor este incompletă. Semnătura personală a APK-ului curent și cheia
-locală au fost comparate: SHA-256 certificat
-`2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
+**Livrat `45ea380`**, cu toate modificările AI acumulate după `36457dd`:
+comportament, conectare locală, bara de activitate, control 3D, reguli pentru
+imagini și integrarea Blender/Termux. Compilarea și înlocuirea au fost autorizate
+explicit. S-a folosit workflow-ul existent al proiectului; compilarea locală a
+întregului motor rămâne incompletă.
 
-Instalatorul din Download rămâne cel existent până la verificarea pachetului
-nou: succesul build-ului, semnătura, pachetul, ABI ARM64, scripturile încorporate,
-clasele Android și worker-ul Blender. Copierea va fi atomică, cu checksum și
-timestamp actualizat. Nu există dispozitiv conectat prin ADB în această sesiune;
-instalarea și verificarea fizică rămân distincte.
+- [Workflow `40101377645`](https://github.com/JDscript1/godot-ai-android/actions/runs/40101377645):
+  **toate cele trei job-uri reușite**. Runtime: **407 aserțiuni**, plus **18 teste
+  backend Blender** și **3 teste livrare**; editor upstream: **364 verificări ×
+  5 configurații**; fork nativ: **374 verificări × 5 configurații**. Zero eșecuri.
+  Diferența față de cele 412 aserțiuni locale provine din cele cinci probe
+  opționale ale Blender-ului local, absente pe runner. Log: `.ai-qa/45ea380-ci.log`.
+- [Artifact ARM64 `12562872989`](https://github.com/JDscript1/godot-ai-android/actions/runs/40101377645/artifacts/12562872989):
+  **145.332.496 bytes**, pachet `com.jdscript.godotai.debug`.
+  SHA-256: `aeb303acc30c1fa22a0c3d78378d738fed33c240965c3139640b6415223c13bb`.
+- Verificate local: SHA-256 identic artifactului, semnătură persistentă, ABI și
+  ELF AArch64, toate cele **27 scripturi GD** identice cu snapshot-ul compilat,
+  clasele Android, permisiunea și receiver-ul Termux, intrarea JNI și worker-ul
+  Blender identic sursei. Raport:
+  `.ai-qa/artifacts/45ea380/extended-verification.json`.
+- Certificat SHA-256 păstrat pentru actualizarea aplicației existente:
+  `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
+- Înlocuit atomic `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`
+  și checksum-ul aferent; timestamp **24.10.2026, 16:17:30 CEST**. În Download
+  rămâne un singur instalator al fork-ului; alte descărcări nu au fost modificate.
+  Raport: `.ai-qa/delivery-45ea380.json`.
+
+**Limite:** nu există dispozitiv conectat prin ADB în această sesiune. APK-ul
+nu a fost instalat sau pornit fizic de agent. Frontiera Android `RUN_COMMAND`,
+dialogurile de permisiuni, un Termux gol și un Debian nou necesită probe din
+aplicația instalată. Compilarea și verificarea conținutului nu le substituie.
+Nu s-au efectuat probe noi cu furnizori plătiți la această livrare.
+
+Jurnal: 24.10.2026 — compilat și verificat APK `45ea380`, toate job-urile CI
+trecute, înlocuit instalatorul `36457dd` din Download cu semnătura păstrată și
+checksum nou; documentația de livrare actualizată. Validarea fizică rămâne separată.
 
 ## Etapa precedentă — configurare Blender și conector Termux, 24.10.2026
 

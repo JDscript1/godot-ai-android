@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the tested Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/39947703170/artifacts/12499161928)
-(GitHub Actions artifact, source `36457dd`).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40101377645/artifacts/12562872989)
+(GitHub Actions artifact, source `45ea380`, delivered 24 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -26,9 +26,8 @@ includes Auto / Default / Plan, structured task progress and the compact compose
 its tested source is identified above.
 
 [Agent behavior and local connection checks](docs/AI_BEHAVIOR_TESTS.md) document
-the subsequent source iteration: resumable turns, duplicate-generation protection,
-new-message steering and one-action LM Studio/Ollama connection. These changes
-are not included in the linked APK yet; source, rendered and live checks are
+the changes included in this APK: resumable turns, duplicate-generation protection,
+new-message steering and one-action LM Studio/Ollama connection. Source, rendered and live checks are
 reported separately.
 
 [Live API behavior evaluation](docs/AI_API_EVALUATION.md) exercises the production
@@ -36,16 +35,16 @@ chat and editor tools with a real DeepSeek model in an isolated project, and
 records call traces and activity journals. It documents the reproduced reflection
 bug, the source fixes and the limits of testing outside the Android APK.
 
-The subsequent source changes add a [collapsible activity bar](docs/AI_ACTIVITY_DRAWER.md)
+The APK includes a [collapsible activity bar](docs/AI_ACTIVITY_DRAWER.md)
 above the chat input, showing plan progress, background tasks and tool outcomes.
-The delivered APK linked above has not been rebuilt for these changes.
 
-Source changes also add [Blender setup through Termux](docs/AI_TERMUX_BLENDER.md)
+The APK also includes [Blender setup through Termux](docs/AI_TERMUX_BLENDER.md)
 under Integrations: reuse or install, real export/import verification, resumable jobs,
-file transfer and optional agent access. The Android Intent boundary still requires
-a new APK and physical-device validation.
+file transfer and optional agent access. The Android classes, permission, JNI entry
+and bundled worker are verified in this APK; the Intent boundary still requires
+physical-device validation.
 
-Further source changes add [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
+The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture
 prompts, alpha verification and an optional Runware background-removal tool.
 

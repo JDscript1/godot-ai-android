@@ -29,13 +29,15 @@ opens the same global configuration window.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
   configure the process in the companion and connect to its `/mcp/<name>` URL.
 - **General:** YOLO, center/left/right chat placement and completion sounds.
-- **Integrări:** GitHub cu token personal și selecție de repository, Blender CLI desktop și [configurare Blender prin Termux pe Android](AI_TERMUX_BLENDER.md) în surse; validarea Intent din APK este separată.
+- **Integrări:** GitHub cu token personal și selecție de repository, Blender CLI desktop și [configurare Blender prin Termux pe Android](AI_TERMUX_BLENDER.md) inclusă în APK; validarea fizică a Intent-ului este separată.
   Skills și Sarcini au pagini principale proprii. Configurarea GitHub este descrisă în
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current APK is `36457dd`, including control/integrations/generation and
+The current APK is `45ea380`, including control/integrations/generation and
 [chat files, previews, editor control, Store and real diff](AI_CHAT_FILES_AND_EDITOR_CONTROL.md).
+It also includes the subsequent harness/local-connection fixes, activity drawer,
+3D preview controls, image-purpose rules and optional Termux/Blender setup.
 Delivery evidence is recorded in [the project progress document](../PROGRES_SI_PLAN.md).
 
 HTTP is opt-in per local connection. `127.0.0.1` means this Android device; a server
@@ -44,7 +46,7 @@ No inference runtime or generation model is installed automatically.
 
 ## Local servers over Wi-Fi
 
-The following simplified flow is implemented in source after APK `36457dd`;
+The following simplified flow is included in APK `45ea380`;
 see [behavior and connection checks](AI_BEHAVIOR_TESTS.md) for its evidence.
 Select LM Studio, Ollama or llama.cpp, enter the computer's Wi-Fi IP and press
 **Conectează**. A bare IP such as `192.168.1.20` adds the service's usual port
@@ -189,19 +191,20 @@ with the standard `androiddebugkey` alias and `android` debug passwords. CI also
 compares the APK certificate with that keystore before uploading an artifact.
 This is a development build; no production signing key is included in source.
 
-Evidence below describes delivered APK `978a6d3`. Full history and local paths
+Evidence below describes delivered APK `45ea380`. Full history and local paths
 are in [the progress record](../PROGRES_SI_PLAN.md).
 
 | Area | Current verification |
 | --- | --- |
-| Runtime, protocol adapters, file revisions, diff and model capability policies | 340 assertions locally; 335 in CI, which omits the five optional local Blender checks. HTTP providers use deterministic fixtures |
-| Upstream editor | 319 local checks in each of five configurations: desktop, narrow, wide, phone landscape and phone compact |
-| Compiled native fork | 329 CI checks in each configuration, including actual mouse input, GLB pixels, offscreen rendering, native addon installation/activation/removal, Undo and diagnostics |
+| Runtime, protocol adapters, file revisions, diff and model capability policies | 412 assertions locally; 407 in CI, which omits the five optional local Blender checks. HTTP providers use deterministic fixtures |
+| Upstream editor | 364 CI checks in each of five configurations: desktop, narrow, wide, phone landscape and phone compact |
+| Compiled native fork | 374 CI checks in each configuration, including actual mouse input, GLB pixels, offscreen rendering, native addon installation/activation/removal, Undo and diagnostics |
+| Blender backend | 18 backend/HTTP tests passed in CI; 21 local Godot-to-real-Blender assertions passed with the Android Intent boundary substituted |
 | Companion | Nine deterministic tests and TypeScript build passed |
-| APK | ARM64, package and persistent certificate verified; all 26 embedded scripts match the compiled commit byte for byte |
+| APK | ARM64, package and persistent certificate verified; all 27 embedded scripts and the Blender worker match the compiled commit byte for byte; Termux permission, receiver, Android classes and JNI entry present |
 | Device and live services | Physical Android UI/touch/Keystore/microphone/suspend and real vision/subscription/generation providers remain separate checks. The public Store request returned HTTP 403 locally; Store execution was tested with a fixture addon |
 
-[All three CI jobs passed](https://github.com/JDscript1/godot-ai-android/actions/runs/39932275075).
+[All three CI jobs passed](https://github.com/JDscript1/godot-ai-android/actions/runs/40101377645).
 Native export/provider/integration settings and dock screenshots were inspected in the current build, including compact
 left placement and the 3D workspace overlap check. Image/3D viewer, references
 and diff screenshot inspection is also recorded in the earlier delivery history.
@@ -213,14 +216,14 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The tested APK source is `978a6d332edd1204baeb0f5fed0634345b16645d`.
-Download its [ARM64 artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/39932275075/artifacts/12492461717).
-The APK is 145,206,577 bytes; its SHA-256 is
-`2ed475190032e253ff8ce1fc7f6593774488e22ed80ed47cab0022f6bceae689`.
+The verified APK source is `45ea3801af6429de9b3eaa2d6617bb8be1b20484`.
+Download its [ARM64 artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/40101377645/artifacts/12562872989).
+The APK is 145,332,496 bytes; its SHA-256 is
+`aeb303acc30c1fa22a0c3d78378d738fed33c240965c3139640b6415223c13bb`.
 The delivered phone copy is `Download/Godot-AI-Android-arm64-debug.apk`,
-with a matching `.sha256` file, updated on 23 October 2026 at 11:40:52 CEST.
+with a matching `.sha256` file, updated on 24 October 2026 at 16:17:30 CEST.
 Its checksum, package, ABI, persistent signature and all embedded sources were
-checked locally. It atomically replaced `13456af`; Download contains one fork
+checked locally. It atomically replaced `36457dd`; Download contains one fork
 installer. Unrelated downloads remain untouched.
 The persistent development certificate SHA-256 is
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.
