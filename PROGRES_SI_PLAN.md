@@ -12,8 +12,8 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`4236902`**
-  (`4236902daed5d7d9a6852a4b9ae0e7e5b816e20b`).
+- Ultimul commit livrat și verificat ca pachet: **`cd1acda`**
+  (`cd1acdaa8ed642b6b3f4a59d6e0d77d1a4c0c7b2`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -25,7 +25,7 @@ drept funcție validată cu un serviciu real.
   diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
   inclusiv Google Play, folosește pornire explicită din terminal și verificare
   automată la revenirea în Godot.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `2287ae5` a fost
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `4236902` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -66,15 +66,38 @@ fișierele utilizatorului nu au fost modificate sau confirmate prin `ack`.
   `.ai-qa/blender-editor-mesh-connector/report.json`; frontiera Android rămâne
   substituită în acea suită, conform raportului.
 
-**APK nou în pregătire; cel din Download rămâne `4236902` până la verificare.**
+**APK `cd1acda` compilat, verificat și livrat.**
+[Workflow `40134515233`](https://github.com/JDscript1/godot-ai-android/actions/runs/40134515233):
+toate cele trei job-uri reușite. **422 aserțiuni runtime CI**, **20 teste
+backend/bootstrap**, **3 teste livrare**, editor upstream **371 × 5 dimensiuni**,
+fork nativ **381 × 5**, plus **55 verificări UI Blender** pentru telefon;
+zero eșecuri. Cele cinci probe Blender locale opționale explică diferența față
+de cele 427 aserțiuni locale. Log: `.ai-qa/cd1acda-ci.log`.
+
+[Artifact `12575828367`](https://github.com/JDscript1/godot-ai-android/actions/runs/40134515233/artifacts/12575828367):
+**145.349.474 bytes**, ARM64, pachet `com.jdscript.godotai.debug`;
+SHA-256 `0f571b5f185fbd6b161637a31ff560cc7f48f474cf0eeefb38fc0157a21dce70`.
+Verificate local semnătura persistentă, manifestul, clasele Android/JNI,
+marcajele native pentru detectare și clipboard, toate cele **27 scripturi GD**
+și ambele assets bootstrap/worker, identice cu snapshot-ul compilat.
+Raport: `.ai-qa/artifacts/cd1acda/extended-verification.json`.
+
+Înlocuit atomic instalatorul `4236902` și checksum-ul din Download, cu numele
+stabil `Godot-AI-Android-arm64-debug.apk`, la **24.10.2026, 23:40:34 CEST**.
+Un singur instalator al fork-ului; alte descărcări păstrate. Hash-ul copiei finale
+și checksum-ul au fost reverificate. Raport: `.ai-qa/delivery-cd1acda.json`.
+
 După actualizare, sarcina de verificare deja terminată poate fi recuperată din
 Integrări → Blender, fără reinstalarea Blender. Dacă procesul auxiliar a expirat,
 se pornește din nou prin Termux înainte de recuperare. Validarea din APK-ul
-corectat rămâne o probă fizică distinctă.
+corectat rămâne o probă fizică distinctă; jurnalul utilizatorului confirmă deja
+conexiunea manuală și execuția Blender în versiunea precedentă. Nu s-au făcut
+apeluri către furnizori plătiți și nu s-au modificat instalarea sau containerele.
 
 Jurnal: 24.10.2026 — reprodus `empty_mesh` cu GLB-ul real al utilizatorului,
 corectată validarea nodurilor de import ale editorului și adăugată regresie
-pentru recuperarea verificării existente, fără reexecutare Blender.
+pentru recuperarea verificării existente, fără reexecutare Blender. Compilat,
+verificat și livrat `cd1acda`, înlocuind atomic APK-ul `4236902` din Download.
 
 ## Etapa precedentă — compatibilitate Termux Google Play, 24.10.2026
 

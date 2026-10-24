@@ -1,6 +1,6 @@
 # Blender în Integrări, prin Termux
 
-Inclus în APK-ul Android ARM64 `4236902`, livrat la 24 octombrie 2026.
+Inclus în APK-ul Android ARM64 `cd1acda`, livrat la 24 octombrie 2026.
 Clasele Android, permisiunea, intrarea JNI, cele 27 scripturi și worker-ul inclus
 au fost verificate în pachet. Harness-ul AI rulează în Godot; Termux și Python
 sunt dependențe numai ale integrării opționale Blender. Legătura Android prin
@@ -11,7 +11,7 @@ Intent și configurarea inițială trebuie verificate din aplicația instalată
 
 ### Termux din Google Play
 
-APK-ul `4236902` verifică manifestul Termux, nu numai
+APK-ul curent verifică manifestul Termux, nu numai
 numărul versiunii. Distribuția Google Play verificată (`googleplay.2026.10.09`)
 nu declară `RUN_COMMAND` și nu include serviciul extern. În acest caz nu există
 un dialog Android pentru acea permisiune. Vezi
@@ -68,7 +68,7 @@ iar profilul nou utilizează [Blender Debian ARM64](https://packages.debian.org/
 
 ## Jurnal și diagnostic
 
-În iterația următoare APK-ului `4236902`, validarea GLB acceptă atât
+În APK-ul `cd1acda`, validarea GLB acceptă atât
 `MeshInstance3D`, cât și `ImporterMeshInstance3D`, folosit de Godot în editor.
 Un GLB valid putea primi anterior `empty_mesh`, deși Blender terminase exportul
 și randarea. Corecția verifică suprafețele reale, inclusiv geometria la rădăcină,

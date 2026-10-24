@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40106507842/artifacts/12565041849)
-(GitHub Actions artifact, source `4236902`, delivered 24 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40134515233/artifacts/12575828367)
+(GitHub Actions artifact, source `cd1acda`, delivered 24 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -46,6 +46,8 @@ physical-device validation.
 Setup diagnostics now persist across editor restarts, include pre-job failures
 and appear in both the Blender and general journals. A failed connection opens
 and scrolls the journal to its latest error, with a copy button for diagnostics.
+Blender GLB verification accepts the editor's import mesh nodes, so a completed
+verification previously rejected as `empty_mesh` can be recovered without regenerating it.
 Termux variants without RUN_COMMAND, including the inspected Google Play build,
 use explicit terminal pairing: copy/paste the bundled bootstrap, then return to
 Godot for automatic discovery and export/import verification. Existing runtimes
