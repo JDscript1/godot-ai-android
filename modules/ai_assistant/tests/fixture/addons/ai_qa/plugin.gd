@@ -186,8 +186,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -210,6 +210,10 @@ func _run() -> void:
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "startup":
 		await _handoff_tests()
 		await _generated_preview_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "linux":
+		await _linux_runtime_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "providers":
@@ -249,6 +253,7 @@ func _run() -> void:
 	await _settings_action_tests()
 	await _provider_connection_tests("")
 	await _provider_discovery_tests("")
+	await _linux_runtime_tests("")
 	await _handoff_tests()
 	await _generated_preview_tests()
 	await _layout_tests()
@@ -2134,4 +2139,95 @@ func _provider_discovery_tests(output: String) -> void:
 	panel._choose(original_selection)
 	if old_profiles.is_empty(): panel._new_provider()
 	else: panel._edit_provider(0)
+	panel.settings_window.hide()
+
+class FixtureLinuxBridge:
+	extends Node
+	var state = {"ok": true, "supported": true, "packaged": true, "installed": false, "ready": false, "tools": {}, "active_job": ""}
+	var requests: Array = []
+	var pending = {}
+	var polls = 0
+	var fail = false
+	var cancelled = false
+	func linux_runtime_request(action: String, args: Dictionary) -> Dictionary:
+		if action == "status": return state.duplicate(true)
+		if action == "cancel": cancelled = true; return {"ok": true}
+		if action == "poll":
+			polls += 1
+			if cancelled: state["active_job"] = ""; return {"ok": true, "status": "cancelled", "error": "Operație anulată."}
+			if polls == 1: return {"ok": true, "status": "running", "output": "Pregătesc Linux…"}
+			state["active_job"] = ""
+			if fail: return {"ok": true, "status": "failed", "error": "Verificarea runtime a eșuat.", "output": "diagnostic fixture"}
+			var result = {}
+			match str(pending.get("action", "")):
+				"install", "verify": state.merge({"installed": true, "ready": true}, true); result = state.duplicate(true)
+				"tool_install":
+					state["tools"][pending["args"]["tool"]] = {"ready": true, "version": "fixture 1.0"}
+					result = state.duplicate(true)
+				"execute": result = {"exit_code": 0, "output": "LINUX_FIXTURE_OK", "truncated": false}
+				"uninstall": state.merge({"installed": false, "ready": false, "tools": {}}, true); result = state.duplicate(true)
+			return {"ok": true, "status": "completed", "result": result}
+		requests.append({"action": action, "args": args.duplicate(true)})
+		polls = 0; cancelled = false
+		pending = {"action": action, "args": args.duplicate(true)}
+		state["active_job"] = "fixture-linux-job"
+		return {"ok": true, "id": "fixture-linux-job"}
+
+func _linux_runtime_tests(output: String) -> void:
+	var backend = panel.integrations.linux
+	var old_bridge = backend.bridge
+	var old_connections = panel.integration_settings.duplicate(true)
+	var old_definitions = panel.active_definitions.duplicate(true)
+	var old_mode = panel.mode_picker.selected
+	var old_yolo = panel.full_control.button_pressed
+	var bridge = FixtureLinuxBridge.new()
+	add_child(bridge)
+	backend.bridge = bridge
+	backend.refresh()
+	panel.open_settings("integrations")
+	await get_tree().create_timer(0.2).timeout
+	var form: Dictionary = panel.forms["linux"]
+	_check(form["primary"].text == "Instalează Linux" and not form["primary"].disabled and not form["tools"].visible, "Runtime setup offers one install action before the app-owned filesystem exists")
+	var catalog = panel.ToolRegistry.new(backend.definitions(false), true)
+	_check(catalog.discover("tool_describe", {"name": "linux_execute"}).get("code") == "tool_unavailable", "No Linux execution tool is exposed before successful runtime verification")
+	await panel._linux_setup("install")
+	_check(backend.available() and form["status"].text == "Linux activ" and form["tools"].visible, "Only a completed and verified Linux job enables the runtime and its utility controls")
+	_check(panel.integration_settings.get("linux_enabled", false) and not form["buttons"]["python"].disabled, "Verified runtime becomes available for optional Python installation")
+	await panel._linux_setup("tool_install", "python")
+	_check(form["buttons"]["python"].text == "Instalat" and form["buttons"]["python"].disabled and not form["buttons"]["node"].disabled, "Tool installation reflects measured capability without claiming other tools are installed")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		var page = panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"])
+		page.scroll_vertical = 0
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("linux-runtime-settings.png"))
+	panel.active_definitions = backend.definitions(true)
+	panel.cancel = {}
+	panel.mode_picker.select(2)
+	var denied = await panel._execute_call("linux_execute", {"command": "echo LINUX_FIXTURE_OK"})
+	_check(not denied.get("ok", false) and not bridge.requests.any(func(request: Dictionary) -> bool: return request["action"] == "execute"), "Plan mode cannot start a modifying Linux command")
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.planner.reset()
+	var result = await panel._execute_call("linux_execute", {"command": "echo LINUX_FIXTURE_OK", "seconds": 30})
+	_check(result.get("ok", false) and result.get("result", {}).get("output") == "LINUX_FIXTURE_OK", "Agent dispatch receives the completed Linux command result through the existing permission pipeline")
+	var count = bridge.requests.size()
+	var stopped = await backend.execute({"command": "unused"}, {"cancelled": true})
+	_check(stopped.get("code") == "cancelled" and bridge.requests.size() == count, "An already cancelled turn cannot submit a Linux job")
+	bridge.fail = true
+	var failed = await backend.setup("verify")
+	_check(not failed.get("ok", false) and backend.log_text.contains("diagnostic"), "Failed runtime jobs retain their diagnostic output")
+	bridge.fail = false
+	panel._linux_remove()
+	var dialogs = panel.find_children("*", "ConfirmationDialog", true, false).filter(func(item: ConfirmationDialog) -> bool: return item.title == "Dezinstalează Linux")
+	_check(dialogs.size() == 1 and not bridge.requests.any(func(request: Dictionary) -> bool: return request["action"] == "uninstall"), "Removing the runtime requires confirming removal of its tools while preserving projects")
+	if not dialogs.is_empty(): dialogs[0].canceled.emit()
+	await panel._linux_setup("uninstall")
+	_check(not backend.available() and not form["tools"].visible and not panel.integration_settings.get("linux_enabled", true), "Completed uninstall removes Linux availability from the agent")
+	panel.mode_picker.select(old_mode)
+	panel.full_control.button_pressed = old_yolo
+	panel.active_definitions = old_definitions
+	panel.integration_settings = old_connections
+	backend.bridge = old_bridge
+	backend.refresh()
+	bridge.queue_free()
 	panel.settings_window.hide()

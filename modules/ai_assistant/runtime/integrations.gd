@@ -4,6 +4,7 @@ extends RefCounted
 static var Common: GDScript
 static var Transport: GDScript
 static var TermuxBlender: GDScript
+static var LinuxRuntime: GDScript
 var owner: Node
 var vault: RefCounted
 var transport: RefCounted
@@ -12,6 +13,7 @@ var test_http = false
 var processes: Array = []
 var github_generation = 0
 var termux: RefCounted
+var linux: RefCounted
 
 func github_invalidate() -> void:
 	github_generation += 1
@@ -42,6 +44,7 @@ func _init(node: Node = null, store: RefCounted = null) -> void:
 	owner = node
 	vault = store
 	transport = Transport.new(node)
+	linux = LinuxRuntime.new(node, node.get("plugin") if node != null else null)
 	if OS.has_feature("android"):
 		termux = TermuxBlender.new(node, node.get("plugin") if node != null else null)
 
@@ -107,6 +110,7 @@ func github_request(repository: String, args: Dictionary, cancel: Dictionary = {
 	return Common.success(value)
 
 func stop() -> void:
+	if linux != null: linux.stop()
 	github_invalidate()
 	if termux != null: termux.stop()
 	for pid in processes:

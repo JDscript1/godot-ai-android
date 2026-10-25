@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--godot", required=True)
     parser.add_argument("--proot", action="store_true")
-    parser.add_argument("--scenario", choices=["all", "dock", "files", "terrain", "activity", "preview", "blender", "providers", "startup"], default="all")
+    parser.add_argument("--scenario", choices=["all", "dock", "files", "terrain", "activity", "preview", "blender", "providers", "startup", "linux"], default="all")
     parser.add_argument("--output", default=".ai-qa/rendered")
     parser.add_argument("--only", choices=["desktop", "narrow", "wide", "phone_landscape", "phone_compact"])
     args = parser.parse_args()

@@ -1,7 +1,7 @@
 """Embed editor scripts; they never depend on, or get copied into, a game project."""
 from pathlib import Path
 
-SCRIPT_BINDINGS = {'common': 'Common', 'diff': 'Diff', 'transport': 'Transport', 'tool_registry': 'ToolRegistry', 'providers': 'Providers', 'editor_tools': 'Tools', 'mcp': 'MCP', 'asset_exports': 'AssetExports', 'assets': 'Assets', 'accounts': 'Accounts', 'conversations': 'Conversations', 'icons': 'Icons', 'planner': 'Planner', 'markdown': 'Markdown', 'file_registry': 'FileRegistry', 'model_preview': 'ModelPreview', 'media_view': 'MediaView', 'chat_view': 'ChatView', 'harness': 'Harness', 'agent_jobs': 'AgentJobs', 'speech': 'Speech', 'workspace': 'Workspace', 'termux_blender': 'TermuxBlender', 'integrations': 'Integrations', 'store': 'Store', 'editor_control': 'EditorControl', 'panel': 'Panel'}
+SCRIPT_BINDINGS = {'common': 'Common', 'diff': 'Diff', 'transport': 'Transport', 'tool_registry': 'ToolRegistry', 'providers': 'Providers', 'editor_tools': 'Tools', 'mcp': 'MCP', 'asset_exports': 'AssetExports', 'assets': 'Assets', 'accounts': 'Accounts', 'conversations': 'Conversations', 'icons': 'Icons', 'planner': 'Planner', 'markdown': 'Markdown', 'file_registry': 'FileRegistry', 'model_preview': 'ModelPreview', 'media_view': 'MediaView', 'chat_view': 'ChatView', 'harness': 'Harness', 'agent_jobs': 'AgentJobs', 'speech': 'Speech', 'workspace': 'Workspace', 'termux_blender': 'TermuxBlender', 'linux_runtime': 'LinuxRuntime', 'integrations': 'Integrations', 'store': 'Store', 'editor_control': 'EditorControl', 'panel': 'Panel'}
 SCRIPT_NAMES = list(SCRIPT_BINDINGS)
 
 

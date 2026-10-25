@@ -60,6 +60,7 @@ public:
 	int64_t runtime_request(const String &p_command, const Dictionary &p_arguments);
 	Dictionary runtime_poll(int64_t p_id);
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
+	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
 	Dictionary termux_blender_request(const String &p_action, const Dictionary &p_args);
 	Dictionary script_diagnostics(const String &p_source, const String &p_path);
 	void prepare_script_removal(const PackedStringArray &p_paths);
@@ -83,6 +84,7 @@ protected:
 public:
 	void project_action(const String &p_action);
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
+	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
 	bool prepare_project(const String &p_path);
 	AIAssistantProjectManager();
 };

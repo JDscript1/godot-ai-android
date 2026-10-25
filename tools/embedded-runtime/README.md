@@ -2,7 +2,9 @@
 
 This directory builds PRoot and its loader for Android ARM64/API 29+. The
 result depends on Android system libraries, not on an installed Termux app.
-Python and make are build tools only. Blender is not included in this milestone.
+Python and make are build tools only. The current source also packages a pinned
+Debian filesystem; Python/Node/Git/ripgrep/Blender are optional in-app installs.
+Blender and third-party agent harnesses have not been validated in the Godot APK.
 
 ```sh
 python3 build.py --ndk /path/to/android-ndk \
@@ -38,3 +40,26 @@ repository's git tag.
 PRoot's COPYING, talloc's LGPLv3 license and libandroid-shmem's BSD license are
 preserved from their source archives. The exact source/build bundle accompanies
 the CI APK as an artifact. Regenerate it whenever changing a source or build rule.
+
+## Persistent Linux filesystem
+
+`rootfs.py --work <cache> --output <generated>` fetches the exact official
+Debian ARM64 layer pinned in `rootfs.json`, verifies its SHA-256 and repackages
+it as `assets/godot_ai/linux/rootfs.zip` plus `package.json`. Gradle invokes
+this after building PRoot. Source and installed-package copyright files stay
+in the filesystem. No Termux bootstrap or tar executable is used on Android.
+The base is about 33 MB zipped and 104 MB of regular files before optional tools.
+
+The installer validates each file's size/hash, defers links until regular files
+are written, rejects paths through links and publishes the installed directory
+only after extraction. PRoot's packaged native loader executes the Linux files;
+Android does not directly execute an extracted Debian ELF. Only the selected
+Godot project is mounted as `/workspace` for an agent command. PRoot is not a
+security sandbox and cannot grant kernel features absent from Android.
+
+`python test_rootfs.py` checks archive traversal, link handling, budgets and
+reproducible packaging. `tests/RuntimeArchiveTest.kt` exercises the actual Kotlin
+unpacker with malicious manifests. `tests/RuntimeSmoke.kt` runs an installation,
+optional tool installs and command/cancellation checks using supplied native
+files. These development controls are distinct from the installed Godot service.
+See [the runtime document](../../docs/AI_LINUX_RUNTIME.md) for current evidence.

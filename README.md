@@ -59,6 +59,12 @@ action, then **Blender Active** and **Uninstall Blender**. It resumes setup afte
 terminal pairing and preserves containers/user files during package removal.
 See the [current progress and checks](PROGRES_SI_PLAN.md).
 
+The current source now adds a [persistent embedded Linux runtime](docs/AI_LINUX_RUNTIME.md)
+with a pinned Debian ARM64 filesystem, native installation, managed jobs and
+optional Python, Node.js/npm, Git, ripgrep and Blender packages. The direct-provider
+harness remains in Godot. These sources have development/control tests; the new
+runtime is not yet in the Download APK or physically verified in Godot.
+
 An [embedded Android runtime probe](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) is under
 development as the first step toward Blender without a separate Termux app.
 It is packaged in a CI APK; execution from that APK still needs a device test.

@@ -2,6 +2,7 @@
 
 #include "runtime.gen.h"
 
+#include "core/config/project_settings.h"
 #include "core/crypto/crypto.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
@@ -163,6 +164,7 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
 	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
+	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantEditorPlugin::linux_runtime_request);
 	ClassDB::bind_method(D_METHOD("termux_blender_request", "action", "arguments"), &AIAssistantEditorPlugin::termux_blender_request);
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
 	ClassDB::bind_method(D_METHOD("prepare_script_removal", "paths"), &AIAssistantEditorPlugin::prepare_script_removal);
@@ -310,6 +312,62 @@ Dictionary AIAssistantEditorPlugin::termux_blender_request(const String &p_actio
 	result["error"] = "Conectorul Termux necesită editorul Android.";
 	return result;
 #endif
+}
+
+static Dictionary ai_linux_runtime_request(const String &p_action, const Dictionary &p_args) {
+#ifdef ANDROID_ENABLED
+	JNIEnv *env = get_jni_env();
+	jclass cls = jni_find_class(env, "org/godotengine/editor/AILinuxRuntime");
+	if (!cls) {
+		return Dictionary();
+	}
+	jmethodID method = env->GetStaticMethodID(cls, "command", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+	if (!method || env->ExceptionCheck()) {
+		env->ExceptionClear();
+		env->DeleteLocalRef(cls);
+		return Dictionary();
+	}
+	jstring action = env->NewStringUTF(p_action.utf8().get_data());
+	jstring args = env->NewStringUTF(JSON::stringify(p_args).utf8().get_data());
+	jstring result = (jstring)env->CallStaticObjectMethod(cls, method, action, args);
+	String output;
+	if (env->ExceptionCheck()) {
+		env->ExceptionClear();
+	} else if (result) {
+		output = jstring_to_string(result, env);
+	}
+	if (result) {
+		env->DeleteLocalRef(result);
+	}
+	env->DeleteLocalRef(action);
+	env->DeleteLocalRef(args);
+	env->DeleteLocalRef(cls);
+	Variant parsed = JSON::parse_string(output);
+	return parsed.get_type() == Variant::DICTIONARY ? Dictionary(parsed) : Dictionary();
+#else
+	Dictionary result;
+	result["ok"] = false;
+	result["error"] = "Runtime Linux integrat necesită editorul Android.";
+	return result;
+#endif
+}
+
+Dictionary AIAssistantEditorPlugin::linux_runtime_request(const String &p_action, const Dictionary &p_args) {
+	Dictionary args = p_args.duplicate(true);
+	if (p_action == "execute") {
+		args["project_directory"] = ProjectSettings::get_singleton()->globalize_path("res://");
+	}
+	return ai_linux_runtime_request(p_action, args);
+}
+
+Dictionary AIAssistantProjectManager::linux_runtime_request(const String &p_action, const Dictionary &p_args) {
+	if (p_action == "execute") {
+		Dictionary result;
+		result["ok"] = false;
+		result["error"] = "Deschide un proiect înainte de rularea comenzilor Linux.";
+		return result;
+	}
+	return ai_linux_runtime_request(p_action, p_args);
 }
 
 void AIAssistantEditorPlugin::make_visible(bool p_visible) {
@@ -484,6 +542,7 @@ void AIAssistantEditorPlugin::prepare_script_removal(const PackedStringArray &p_
 void AIAssistantProjectManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("project_action", "action"), &AIAssistantProjectManager::project_action);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantProjectManager::speech_request);
+	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantProjectManager::linux_runtime_request);
 	ADD_SIGNAL(MethodInfo("project_action_requested", PropertyInfo(Variant::STRING, "action")));
 }
 

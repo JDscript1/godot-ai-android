@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "distribution": "Debian",
+  "release": "trixie",
+  "architecture": "arm64",
+  "source_commit": "9c4818e3bfd35139d3798b0420e9c46836658b2e",
+  "source_repository": "https://github.com/debuerreotype/docker-debian-artifacts",
+  "url": "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/9c4818e3bfd35139d3798b0420e9c46836658b2e/trixie/slim/oci/blobs/rootfs.tar.gz",
+  "sha256": "ddc0c1e36a6793411b6c8d48e1ddad2987405d377da92bcf532ed3181c2e4d62",
+  "size": 30200478,
+  "max_unpacked_bytes": 536870912,
+  "max_entries": 30000
+}

@@ -36,7 +36,60 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — catalog DeepSeek după salvarea cheii, 25.10.2026
+## Etapa curentă — runtime Linux persistent pentru utilitare, 25.10.2026
+
+**Implementat în surse, fără recompilare APK:** un runtime comun în
+**Integrări → Runtime Linux**, cu bază Debian ARM64 ambalată în build, instalare
+nativă în stocarea privată, verificare, dezinstalare, jurnal și oprirea joburilor.
+Nu cere aplicația Termux, comenzi lipite sau server companion. Harness-ul
+direct-provider rămâne în Godot; Linux este backend-ul opțional pentru CLI-uri.
+
+Utilitare instalabile separat: Python/venv/pip, Node.js/npm, Git, ripgrep și
+Blender CLI. Agentul primește `linux_status`, iar după activarea verificată
+`linux_execute` și `linux_install_tool`, cu permisiunile existente. Modul Plan
+nu pornește comenzile. JNI injectează proiectul curent ca `/workspace`;
+modelul nu alege directorul gazdă. Serviciul Android este neexportat, cu proces
+separat și notificare foreground, joburi persistente, heartbeat și anulare.
+O operație întreruptă nu este relansată automat.
+
+Baza oficială Debian este fixată la commit și SHA-256; buildul verifică
+arhiva, iar instalatorul Kotlin verifică fișierele și legăturile înaintea
+activării. Pachet local: **32.789.398 bytes**, **104.455.032 bytes** de fișiere
+regulate, **3.265 intrări**. Publicarea și sursele/licențele tuturor pachetelor
+redistribuite se verifică înaintea livrării efective a unui APK cu noua bază.
+
+**Probe reale de dezvoltare**, într-un filesystem nou al sarcinii, separat de
+Debian-ul utilizatorului: instalate și pornite **Python 3.13.5**, **Node 20.19.2**,
+**Git 2.47.3**, **ripgrep 14.1.1**. A trecut execuția prin directorul unui proiect
+de probă, scrierea fișierului, limitarea ieșirii, timeout-ul, anularea și
+ștergerea fără urmărirea unei legături spre un fișier exterior. PRoot-ul compilat
+de noi a pornit aceleași utilitare cu loader-ul deja ambalat al Termux.
+Aceasta nu dovedește încă loader-ul propriu și serviciul din APK-ul Godot.
+Corectată o eroare APT din opțiunile PRoot ale probei; verificarea descărcării
+și verificarea utilitarului au rămas etape distincte.
+
+Validări locale: **429 aserțiuni runtime Godot**, **426 verificări UI complete
+pe formatul tabletei**, **47 verificări UI focalizate × 2 dimensiuni**,
+**4 teste Python pentru rootfs**, **6 probe Kotlin ale instalatorului**,
+compilare Kotlin cu clase Android și verificare de sintaxă C++. Capturile
+Runtime Linux au fost inspectate vizual. Puntea Android din fixture este simulată.
+Dovezi: `.ai-qa/linux-runtime-package/`, `.ai-qa/linux-runtime-tools.log`,
+`.ai-qa/linux-runtime-execute.log`, `.ai-qa/linux-runtime-custom-proot.log`,
+`.ai-qa/linux-runtime-control/smoke-result.json`, `.ai-qa/linux-runtime-ui/`,
+`.ai-qa/linux-runtime-narrow/`, `.ai-qa/linux-runtime-full/`,
+`.ai-qa/linux-runtime-kotlin.log`, `.ai-qa/linux-runtime-cpp.log`,
+`.ai-qa/linux-runtime-verification.json`.
+Document complet: [AI_LINUX_RUNTIME.md](docs/AI_LINUX_RUNTIME.md).
+
+**Rămâne proba fizică în APK** pentru propriul loader, foreground service,
+instalare/anulare și revenirea din fundal. Blender complet și un harness extern
+instalat, autentificat și conectat agentului nu sunt încă validate. Runtime-ul
+le oferă o bază de execuție; fiecare harness are nevoie de adaptor și probe
+proprii. APK-ul din Downloads nu a fost înlocuit și nu s-a făcut push.
+Jurnal: 25.10.2026 — adăugat Debian persistent în aplicație, manager de utilitare,
+punte de execuție și probe reale de dezvoltare pentru Python/Node/Git/ripgrep.
+
+## Etapa precedentă — catalog DeepSeek după salvarea cheii, 25.10.2026
 
 Inspectată captura fizică `Screenshot_20261025_183822.jpg`: sertarul DeepSeek
 este deschis, dar nu are modele și afișează doar mesajul generic de lipsă

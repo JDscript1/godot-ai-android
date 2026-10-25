@@ -175,6 +175,8 @@ func _ready() -> void:
 	if not project_manager_mode: _receive_project_handoff()
 	workspace = Workspace.new(self, project_directory)
 	integrations = Integrations.new(self, vault)
+	integrations.linux.changed.connect(_refresh_linux_card)
+	integrations.linux.diagnostic.connect(_linux_diagnostic)
 	if integrations.termux != null and not project_manager_mode:
 		integrations.termux.configure(data_directory, project_directory)
 		integrations.termux.changed.connect(_refresh_blender_card)
@@ -701,6 +703,7 @@ func _integration_card(parent: Node, title: String, icon: String) -> VBoxContain
 func _build_integrations(parent: Node) -> void:
 	if project_manager_mode: return
 	var connections = parent
+	_build_linux_runtime(connections)
 	var saved: Dictionary = integration_settings.duplicate(true)
 	var github = _integration_card(connections, "GitHub", "Provider_github")
 	var form = _form(github, "github")
@@ -727,7 +730,7 @@ func _build_integrations(parent: Node) -> void:
 	form["status"] = _label(github, "Token salvat · verifică conexiunea" if not vault.read("integration_github").is_empty() else "Neconectat")
 	github.move_child(form["status"], 1)
 	form["status"].add_theme_color_override("font_color", Color("a9b5cb"))
-	if integrations.termux != null:
+	if integrations.termux != null and not integrations.linux.state.get("packaged", false):
 		_build_termux_blender(connections)
 	elif Integrations.desktop_blender():
 		var blender = _integration_card(connections, "Blender CLI", "Models")
@@ -1394,6 +1397,7 @@ func _action_button(parent: Node, title: String, key: String, callback: Callable
 	return control
 
 func _update_settings_controls() -> void:
+	if forms.has("linux"): _refresh_linux_card()
 	if chat != null and chat.drawer_refresh != null: chat.drawer_refresh.disabled = busy or provider_testing
 	if forms.has("provider") and forms["provider"].has("save"): forms["provider"]["save"].disabled = busy or provider_testing
 	if forms.has("provider") and forms["provider"].has("new_connection"): forms["provider"]["new_connection"].disabled = busy or provider_testing
@@ -1634,6 +1638,7 @@ func _stop(reason: String = "user", pause_queue: bool = true) -> void:
 	cancel["cancelled"] = true
 	cancel["reason"] = reason
 	if editor_control != null: editor_control.release()
+	if integrations != null and integrations.linux != null: integrations.linux.stop()
 	queue_paused = pause_queue
 	agent_jobs.stop()
 	speech.stop()
@@ -1702,8 +1707,10 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		_finish_chat("Conversația nu a putut fi salvată.")
 		return
 	_status("Pregătesc contextul și instrumentele…")
-	if not project_manager_mode and integrations.termux != null and integration_settings.get("blender_enabled", false): await integrations.termux.ensure_ready(cancel)
-	active_definitions = _start_definitions() if project_manager_mode else (tools.definitions() + assets.definitions() + FileRegistry.definitions() + [_preview_definition()] + EditorControl.definitions() + Store.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)) and github_has_token and Integrations.valid_repository(str(integration_settings.get("github_repository", ""))), bool(integration_settings.get("blender_enabled", false)), integrations.termux != null and integrations.termux.available()))
+	if not project_manager_mode:
+		integrations.linux.refresh()
+		if not integrations.linux.state.get("packaged", false) and integrations.termux != null and integration_settings.get("blender_enabled", false): await integrations.termux.ensure_ready(cancel)
+	active_definitions = _start_definitions() if project_manager_mode else (integrations.linux.definitions(bool(integration_settings.get("linux_enabled", false)) and integrations.linux.available()) + tools.definitions() + assets.definitions() + FileRegistry.definitions() + [_preview_definition()] + EditorControl.definitions() + Store.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)) and github_has_token and Integrations.valid_repository(str(integration_settings.get("github_repository", ""))), bool(integration_settings.get("blender_enabled", false)), integrations.termux != null and integrations.termux.available()))
 	mcp.tool_index.clear()
 	for server in ([] if project_manager_mode else config["mcp"]):
 		if cancel.get("cancelled", false): break
@@ -1781,10 +1788,12 @@ func _context_messages() -> Array:
 	if not project_manager_mode:
 		instructions += "\nProject file tools require exact res:// paths, for example res://scripts/player.gd. Preserve the path supplied by the user or returned by godot_files; a bare relative path is invalid. Scene node paths are separate and remain relative to the scene root."
 		instructions += "\nFor addon requests, use store_search, store_describe and store_install before claiming a plugin is unavailable or the editor lacks network access. Report the actual tool result. Native addons still need compatible binaries and a separate load check after installation."
-		if integrations.termux != null:
+		if integrations.termux != null and not integrations.linux.state.get("packaged", false):
 			var backend = integrations.termux
 			instructions += "\nAndroid Blender integration: " + JSON.stringify({"enabled": integration_settings.get("blender_enabled", false), "ready": backend.available(), "runtime": backend.runtime.get("version", ""), "capabilities": backend.runtime.get("capabilities", {}), "pending_job": not backend.pending.is_empty(), "diagnostic": backend.diagnostics()})
 			instructions += " Use blender_run when enabled and ready. When not ready, blender_run is deliberately excluded: do not repeatedly search for or describe it. Explain the supplied diagnostic and next action in one or two short sentences; do not expose internal JSON or claim Blender is absent without a discovery result. Save scripts in the project; declare dependency files in inputs, read them via GODOT_AI_PROJECT_DIR and write all outputs via GODOT_AI_OUTPUT_DIR. Save a GLB preview alongside FBX/OBJ/BLEND outputs for inspection in Godot. Respect the measured rendering capabilities. If setup or recovery is needed, direct the user to Integrări > Blender; never install packages or reset containers through a generated Blender script."
+		instructions += "\nIntegrated Linux runtime: " + JSON.stringify({"enabled": integration_settings.get("linux_enabled", false), "ready": integrations.linux.available(), "tools": integrations.linux.state.get("tools", {})})
+		instructions += " The direct-provider harness runs in Godot. Optional Linux commands and CLI agents run only when the supplied runtime is ready. Do not repeatedly search for unavailable Linux tools. Install utilities only when the user requests them. Native scene tools and GLB previews remain in Godot. A CLI binary version check alone does not establish a working harness integration."
 		var snapshot = tools.execute("godot_project", {}, 0, false)
 		instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
 		instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")}))
@@ -1910,6 +1919,9 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		_refresh_skills()
 	elif name in ["github_read", "github_create_issue"]:
 		result = await integrations.github_request(str(integration_settings.get("github_repository", "")), Common.parse_json(_redact(JSON.stringify(args))), cancel, name == "github_create_issue")
+	elif name == "linux_status": result = integrations.linux.refresh()
+	elif name == "linux_execute": result = await integrations.linux.execute(args, cancel)
+	elif name == "linux_install_tool": result = await integrations.linux.setup("tool_install", str(args["tool"]))
 	elif name == "blender_run":
 		if not integration_settings.get("blender_enabled", false): result = Common.failure("Blender este dezactivat în acest proiect.", "permission_denied")
 		else:
@@ -2568,13 +2580,14 @@ func _process(_delta: float) -> void:
 		chat.set_working(busy or (speech != null and (speech.listening or speech.transcribing)))
 		if busy: chat._follow()
 	if settings_window != null and settings_window.visible: _update_settings_controls()
-	if not project_manager_mode and integrations != null and integrations.termux != null:
+	if not project_manager_mode and integrations != null and integrations.termux != null and not integrations.linux.state.get("packaged", false):
 		var backend = integrations.termux
 		var viewing = settings_window != null and settings_window.visible
 		var keep_manual = backend.manual_mode() and integration_settings.get("blender_enabled", false) and not backend.verified.is_empty()
 		if (viewing or keep_manual) and Time.get_ticks_msec() - backend.last_check > (5000 if viewing else 60000) and not backend.working and not backend.refreshing:
 			backend.last_check = Time.get_ticks_msec()
 			backend.refresh.call_deferred()
+	if integrations != null and integrations.linux != null and not project_manager_mode and settings_window != null and settings_window.visible and not integrations.linux.working and Time.get_ticks_msec() - integrations.linux.last_refresh > 5000: integrations.linux.refresh()
 	if speech != null: speech.poll(config.get("preferences", {}))
 
 func _selection() -> Dictionary:
@@ -3641,3 +3654,72 @@ func _publish_generated_files() -> void:
 		history.append({"id": id, "role": "assistant", "content": "", "files": missing, "origin_label": "Fișiere generate", "turn_id": current_turn})
 		_show_files(missing, "generated-" + id)
 	generated_files.clear()
+
+func _build_linux_runtime(parent: Node) -> void:
+	var card = _integration_card(parent, "Runtime Linux", "Local")
+	var form = _form(card, "linux")
+	form["status"] = _label(card, "Verific runtime-ul…")
+	var actions = _row(card)
+	form["primary"] = _button(actions, "Instalează Linux", func() -> void: _linux_setup("verify" if integrations.linux.state.get("installed", false) else "install"))
+	form["cancel"] = _button(actions, "Oprește", func() -> void: integrations.linux.stop())
+	form["remove"] = _button(actions, "Dezinstalează", _linux_remove)
+	form["tools"] = VBoxContainer.new()
+	card.add_child(form["tools"])
+	form["buttons"] = {}
+	for entry in [["python", "Python"], ["node", "Node.js · npm"], ["git", "Git"], ["ripgrep", "ripgrep"], ["blender", "Blender CLI"]]:
+		var row = HBoxContainer.new()
+		form["tools"].add_child(row)
+		var label = _label(row, entry[1])
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var button = _button(row, "Instalează", func() -> void: _linux_setup("tool_install", entry[0]))
+		form["buttons"][entry[0]] = button
+	form["hint"] = _label(card, "Unelte Linux în memoria aplicației, fără Termux. Comenzile au permisiunile aplicației.")
+	integrations.linux.refresh()
+	_refresh_linux_card()
+
+func _refresh_linux_card() -> void:
+	if not forms.has("linux") or integrations == null: return
+	var form: Dictionary = forms["linux"]
+	var runtime = integrations.linux
+	var state: Dictionary = runtime.state
+	var supported = bool(state.get("supported", false)) and bool(state.get("packaged", false))
+	var installed = bool(state.get("installed", false))
+	form["status"].text = "În lucru…" if runtime.working else ("Linux activ" if runtime.available() else ("Necesită verificare" if installed else ("Linux neinstalat" if supported else "Disponibil în APK-ul Android cu runtime Linux")))
+	form["primary"].text = "Verifică Linux" if installed else "Instalează Linux"
+	form["primary"].disabled = busy or runtime.working or not supported
+	form["remove"].visible = installed
+	form["remove"].disabled = busy or runtime.working
+	form["cancel"].visible = runtime.working
+	form["tools"].visible = installed
+	for key in form["buttons"]:
+		var button: Button = form["buttons"][key]
+		var ready = bool(state.get("tools", {}).get(key, {}).get("ready", false))
+		button.text = "Instalat" if ready else "Instalează"
+		button.disabled = busy or runtime.working or not runtime.available() or ready
+		button.tooltip_text = str(state.get("tools", {}).get(key, {}).get("version", ""))
+	if runtime.available() and not integration_settings.get("linux_enabled", false):
+		integration_settings["linux_enabled"] = true
+		Common.atomic_json(project_directory.path_join("integrations.json"), integration_settings)
+
+func _linux_setup(action: String, tool: String = "") -> void:
+	if busy or integrations.linux.working: return
+	var result = await integrations.linux.setup(action, tool)
+	_status("Linux pregătit." if result.get("ok", false) and action != "uninstall" else ("Linux dezinstalat." if result.get("ok", false) else str(result.get("error", "Sarcina Linux nu s-a finalizat."))))
+	_refresh_linux_card()
+
+func _linux_remove() -> void:
+	if busy or integrations.linux.working: return
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "Dezinstalează Linux"
+	dialog.dialog_text = "Se șterg Linux și utilitarele instalate în runtime. Proiectele Godot sunt păstrate."
+	dialog.confirmed.connect(func() -> void: dialog.queue_free(); _linux_setup("uninstall"))
+	dialog.canceled.connect(dialog.queue_free)
+	_mount_dialog(dialog)
+	dialog.popup_centered_clamped(Vector2i(500, 220), 0.9)
+
+func _linux_diagnostic(entry: Dictionary) -> void:
+	_record_event("linux_runtime", {"action": entry.get("action", "")}, entry)
+	if not integrations.linux.available() and integration_settings.get("linux_enabled", false):
+		integration_settings["linux_enabled"] = false
+		Common.atomic_json(project_directory.path_join("integrations.json"), integration_settings)

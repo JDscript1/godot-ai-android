@@ -2,6 +2,15 @@
 
 Ținta este un Blender CLI utilizabil de agent fără instalarea aplicației Termux și fără comenzi lipite de utilizator. Harness-ul AI rămâne în Godot; serviciul nativ este doar backend-ul opțional pentru modelare, export și randare.
 
+## Starea curentă a surselor — 25.10.2026
+
+Runtime-ul a fost extins la un mediu Debian persistent, cu instalator nativ,
+joburi și pachete opționale în Integrări → Runtime Linux. Detaliile și probele
+sunt în [Runtime Linux integrat](AI_LINUX_RUNTIME.md). Secțiunile de mai jos
+păstrează etapele istorice ale probei PRoot. Aceste surse noi nu sunt încă în
+APK-ul curent din Downloads și nu există încă o probă fizică a serviciului
+Linux complet în aplicația Godot instalată.
+
 ## Etapa 1: proba de executare
 
 Editorul construiește un executabil PIE ARM64 foarte mic (`ai_runtime_probe.c`) cu NDK și îl include în APK sub `lib/arm64-v8a/libai_runtime_probe.so`. Android îl extrage în directorul bibliotecilor native. Serviciul neexportat `AIEmbeddedRuntimeService` rulează în procesul aplicației `:ai_runtime`, pornește numai acel fișier cunoscut, așteaptă cel mult opt secunde și întoarce rezultatul printr-un receiver neexportat. Puntea Godot acceptă intern `embedded_probe` și `embedded_status` pentru diagnostic. Aceasta verifică mecanismul de proces, izolare și executare; **nu instalează și nu pornește încă PRoot sau Blender**.

@@ -218,7 +218,7 @@ android {
 }
 
 // Android 10+ permits exec from the installed native-library directory. Build a
-// tiny PIE first; PRoot must later be rebuilt for this app ID and verified here.
+// native PRoot/loader plus a pinned Debian filesystem and the native probe.
 tasks.register('buildAiEmbeddedRuntime') {
     def runtimeTools = new File(rootDir, '../../../tools/embedded-runtime').canonicalFile
     def generated = file("$buildDir/generated/ai-runtime")
@@ -238,6 +238,10 @@ tasks.register('buildAiEmbeddedRuntime') {
         }
         exec {
             commandLine 'python3', new File(runtimeTools, 'build.py'), '--ndk', ndk,
+                    '--work', file("$buildDir/ai-runtime-build"), '--output', generated
+        }
+        exec {
+            commandLine 'python3', new File(runtimeTools, 'rootfs.py'),
                     '--work', file("$buildDir/ai-runtime-build"), '--output', generated
         }
     }

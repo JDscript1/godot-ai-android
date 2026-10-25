@@ -37,6 +37,7 @@ jobs:
           python modules/ai_assistant/tests/test_delivery.py
           python modules/ai_assistant/tests/test_termux_blender.py
           python tools/embedded-runtime/test_build.py
+          python tools/embedded-runtime/test_rootfs.py
       - name: Render desktop and narrow editor panels
         run: |
           sudo apt-get update -qq
