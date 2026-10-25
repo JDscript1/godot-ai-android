@@ -34,10 +34,15 @@ opens the same global configuration window.
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current APK is `cd1acda`, including control/integrations/generation and
+The current APK is `a23d260`, including control/integrations/generation and
 [chat files, previews, editor control, Store and real diff](AI_CHAT_FILES_AND_EDITOR_CONTROL.md).
 It also includes the subsequent harness/local-connection fixes, activity drawer,
 3D preview controls, image-purpose rules and optional Termux/Blender setup.
+The Android Blender card has one install action, automatic verification and agent
+activation, then a compact **Blender Active** status and **Uninstall Blender**.
+Diagnostics and worker output are in Journal; package removal preserves containers
+and user files. Terminal-only Termux variants still require pasting the private
+bootstrap before setup continues automatically.
 Delivery evidence is recorded in [the project progress document](../PROGRES_SI_PLAN.md).
 
 HTTP is opt-in per local connection. `127.0.0.1` means this Android device; a server
@@ -191,7 +196,7 @@ with the standard `androiddebugkey` alias and `android` debug passwords. CI also
 compares the APK certificate with that keystore before uploading an artifact.
 This is a development build; no production signing key is included in source.
 
-Evidence below describes delivered APK `cd1acda`. Full history and local paths
+Evidence below describes delivered APK `a23d260`. Full history and local paths
 are in [the progress record](../PROGRES_SI_PLAN.md).
 
 | Area | Current verification |
@@ -199,16 +204,19 @@ are in [the progress record](../PROGRES_SI_PLAN.md).
 | Runtime, protocol adapters, file revisions, diff and model capability policies | 427 assertions locally; 422 in CI, which omits the five optional local Blender checks. HTTP providers use deterministic fixtures |
 | Upstream editor | 371 CI checks in each of five configurations: desktop, narrow, wide, phone landscape and phone compact |
 | Compiled native fork | 381 CI checks in each configuration, including actual mouse input, GLB pixels, offscreen rendering, native addon installation/activation/removal, Undo, diagnostics and editor-specific Blender verification recovery |
-| Blender backend | 20 backend/HTTP/bootstrap tests passed in CI, including a real pasted command starting an authenticated worker; 22 local Godot-to-real-Blender assertions passed in manual mode with the Android boundary substituted |
-| Blender setup UI | 55 checks at phone scaling in CI, including pre-job journal entries, the general journal, auto-revealed errors, wrapped error lines, pairing without RUN_COMMAND and editor import mesh validation/recovery |
+| Blender backend | 26 backend/HTTP/bootstrap tests passed in CI, including a real pasted command starting an authenticated worker; 22 local Godot-to-real-Blender assertions passed in manual mode with the Android boundary substituted |
+| Blender setup UI | 67 checks at phone scaling in CI, including the single install action, persistent setup intent, editor import verification, automatic agent activation, scoped uninstall, old worker upgrade, permission/manual fallback and visible pairing hints |
 | Companion | Nine deterministic tests and TypeScript build passed |
-| APK | ARM64, package and persistent certificate verified; all 27 embedded scripts and the Blender worker match the compiled commit byte for byte; Termux permission, receiver, Android classes and JNI entry present |
+| APK | ARM64, package and persistent certificate verified; all 27 embedded scripts, the Blender worker and bootstrap match the compiled commit byte for byte; Termux permission, receiver, Android classes, JNI entry and Play Store destinations present |
 | Device and live services | Physical Android UI/touch/Keystore/microphone/suspend and real vision/subscription/generation providers remain separate checks. The public Store request returned HTTP 403 locally; Store execution was tested with a fixture addon |
 
-[All three CI jobs passed](https://github.com/JDscript1/godot-ai-android/actions/runs/40134515233).
-Native export/provider/integration settings and dock screenshots were inspected in the current build, including compact
-left placement and the 3D workspace overlap check. Image/3D viewer, references
-and diff screenshot inspection is also recorded in the earlier delivery history.
+[All three CI jobs passed](https://github.com/JDscript1/godot-ai-android/actions/runs/40173817612).
+Native export/provider/integration settings and dock screenshots were inspected
+in earlier deliveries, including compact left placement and 3D workspace overlap.
+This iteration's simplified Blender card was inspected locally at desktop and
+phone scaling; the current compiled native fork passed the rendered checks above.
+Image/3D viewer, references and diff screenshot inspection is also recorded in
+the earlier delivery history.
 Godot may enforce a larger editor window than the narrow virtual display.
 Desktop rendering does not establish physical Android behavior.
 The user's Android logs confirm manual Termux pairing and Blender 4.3.2 export/render
@@ -223,14 +231,14 @@ the module's real Godot HTTP transport (six 3D choices after filtering the
 mask-dependent model). This establishes catalog access only; no account or
 credit-consuming generation was used for that check.
 
-The verified APK source is `cd1acdaa8ed642b6b3f4a59d6e0d77d1a4c0c7b2`.
-Download its [ARM64 artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/40134515233/artifacts/12575828367).
-The APK is 145,349,474 bytes; its SHA-256 is
-`0f571b5f185fbd6b161637a31ff560cc7f48f474cf0eeefb38fc0157a21dce70`.
+The verified APK source is `a23d26033c4553621540bdfd32312ccb71617846`.
+Download its [ARM64 artifact](https://github.com/JDscript1/godot-ai-android/actions/runs/40173817612/artifacts/12591950511).
+The APK is 145,350,402 bytes; its SHA-256 is
+`b230284b1bf6b07a998e540baebcb36c20cde68a8efe04cf816f808efe5e640f`.
 The delivered phone copy is `Download/Godot-AI-Android-arm64-debug.apk`,
-with a matching `.sha256` file, updated on 24 October 2026 at 23:40:34 CEST.
+with a matching `.sha256` file, updated on 25 October 2026 at 08:48:52 CET.
 Its checksum, package, ABI, persistent signature and all embedded sources were
-checked locally. It atomically replaced `4236902`; Download contains one fork
+checked locally. It atomically replaced `cd1acda`; Download contains one fork
 installer. Unrelated downloads remain untouched.
 The persistent development certificate SHA-256 is
 `2e0a80969c099f7ff72bfe0c0cd33d98ebdd0e64bbf9729294df0b11665fcab5`.

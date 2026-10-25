@@ -1,16 +1,17 @@
 # Blender în Integrări, prin Termux
 
-Inclus în APK-ul Android ARM64 `cd1acda`, livrat la 24 octombrie 2026.
+Inclus în APK-ul Android ARM64 `a23d260`, livrat la 25 octombrie 2026.
 Clasele Android, permisiunea, intrarea JNI, cele 27 scripturi și worker-ul inclus
 au fost verificate în pachet. Harness-ul AI rulează în Godot; Termux și Python
 sunt dependențe numai ale integrării opționale Blender. Legătura Android prin
 Intent și configurarea inițială trebuie verificate din aplicația instalată
 înainte ca funcția să fie declarată validată pe dispozitiv.
 
-## Configurare simplificată în sursele curente — 25 octombrie 2026
+## Configurare simplificată — 25 octombrie 2026
 
-Această interfață este implementată și verificată în editor; nu este încă inclusă
-în APK-ul `cd1acda` menționat mai sus.
+Această interfață este inclusă în APK-ul `a23d260`, cu verificări în editor și
+surse incluse în pachet identice cu snapshot-ul compilat. Fluxul fizic Android
+rămâne de confirmat după instalare.
 
 Panoul Android conține statusul și un singur buton pentru etapa curentă:
 
@@ -77,7 +78,7 @@ iar profilul nou utilizează [Blender Debian ARM64](https://packages.debian.org/
 Un GLB valid putea primi anterior `empty_mesh`, deși Blender terminase exportul
 și randarea. Corecția verifică suprafețele reale, inclusiv geometria la rădăcină,
 și permite recuperarea verificării deja terminate (în APK-ul `cd1acda`,
-prin **Recuperează**; în sursele curente, prin acțiunea unică). Nu este necesară
+prin **Recuperează**; în APK-ul curent, prin acțiunea unică). Nu este necesară
 o nouă instalare sau generare. Regresia rulează în editorul real, deoarece
 probele în modul joc nu expun aceeași clasă de import.
 
@@ -90,7 +91,7 @@ Jurnalul Blender este salvat în configurația privată a editorului, limitat la
 100 evenimente și ultima parte a ieșirii worker-ului. Tokenul conexiunii și
 cheile recunoscute sunt redactate înainte de salvare. Verificările periodice
 identice nu produc intrări noi. Evenimentele apar și în **Jurnalul** general.
-În APK-ul `cd1acda`, jurnalul separat se deschide la eroare. În sursele curente,
+În APK-ul `cd1acda`, jurnalul separat se deschide la eroare. În APK-ul curent,
 cardul arată numai o indicație scurtă, iar diagnosticul complet și ieșirea
 worker-ului sunt în pagina **Jurnal**, cu filtrare și copiere. Închiderea editorului nu
 șterge istoricul diagnosticelor.
@@ -140,7 +141,7 @@ capacitățile detectate; nu primește tokenul conexiunii locale.
   la `127.0.0.1`, token aleator de 256 biți păstrat în seiful Android.
 - ID-uri persistente și manifest verificat: același ID nu execută comanda
   de două ori. La pierderea conexiunii, reluarea consultă sarcina existentă
-  (în sursele curente, prin aceeași acțiune de instalare).
+  (în APK-ul curent, prin aceeași acțiune de instalare).
 - O singură sarcină activă, două fire Blender, timeout, anularea grupului de
   procese propriu și limitarea logului. PRoot nu este un sandbox de securitate.
 - Instalarea se oprește după încheierea tranzacției curente, inclusiv pregătirea

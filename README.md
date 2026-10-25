@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40134515233/artifacts/12575828367)
-(GitHub Actions artifact, source `cd1acda`, delivered 24 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40173817612/artifacts/12591950511)
+(GitHub Actions artifact, source `a23d260`, delivered 25 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -44,8 +44,8 @@ file transfer and optional agent access. The Android classes, permission, JNI en
 and bundled worker are verified in this APK; the Intent boundary still requires
 physical-device validation.
 Setup diagnostics now persist across editor restarts, include pre-job failures
-and appear in both the Blender and general journals. A failed connection opens
-and scrolls the journal to its latest error, with a copy button for diagnostics.
+and appear in the general Journal with full worker output. The Blender card
+keeps errors compact and directs detailed troubleshooting to Journal.
 Blender GLB verification accepts the editor's import mesh nodes, so a completed
 verification previously rejected as `empty_mesh` can be recovered without regenerating it.
 
@@ -54,11 +54,10 @@ use explicit terminal pairing: copy/paste the bundled bootstrap, then return to
 Godot for automatic discovery and export/import verification. Existing runtimes
 are reused; Android clipboard/activity behavior still needs physical validation.
 
-The current source iteration simplifies the Android Blender card to one install
+The APK simplifies the Android Blender card to one install
 action, then **Blender Active** and **Uninstall Blender**. It resumes setup after
 terminal pairing and preserves containers/user files during package removal.
-This source iteration is not yet included in the linked APK; see the
-[current progress and checks](PROGRES_SI_PLAN.md).
+See the [current progress and checks](PROGRES_SI_PLAN.md).
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture

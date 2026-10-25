@@ -12,8 +12,8 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`cd1acda`**
-  (`cd1acdaa8ed642b6b3f4a59d6e0d77d1a4c0c7b2`).
+- Ultimul commit livrat și verificat ca pachet: **`a23d260`**
+  (`a23d26033c4553621540bdfd32312ccb71617846`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -25,7 +25,7 @@ drept funcție validată cu un serviciu real.
   diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
   inclusiv Google Play, folosește pornire explicită din terminal și verificare
   automată la revenirea în Godot.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `4236902` a fost
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `cd1acda` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -35,7 +35,7 @@ MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
 ## Etapa curentă — panou Blender simplificat, 25.10.2026
 
-**Implementat în surse; APK-ul din Download rămâne `cd1acda`.** Cardul Android
+**Compilat, verificat și livrat în APK-ul `a23d260`.** Cardul Android
 are status și un singur buton: **Instalează Termux** → **Instalează Blender** →
 **Blender Active**, cu **Dezinstalează Blender** dedesubt. Instalarea Termux
 deschide Play Store, cu pagina web a magazinului ca fallback. Eliminate din card
@@ -88,18 +88,39 @@ Verificări efectuate:
   Frontiera Android este substituită; `android_intent_tested=false`.
 - Conectorul Kotlin și seiful au compilat cu SDK Android 36:
   `.ai-qa/blender-simple-kotlin.log`. Deschiderea Play Store, clipboard-ul,
-  permisiunea și revenirea fizică în APK-ul viitor rămân de verificat pe Android.
+  permisiunea și revenirea fizică în APK-ul nou rămân de verificat pe Android.
 
-La cererea utilizatorului din 25.10.2026, începe compilarea acestei iterații;
-instalatorul `cd1acda` din Download este păstrat până la verificarea pachetului nou.
-Nu s-au apelat furnizori plătiți. Instalarea/dezinstalarea reală prin managerul de pachete nu a fost
-executată asupra mediului utilizatorului. Descrierea fluxului și limitele sale:
+**Livrare verificată la 25.10.2026, 08:48:52 CET.**
+[Workflow `40173817612`](https://github.com/JDscript1/godot-ai-android/actions/runs/40173817612):
+toate cele trei job-uri trecute. **422 aserțiuni runtime CI**, **26 teste
+backend/bootstrap**, **3 teste livrare**, editor upstream **371 × 5 configurații**,
+editor nativ compilat **381 × 5**, plus **67 verificări UI Blender** pentru telefon;
+zero eșecuri. Cele cinci probe Blender locale opționale explică diferența față
+de cele 427 aserțiuni locale. Log: `.ai-qa/a23d260-ci.log`.
+
+[Artifact `12591950511`](https://github.com/JDscript1/godot-ai-android/actions/runs/40173817612/artifacts/12591950511):
+**145.350.402 bytes**, ARM64, pachet `com.jdscript.godotai.debug`;
+SHA-256 `b230284b1bf6b07a998e540baebcb36c20cde68a8efe04cf816f808efe5e640f`.
+Verificate semnătura persistentă, manifestul, clasele Android/JNI, destinațiile
+Play Store și toate cele **27 scripturi GD**, identice cu snapshot-ul compilat.
+Bootstrap-ul și worker-ul nou cu dezinstalare/revizia 2 sunt identice cu sursele.
+Raport: `.ai-qa/artifacts/a23d260/extended-verification.json`.
+
+Înlocuit atomic APK-ul `cd1acda` și checksum-ul din Download, cu numele stabil
+`Godot-AI-Android-arm64-debug.apk`; data modificării a fost actualizată explicit.
+Hash-ul copiei finale și checksum-ul au fost reverificate. În Download există
+un singur instalator al fork-ului; alte descărcări sunt păstrate.
+Raport: `.ai-qa/delivery-a23d260.json`.
+
+Nu s-au apelat furnizori plătiți. Instalarea/dezinstalarea reală prin managerul
+de pachete nu a fost executată asupra mediului utilizatorului. Fluxul fizic din
+APK-ul nou rămâne de verificat. Descrierea fluxului și limitele sale:
 [`docs/AI_TERMUX_BLENDER.md`](docs/AI_TERMUX_BLENDER.md).
 
 Jurnal: 25.10.2026 — simplificat Blender la status și acțiunea etapei curente;
 adăugate continuarea automată, activarea după verificare și dezinstalarea strictă
 cu păstrarea mediului și fișierelor. Testat fluxul în editor și cu Blender real;
-Pornită pregătirea APK-ului solicitat; cel livrat rămâne `cd1acda` până la verificare.
+Compilat și verificat APK-ul `a23d260`, înlocuind instalatorul `cd1acda` din Download.
 
 ## Etapa precedentă — validare mesh Blender în editor, 24.10.2026
 
