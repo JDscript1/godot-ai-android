@@ -339,6 +339,45 @@ class BackendTests(unittest.TestCase):
         self.assertFalse(any("upgrade" in command or "reset" in command or "remove" in command for command in commands))
         self.assertTrue(any("DPkg::Lock::Timeout=120" in command for command in commands))
 
+    def test_reinstall_uses_previously_verified_container_without_downloading_image(self):
+        prefix = Path(self.scratch.name) / "prefix"
+        (prefix / "var/lib/proot-distro/containers/debian").mkdir(parents=True)
+        self.backend.runtime = {"kind": "proot", "container": "debian", "executable": "/usr/bin/blender"}
+        commands = []
+        def discover(_job):
+            self.backend.runtime = {}
+            return {"found": False}
+        with patch.dict(os.environ, {"PREFIX": str(prefix)}), \
+             patch.object(self.backend, "discover", side_effect=discover), \
+             patch.object(worker.shutil, "disk_usage", return_value=type("Disk", (), {"free": 4 * 1024**3})()), \
+             patch.object(worker.shutil, "which", return_value="/fixture/proot-distro"), \
+             patch.object(worker.subprocess, "run", return_value=type("Plan", (), {"stdout": "Inst blender (4.3.2)", "returncode": 0})()), \
+             patch.object(self.backend, "command", side_effect=lambda _id, command, *_args: commands.append(command)), \
+             patch.object(self.backend, "probe", return_value="Blender fixture"):
+            result = self.backend.install(self.stage()["id"])
+        self.assertEqual(result["container"], "debian")
+        self.assertFalse(any(command[:2] == ["proot-distro", "install"] for command in commands))
+        self.assertEqual(sum("install" in command for command in commands), 1)
+
+    def test_reinstall_refuses_package_plan_that_removes_other_packages(self):
+        prefix = Path(self.scratch.name) / "prefix"
+        (prefix / "var/lib/proot-distro/containers/debian").mkdir(parents=True)
+        self.backend.runtime = {"kind": "proot", "container": "debian", "executable": "/usr/bin/blender"}
+        def discover(_job):
+            self.backend.runtime = {}
+            return {"found": False}
+        commands = []
+        with patch.dict(os.environ, {"PREFIX": str(prefix)}), \
+             patch.object(self.backend, "discover", side_effect=discover), \
+             patch.object(worker.shutil, "disk_usage", return_value=type("Disk", (), {"free": 4 * 1024**3})()), \
+             patch.object(worker.shutil, "which", return_value="/fixture/proot-distro"), \
+             patch.object(worker.subprocess, "run", return_value=type("Plan", (), {"stdout": "Remv user-package [1.0]", "returncode": 0})()), \
+             patch.object(self.backend, "command", side_effect=lambda _id, command, *_args: commands.append(command)):
+            with self.assertRaises(worker.Fault) as failure:
+                self.backend.install(self.stage()["id"])
+        self.assertEqual(failure.exception.code, "install_plan_unsafe")
+        self.assertFalse(any("install" in command for command in commands))
+
     def test_existing_unmanaged_container_is_never_modified(self):
         prefix = Path(self.scratch.name) / "prefix"
         (prefix / "var/lib/proot-distro/containers/godot-ai-blender").mkdir(parents=True)

@@ -22,8 +22,11 @@ import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.SocketTimeoutException
 import java.security.SecureRandom
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Editor-only, optional bridge. No arbitrary command/URL/path supplied by the model. */
 object AITermuxBlender {
@@ -33,6 +36,7 @@ object AITermuxBlender {
     private const val SECRET = "integration_termux_blender"
     private var activity = WeakReference<Activity>(null)
     private val main = Handler(Looper.getMainLooper())
+    private var bootstrapServer: ServerSocket? = null
 
     fun initialize(value: Activity) { activity = WeakReference(value) }
 
@@ -100,15 +104,27 @@ object AITermuxBlender {
                     if (!state.optBoolean("installed") || !state.optBoolean("supported"))
                         return failure("Configurarea necesită Termux instalat pe Android ARM64.").toString()
                     val script = bootstrap(current, args.optBoolean("install_python", true))
-                    val encoded = Base64.encodeToString(script.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                    // The command contains a local pairing token. Keep it out of GDScript/model/log results.
-                    val clip = ClipData.newPlainText("Godot Blender", "printf '%s' '$encoded' | base64 -d | bash")
+                    // The full worker stays inside Godot. A short one-use loopback URL avoids
+                    // pasting tens of thousands of characters into the Play Store terminal.
+                    val clip = ClipData.newPlainText("Godot Blender", serveBootstrap(script))
                     clip.description.extras = PersistableBundle().apply {
                         putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
                     }
                     val clipboard = current.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    main.post { clipboard.setPrimaryClip(clip) }
-                    JSONObject().put("ok", true)
+                    if (Looper.myLooper() == Looper.getMainLooper()) {
+                        clipboard.setPrimaryClip(clip)
+                    } else {
+                        val copied = CountDownLatch(1)
+                        var copyError: Exception? = null
+                        main.post {
+                            try { clipboard.setPrimaryClip(clip) }
+                            catch (error: Exception) { copyError = error }
+                            finally { copied.countDown() }
+                        }
+                        if (!copied.await(3, TimeUnit.SECONDS) || copyError != null)
+                            return failure("Nu am putut copia comanda de conectare. Încearcă din nou.").toString()
+                    }
+                    JSONObject().put("ok", true).put("command_length", clip.getItemAt(0).text.length)
                 }
                 "settings", "open_termux", "install_termux" -> {
                     val intent = when (action) {
@@ -149,6 +165,42 @@ object AITermuxBlender {
             .replace("__GODOT_TOKEN__", token)
         check(script.toByteArray().size < 120_000)
         return script
+    }
+
+    private fun serveBootstrap(script: String): String {
+        bootstrapServer?.close()
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        server.soTimeout = 10 * 60 * 1000
+        bootstrapServer = server
+        val nonce = UUID.randomUUID().toString().replace("-", "")
+        val body = script.toByteArray(Charsets.UTF_8)
+        Thread({
+            try {
+                server.use { listener ->
+                    listener.accept().use { client ->
+                        client.soTimeout = 5000
+                        val request = client.getInputStream().bufferedReader(Charsets.US_ASCII).readLine()
+                        val valid = request == "GET /$nonce HTTP/1.1" || request == "GET /$nonce HTTP/1.0"
+                        val output = client.getOutputStream()
+                        if (valid) {
+                            output.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${body.size}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                            output.write(body)
+                        } else {
+                            output.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                        }
+                        output.flush()
+                    }
+                }
+            } catch (_: SocketTimeoutException) {
+                server.close()
+            } catch (_: Exception) {
+                server.close()
+            } finally {
+                synchronized(this) { if (bootstrapServer === server) bootstrapServer = null }
+            }
+        }, "GodotBlenderBootstrap").apply { isDaemon = true; start() }
+        // The one-time URL contains a random capability; never return it to Godot or a model.
+        return "curl --fail --silent --show-error --noproxy 127.0.0.1 'http://127.0.0.1:${server.localPort}/$nonce' | bash"
     }
 
     private fun start(current: Activity, installPython: Boolean): JSONObject {

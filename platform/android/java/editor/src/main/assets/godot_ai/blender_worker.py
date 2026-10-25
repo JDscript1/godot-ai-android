@@ -380,6 +380,7 @@ class Backend:
         return {"found": False}
 
     def install(self, job_id, repair=False):
+        previous = dict(self.runtime)
         found = self.discover(job_id)
         if found.get("found"):
             return dict(found, reused=True)
@@ -389,11 +390,34 @@ class Backend:
             self.step(job_id, "Instalare PRoot-Distro")
             self.command(job_id, ["pkg", "update", "-y"], 900, False)
             self.command(job_id, ["pkg", "install", "-y", "proot-distro"], 900, False)
+        prefix = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr"))
+        old_name = previous.get("container", "")
+        if (previous.get("kind") == "proot" and previous.get("executable") == "/usr/bin/blender"
+                and isinstance(old_name, str) and NAME_RE.fullmatch(old_name)
+                and old_name != "godot-ai-blender"
+                and (prefix / "var/lib/proot-distro/containers" / old_name).is_dir()):
+            # A previously verified container can be reused after Blender was removed.
+            # Do not touch arbitrary existing containers or silently remove packages.
+            shell = ["proot-distro", "login", old_name, "--", "env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive"]
+            self.step(job_id, "Pregătire Blender în mediul folosit anterior")
+            plan = subprocess.run(shell + ["apt-get", "--simulate", "--no-install-recommends", "install", "blender"],
+                                  capture_output=True, text=True, timeout=60)
+            if plan.returncode != 0 or re.search(r"(?m)^Remv ", plan.stdout):
+                raise Fault("install_plan_unsafe", "Instalarea în mediul existent ar modifica alte pachete. Verifică Jurnalul.")
+            self.step(job_id, "Instalare Blender în mediul folosit anterior")
+            self.command(job_id, shell + ["apt-get", "-o", "DPkg::Lock::Timeout=120", "install", "-y",
+                                          "--no-install-recommends", "blender"], 1800, False)
+            runtime = {"kind": "proot", "container": old_name, "executable": "/usr/bin/blender"}
+            version = self.probe(self.prefix(runtime))
+            if not version:
+                raise Fault("missing_blender", "Blender instalat nu a trecut verificarea de pornire.")
+            self.runtime = dict(runtime, version=version, binary_stamp=self.binary_stamp(runtime))
+            atomic_json(self.root / "runtime.json", self.runtime)
+            return dict(self.runtime, found=True, reused=False)
         help_text = subprocess.run(["proot-distro", "install", "--help"], capture_output=True,
                                    text=True, timeout=15).stdout
         if "--name" not in help_text or "Docker" not in help_text:
             raise Fault("proot_update_required", "Instalarea automată cere PRoot-Distro 5.x. Actualizează-l din Termux; containerele existente nu sunt migrate de aplicație.")
-        prefix = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr"))
         name = "godot-ai-blender"
         container = prefix / "var/lib/proot-distro/containers" / name
         marker = self.root / "managed-container.json"

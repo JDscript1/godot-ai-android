@@ -33,7 +33,32 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — dezinstalare reală Blender pentru testul instalării, 25.10.2026
+## Etapa curentă — comandă scurtă pentru conectarea Termux, 25.10.2026
+
+În proba fizică, comanda veche de conectare nu s-a lipit în Termux. Ea conținea
+conectorul codificat, de zeci de mii de caractere. Sursele Android pregătesc
+acum o comandă scurtă: aplicația păstrează conectorul și îl oferă o singură dată
+prin `127.0.0.1`, cu un URL aleator valabil maximum zece minute. După lipire și
+Enter, worker-ul preia operația de instalare fără alte comenzi manuale. La
+reinstalare, încearcă mai întâi containerul Debian verificat anterior, evitând
+descărcarea unei imagini noi; planul apt este verificat înainte de instalare și
+este refuzat dacă ar elimina alte pachete.
+
+**Verificat în surse:** 28 teste Python ale worker-ului/bootstrap-ului au trecut,
+inclusiv reinstalarea în containerul anterior și refuzul unui plan ce elimină
+alt pachet. Conectorul Kotlin și seiful compilează cu Android SDK 36; logul este
+în `.ai-qa/blender-short-bootstrap-kotlin/compile.log`. Transferul local,
+lipirea comenzii și instalarea efectivă din APK-ul nou rămân de confirmat pe
+dispozitiv. Pachetul Blender complet nu este inclus în memoria privată a
+aplicației: Termux nu o poate citi direct și, în varianta Play Store, nu acceptă
+pornirea directă de comenzi din Godot. Conectorul din aplicație elimină comanda
+lungă; prima lipire scurtă rămâne necesară pentru această variantă Termux.
+
+Jurnal: 25.10.2026 — reprodusă cauza raportată de utilizator (comanda veche nu
+s-a lipit), redus transferul inițial la o comandă locală scurtă și adăugată
+reutilizarea containerului Debian anterior, cu verificarea planului apt.
+
+## Etapa precedentă — dezinstalare reală Blender pentru testul instalării, 25.10.2026
 
 La cererea utilizatorului, am eliminat **Blender CLI 4.3.2** din containerul
 Termux PRoot `debian`, folosind chiar worker-ul inclus în APK-ul livrat

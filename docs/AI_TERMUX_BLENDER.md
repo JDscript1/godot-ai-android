@@ -39,6 +39,22 @@ pornire, așteaptă inițializarea Termux, lipește comanda și apasă Enter, ap
 în Godot. Instalarea și verificarea continuă automat. Acest pas manual nu poate
 fi înlocuit cu o solicitare de permisiune absentă din distribuție.
 
+După proba pe dispozitiv în care comanda veche nu s-a putut lipi, sursele noi
+folosesc o **comandă scurtă**. Godot servește o singură dată conectorul inclus
+în aplicație pe `127.0.0.1`, pentru maximum zece minute, printr-un URL aleator;
+Termux îl preia și îl pornește. Comanda nu conține conectorul codificat și nu
+expune tokenul către GDScript sau agent. Dacă transferul expiră, repetarea
+butonului pregătește un URL nou. Această corecție necesită un APK nou și nu
+trebuie confundată cu APK-ul `a23d260` descris mai sus.
+
+La reinstalare, conectorul încearcă întâi containerul Debian în care a verificat
+anterior Blender, după un plan apt care nu elimină alte pachete. Dacă nu există
+un astfel de container cunoscut, folosește mediul dedicat. Pachetul Blender nu
+este inclus integral în APK: binarul și dependențele Linux necesită instalare
+în mediul Termux, iar memoria privată a aplicației Android nu este accesibilă
+direct de Termux. Aceasta păstrează APK-ul compact și evită o a doua descărcare
+de imagine Debian pe dispozitive care au deja mediul verificat.
+
 Pentru variantele cu `RUN_COMMAND`, aceeași acțiune solicită permisiunea Android
 când este necesar și continuă după acordare. Dacă serviciul există, dar refuză
 execuția externă, se folosește aceeași pornire prin copiere/lipire. Nu se adaugă

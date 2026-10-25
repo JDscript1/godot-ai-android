@@ -117,7 +117,7 @@ func native(action: String, args: Dictionary = {}) -> Dictionary:
 	if native_override.is_valid(): result = native_override.call(action, args)
 	elif bridge == null or not bridge.has_method("termux_blender_request"): result = Common.failure("Conectorul necesită un APK Android actualizat.", "missing_bridge")
 	else: result = bridge.termux_blender_request(action, args)
-	var labels = {"permission": "Permisiune Android solicitată. Confirmă dialogul Android sau verifică Setări Android.", "settings": "Setările Android au fost solicitate.", "open_termux": "Deschiderea Termux a fost solicitată.", "install_termux": "Pagina oficială de instalare Termux a fost solicitată.", "copy_bootstrap": "Comanda privată de conectare a fost copiată. Lipește-o în Termux, apasă Enter și revino în Godot."}
+	var labels = {"permission": "Permisiune Android solicitată. Confirmă dialogul Android sau verifică Setări Android.", "settings": "Setările Android au fost solicitate.", "open_termux": "Deschiderea Termux a fost solicitată.", "install_termux": "Pagina oficială de instalare Termux a fost solicitată.", "copy_bootstrap": "Comanda scurtă de conectare a fost copiată. Lipește-o în Termux, apasă Enter și revino în Godot."}
 	if labels.has(action):
 		if result.get("ok", false): note(labels[action], action)
 		else: _failure(result)
