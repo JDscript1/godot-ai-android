@@ -3,7 +3,7 @@ extends RefCounted
 ## A per-run catalog. Deferred discovery cannot expose a tool outside this catalog.
 static var Common: GDScript
 
-const INITIAL = ["godot_project", "godot_files", "godot_read_file", "godot_read_range", "godot_search_code", "godot_scene_tree", "task_update", "agent_wait", "agent_cancel", "playtest_observe", "playtest_state"]
+const INITIAL = ["godot_project", "godot_files", "godot_read_file", "godot_read_range", "godot_search_code", "godot_scene_tree", "task_update", "agent_wait", "agent_cancel", "playtest_observe", "playtest_state", "file_catalog", "file_observe", "file_preview"]
 const SUPPORTED = ["$schema", "$id", "$defs", "definitions", "$ref", "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly", "format", "type", "enum", "const", "properties", "required", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "allOf", "anyOf", "oneOf", "not", "minProperties", "maxProperties"]
 var catalog = {}
 var loaded = {}

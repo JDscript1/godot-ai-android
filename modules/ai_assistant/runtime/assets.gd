@@ -1,6 +1,8 @@
 @tool
 extends RefCounted
 
+signal artifact_ready(job: Dictionary)
+
 static var Common: GDScript
 static var Transport: GDScript
 static var AssetExports: GDScript
@@ -321,6 +323,7 @@ func _finish_download(job: Dictionary, temporary: String) -> Dictionary:
 	var imported = import_job(str(job["id"]), str(job.get("destination", "res://ai_assets")))
 	if not imported.get("ok", false): job["import_error"] = str(imported.get("error", "Import automat eșuat."))
 	_save()
+	artifact_ready.emit(job.duplicate(true))
 	return Common.success(job.duplicate(true))
 
 func import_job(id: String, directory: String) -> Dictionary:

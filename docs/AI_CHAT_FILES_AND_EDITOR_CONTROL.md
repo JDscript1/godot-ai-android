@@ -4,6 +4,17 @@ Data: 23.10.2026. **Inclus în APK `13456af`; verificările și livrarea sunt ur
 în PROGRES_SI_PLAN.md.** Documentul păstrează cerințele aprobate și
 limitele implementării. Nu adaugă o pagină duplicată în Integrări.
 
+## Actualizare în surse — 25.10.2026
+
+Descărcarea unei generări finalizate înregistrează automat fișierul și păstrează
+cardul în conversație, inclusiv după reîncărcare. `file_preview` îi permite
+agentului să deschidă direct previzualizatorul Godot; `file_observe` inspectează
+în fundal. Pentru GLB/glTF, ambele folosesc rendererul nativ și nu cer Blender
+CLI. Confirmarea deschiderii verifică rezultatul încărcării. Exporturile
+FBX/BLEND păstrează originalul GLB pentru preview; această actualizare nu
+adaugă un cititor nativ al acelor formate. Verificat cu un GLB real și pixeli
+randați în fixture. **Actualizarea nu este încă în APK-ul din Download.**
+
 ## Implementarea acestei etape
 
 | Componentă | Implementare |

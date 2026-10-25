@@ -36,7 +36,62 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — Furnizori AI fără selectoare suprapuse, 25.10.2026
+## Etapa curentă — Agent înainte de proiect și acces direct la rezultatul 3D, 25.10.2026
+
+**Implementat în surse, fără recompilare APK.** Managerul de proiecte primește
+un tab **Agent**, lângă **Projects / Asset Store**. Același chat, aceiași
+furnizori salvați și același seif de chei sunt folosite înainte de selectarea
+unui proiect. Gazda nativă este separată de `EditorPlugin`; nu construiește
+un `EditorNode` și nu depinde de Termux. Scurtături compacte cer dialogul nativ
+pentru proiect nou/import sau afișează lista proiectelor. Modelul poate cere
+aceste dialoguri, fără să declare că proiectul a fost creat doar fiindcă s-a
+deschis un dialog.
+
+Conversațiile inițiale au stocare separată. La deschiderea individuală a unui
+proiect, conversația activă, selecția modelului și referințele partajate sunt
+transferate într-o conversație nouă a proiectului. Istoricul proiectului nu
+este înlocuit; transferul consumat nu este importat din nou. Nu se transferă
+în modul de recuperare sau la deschiderea mai multor proiecte simultan.
+O sarcină AI activă trebuie încheiată/oprită înaintea transferului. Instrumentele
+pentru scene, editări, generare, Blender și proiect nu sunt oferite în ecranul
+inițial; apelurile directe de editare sunt refuzate. Setările de acolo includ
+General, Furnizori AI, Abonamente, Jurnal și Voce.
+
+Pentru rezultatele generării, descărcarea finalizată emite un eveniment către
+chat. Aplicația înregistrează fișierul și păstrează cardul în conversație chiar
+dacă modelul omite `file_show`. Se folosește numele fișierului importat în
+proiect, cu copia descărcată ca rezervă. Comanda dedicată **`file_preview`**
+deschide previzualizatorul Godot și confirmă încărcarea efectivă. Un format
+nesuportat sau un fișier inexistent nu mai pot primi o confirmare falsă.
+`file_observe` oferă în continuare inspecție în fundal. Instrucțiunile și
+catalogul inițial al agentului separă vizualizarea nativă GLB/glTF de modelare
+și conversie cu Blender. **Vizualizarea GLB/glTF nu cere Blender CLI.**
+Această etapă nu adaugă un cititor nativ pentru FBX/BLEND; originalul GLB
+rămâne previzualizarea disponibilă pentru aceste exporturi.
+
+Verificări locale: **425 aserțiuni runtime**, **399 verificări ale editorului
+pe formatul tabletei**, **48 verificări × 2 dimensiuni într-un manager de
+proiecte real fără `EditorNode`**, **52 verificări focalizate pe transfer și pe
+rezultatul generării la lățime mică**, fără eșecuri. Proba managerului folosește chatul din
+surse montat de fixture în managerul Godot oficial; noua înregistrare C++ a
+tabului a trecut verificarea de sintaxă, nu a fost încă executată într-un
+binar recompilat. Furnizorul de chat din probe este simulat. Proba 3D folosește
+un GLB real, verifică geometria, pixeli randați, cardul după reîncărcarea
+conversației și deschiderea fără Blender. Capturile au fost inspectate vizual.
+
+Dovezi: `.ai-qa/start-agent-runtime.log`, `.ai-qa/start-agent-cpp.log`,
+`.ai-qa/start-agent/desktop/`, `.ai-qa/start-agent/narrow/`,
+`.ai-qa/start-agent-full/phone_landscape/`, `.ai-qa/start-agent-narrow/narrow/`.
+Testul nou se rulează cu `modules/ai_assistant/tests/start.py`; scenariul
+`startup` al `tests/render.py` acoperă transferul și cardul generat.
+
+**APK-ul din Download rămâne cel anterior.** Nu s-a făcut push și nu s-a
+pornit o compilare Android. Comportamentul fizic Android, lansarea nativă a
+noii gazde compilate și generarea cu un furnizor real se verifică separat.
+Jurnal: 25.10.2026 — adăugată gazda agentului în managerul inițial, transferul
+conversației și accesul persistent la previzualizarea rezultatelor generate.
+
+## Etapa precedentă — Furnizori AI fără selectoare suprapuse, 25.10.2026
 
 Pornind de la captura `Screenshot_20261025_174937.jpg`, simplificat panoul
 **Furnizori AI** în surse. Eliminat dropdown-ul de profil care repeta

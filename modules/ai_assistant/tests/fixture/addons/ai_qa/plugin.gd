@@ -197,6 +197,11 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
 	await _blender_mesh_verification_tests()
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "startup":
+		await _handoff_tests()
+		await _generated_preview_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "providers":
 		await _provider_connection_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -232,6 +237,8 @@ func _run() -> void:
 	await _history_button_tests()
 	await _settings_action_tests()
 	await _provider_connection_tests("")
+	await _handoff_tests()
+	await _generated_preview_tests()
 	await _layout_tests()
 	await _activity_drawer_tests()
 	await _control_settings_tests()
@@ -1938,3 +1945,114 @@ func _vision_settings_tests() -> void:
 	panel._save_config()
 	panel._choose(selection)
 	if not original.is_empty(): panel._edit_provider(0)
+
+class StartHost:
+	extends Node
+	var actions: Array = []
+	func project_action(action: String) -> void: actions.append(action)
+
+func _handoff_tests() -> void:
+	var original_id = str(panel.conversations.index["active"])
+	var old_count = panel.conversations.index["items"].size()
+	var start = embedded["panel"].new()
+	var host = StartHost.new()
+	add_child(host)
+	start.configure(host, FixtureVault.new(), true)
+	EditorInterface.get_base_control().add_child(start)
+	start.hide()
+	start.history = [{"id": "startup-message", "role": "user", "content": "Pregătim un joc înainte de selectarea proiectului."}, {"id": "startup-reply", "role": "assistant", "content": "Pregătim structura jocului."}]
+	var picture = Image.create(12, 12, false, Image.FORMAT_RGBA8)
+	picture.fill(Color.CORNFLOWER_BLUE)
+	var image_path = start.file_registry.directory.path_join("handoff.png")
+	picture.save_png(image_path)
+	start.file_registry.permit(image_path)
+	var file = start.file_registry.register_file(image_path, str(start.conversations.index["active"]))
+	_check(file.get("ok", false), "Register a start-screen conversation attachment")
+	if file.get("ok", false): start.history[0]["files"] = [file["result"]["id"]]
+	_check(start.prepare_project_handoff(ProjectSettings.globalize_path("res://")), "Save start chat before opening its selected project")
+	var handoff_path = start._handoff_path(ProjectSettings.globalize_path("res://"))
+	var saved = embedded["common"].read_json(handoff_path, {})
+	panel._receive_project_handoff()
+	_check(panel.conversations.index["items"].size() == old_count + 1 and not panel.conversations.item(original_id).is_empty(), "Transfer creates a conversation without replacing existing project history")
+	_check(panel.history.size() == 2 and panel.history[0].get("id") == "startup-message", "Project editor receives the start-screen messages")
+	if file.get("ok", false):
+		_check(panel.file_registry.describe(str(file["result"]["id"]), str(panel.conversations.index["active"])).get("available", false), "Shared file cards survive entry into a project")
+	_check(not FileAccess.file_exists(handoff_path), "Consume the completed handoff")
+	embedded["common"].atomic_json(handoff_path, saved)
+	panel._receive_project_handoff()
+	_check(panel.conversations.index["items"].size() == old_count + 1, "Replaying the same handoff cannot duplicate a conversation")
+	var first_scope = str(panel.conversations.index["active"])
+	start.prepare_project_handoff(ProjectSettings.globalize_path("res://"))
+	panel._receive_project_handoff()
+	if file.get("ok", false): _check(not panel.file_registry.describe(str(file["result"]["id"]), first_scope).is_empty(), "A later handoff preserves file access in the earlier project conversation")
+	start.queue_free()
+	host.queue_free()
+	await get_tree().process_frame
+	panel._new_conversation()
+
+func _generated_preview_tests() -> void:
+	panel.settings_window.hide()
+	panel._new_conversation()
+	panel.cancel = {}
+	panel.current_turn = embedded["common"].uid()
+	panel.planner.reset(panel.current_turn, false)
+	panel.history = [{"id": "generation-request", "role": "user", "content": "Generează un cub 3D.", "turn_id": panel.current_turn}]
+	panel.busy = true
+	var scene = Node3D.new()
+	var mesh = MeshInstance3D.new()
+	mesh.mesh = BoxMesh.new()
+	scene.add_child(mesh)
+	mesh.owner = scene
+	var doc = GLTFDocument.new()
+	var state = GLTFState.new()
+	var temporary = panel.assets.cache_directory.path_join("generated-probe.glb")
+	_check(doc.append_from_scene(scene, state) == OK and doc.write_to_filesystem(state, temporary) == OK, "Produce a real 3D artifact for the completed-generation flow")
+	scene.free()
+	var job = {"id": embedded["common"].uid(), "kind": "mesh", "status": "processing", "prompt": "Cub de probă", "provider": "fixture", "destination": "res://ai_test_generated"}
+	panel.assets.jobs.append(job)
+	var result = panel.assets._finish_download(job, temporary)
+	_check(result.get("ok", false) and panel.generated_files.size() == 1, "Completed download registers its GLB even when the model never calls file_show")
+	var file_id = str(panel.generated_files[0]) if not panel.generated_files.is_empty() else ""
+	panel._finish_chat("Finalizat.")
+	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
+	await get_tree().create_timer(0.4).timeout
+	_check(panel.history.any(func(message: Dictionary) -> bool: return file_id in message.get("files", [])), "Task completion persists a generated-file shortcut without requiring model cooperation")
+	panel.history = panel.conversations.load_active()
+	panel._render_history()
+	_check(panel.chat.message_records.any(func(record: Dictionary) -> bool: return file_id in record.get("metadata", {}).get("files", [])), "Generated 3D card remains clickable after conversation reload")
+	panel.active_definitions = [panel._preview_definition()]
+	var opened = await panel._execute_call("file_preview", {"id": file_id})
+	_check(opened.get("ok", false) and panel.media_view.visible and panel.media_view.model_views.size() == 1, "Agent opens the GLB in the native viewer without Blender")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	await get_tree().create_timer(0.2).timeout
+	if not panel.media_view.model_views.is_empty():
+		var pixels = await panel.media_view.model_views[0].capture()
+		var rendered = false
+		if pixels != null and not pixels.is_empty():
+			var corner = pixels.get_pixel(0, 0)
+			for y in range(0, pixels.get_height(), 8):
+				for x in range(0, pixels.get_width(), 8):
+					if absf(pixels.get_pixel(x, y).r - corner.r) + absf(pixels.get_pixel(x, y).g - corner.g) + absf(pixels.get_pixel(x, y).b - corner.b) > 0.1: rendered = true
+		_check(rendered, "The generated mesh produces visible pixels in the native preview")
+	if not output.is_empty(): panel.media_view.get_texture().get_image().save_png(output.path_join("generated-model.png"))
+	panel.media_view.hide()
+	var observed = await panel._observe_file(file_id)
+	_check(observed.get("ok", false) and observed.get("result", {}).get("metadata", {}).get("meshes", 0) > 0, "Background inspection uses the same native renderer without Blender")
+	if not output.is_empty():
+		await get_tree().process_frame
+		panel.get_viewport().get_texture().get_image().save_png(output.path_join("generated-card.png"))
+	panel.active_definitions = [panel._preview_definition()]
+	var missing = await panel._execute_call("file_preview", {"id": "missing"})
+	_check(not missing.get("ok", false) and missing.get("code") == "file_unavailable", "Do not claim preview success for an unavailable file")
+	var unknown_path = panel.file_registry.directory.path_join("unsupported.fbx")
+	var unknown_file = FileAccess.open(unknown_path, FileAccess.WRITE)
+	unknown_file.store_string("; FBX test fixture, unsupported native preview")
+	unknown_file.close()
+	panel.file_registry.permit(unknown_path)
+	var unknown = panel.file_registry.register_file(unknown_path, str(panel.conversations.index["active"]))
+	if unknown.get("ok", false):
+		var unsupported = await panel._execute_call("file_preview", {"id": unknown["result"]["id"]})
+		_check(not unsupported.get("ok", false), "A previous successful preview cannot mask an unsupported format")
+		panel.media_view.hide()
+	panel.assets.jobs.erase(job)
+	panel._new_conversation()

@@ -271,6 +271,14 @@ adapters. The test counts above cover the exercised paths, not every engine meth
 
 ## Native chat workspace
 
+The current source also adds an Agent tab to the project manager, before a
+project is opened. It reuses the native chat, provider settings and credential
+vault in a separate host. Project editing tools stay unavailable until a project
+opens. A single-project launch can carry the active start-screen conversation
+into a new project conversation while preserving existing project history.
+This addition has local script/render and C++ syntax checks; it is not yet in
+the delivered APK. Evidence is in [the progress document](../PROGRES_SI_PLAN.md).
+
 The AI main screen is registered immediately after Asset Store. Scene,
 FileSystem and Inspector docks stay available. The native chat uses a graphite
 surface and violet/blue gradient; history collapses when the available workspace

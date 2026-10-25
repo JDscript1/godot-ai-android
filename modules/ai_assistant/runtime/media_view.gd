@@ -4,6 +4,7 @@ extends Window
 static var Common: GDScript
 static var Icons: GDScript
 static var ModelPreview: GDScript
+var load_result: Dictionary = {}
 var model_views: Array = []
 signal action(name: String, args: Dictionary)
 var registry: RefCounted
@@ -202,6 +203,7 @@ func _clear_content() -> void:
 	model_views.clear()
 
 func _show(id: String, compare: String = "") -> void:
+	load_result = Common.failure("Preview indisponibil pentru acest fișier.", "preview_unavailable")
 	_clear_content()
 	var primary = registry.describe(id, scope)
 	var kind = primary.get("kind", "file")
@@ -219,6 +221,7 @@ func _show(id: String, compare: String = "") -> void:
 			canvas.setup(image)
 			content.add_child(canvas)
 			canvases.append(canvas)
+			load_result = {"ok": true, "result": {"kind": "image"}}
 			canvas.pose_changed.connect(func(pose: Dictionary) -> void:
 				for other in canvases:
 					if other != canvas: other.set_pose(pose))
@@ -226,6 +229,7 @@ func _show(id: String, compare: String = "") -> void:
 			var view = ModelPreview.new()
 			content.add_child(view)
 			var loaded = view.load_file(item["path"])
+			load_result = loaded
 			if loaded.get("ok", false):
 				model_views.append(view)
 				detail.text = "Meshuri: %s · Triunghiuri: %s · Materiale: %s" % [loaded["result"]["meshes"], loaded["result"]["triangles"], loaded["result"]["materials"]]

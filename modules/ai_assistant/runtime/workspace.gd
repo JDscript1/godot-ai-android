@@ -26,6 +26,7 @@ func path_for(id: String) -> String:
 	return Common.project_path(SKILLS_PATH.path_join(id).path_join("SKILL.md")) if valid_id(id) else ""
 
 func catalog() -> Array:
+	if owner != null and bool(owner.get("project_manager_mode")): return []
 	var result = []
 	if Common.project_path(SKILLS_PATH).is_empty(): return result
 	var directory = DirAccess.open(SKILLS_PATH)

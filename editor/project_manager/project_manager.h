@@ -33,6 +33,7 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/scroll_container.h"
 
+class AIAssistantProjectManager;
 class CheckBox;
 class EditorAbout;
 class EditorAssetLibrary;
@@ -97,6 +98,7 @@ class ProjectManager : public Control {
 	enum MainViewTab {
 		MAIN_VIEW_PROJECTS,
 		MAIN_VIEW_ASSETLIB,
+		MAIN_VIEW_AI,
 		MAIN_VIEW_MAX
 	};
 
@@ -113,6 +115,8 @@ class ProjectManager : public Control {
 
 	VBoxContainer *local_projects_vb = nullptr;
 	EditorAssetLibrary *asset_library = nullptr;
+	AIAssistantProjectManager *ai_assistant = nullptr;
+	void _ai_project_action(const String &p_action);
 
 	EditorAbout *about_dialog = nullptr;
 

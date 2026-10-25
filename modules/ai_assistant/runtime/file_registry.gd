@@ -16,14 +16,14 @@ const MAX_FILE = 128 * 1024 * 1024
 
 func _init(node: Node = null) -> void: owner = node
 
-func configure(project_directory: String) -> void:
+func configure(project_directory: String, include_project: bool = true) -> void:
 	directory = project_directory.path_join("files")
 	DirAccess.make_dir_recursive_absolute(directory)
 	var saved = Common.read_json(directory.path_join("index.json"), {})
 	entries = saved.get("entries", {})
 	chosen = saved.get("chosen", [])
 	extra_roots = saved.get("roots", [])
-	roots = [ProjectSettings.globalize_path("res://").trim_suffix("/")]
+	roots = [ProjectSettings.globalize_path("res://").trim_suffix("/")] if include_project else []
 	if OS.has_feature("android"):
 		roots.append_array(["/storage/emulated/0/Pictures/Screenshots", "/storage/emulated/0/Download", "/storage/emulated/0/DCIM/Screenshots"])
 	else:

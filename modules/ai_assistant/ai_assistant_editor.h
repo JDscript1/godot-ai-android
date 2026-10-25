@@ -4,6 +4,7 @@
 
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
+#include "scene/gui/box_container.h"
 
 #include "modules/gdscript/gdscript.h"
 
@@ -67,4 +68,21 @@ public:
 	void open_settings(const String &p_section = String());
 	AIAssistantEditorPlugin();
 	~AIAssistantEditorPlugin();
+};
+
+// A host for the shared chat that does not construct an EditorPlugin or EditorNode.
+class AIAssistantProjectManager : public VBoxContainer {
+	GDCLASS(AIAssistantProjectManager, VBoxContainer);
+	Control *panel = nullptr;
+	Ref<AIAssistantSecretStore> secrets;
+	Vector<Ref<GDScript>> scripts;
+
+protected:
+	static void _bind_methods();
+
+public:
+	void project_action(const String &p_action);
+	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
+	bool prepare_project(const String &p_path);
+	AIAssistantProjectManager();
 };

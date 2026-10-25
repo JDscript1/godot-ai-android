@@ -4,7 +4,7 @@ extends RefCounted
 static var Common: GDScript
 static var ToolRegistry: GDScript
 static var Diff: GDScript
-var plugin: EditorPlugin
+var plugin: Node
 var panel: Node
 var handles: Dictionary = {}
 var retained: Array = []
@@ -14,11 +14,12 @@ var turn_id = ""
 var scene_changes = {}
 var scan_pending = false
 
-func _init(editor_plugin: EditorPlugin = null, owner_panel: Node = null) -> void:
+func _init(editor_plugin: Node = null, owner_panel: Node = null) -> void:
 	plugin = editor_plugin
 	panel = owner_panel
 
 func definitions() -> Array:
+	if panel != null and bool(panel.get("project_manager_mode")): return []
 	var string = Common.string_field()
 	var integer = {"type": "integer"}
 	var object = {"type": "object"}
@@ -70,6 +71,7 @@ func validate(name: String, args: Dictionary) -> Dictionary:
 	return Common.failure("Instrument necunoscut: " + name, "unknown_tool")
 
 func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool = false) -> Dictionary:
+	if panel != null and bool(panel.get("project_manager_mode")): return Common.failure("Deschide un proiect pentru instrumentele editorului.", "project_required")
 	var validation = validate(name, args)
 	if not validation.get("ok", false): return validation
 	if validation["result"] != "read" and (mode in [0, 3] or not full_control): return Common.failure("Operația necesită control complet activat și un mod care permite modificări.", "permission_denied")

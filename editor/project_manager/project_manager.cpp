@@ -30,6 +30,11 @@
 
 #include "project_manager.h"
 
+#include "modules/modules_enabled.gen.h"
+#ifdef MODULE_AI_ASSISTANT_ENABLED
+#include "modules/ai_assistant/ai_assistant_editor.h"
+#endif
+
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
@@ -595,6 +600,15 @@ void ProjectManager::_open_selected_projects() {
 			args.push_back("--verbose");
 		}
 
+#ifdef MODULE_AI_ASSISTANT_ENABLED
+		if (ai_assistant && !open_in_recovery_mode && selected_list.size() == 1) {
+			if (!ai_assistant->prepare_project(path)) {
+				loading_label->hide();
+				_show_error(TTR("The AI conversation could not be saved. Finish or stop any active AI task, then try opening the project again."));
+				return;
+			}
+		}
+#endif
 		Error err = OS::get_singleton()->create_instance(args);
 		if (err != OK) {
 			loading_label->hide();
@@ -752,6 +766,15 @@ void ProjectManager::_install_project(const String &p_zip_path, const String &p_
 	project_dialog->set_zip_path(p_zip_path);
 	project_dialog->set_zip_title(p_title);
 	project_dialog->show_dialog();
+}
+
+void ProjectManager::_ai_project_action(const String &p_action) {
+	_select_main_view(MAIN_VIEW_PROJECTS);
+	if (p_action == "create") {
+		_new_project();
+	} else if (p_action == "import") {
+		_import_project();
+	}
 }
 
 void ProjectManager::_import_project() {
@@ -1747,6 +1770,12 @@ ProjectManager::ProjectManager() {
 		asset_library_toggle->set_disabled(true);
 		asset_library_toggle->set_tooltip_text(TTRC("Asset Store not available (due to using Web editor, or because SSL support disabled)."));
 	}
+
+#ifdef MODULE_AI_ASSISTANT_ENABLED
+	ai_assistant = memnew(AIAssistantProjectManager);
+	_add_main_view(MAIN_VIEW_AI, TTRC("Agent"), Ref<Texture2D>(), ai_assistant);
+	ai_assistant->connect("project_action_requested", callable_mp(this, &ProjectManager::_ai_project_action));
+#endif
 
 	// Footer bar.
 	{

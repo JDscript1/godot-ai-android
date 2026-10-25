@@ -233,7 +233,7 @@ int64_t AIAssistantEditorPlugin::runtime_request(const String &p_command, const 
 Dictionary AIAssistantEditorPlugin::runtime_poll(int64_t p_id) {
 	return runtime_debugger->poll(p_id);
 }
-Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const Dictionary &p_args) {
+static Dictionary ai_speech_request(const String &p_action, const Dictionary &p_args) {
 #ifdef ANDROID_ENABLED
 	JNIEnv *env = get_jni_env();
 	jclass cls = jni_find_class(env, "org/godotengine/editor/AIVoice");
@@ -268,6 +268,10 @@ Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const
 	result["error"] = "Dictarea Android nu este disponibilă pe această platformă.";
 	return result;
 #endif
+}
+
+Dictionary AIAssistantEditorPlugin::speech_request(const String &p_action, const Dictionary &p_args) {
+	return ai_speech_request(p_action, p_args);
 }
 
 Dictionary AIAssistantEditorPlugin::termux_blender_request(const String &p_action, const Dictionary &p_args) {
@@ -375,6 +379,25 @@ void AIAssistantEditorPlugin::open_settings(const String &p_section) {
 	panel->call("open_settings", p_section);
 }
 
+static bool ai_load_scripts(Vector<Ref<GDScript>> &scripts) {
+	for (const AIScriptSource &source : ai_script_sources) {
+		Ref<GDScript> script;
+		script.instantiate();
+		script->set_path(String("local://godot_ai/") + source.name + ".gd");
+		script->set_source_code(String::utf8((const char *)source.data));
+		if (script->reload() != OK) {
+			ERR_PRINT(String("AI Assistant could not load embedded script: ") + source.name);
+			return false;
+		}
+		for (int i = 0; i < scripts.size(); i++) {
+			script->set(ai_script_sources[i].binding, scripts[i]);
+		}
+		script->set_edited(false);
+		scripts.push_back(script);
+	}
+	return true;
+}
+
 AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	connect("main_screen_changed", callable_mp(this, &AIAssistantEditorPlugin::_main_screen_changed));
 	EDITOR_DEF("ai_assistant/general/configure", String());
@@ -392,20 +415,8 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 	runtime_debugger.instantiate();
 	add_debugger_plugin(runtime_debugger);
 
-	for (const AIScriptSource &source : ai_script_sources) {
-		Ref<GDScript> script;
-		script.instantiate();
-		script->set_path(String("local://godot_ai/") + source.name + ".gd");
-		script->set_source_code(String::utf8((const char *)source.data));
-		if (script->reload() != OK) {
-			ERR_PRINT(String("AI Assistant could not load embedded script: ") + source.name);
-			return;
-		}
-		for (int i = 0; i < scripts.size(); i++) {
-			script->set(ai_script_sources[i].binding, scripts[i]);
-		}
-		script->set_edited(false);
-		scripts.push_back(script);
+	if (!ai_load_scripts(scripts)) {
+		return;
 	}
 	panel = memnew(VBoxContainer);
 	panel->set_name("AIAssistantPanel");
@@ -468,4 +479,41 @@ void AIAssistantEditorPlugin::prepare_script_removal(const PackedStringArray &p_
 			script->set_path("");
 		}
 	}
+}
+
+void AIAssistantProjectManager::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("project_action", "action"), &AIAssistantProjectManager::project_action);
+	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantProjectManager::speech_request);
+	ADD_SIGNAL(MethodInfo("project_action_requested", PropertyInfo(Variant::STRING, "action")));
+}
+
+void AIAssistantProjectManager::project_action(const String &p_action) {
+	if (p_action == "create" || p_action == "import" || p_action == "projects") {
+		emit_signal("project_action_requested", p_action);
+	}
+}
+
+Dictionary AIAssistantProjectManager::speech_request(const String &p_action, const Dictionary &p_args) {
+	return ai_speech_request(p_action, p_args);
+}
+
+bool AIAssistantProjectManager::prepare_project(const String &p_path) {
+	return panel && bool(panel->call("prepare_project_handoff", p_path));
+}
+
+AIAssistantProjectManager::AIAssistantProjectManager() {
+	set_name("AIAssistantStart");
+	set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	secrets.instantiate();
+	if (!ai_load_scripts(scripts)) {
+		return;
+	}
+	panel = memnew(VBoxContainer);
+	panel->set_name("AIAssistantStartPanel");
+	panel->set_script(scripts[scripts.size() - 1]);
+	panel->call("configure", this, secrets, true);
+	panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	add_child(panel);
 }
