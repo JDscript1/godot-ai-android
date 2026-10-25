@@ -57,7 +57,9 @@ din artefact a rulat în Termux pe dispozitiv, dar lansarea din procesul
 aplicației Godot **nu este încă testată**. Artefactul verificat este în
 `.ai-qa/artifacts/db550ea/`; versiunea stabilă din Downloads a fost păstrată.
 Binarul PRoot existent în Termux are `RUNPATH` fix spre
-`/data/data/com.termux/files/usr/lib` și trebuie reconstruit pentru aplicație.
+`/data/data/com.termux/files/usr/lib`, căi fixe pentru loader și fișiere
+temporare, plus dependențe `libtalloc` și `libandroid-shmem`; trebuie
+reconstruit pentru aplicație, nu doar copiat sau repachetat.
 
 ## Etapa curentă — comandă scurtă pentru conectarea Termux, 25.10.2026
 

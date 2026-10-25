@@ -12,7 +12,7 @@ Proba nu cere acces la Termux, stocare partajată sau rețea. Modulul nu primeș
 
 ## Următorii pași pentru un backend funcțional
 
-1. Construim PRoot pentru ID-ul acestei aplicații și verificăm explicit că nu are `RUNPATH` sau prefix `com.termux`. Nu copiem binarul Termux: cel inspectat are `RUNPATH=/data/data/com.termux/files/usr/lib`.
+1. Construim PRoot pentru ID-ul acestei aplicații și verificăm explicit că nu are `RUNPATH` sau prefix `com.termux`. Nu copiem binarul Termux: cel inspectat are `RUNPATH=/data/data/com.termux/files/usr/lib` și conține și căi fixe pentru `libproot-loader.so` și fișiere temporare. Depinde de `libtalloc.so.2` și `libandroid-shmem.so`. Doar schimbarea `RUNPATH` nu rezolvă aceste căi.
 2. Pregătim un rootfs ARM64 reproducibil cu Blender CLI și dependențele sale, cu manifest de versiuni, hash-uri și licențe. PRoot-Distro poate ajuta la pregătirea imaginii, dar nu trebuie să fie un manager de pachete activ în fiecare pornire.
 3. Împărțim pachetul în componente verificabile la instalare. Executabilul native rămâne în zona permisă pentru execuție; datele rootfs și proiectele stau în stocarea privată a aplicației. Verificăm spațiul necesar înainte de instalare și nu descărcăm sau extragem pachete în tăcere.
 4. Pornim Blender din serviciul separat, cu joburi limitate, anulare, jurnal, import GLB în Godot și verificarea unui mesh real. Abia după o probă fizică în APK mutăm butonul **Instalează Blender** la noul backend și eliminăm fluxul Termux.
