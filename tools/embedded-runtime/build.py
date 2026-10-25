@@ -159,6 +159,9 @@ def main():
     shutil.copyfile(shmem / "shm.h", prefix / "include/sys/shm.h")
 
     proot = sources["proot"]
+    ashmem = proot / "src/extension/ashmem_memfd/ashmem_memfd.c"
+    if "#include <string.h>" not in ashmem.read_text():
+        ashmem.write_text("#include <string.h>\n" + ashmem.read_text())
     # Ship only the 64-bit loader. Blender and this rootfs are ARM64-only.
     arch = proot / "src/arch.h"
     text = arch.read_text()

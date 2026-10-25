@@ -60,6 +60,13 @@ din procesul Android separat, cu verificarea hash-urilor și diagnostic în Jurn
 Prima rulare CI (`40190593253`) s-a oprit înaintea compilării PRoot din cauza
 unui HTTP 503 de la sursa talloc. Adăugate reîncercări, mirror oficial Samba,
 cache pentru arhive și teste pentru refuzul unui checksum modificat.
+A doua rulare (`40190911801`) a trecut descărcările, compilarea talloc și
+testele runtime/editor; NDK a identificat un include `string.h` lipsă în extensia
+ashmem a PRoot. Include-ul este acum adăugat explicit de scriptul reproductibil.
+Proba guest Linux a trecut separat cu PRoot-ul și loader-ul deja ambalate ale
+Termux (`.ai-qa/embedded-proot-smoke/guest-control.json`), izolând refuzul local
+la loader-ul nou din stocarea privată. Acesta este un control al probei, nu
+dovada că runtime-ul nostru funcționează în APK.
 
 ## Etapa precedentă — probă nativă de executare în APK, 25.10.2026
 
