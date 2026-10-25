@@ -72,6 +72,7 @@ var root_column: VBoxContainer
 var compose_panel: PanelContainer
 var attachment_chips: HFlowContainer
 var expand_button: Button
+var workspace_expanded = false
 var activity_group: VBoxContainer
 var message_records: Array = []
 var restoring = false
@@ -153,7 +154,8 @@ func _ready() -> void:
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	navigation_buttons["new"] = icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {}))
 	_compact_button(navigation_buttons["new"])
-	expand_button = icon_button(header, "Expand", "Extinde / restrânge chatul", _toggle_expanded)
+	expand_button = icon_button(header, "Expand", "Extinde chatul și ascunde panourile", _toggle_expanded)
+	expand_button.toggle_mode = true
 	_compact_button(expand_button)
 	navigation_buttons["settings"] = icon_button(header, "Settings", "Setări", func() -> void: action.emit("settings", {}))
 	_compact_button(navigation_buttons["settings"])
@@ -1355,6 +1357,13 @@ func provider_icon(profile: Dictionary) -> Texture2D:
 
 func section_icon(section: String) -> Texture2D:
 	return _icon({"general": "Settings", "providers": "Providers", "accounts": "Accounts", "generation": "Generation", "mcp": "MCP", "integrations": "Integrations", "skills": "Skills", "automations": "Plan", "journal": "Journal", "agent": "File", "voice": "Microphone", "playtesting": "Play"}.get(section, "Settings"))
+
+func set_workspace_expanded(value: bool) -> void:
+	workspace_expanded = value
+	if expand_button == null: return
+	expand_button.icon = _icon("Collapse" if value else "Expand")
+	expand_button.tooltip_text = "Restaurează panourile" if value else "Extinde chatul și ascunde panourile"
+	expand_button.set_pressed_no_signal(value)
 
 func _toggle_expanded() -> void:
 	action.emit("expand", {})

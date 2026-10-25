@@ -23,7 +23,7 @@ BRANDS = {
 }
 ACTIONS = {
     'Add': 'plus', 'ArrowUp': 'arrow-up', 'Stop': 'square', 'Microphone': 'mic',
-    'Menu': 'panel-left', 'Settings': 'settings', 'Expand': 'maximize',
+    'Menu': 'panel-left', 'Settings': 'settings', 'Expand': 'maximize', 'Collapse': 'minimize',
     'Copy': 'copy', 'Retry': 'rotate-cw', 'More': 'ellipsis', 'Changes': 'file-diff',
     'Close': 'x', 'Back': 'arrow-left', 'Check': 'check', 'Search': 'search',
     'Attach': 'paperclip', 'Models': 'layers', 'Reasoning': 'brain', 'Auto': 'sparkles',

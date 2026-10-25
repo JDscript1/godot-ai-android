@@ -121,6 +121,8 @@ var provider_testing = false
 var exporting_asset = false
 var current_placement = 0
 var expanded_dock = 0
+var workspace_bottom_panel: WeakRef
+var workspace_bottom_tab: WeakRef
 var dock_layout_busy = false
 var dock_layout_generation = 0
 var dock_hidden_groups: Array = []
@@ -204,6 +206,7 @@ func _ready() -> void:
 	integrations.linux.ensure_ready.call_deferred()
 
 func _exit_tree() -> void:
+	_restore_workspace_bottom_panel()
 	_restore_dock_groups()
 	cancel["cancelled"] = true
 	if editor_control != null: editor_control.release()
@@ -646,18 +649,44 @@ func _expand_workspace() -> void:
 	if current_placement != 0 or (expanded and expanded_dock != 0):
 		if busy or speech.listening or speech.transcribing:
 			_status("Extinde sau restrânge dock-ul după încheierea sarcinii.")
+			chat.set_workspace_expanded(expanded)
 			return
 	if not expanded:
 		if current_placement != 0:
 			expanded_dock = current_placement
 			_set_placement(0, false)
+		var bottom = _editor_bottom_panel()
+		if bottom != null:
+			workspace_bottom_panel = weakref(bottom)
+			var selected = bottom.get_current_tab_control()
+			workspace_bottom_tab = weakref(selected) if selected != null else null
 		EditorInterface.set_distraction_free_mode(true)
+		plugin.hide_bottom_panel()
+		_queue_dock_layout()
 	else:
 		EditorInterface.set_distraction_free_mode(false)
+		_restore_dock_groups()
+		_restore_workspace_bottom_panel()
 		if expanded_dock != 0:
 			var restore = expanded_dock
 			expanded_dock = 0
 			_set_placement(restore, false)
+	chat.set_workspace_expanded(EditorInterface.is_distraction_free_mode_enabled())
+
+func _editor_bottom_panel() -> TabContainer:
+	var center = EditorInterface.get_base_control().find_child("DockVSplitCenter", true, false)
+	if center != null:
+		for child in center.get_children():
+			if child.is_class("EditorBottomPanel"): return child as TabContainer
+	return null
+
+func _restore_workspace_bottom_panel() -> void:
+	var bottom = workspace_bottom_panel.get_ref() if workspace_bottom_panel != null else null
+	var selected = workspace_bottom_tab.get_ref() if workspace_bottom_tab != null else null
+	workspace_bottom_panel = null
+	workspace_bottom_tab = null
+	if bottom == null or selected == null or selected.get_parent() != bottom or bottom.current_tab >= 0: return
+	bottom.current_tab = bottom.get_tab_idx_from_control(selected)
 
 func _completion_stream() -> AudioStreamWAV:
 	var rate = 22050
@@ -2565,7 +2594,14 @@ func _register_blender_outputs(result: Dictionary) -> void:
 	if not ids.is_empty(): result["files"] = ids
 
 func _process(_delta: float) -> void:
-	if current_placement != 0 and is_visible_in_tree():
+	if not project_manager_mode and chat != null:
+		var expanded = EditorInterface.is_distraction_free_mode_enabled()
+		if expanded != chat.workspace_expanded:
+			chat.set_workspace_expanded(expanded)
+			if not expanded:
+				_restore_dock_groups()
+				_restore_workspace_bottom_panel()
+	if not project_manager_mode and (current_placement != 0 or EditorInterface.is_distraction_free_mode_enabled()) and is_visible_in_tree():
 		var viewport_size = get_viewport().get_visible_rect().size
 		if viewport_size != dock_viewport_size:
 			_restore_dock_groups()
@@ -3446,7 +3482,7 @@ func _restore_dock_groups() -> void:
 	dock_hidden_groups.clear()
 
 func _queue_dock_layout() -> void:
-	if current_placement == 0 or dock_layout_busy: return
+	if (current_placement == 0 and not EditorInterface.is_distraction_free_mode_enabled()) or dock_layout_busy: return
 	dock_layout_busy = true
 	_fit_dock_layout.call_deferred(dock_layout_generation)
 

@@ -6,6 +6,7 @@ on:
     branches: ["ai/android-assistant"]
     paths:
       - "editor/editor_node.cpp"
+      - "editor/gui/editor_bottom_panel.*"
       - "editor/asset_library/editor_asset_installer.*"
       - "scene/main/viewport.*"
       - "modules/ai_assistant/**"
@@ -207,7 +208,9 @@ jobs:
           path: .ai-linux-cache
           key: godot-ai-linux-4.7.2-${{ github.sha }}
       - name: Exercise and render the actual native plugin
-        run: python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --output .ai-qa/native-rendered
+        run: |
+          python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --output .ai-qa/native-rendered
+          python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario panels --only phone_landscape --output .ai-qa/native-rendered/panels
       - uses: actions/upload-artifact@v4
         if: always()
         with:

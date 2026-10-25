@@ -36,7 +36,33 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — APK livrat cu Linux automat, 25.10.2026
+## Etapa curentă — panouri minimizabile și chat extins, 25.10.2026
+
+Inspectată captura fizică `Screenshot_20261025_203433.jpg`: Output ocupă o
+parte mare din înălțime, iar Scene/Inspector limitează lățimea chatului.
+Butonul de extindere folosea modul Godot fără distrageri, care ascundea doar
+dock-urile laterale.
+
+Corecție în surse: buton dedicat de minimizare pentru panoul inferior nativ,
+valabil pentru Output, Debugger și celelalte file. Extinderea din antetul
+chatului ascunde și panoul inferior; revenirea restaurează fila deschisă și
+poziția chatului, inclusiv stânga/dreapta. Textul din composer și mesajele
+de diagnostic se păstrează. O filă aleasă manual între timp este respectată.
+Panoul inferior restrâns păstrează filele accesibile pentru redeschidere.
+Iconul de revenire este Lucide original, adăugat în catalogul local verificat.
+Încadrarea pe lățimea disponibilă se aplică și chatului central extins.
+
+Probe: scenariu UI dedicat cu panou diagnostic real, extindere/revenire,
+minimizare nativă, controale accesibile, păstrarea textelor și poziții laterale.
+Capturile și rapoartele sunt în `.ai-qa/chat-panels-*`; verificarea runtime
+Godot a trecut **429 aserțiuni**. Livrarea APK-ului se consemnează după build
+și verificarea installerului. Captura utilizatorului dovedește problema din
+versiunea instalată; testele desktop nu sunt probă fizică a corecției Android.
+
+Jurnal: 25.10.2026 — adăugată minimizarea explicită a panourilor inferioare și
+extinderea completă a chatului cu restaurarea layoutului și păstrarea mesajelor.
+
+## Etapa precedentă — APK livrat cu Linux automat, 25.10.2026
 
 Utilizatorul a cerut compilarea și înlocuirea APK-ului. Baza Linux este acum
 pregătită automat la pornirea asistentului, inclusiv în lista de proiecte.

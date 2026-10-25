@@ -60,6 +60,7 @@ class EditorBottomPanel : public DockTabContainer {
 	ProgressIndicator *progress_indicator = nullptr;
 	Button *pin_button = nullptr;
 	Button *expand_button = nullptr;
+	Button *minimize_button = nullptr;
 
 	int previous_tab = -1;
 	bool lock_panel_switching = false;

@@ -216,6 +216,10 @@ func _run() -> void:
 		await _linux_runtime_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "panels":
+		await _workspace_panel_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "providers":
 		await _provider_connection_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		await _provider_discovery_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -254,6 +258,7 @@ func _run() -> void:
 	await _provider_connection_tests("")
 	await _provider_discovery_tests("")
 	await _linux_runtime_tests("")
+	await _workspace_panel_tests("")
 	await _handoff_tests()
 	await _generated_preview_tests()
 	await _layout_tests()
@@ -2233,3 +2238,93 @@ func _linux_runtime_tests(output: String) -> void:
 	backend.refresh()
 	bridge.queue_free()
 	panel.settings_window.hide()
+
+func _workspace_panel_tests(output: String) -> void:
+	var previous_placement = panel.current_placement
+	var previous_expanded = EditorInterface.is_distraction_free_mode_enabled()
+	if previous_expanded: panel.chat.expand_button.pressed.emit()
+	panel._set_placement(0, false)
+	var bottom = panel._editor_bottom_panel()
+	_check(bottom != null, "The editor exposes its real bottom panel for workspace layout")
+	if bottom == null: return
+	var previous_bottom = bottom.get_current_tab_control()
+	var diagnostic = VBoxContainer.new()
+	diagnostic.custom_minimum_size.y = 150 * EditorInterface.get_editor_scale()
+	var content = Label.new()
+	content.text = "Diagnostic de verificare\nMesajele rămân disponibile după minimizare."
+	diagnostic.add_child(content)
+	add_control_to_bottom_panel(diagnostic, "Diagnostic QA")
+	make_bottom_panel_item_visible(diagnostic)
+	await get_tree().create_timer(0.25).timeout
+	var diagnostic_tab = bottom.get_current_tab_control()
+	var previous_height = panel.chat.size.y
+	var draft = panel.composer.text
+	panel.composer.text = "Mesaj păstrat la extinderea chatului"
+	_workspace_capture(output, "panels-open")
+	panel.chat.expand_button.pressed.emit()
+	await get_tree().create_timer(0.3).timeout
+	while panel.dock_layout_busy: await get_tree().process_frame
+	_check(EditorInterface.is_distraction_free_mode_enabled() and bottom.current_tab == -1, "Expand chat collapses Output and the side docks together")
+	_check(panel.chat.size.y > previous_height + 20, "Collapsing the bottom panel returns its height to the chat")
+	_check(panel.chat.expand_button.tooltip_text == "Restaurează panourile" and panel.chat.expand_button.button_pressed, "Expanded chat clearly offers restoring the editor panels")
+	for control in [panel.composer, panel.chat.send_button, panel.chat.model_button, panel.chat.expand_button, panel.chat.navigation_buttons["settings"]]:
+		_check(panel.get_viewport().get_visible_rect().grow(2).encloses(control.get_global_rect()), "Expanded chat keeps its control fully accessible: " + control.name)
+	content.text += "\nDiagnostic nou păstrat."
+	_workspace_capture(output, "panels-chat-full")
+	panel.chat.expand_button.pressed.emit()
+	await get_tree().create_timer(0.25).timeout
+	_check(not EditorInterface.is_distraction_free_mode_enabled() and bottom.get_current_tab_control() == diagnostic_tab, "Restore returns the previously open diagnostic panel")
+	_check(content.text.contains("Diagnostic nou păstrat") and panel.composer.text == "Mesaj păstrat la extinderea chatului", "Expanding and restoring preserves both diagnostics and the message draft")
+	if native:
+		var minimize = bottom.find_child("MinimizeBottomPanel", true, false)
+		_check(minimize is Button and minimize.is_visible_in_tree(), "Open native bottom panels expose a dedicated minimize button")
+		if minimize is Button:
+			minimize.pressed.emit()
+			await get_tree().create_timer(0.25).timeout
+			_check(bottom.current_tab == -1 and not minimize.visible, "The minimize action folds the panel while retaining its tabs")
+			make_bottom_panel_item_visible(diagnostic)
+			await get_tree().process_frame
+			_check(bottom.get_current_tab_control() == diagnostic_tab and content.text.contains("Diagnostic nou păstrat"), "A minimized diagnostic can be reopened with all messages intact")
+			minimize.pressed.emit()
+			await get_tree().create_timer(0.2).timeout
+			_workspace_capture(output, "panels-minimized")
+	hide_bottom_panel()
+	panel.chat.expand_button.pressed.emit()
+	await get_tree().process_frame
+	panel.chat.expand_button.pressed.emit()
+	await get_tree().process_frame
+	_check(bottom.current_tab == -1, "Restoring chat leaves an initially closed bottom panel closed")
+	make_bottom_panel_item_visible(diagnostic)
+	panel.chat.expand_button.pressed.emit()
+	await get_tree().process_frame
+	var alternate = VBoxContainer.new()
+	add_control_to_bottom_panel(alternate, "Inspect QA")
+	make_bottom_panel_item_visible(alternate)
+	var alternate_tab = bottom.get_current_tab_control()
+	panel.chat.expand_button.pressed.emit()
+	await get_tree().process_frame
+	_check(bottom.get_current_tab_control() == alternate_tab, "Restoring panels respects a different diagnostic selected by the user")
+	remove_control_from_bottom_panel(alternate)
+	alternate.queue_free()
+	for side in [1, 2]:
+		panel._set_placement(side, false)
+		await get_tree().create_timer(0.2).timeout
+		make_bottom_panel_item_visible(diagnostic)
+		panel.chat.expand_button.pressed.emit()
+		await get_tree().create_timer(0.2).timeout
+		_check(panel.current_placement == 0 and bottom.current_tab == -1, "Expanding a side chat also folds diagnostics: " + str(side))
+		panel.chat.expand_button.pressed.emit()
+		await get_tree().create_timer(0.2).timeout
+		_check(panel.current_placement == side and bottom.get_current_tab_control() == diagnostic_tab, "Restoring a side chat recovers its position and diagnostic panel: " + str(side))
+	hide_bottom_panel()
+	remove_control_from_bottom_panel(diagnostic)
+	diagnostic.queue_free()
+	panel.composer.text = draft
+	if is_instance_valid(previous_bottom) and previous_bottom.get_parent() == bottom: bottom.current_tab = bottom.get_tab_idx_from_control(previous_bottom)
+	panel._set_placement(previous_placement, false)
+	if previous_expanded: panel.chat.expand_button.pressed.emit()
+
+func _workspace_capture(output: String, filename: String) -> void:
+	if output.is_empty(): return
+	RenderingServer.force_draw(false)
+	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(filename + ".png"))

@@ -56,6 +56,7 @@ void EditorBottomPanel::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			pin_button->set_button_icon(get_editor_theme_icon(SNAME("Pin")));
 			expand_button->set_button_icon(get_editor_theme_icon(SNAME("ExpandBottomDock")));
+			minimize_button->set_button_icon(get_editor_theme_icon(SNAME("ArrowDown")));
 		} break;
 	}
 }
@@ -112,6 +113,7 @@ void EditorBottomPanel::_repaint() {
 	center_split->set_collapsed(panel_collapsed);
 
 	expand_button->set_visible(!panel_collapsed);
+	minimize_button->set_visible(!panel_collapsed);
 	if (expand_button->is_pressed()) {
 		_expand_button_toggled(!panel_collapsed);
 	} else {
@@ -335,6 +337,15 @@ EditorBottomPanel::EditorBottomPanel() :
 	pin_button->set_toggle_mode(true);
 	pin_button->set_tooltip_text(TTRC("Pin Bottom Panel Switching"));
 	pin_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBottomPanel::_pin_button_toggled));
+
+	minimize_button = memnew(Button);
+	minimize_button->set_name("MinimizeBottomPanel");
+	bottom_hbox->add_child(minimize_button);
+	minimize_button->hide();
+	minimize_button->set_theme_type_variation("BottomPanelButton");
+	minimize_button->set_tooltip_text(TTRC("Minimize Bottom Panel"));
+	minimize_button->set_accessibility_name(TTRC("Minimize Bottom Panel"));
+	minimize_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBottomPanel::hide_bottom_panel));
 
 	callable_mp(this, &EditorBottomPanel::_repaint).call_deferred();
 }

@@ -139,6 +139,11 @@
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/maximize.svg",
     "sha256": "1f790856b0de805ab62e871609f1990b89d227d472022e57a11fde015aad4826"
   },
+  "Collapse": {
+    "file": "lucide/minimize.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/minimize.svg",
+    "sha256": "7daa304bc3dccac1f100304e66a41139662cc6c0ba3eba67480d97466a9ce02b"
+  },
   "Copy": {
     "file": "lucide/copy.svg",
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/copy.svg",
