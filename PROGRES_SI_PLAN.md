@@ -12,8 +12,9 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`644a3b0`**
-  (`644a3b09553cd57eced3bbe837f542e1067ebfbd`).
+- APK-ul curent din Download a fost readus la **`5baf890`**
+  (`5baf8904353fcf5bff9e3404846033f54dda8867`) după raportul de interfață lipsă
+  în buildul experimental `644a3b0`.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -25,9 +26,9 @@ drept funcție validată cu un serviciu real.
   diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
   inclusiv Google Play, folosește pornire explicită din terminal și verificare
   automată la revenirea în Godot.
-- Include și PRoot propriu, loader ARM64 și proba Linux automată în procesul
-  separat; aceasta nu activează încă Blender fără Termux.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `5baf890` a fost
+- PRoot propriu, loader-ul ARM64 și proba Linux sunt în surse și în artefactul
+  experimental `644a3b0`, retras din Download; nu sunt în APK-ul restaurat.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `644a3b0` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -35,7 +36,32 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — PRoot propriu compilat și livrat în APK, 25.10.2026
+## Etapa curentă — restaurare APK anterior după raport de interfață lipsă, 25.10.2026
+
+Utilizatorul raportează că buildul experimental `644a3b0` nu mai afișează Agent,
+Asset Store și alte elemente ale editorului. Verificarea locală a pachetului
+confirmă prezența codului pentru Agent și Asset Store, toate cele 27 de
+scripturi încorporate și niciun asset anterior eliminat sau schimbat. Diferența
+de dimensiune provine din comprimare: biblioteca motorului are aproximativ
+131 MB în ambele APK-uri, dar în `644a3b0` ocupă aproximativ 70 MB în ZIP.
+Acestea sunt dovezi despre conținut, nu despre funcționarea fizică a interfeței;
+cauza raportului rămâne neconfirmată și necesită o captură sau un jurnal actual.
+
+Readus în Download installerul anterior **`5baf890`**, 145.350.814 bytes,
+SHA-256 `8982c87ce00193f70b4847a08431de26180aba0812b5808d1032a667c79d857e`.
+Verificate din nou semnătura persistentă, identitatea aplicației și sursele
+celor 27 de scripturi față de commit. Înlocuirea este atomică; instalarea din
+Android și revenirea efectivă a interfeței nu au fost executate de agent.
+Proiectele și setările utilizatorului nu au fost modificate. Sursele și
+artefactul PRoot experimental sunt păstrate separat în proiect.
+
+Dovezi: `.ai-qa/rollback-agent-20261025.json`,
+`.ai-qa/agent-missing-apk-analysis-20261025.json` și
+`.ai-qa/artifacts/5baf890/`. Nu s-a recompilat sau modificat cod pe baza unei
+cauze presupuse. Jurnal: 25.10.2026 — retras din Download buildul experimental
+și restaurat installerul anterior verificat; investigația UI rămâne deschisă.
+
+## Etapa precedentă — PRoot propriu compilat în APK experimental, 25.10.2026
 
 Adăugat buildul din surse pentru PRoot 5.1.107.101, talloc 2.5.0 și
 libandroid-shmem 0.7, cu versiuni/hash-uri fixate și dependențe nesistem legate

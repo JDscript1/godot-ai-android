@@ -62,8 +62,9 @@ See the [current progress and checks](PROGRES_SI_PLAN.md).
 An [embedded Android runtime probe](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) is under
 development as the first step toward Blender without a separate Termux app.
 It is packaged in a CI APK; execution from that APK still needs a device test.
-The current Download APK includes PRoot and an automatic Linux self-test;
-its result appears in the agent settings Journal. Blender is not yet bundled.
+The experimental PRoot APK was withdrawn from Download after a report of missing
+editor UI. Download now contains the previous `5baf890` installer; the experimental
+artifact remains in CI and project evidence. The UI cause is not yet confirmed.
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture
