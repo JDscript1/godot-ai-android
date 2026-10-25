@@ -59,6 +59,10 @@ action, then **Blender Active** and **Uninstall Blender**. It resumes setup afte
 terminal pairing and preserves containers/user files during package removal.
 See the [current progress and checks](PROGRES_SI_PLAN.md).
 
+An [embedded Android runtime probe](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) is under
+development as the first step toward Blender without a separate Termux app.
+It is source-only until APK packaging and execution are verified on Android.
+
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture
 prompts, alpha verification and an optional Runware background-removal tool.

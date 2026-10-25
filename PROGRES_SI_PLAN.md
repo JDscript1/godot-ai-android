@@ -33,6 +33,26 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
+## Etapa în lucru — runtime Blender în APK, 25.10.2026
+
+Am început [runtime-ul Blender integrat](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) cu
+o probă ARM64 reproductibilă: Gradle construiește un executabil PIE mic cu NDK,
+îl ambalează ca bibliotecă nativă extrasă, iar un serviciu Android neexportat,
+în procesul separat `:ai_runtime`, încearcă să îl ruleze cu limită de timp.
+Puntea internă a agentului expune `embedded_probe` / `embedded_status` pentru
+diagnostic. CI verifică ELF-ul ARM64 din APK. Această etapă este o probă de
+execuție, **nu** un PRoot sau Blender funcțional și nu schimbă încă butonul
+Blender din Integrări. APK-ul din Downloads nu a fost înlocuit în această etapă.
+
+Verificare locală inițială: același cod C a fost compilat cu Clang Android pe
+dispozitiv, a rulat și a raportat `arch=aarch64`; ELF este `ET_DYN`/AArch64.
+Clasa Kotlin a serviciului a trecut compilarea locală cu Android SDK 36;
+cele 28 de teste ale integrării Blender existente au trecut. Gradle local nu
+poate rezolva offline pluginul Nexus al proiectului, astfel că împachetarea în
+APK și rularea din procesul separat se verifică în continuare. Binarul PRoot
+existent în Termux are `RUNPATH` fix spre
+`/data/data/com.termux/files/usr/lib` și trebuie reconstruit pentru aplicație.
+
 ## Etapa curentă — comandă scurtă pentru conectarea Termux, 25.10.2026
 
 În proba fizică, comanda veche de conectare nu s-a lipit în Termux. Ea conținea

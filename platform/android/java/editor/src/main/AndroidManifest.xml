@@ -62,6 +62,11 @@
             tools:targetApi="29" />
 
         <receiver android:name=".AITermuxBlenderResult" android:exported="false" />
+        <receiver android:name=".AIEmbeddedRuntimeResult" android:exported="false" />
+        <service
+            android:name=".AIEmbeddedRuntimeService"
+            android:exported="false"
+            android:process=":ai_runtime" />
 
         <activity
             android:name=".GodotEditor"

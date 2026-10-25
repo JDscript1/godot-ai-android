@@ -40,6 +40,7 @@ open class GodotEditor : BaseGodotEditor() {
 		AISecretVault.initialize(applicationContext)
 		AIVoice.initialize(this)
 		AITermuxBlender.initialize(this)
+		AIEmbeddedRuntime.initialize(this)
 		super.onCreate(savedInstanceState)
 	}
 

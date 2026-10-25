@@ -74,6 +74,10 @@ android {
     buildToolsVersion versions.buildTools
     ndkVersion versions.ndkVersion
 
+    sourceSets {
+        main.jniLibs.srcDir "$buildDir/generated/ai-runtime/jniLibs"
+    }
+
     namespace = "org.godotengine.editor"
 
     defaultConfig {
@@ -162,6 +166,10 @@ android {
     }
 
     packagingOptions {
+        jniLibs {
+            // The executable probe must exist as a real file in nativeLibraryDir.
+            useLegacyPackaging = true
+        }
         // Debug symbols are kept for development within Android Studio.
         if (shouldNotStrip()) {
             jniLibs {
@@ -204,6 +212,31 @@ android {
             minSdkVersion 29
             targetSdkVersion 32
         }
+    }
+}
+
+// Android 10+ permits exec from the installed native-library directory. Build a
+// tiny PIE first; PRoot must later be rebuilt for this app ID and verified here.
+tasks.register('buildAiRuntimeProbe') {
+    def output = file("$buildDir/generated/ai-runtime/jniLibs/arm64-v8a/libai_runtime_probe.so")
+    inputs.file('src/main/native/ai_runtime_probe.c')
+    outputs.file(output)
+    doLast {
+        def ndk = android.ndkDirectory
+        def host = System.getProperty('os.name').toLowerCase().contains('mac') ? 'darwin-x86_64' : 'linux-x86_64'
+        def clang = new File(ndk, "toolchains/llvm/prebuilt/$host/bin/clang")
+        if (!clang.isFile()) throw new GradleException("Android NDK clang unavailable: $clang")
+        output.parentFile.mkdirs()
+        exec {
+            commandLine clang, '--target=aarch64-linux-android24', '-fPIE', '-pie',
+                    '-Wl,--build-id=none', '-s', file('src/main/native/ai_runtime_probe.c'), '-o', output
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.startsWith('merge') && name.endsWith('JniLibFolders')) {
+        dependsOn 'buildAiRuntimeProbe'
     }
 }
 

@@ -66,6 +66,7 @@ object AITermuxBlender {
     }
 
     @JvmStatic @Synchronized fun command(action: String, payload: String): String {
+        if (action == "embedded_probe" || action == "embedded_status") return AIEmbeddedRuntime.command(action)
         val current = activity.get() ?: return failure("Editorul Android nu este activ.").toString()
         val args = try { JSONObject(payload) } catch (_: Exception) { JSONObject() }
         return try {
