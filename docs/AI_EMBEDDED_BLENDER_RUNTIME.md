@@ -7,9 +7,10 @@
 Runtime-ul a fost extins la un mediu Debian persistent, cu instalator nativ,
 joburi și pachete opționale în Integrări → Runtime Linux. Detaliile și probele
 sunt în [Runtime Linux integrat](AI_LINUX_RUNTIME.md). Secțiunile de mai jos
-păstrează etapele istorice ale probei PRoot. Aceste surse noi nu sunt încă în
-APK-ul curent din Downloads și nu există încă o probă fizică a serviciului
-Linux complet în aplicația Godot instalată.
+păstrează etapele istorice ale probei PRoot. APK-ul curent `8878801` din
+Downloads include noul runtime, cu pregătire automată a bazei Linux.
+Nu există încă o probă fizică a serviciului Linux complet și a Blender în
+aplicația Godot instalată.
 
 ## Etapa 1: proba de executare
 

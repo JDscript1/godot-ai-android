@@ -12,9 +12,9 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download a fost readus la **`5baf890`**
-  (`5baf8904353fcf5bff9e3404846033f54dda8867`) după raportul de interfață lipsă
-  în buildul experimental `644a3b0`.
+- APK-ul curent din Download este **`8878801`**
+  (`8878801c5cb37f5f57e4b21086ae75f5528dcc09`), livrat la
+  **25.10.2026, 20:21 +01:00**, cu Linux integrat și pregătire automată.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -22,21 +22,21 @@ drept funcție validată cu un serviciu real.
   separatoare Cloud/Local și căutare LAN explicită.
 - Include și corecțiile harness-ului, conectarea locală simplificată, bara de
   activitate deasupra composer-ului, controlul rotirii 3D, regulile pentru
-  imagini și integrarea opțională Blender/Termux, cu jurnal persistent și
-  diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
-  inclusiv Google Play, folosește pornire explicită din terminal și verificare
-  automată la revenirea în Godot.
-- PRoot propriu, loader-ul ARM64 și proba Linux sunt în surse și în artefactul
-  experimental `644a3b0`, retras din Download; nu sunt în APK-ul restaurat.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `644a3b0` a fost
-  înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
+  imagini și jurnalul persistent. Include și asistentul din lista de proiecte,
+  deschiderea nativă a asseturilor generate și descoperirea modelelor cloud
+  după salvarea cheii. Integrarea veche Termux rămâne în cod pentru compatibilitate.
+- PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
+  Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
+  `5baf890` a fost înlocuită atomic după verificare. În Download rămâne un
+  singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
 
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Livrare în pregătire — Linux automat, 25.10.2026
+## Etapa curentă — APK livrat cu Linux automat, 25.10.2026
 
 Utilizatorul a cerut compilarea și înlocuirea APK-ului. Baza Linux este acum
 pregătită automat la pornirea asistentului, inclusiv în lista de proiecte.
@@ -44,8 +44,32 @@ Eliminate acțiunile manuale Instalează/Dezinstalează Linux; rămân statusul,
 Repară la eșec și instalarea utilitarelor opționale. Pregătirea bazei continuă
 la trecerea din lista de proiecte în editor. Revalidarea păstrează pachetele.
 Compilarea verifică și pachetul Debian, clasele serviciului Linux și conținutul
-exact al scripturilor AI înglobate. Livrarea se confirmă după verificarea
-artefactului semnat și înlocuirea atomică a installerului din Download.
+exact al scripturilor AI înglobate.
+
+**Compilat și livrat:** [workflow 40224731049](https://github.com/JDscript1/godot-ai-android/actions/runs/40224731049),
+toate cele trei joburi reușite. APK ARM64 de **112.268.670 bytes**,
+SHA-256 `31593a24142a4f7be279057b127d01a0cba1e9e1ba639d2b8be1bf73f3912050`.
+Verificate local semnătura persistentă, ID-ul aplicației, cele **28 de scripturi
+AI exacte**, prezența agentului și Asset Store în biblioteca nativă, serviciul
+Linux privat și hash-urile celor **2.678 fișiere regulate** din pachetul Debian.
+Executabilele PRoot/loader nu depind de căi sau biblioteci din aplicația Termux.
+
+Teste: **429 aserțiuni runtime**, **49 verificări Linux pe tabletă și 49 pe
+ecran îngust**, plus **438 verificări × 5 dimensiuni** pe editorul nativ compilat,
+fără eșecuri. Compilarea Kotlin și probele de livrare atomică au trecut.
+Capturile panoului Linux au fost inspectate vizual.
+
+Dovezi: `.ai-qa/delivery-8878801.json`,
+`.ai-qa/artifacts/8878801/linux-verification.json`,
+`.ai-qa/artifacts/8878801/sources/verification.json`, `.ai-qa/8878801-native/`,
+`.ai-qa/linux-auto-ui/`, `.ai-qa/linux-auto-narrow/`,
+`.ai-qa/linux-auto-verification.json` și `.ai-qa/8878801-delivery.log`.
+Pornirea fizică a noului runtime în aplicația Godot, Blender complet și un
+harness extern autentificat rămân de verificat separat. APK-ul a fost pus
+pentru instalarea utilizatorului; aplicația instalată nu a fost modificată prin ADB.
+
+Jurnal: 25.10.2026 — Linux obligatoriu pregătit automat, fără acțiuni manuale
+pentru bază; compilat `8878801`, verificat și înlocuit installerul din Download.
 
 ## Etapa precedentă — runtime Linux persistent pentru utilitare, 25.10.2026
 

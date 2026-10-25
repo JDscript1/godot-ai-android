@@ -1,8 +1,9 @@
 # Runtime Linux integrat în aplicație
 
-Stare: **implementat în surse, 25.10.2026**. APK-ul din Downloads nu a fost
-recompilat sau înlocuit. Testele de dezvoltare nu sunt prezentate drept probă
-a serviciului din aplicația Godot instalată.
+Stare: **compilat în APK și livrat, 25.10.2026**, sursa `8878801`.
+Installerul din Downloads a fost înlocuit după verificarea semnăturii și a
+conținutului. Pornirea fizică a serviciului din aplicația Godot instalată
+rămâne de verificat; probele de dezvoltare nu o înlocuiesc.
 
 ## Funcționare
 
@@ -75,13 +76,18 @@ pachetelor distribuite trebuie verificate separat înaintea publicării.
 ## Dovezi și limite
 
 - Kotlin: compilare reușită a managerului, serviciului și instalatorului cu
-  clasele Android; aceasta nu este o compilare APK/Gradle completă.
+  clasele Android, urmată de compilarea completă APK/Gradle în workflow.
 - C++: verificare de sintaxă pentru puntea JNI și înregistrarea modulului.
 - Teste de arhivă: 4 teste Python, plus 6 cazuri executate împotriva
   instalatorului Kotlin, inclusiv traversări și legături nepermise.
-- Godot: 429 aserțiuni runtime, 426 verificări UI pe formatul tabletei și
-  47 verificări focalizate pe runtime la fiecare dintre două dimensiuni.
-  Interfața a fost inspectată vizual; puntea Android este simulată în fixture.
+- Godot: 429 aserțiuni runtime, 438 verificări pe editorul nativ compilat la
+  fiecare dintre cinci dimensiuni și 49 verificări focalizate pe runtime la
+  fiecare dintre două dimensiuni. Interfața a fost inspectată vizual;
+  puntea Android este simulată în fixture.
+- APK: verificată semnătura persistentă, cele 28 de scripturi AI exacte,
+  clasele serviciului, ELF-urile native și toate cele 2.678 de fișiere regulate
+  din baza Debian. Installer livrat: 112.268.670 bytes, SHA-256
+  `31593a24142a4f7be279057b127d01a0cba1e9e1ba639d2b8be1bf73f3912050`.
 - Probă reală de dezvoltare: instalarea pachetului de bază și a Python
   3.13.5, Node 20.19.2, Git 2.47.3, ripgrep 14.1.1 într-un filesystem nou,
   separat de containerul Debian existent al utilizatorului. Au trecut
@@ -102,4 +108,6 @@ Dovezi locale: `.ai-qa/linux-runtime-package/`,
 
 Urmează proba fizică în APK cu propriul loader, foreground service, instalare,
 oprire și reluare după trecerea aplicației în fundal. Blender complet și un
-harness extern sunt probe distincte. APK-ul stabil din Downloads rămâne intact.
+harness extern sunt probe distincte. Dovada livrării APK-ului curent este
+`.ai-qa/delivery-8878801.json`; verificarea pachetului este în
+`.ai-qa/artifacts/8878801/linux-verification.json`.

@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40173817612/artifacts/12591950511)
-(GitHub Actions artifact, source `a23d260`, delivered 25 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40224731049/artifacts/12611036313)
+(GitHub Actions artifact, source `8878801`, delivered 25 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -38,41 +38,22 @@ bug, the source fixes and the limits of testing outside the Android APK.
 The APK includes a [collapsible activity bar](docs/AI_ACTIVITY_DRAWER.md)
 above the chat input, showing plan progress, background tasks and tool outcomes.
 
-The APK also includes [Blender setup through Termux](docs/AI_TERMUX_BLENDER.md)
-under Integrations: reuse or install, real export/import verification, resumable jobs,
-file transfer and optional agent access. The Android classes, permission, JNI entry
-and bundled worker are verified in this APK; the Intent boundary still requires
-physical-device validation.
-Setup diagnostics now persist across editor restarts, include pre-job failures
-and appear in the general Journal with full worker output. The Blender card
-keeps errors compact and directs detailed troubleshooting to Journal.
-Blender GLB verification accepts the editor's import mesh nodes, so a completed
-verification previously rejected as `empty_mesh` can be recovered without regenerating it.
+The APK includes a [persistent embedded Linux runtime](docs/AI_LINUX_RUNTIME.md)
+with native Android PRoot and a pinned Debian ARM64 filesystem. The base prepares
+automatically when the assistant starts, including in the project manager;
+Integrations shows **Linux active** after successful verification. Python,
+Node.js/npm, Git, ripgrep and Blender remain optional utility installs.
+No separate Termux app or pasted setup commands are required for this backend.
+The direct-provider harness remains in Godot; third-party CLI harness adapters
+and full Blender operation still need separate integration and device validation.
 
-Termux variants without RUN_COMMAND, including the inspected Google Play build,
-use explicit terminal pairing: copy/paste the bundled bootstrap, then return to
-Godot for automatic discovery and export/import verification. Existing runtimes
-are reused; Android clipboard/activity behavior still needs physical validation.
-
-The APK simplifies the Android Blender card to one install
-action, then **Blender Active** and **Uninstall Blender**. It resumes setup after
-terminal pairing and preserves containers/user files during package removal.
-See the [current progress and checks](PROGRES_SI_PLAN.md).
-
-The current source now adds a [persistent embedded Linux runtime](docs/AI_LINUX_RUNTIME.md)
-with a pinned Debian ARM64 filesystem, native installation, managed jobs and
-optional Python, Node.js/npm, Git, ripgrep and Blender packages. The direct-provider
-harness remains in Godot. These sources have development/control tests; the new
-runtime is not yet in the Download APK or physically verified in Godot.
-
-An [embedded Android runtime probe](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) is under
-development as the first step toward Blender without a separate Termux app.
-It is packaged in a CI APK; execution from that APK still needs a device test.
-The experimental PRoot APK was withdrawn from Download after a report of missing
-editor UI. Download now contains the previous `5baf890` installer; the experimental
-artifact remains in CI and project evidence. A subsequent screenshot shows the
-empty project manager with Asset Store visible. Open a project to check the
-agent editor tab; physical verification of the experimental runtime is pending.
+The signed APK's complete Linux package, native service, agent, Asset Store and
+28 embedded scripts were verified before replacing the Download installer.
+Python/Node/Git/ripgrep passed real development controls; execution inside the
+installed Godot APK has not yet been physically verified.
+The [older Termux backend](docs/AI_TERMUX_BLENDER.md) remains in source for
+compatibility, and the [runtime history](docs/AI_EMBEDDED_BLENDER_RUNTIME.md)
+records the earlier experimental stages.
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture
