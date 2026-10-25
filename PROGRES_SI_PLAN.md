@@ -36,7 +36,41 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — captura arată managerul de proiecte, 25.10.2026
+## Etapa curentă — Furnizori AI fără selectoare suprapuse, 25.10.2026
+
+Pornind de la captura `Screenshot_20261025_174937.jpg`, simplificat panoul
+**Furnizori AI** în surse. Eliminat dropdown-ul de profil care repeta
+„Adaugă un furnizor”; selectorul catalogului se numește acum **Furnizor**, cu
+aceleași grupuri Cloud și Local. Conexiunile configurate apar într-o listă
+distinctă **Conexiuni salvate**, cu icon, tip Cloud/Local și buton de adăugare.
+Lista și statusul nu apar când nu există conexiuni, iar Șterge este ascuns
+pentru formularul nou. Căutarea LAN și explicația aferentă apar numai pentru
+furnizori locali sau conexiuni personalizate.
+
+Alegerea unei conexiuni salvate încarcă formularul și îl aduce în partea de
+sus. Alegerea altui furnizor pregătește o conexiune nouă, păstrând conexiunea și
+cheia precedente. Nu s-a schimbat schema de stocare sau accesul la furnizori
+din chat. Testate cu chei simulate salvarea cloud/local, păstrarea secretului,
+selecția rândului corect și ștergerea numai a conexiunii selectate.
+
+Verificări locale: **425 aserțiuni runtime**, **384 verificări UI pe formatul
+tabletei** și **48 verificări UI pe ecran îngust**, fără eșecuri de test.
+Capturile randate au fost inspectate vizual, inclusiv formularul gol,
+conexiunile cloud/local și lista salvată. Dovezi:
+`.ai-qa/provider-settings-runtime.log`,
+`.ai-qa/provider-settings-full/phone_landscape/editor-report.json`,
+`.ai-qa/provider-settings-full/phone_landscape/settings-providers.png` și
+`.ai-qa/provider-settings-narrow/narrow/`. Acestea sunt verificări locale în
+Godot prin instrumentele de dezvoltare, nu probe fizice ale APK-ului sau
+conexiuni cu furnizori reali. Captura utilizatorului confirmă acum accesul la
+Agent → Setări în versiunea restaurată.
+
+**Doar surse:** APK-ul din Download nu a fost recompilat sau înlocuit și nu
+s-a pornit o compilare Android prin push. Verificarea PRoot din APK-ul
+experimental rămâne o etapă separată. Jurnal: 25.10.2026 — separat alegerea
+furnizorului de lista conexiunilor salvate și verificat vizual panoul simplificat.
+
+## Etapa precedentă — captura arată managerul de proiecte, 25.10.2026
 
 Inspectată captura fizică `Screenshot_20261025_171509.jpg` din
 `/storage/emulated/0/Pictures/Screenshots/`. Ea arată **managerul de proiecte**,

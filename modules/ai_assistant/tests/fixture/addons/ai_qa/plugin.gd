@@ -197,6 +197,10 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
 	await _blender_mesh_verification_tests()
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "providers":
+		await _provider_connection_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "blender":
 		await _termux_blender_card_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -227,6 +231,7 @@ func _run() -> void:
 	await _chat_workflow_tests()
 	await _history_button_tests()
 	await _settings_action_tests()
+	await _provider_connection_tests("")
 	await _layout_tests()
 	await _activity_drawer_tests()
 	await _control_settings_tests()
@@ -1202,6 +1207,63 @@ func _termux_blender_card_tests() -> void:
 	panel.settings_window.hide()
 	panel.integrations.termux = null
 
+func _provider_connection_tests(output: String) -> void:
+	var original = panel.config["providers"].duplicate(true)
+	panel.config["providers"] = []
+	panel._refresh_lists()
+	panel._new_provider()
+	panel.open_settings("providers")
+	await get_tree().create_timer(0.2).timeout
+	var form: Dictionary = panel.forms["provider"]
+	var page = panel.settings_tabs.get_tab_control(panel.section_tabs["providers"])
+	var selectors = page.find_children("*", "OptionButton", true, false).filter(func(node: Node) -> bool: return node.is_visible_in_tree())
+	_check(selectors.size() == 1 and selectors[0] == form["issuer"] and form["issuer_label"].text == "Furnizor", "A new AI connection exposes one provider selector instead of two overlapping dropdowns")
+	_check(not panel.provider_badge.visible and not panel.provider_connections.visible and not panel.settings_actions["provider_delete"].visible, "An empty provider form omits saved-connection status, empty lists and deletion")
+	_check(not form["local_connection"].visible, "Cloud providers do not show unrelated local-network discovery controls")
+	if not output.is_empty():
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("providers-new.png"))
+		form["issuer"].show_popup()
+		await get_tree().create_timer(0.15).timeout
+		form["issuer"].get_popup().get_texture().get_image().save_png(output.path_join("providers-catalog.png"))
+		form["issuer"].get_popup().hide()
+	panel._select_issuer("deepseek")
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	form["key"].text = "fixture-provider-secret"
+	_check(panel._save_provider(), "A cloud connection can still save its API key through the single provider form")
+	var cloud_id = str(form["editing"])
+	_check(panel.provider_connections.visible and panel.lists["providers"].item_count == 1 and panel.lists["providers"].get_item_text(0).contains("Cloud") and panel.vault.read(cloud_id) == "fixture-provider-secret", "Saved connections appear in their own labeled list while keys remain in the vault")
+	form["new_connection"].pressed.emit()
+	_check(str(form.get("editing", "")).is_empty() and form["key"].text.is_empty() and not panel.provider_badge.visible and panel.config["providers"].size() == 1, "Adding another connection resets only the form and preserves the saved provider")
+	panel._select_issuer("lmstudio")
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	_check(form["local_connection"].visible and form["groups"]["url"].visible, "Local providers expose their LAN address and discovery in the same form")
+	form["url"].text = "192.168.1.20:1234"
+	_check(panel._save_provider(), "A local LM Studio connection still saves a manual LAN address without a token")
+	var local_id = str(form["editing"])
+	_check(panel.lists["providers"].item_count == 2 and panel.lists["providers"].get_item_text(1).contains("Local"), "Cloud and local connections remain recognizable in the saved list")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("providers-local.png"))
+		page.scroll_vertical = 100000
+		await get_tree().create_timer(0.2).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("providers-saved.png"))
+	panel.lists["providers"].item_selected.emit(0)
+	await get_tree().create_timer(0.1).timeout
+	_check(form["editing"] == cloud_id and panel._provider_issuer()["id"] == "deepseek" and form["key"].text.is_empty() and page.scroll_vertical == 0, "Selecting a saved connection opens its form at the top without exposing its key")
+	panel._select_issuer("ollama")
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	_check(str(form["editing"]).is_empty() and panel.config["providers"].size() == 2 and panel.vault.read(cloud_id) == "fixture-provider-secret", "Changing the provider starts a separate connection instead of overwriting the saved cloud key")
+	panel.lists["providers"].item_selected.emit(1)
+	_check(form["editing"] == local_id and form["url"].text.contains("192.168.1.20"), "The saved local connection loads by its own stable list row")
+	panel._remove_profile("providers", "provider")
+	_check(panel.config["providers"].size() == 1 and panel.config["providers"][0]["id"] == cloud_id and panel.vault.read(local_id).is_empty(), "Deleting the selected local connection preserves the other saved provider")
+	panel.vault.erase(cloud_id)
+	panel.config["providers"] = original
+	panel._refresh_lists()
+	if original.is_empty(): panel._new_provider()
+	else: panel._edit_provider(0)
+	panel.settings_window.hide()
+
 func _configuration_screenshots(output: String) -> void:
 	panel.chat.set_context(8192, 32768, 430)
 	await get_tree().create_timer(0.15).timeout
@@ -1430,16 +1492,16 @@ func _populated_chat_tests() -> void:
 	panel._refresh_lists()
 	panel._refresh_profiles()
 	panel._edit_provider(0)
-	_check(panel.provider_selector.item_count == 3 and panel.provider_selector.get_item_metadata(2) == "visual-provider" and not panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved profiles use a compact selector with advanced fields collapsed")
-	_check(not panel.provider_mark.visible and panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["key"].get_parent().get_parent(), "Saved provider keeps the service catalog visible above the API key")
+	_check(panel.lists["providers"].item_count == 1 and panel.lists["providers"].get_item_metadata(0) == "visual-provider" and panel.lists["providers"].visible and not panel.provider_advanced.visible, "Saved connections use a separate compact list with advanced fields collapsed")
+	_check(panel.forms["provider"]["issuer_label"].text == "Furnizor" and panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["key"].get_parent().get_parent(), "A single clearly named provider catalog stays above the API key")
 	panel._new_provider()
 	_check(panel.forms["provider"]["issuer"].get_parent() == panel.forms["provider"]["key"].get_parent().get_parent(), "New provider exposes service selection before the API key")
 	panel._edit_provider(0)
 	var previous_profiles = panel.config["providers"].duplicate(true)
 	panel.config["providers"].append({"id": "lan-fixture", "name": "LAN fixture", "issuer": "custom", "kind": "chat", "url": "http://192.168.1.20:1234/v1", "models": []})
 	panel._refresh_lists()
-	var local_index = panel.provider_selector.item_count - 1
-	panel.provider_selector.item_selected.emit(local_index)
+	var local_index = panel.lists["providers"].item_count - 1
+	panel.lists["providers"].item_selected.emit(local_index)
 	_check(panel.forms["provider"]["editing"] == "lan-fixture" and panel.forms["provider"]["url"].text.contains("192.168.1.20"), "Cloud/local separators retain stable profile selection instead of offset indexes")
 	panel._select_issuer("ollama")
 	_check(panel._provider_issuer()["id"] == "ollama", "Separated service picker resolves the correct catalog entry by ID")

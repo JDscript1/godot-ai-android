@@ -101,10 +101,9 @@ var turn_cancel: Dictionary = {}
 var tasks: Array = []
 var compact_summary = ""
 var compact_through = 0
-var provider_selector: OptionButton
 var provider_badge: Label
 var provider_advanced: VBoxContainer
-var provider_mark: TextureRect
+var provider_connections: VBoxContainer
 var active_mode = 2
 var workspace: RefCounted
 var integrations: RefCounted
@@ -318,29 +317,8 @@ func _build_settings() -> void:
 	add_child(completion_audio)
 	_apply_saved_placement.call_deferred()
 	var provider_tab = _tab("Furnizori AI", "providers")
-	var profile_row = HBoxContainer.new()
-	provider_tab.add_child(profile_row)
-	provider_mark = TextureRect.new()
-	provider_mark.texture = chat._icon("Providers")
-	provider_mark.custom_minimum_size = Vector2(28, 28) * EditorInterface.get_editor_scale()
-	provider_mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	provider_mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	profile_row.add_child(provider_mark)
-	provider_mark.hide()
-	provider_selector = OptionButton.new()
-	provider_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	profile_row.add_child(provider_selector)
-	provider_selector.item_selected.connect(func(index: int) -> void:
-		var id = str(provider_selector.get_item_metadata(index))
-		if id.is_empty(): _new_provider()
-		else:
-			for profile_index in range(config["providers"].size()):
-				if str(config["providers"][profile_index]["id"]) == id: _edit_provider(profile_index))
-	chat.icon_button(profile_row, "Add", "Adaugă un profil", _new_provider)
-	provider_badge = _label(provider_tab, "Adaugă cheia furnizorului pentru a conecta un model.")
-	provider_badge.add_theme_color_override("font_color", Color("a9b5cb"))
 	var p = _form(provider_tab, "provider")
-	_choice(p, "issuer", "Serviciu", [])
+	_choice(p, "issuer", "Furnizor", [])
 	p["issuer_label"] = p["container"].get_child(p["container"].get_child_count() - 2)
 	for group in ["cloud", "local"]:
 		p["issuer"].add_separator("Cloud" if group == "cloud" else "Local / self-hosted")
@@ -349,6 +327,8 @@ func _build_settings() -> void:
 			p["issuer"].add_icon_item(chat.provider_icon({"issuer": entry["id"]}), entry["name"])
 			p["issuer"].set_item_metadata(p["issuer"].item_count - 1, entry["id"])
 	_select_issuer("openai")
+	provider_badge = _label(p["container"], "")
+	provider_badge.hide()
 	_field(p, "key", "Cheie API", true)
 	p["key_label"] = p["groups"]["key"].get_child(0)
 	p["container"] = provider_tab
@@ -356,11 +336,11 @@ func _build_settings() -> void:
 	p["groups"]["url"].hide()
 	var row = _row(provider_tab)
 	p["save"] = _primary_button(row, "Salvează", _provider_save_action)
-	_action_button(row, "Verifică / modele", "provider_test", _test_provider)
+	_action_button(row, "Testează", "provider_test", _test_provider)
 	_action_button(row, "Șterge", "provider_delete", func() -> void: _remove_profile("providers", "provider"))
 	provider_advanced = _disclosure(provider_tab, "Opțiuni avansate")
 	p["container"] = provider_advanced
-	_field(p, "name", "Nume profil")
+	_field(p, "name", "Nume conexiune")
 	_check(p, "allow_http", "Permite HTTP pentru serverul local")
 	_choice(p, "hosting", "Găzduire", ["Detectare automată", "Cloud", "Local / self-hosted"])
 	_field(p, "manual_model", "Model manual (opțional)")
@@ -378,27 +358,48 @@ func _build_settings() -> void:
 	_refresh_provider_vision({})
 	p["issuer"].item_selected.connect(func(_index: int) -> void:
 		var entry = _provider_issuer()
-		provider_mark.texture = chat.provider_icon({"issuer": entry["id"]})
+		var previous = _profile_by_id(str(p.get("editing", "")))
+		if not previous.is_empty() and previous.get("issuer") != entry["id"]:
+			_clear_form("provider")
+			p["hosting"].select(0)
+			p["key"].placeholder_text = "Introdu cheia API"
+			_refresh_provider_vision({})
 		p["url"].text = str(entry["url"])
 		p["name"].text = str(entry["name"])
 		p["allow_http"].button_pressed = bool(entry.get("local", false))
 		p["groups"]["url"].visible = bool(entry.get("local", false)) or entry["id"] == "custom"
 		provider_advanced.visible = entry["id"] == "custom"
-		_layout_provider_service())
-	var discover = _button(provider_tab, "Caută servere în rețea…", _discover_providers)
+		_refresh_provider_connections()
+		_update_settings_controls())
+	p["local_connection"] = VBoxContainer.new()
+	provider_tab.add_child(p["local_connection"])
+	p["local_connection"].hide()
+	var discover = _button(p["local_connection"], "Caută servere în rețea…", _discover_providers)
 	discover.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_label(provider_tab, "Server local: alege serviciul, introdu IP-ul calculatorului și apasă Conectează. Funcționează și prin hotspot.")
+	_label(p["local_connection"], "Server local: introdu IP-ul calculatorului sau caută în rețea.")
 	p["key"].text_changed.connect(func(text: String) -> void:
 		var detection = Providers.detect(text)
 		if detection.get("ok", false) and str(p.get("editing", "")).is_empty():
 			var entry: Dictionary = detection["profile"]
 			_select_issuer(str(entry["id"]))
-			provider_mark.texture = chat.provider_icon({"issuer": entry["id"]})
 			p["url"].text = str(entry["url"])
 			p["name"].text = str(entry["name"]))
 	p["url"].text = str(Providers.CATALOG[0]["url"])
 	p["name"].text = str(Providers.CATALOG[0]["name"])
-	lists["providers"].item_selected.connect(_edit_provider)
+	provider_connections = VBoxContainer.new()
+	provider_tab.add_child(provider_connections)
+	var connection_header = HBoxContainer.new()
+	provider_connections.add_child(connection_header)
+	list_headers["providers"].text = "Conexiuni salvate"
+	list_headers["providers"].reparent(connection_header, false)
+	list_headers["providers"].size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	p["new_connection"] = chat.icon_button(connection_header, "Add", "Adaugă conexiune", _new_provider)
+	lists["providers"].reparent(provider_connections, false)
+	var connection_icon_size = int(20 * EditorInterface.get_editor_scale())
+	lists["providers"].fixed_icon_size = Vector2i(connection_icon_size, connection_icon_size)
+	lists["providers"].item_selected.connect(func(index: int) -> void:
+		_edit_provider(index)
+		_provider_form_top())
 	var account_tab = _tab("Abonamente", "accounts")
 	_label(account_tab, "Alege serviciul pe care vrei să îl conectezi.")
 	account_service = OptionButton.new()
@@ -1104,34 +1105,32 @@ func _select_issuer(id: String) -> void:
 	for index in range(picker.item_count):
 		if picker.get_item_metadata(index) == id: picker.select(index); return
 
-func _refresh_provider_selector() -> void:
-	if provider_selector == null: return
+func _refresh_provider_connections() -> void:
+	if provider_badge == null: return
 	_layout_provider_service()
-	provider_selector.clear()
-	provider_selector.add_item("Adaugă un furnizor")
-	provider_selector.set_item_metadata(0, "")
 	var editing = str(forms["provider"].get("editing", ""))
-	provider_mark.texture = chat.provider_icon({"issuer": _provider_issuer()["id"]})
-	provider_badge.text = "Adaugă cheia furnizorului pentru a conecta un model."
-	provider_badge.add_theme_color_override("font_color", Color("a9b5cb"))
-	for group in ["cloud", "local"]:
-		var profiles = config["providers"].filter(func(item: Dictionary) -> bool: return Providers.hosting(item) == group)
-		if profiles.is_empty(): continue
-		provider_selector.add_separator("Cloud" if group == "cloud" else "Local / self-hosted")
-		for profile in profiles:
-			provider_selector.add_icon_item(chat.provider_icon(profile), str(profile["name"]))
-			provider_selector.set_item_metadata(provider_selector.item_count - 1, str(profile["id"]))
-			if str(profile["id"]) == editing:
-				provider_selector.select(provider_selector.item_count - 1)
-				provider_mark.texture = chat.provider_icon(profile)
-				var count = profile.get("models", []).size()
-				provider_badge.text = ("● Conexiune verificată" if profile.has("verified_at") else "○ Configurat · conexiune neverificată") + " · %s %s" % [count, "model" if count == 1 else "modele"]
-				provider_badge.add_theme_color_override("font_color", Color("a2d2b0") if profile.has("verified_at") else Color("a9b5cb"))
+	provider_badge.hide()
+	lists["providers"].deselect_all()
+	for index in range(config["providers"].size()):
+		var profile: Dictionary = config["providers"][index]
+		if str(profile["id"]) != editing: continue
+		if index < lists["providers"].item_count: lists["providers"].select(index)
+		var count = profile.get("models", []).size()
+		provider_badge.text = ("Conexiune verificată" if profile.has("verified_at") else "Conexiune neverificată") + " · %s %s" % [count, "model" if count == 1 else "modele"]
+		provider_badge.add_theme_color_override("font_color", Color("a2d2b0") if profile.has("verified_at") else Color("a9b5cb"))
+		provider_badge.show()
+		break
+	if provider_connections != null: provider_connections.visible = not config["providers"].is_empty()
+
+func _provider_form_top() -> void:
+	var page = settings_tabs.get_tab_control(section_tabs["providers"]) as ScrollContainer
+	if page != null: page.set_deferred("scroll_vertical", 0)
 
 func _layout_provider_service() -> void:
 	var form: Dictionary = forms["provider"]
 	if not form.has("save"): return
 	var local = bool(_provider_issuer().get("local", false))
+	if form.has("local_connection"): form["local_connection"].visible = local or _provider_issuer()["id"] == "custom"
 	form["save"].text = "Conectează" if local else "Salvează"
 	form["key_label"].text = "Token (opțional)" if local else "Cheie API"
 	form["url"].placeholder_text = "IP sau URL al calculatorului" if local else "https://…"
@@ -1171,12 +1170,13 @@ func _discover_providers() -> void:
 			for key in ["name", "url"]: forms["provider"][key].text = found[key]
 			forms["provider"]["allow_http"].button_pressed = true
 			provider_advanced.show()
-			_refresh_provider_selector()
+			_refresh_provider_connections()
 			dialog.queue_free())
 	dialog.confirmed.connect(dialog.queue_free)
 	dialog.canceled.connect(dialog.queue_free)
 
 func _new_provider() -> void:
+	if busy or provider_testing: return
 	_clear_form("provider")
 	var form: Dictionary = forms["provider"]
 	_select_issuer("openai")
@@ -1187,7 +1187,9 @@ func _new_provider() -> void:
 	form["groups"]["url"].hide()
 	provider_advanced.hide()
 	_refresh_provider_vision({})
-	_refresh_provider_selector()
+	_refresh_provider_connections()
+	_update_settings_controls()
+	_provider_form_top()
 
 func _field(form: Dictionary, id: String, title: String, secret: bool = false) -> void:
 	var group = _form_container(form["container"])
@@ -1340,7 +1342,8 @@ func _refresh_lists() -> void:
 		for item in config[key]:
 			var caption = str(item.get("name", item["id"]))
 			if key == "generation": caption += " · " + ("3D" if item.get("asset_kind") == "mesh" else "Imagine")
-			lists[key].add_item(caption)
+			if key == "providers": caption += " · " + ("Local" if Providers.hosting(item) == "local" else "Cloud")
+			lists[key].add_item(caption, chat.provider_icon(item) if key == "providers" else null)
 			lists[key].set_item_metadata(lists[key].item_count - 1, item["id"])
 			if item["id"] == selected: lists[key].select(lists[key].item_count - 1)
 	if lists.has("jobs"):
@@ -1360,7 +1363,7 @@ func _refresh_lists() -> void:
 		if forms.has("generation") and forms["generation"].has("jobs_heading"): forms["generation"]["jobs_heading"].visible = has_jobs
 	_refresh_journal()
 	_refresh_list_visibility()
-	_refresh_provider_selector()
+	_refresh_provider_connections()
 	_refresh_export_formats()
 	_update_settings_controls()
 
@@ -1379,6 +1382,7 @@ func _action_button(parent: Node, title: String, key: String, callback: Callable
 
 func _update_settings_controls() -> void:
 	if forms.has("provider") and forms["provider"].has("save"): forms["provider"]["save"].disabled = busy or provider_testing
+	if forms.has("provider") and forms["provider"].has("new_connection"): forms["provider"]["new_connection"].disabled = busy or provider_testing
 	if forms.has("generation") and forms["generation"].has("export_stop"): forms["generation"]["export_stop"].visible = busy and exporting_asset
 	if forms.has("github"):
 		_action_available("github_repositories", not github_repos_loading and github_has_token, "Adaugă tokenul personal GitHub.")
@@ -1390,6 +1394,7 @@ func _update_settings_controls() -> void:
 		var id = str(forms[entry[0]].get("editing", ""))
 		var exists = config[entry[1]].any(func(item: Dictionary) -> bool: return item["id"] == id)
 		for suffix in ["delete", "test", "run"]: _action_available(entry[0] + "_" + suffix, exists and not (entry[0] == "provider" and provider_testing), "Selectează un profil salvat și așteaptă verificarea.")
+		if entry[0] == "provider" and settings_actions.has("provider_delete"): settings_actions["provider_delete"].visible = exists
 	_action_available("generate", not _generation_profile().is_empty(), "Selectează un profil de generare salvat.")
 	var job = _selected_job() if lists.has("jobs") else {}
 	_action_available("job_refresh", not job.is_empty() and not _generation_profile(str(job.get("profile_id", ""))).is_empty(), "Selectează un rezultat cu profil conectat.")
@@ -1479,7 +1484,7 @@ func _save_provider() -> bool:
 	p["editing"] = id
 	_upsert("providers", profile)
 	_refresh_provider_vision(profile)
-	_status("Profil salvat. Folosește Testează / modele pentru catalogul disponibil.")
+	_status("Conexiune salvată. Apasă Testează pentru modele.")
 	return true
 
 func _provider_save_action() -> void:
@@ -1505,7 +1510,7 @@ func _edit_provider(index: int) -> void:
 	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
 	provider_advanced.visible = profile.get("issuer") == "custom"
 	forms["provider"]["groups"]["url"].visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "custom"]
-	_refresh_provider_selector()
+	_refresh_provider_connections()
 	settings_status.hide()
 
 func _test_provider() -> bool:
@@ -2901,9 +2906,9 @@ func _refresh_list_visibility() -> void:
 	if account_logout != null: account_logout.visible = lists["accounts"].item_count > 0
 	for id in list_headers:
 		var visible = lists[id].item_count > 0 and not list_headers[id].text.is_empty()
-		if id == "providers": visible = false
 		var font = lists[id].get_theme_font("font")
-		lists[id].custom_minimum_size.y = mini(lists[id].item_count, 3) * (font.get_height(lists[id].get_theme_font_size("font_size")) + 6 * EditorInterface.get_editor_scale()) + lists[id].get_theme_stylebox("panel").get_minimum_size().y
+		var row_height = maxf(font.get_height(lists[id].get_theme_font_size("font_size")), lists[id].fixed_icon_size.y)
+		lists[id].custom_minimum_size.y = mini(lists[id].item_count, 3) * (row_height + 6 * EditorInterface.get_editor_scale()) + lists[id].get_theme_stylebox("panel").get_minimum_size().y
 		lists[id].visible = visible
 		list_headers[id].visible = visible
 
