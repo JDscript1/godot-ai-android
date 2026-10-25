@@ -33,7 +33,35 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — panou Blender simplificat, 25.10.2026
+## Etapa curentă — dezinstalare reală Blender pentru testul instalării, 25.10.2026
+
+La cererea utilizatorului, am eliminat **Blender CLI 4.3.2** din containerul
+Termux PRoot `debian`, folosind chiar worker-ul inclus în APK-ul livrat
+`a23d260`. Înainte de execuție, am verificat că nu existau procese Blender sau
+sarcini Blender active și că simularea apt elimina numai pachetul `blender`.
+Jobul real de dezinstalare a rulat într-un spațiu de verificare separat, fără a
+rescrie istoricul sau configurația utilizatorului.
+
+- Pachetul `blender` (`4.3.2+dfsg-2`) a fost eliminat. Inventarul containerului
+  a trecut de la **478 la 477** pachete instalate: niciun alt pachet eliminat,
+  adăugat sau actualizat. Nu s-a rulat `autoremove`.
+- Detectarea ulterioară prin worker a întors `found: false`. Containerul Debian,
+  Termux, dependențele și cele **12 fișiere** din sarcinile Blender ale
+  utilizatorului au rămas intacte. Blender nu a fost reinstalat.
+- Dovezi: `.ai-qa/blender-real-removal-20261025/report.json`,
+  `packages-before.json`, `packages-after.json`, `uninstall-result.json` și
+  jurnalul jobului din subdirectorul `worker/jobs/` al aceleiași probe.
+
+Acesta este un test **real al comenzii CLI și al worker-ului**. Apăsarea
+butonului în APK pe dispozitiv și instalarea Blender din starea „absent” rămân
+de verificat de utilizator. APK-ul din Download nu a fost recompilat sau
+înlocuit în această etapă.
+
+Jurnal: 25.10.2026 — eliminat la cerere Blender CLI real prin worker-ul livrat;
+inventarul arată exclusiv dispariția pachetului `blender`, iar descoperirea
+confirmă starea absentă pentru testul instalării din interfață.
+
+## Etapa precedentă — panou Blender simplificat, 25.10.2026
 
 **Compilat, verificat și livrat în APK-ul `a23d260`.** Cardul Android
 are status și un singur buton: **Instalează Termux** → **Instalează Blender** →
@@ -74,7 +102,8 @@ Verificări efectuate:
 - **26 teste backend/bootstrap**, zero eșecuri: eliminare strictă Blender,
   păstrarea fișierelor, refuz la dependențe/amprentă schimbată și idempotenta
   dezinstalării. `.ai-qa/blender-simple-backend.log`. Tranzacțiile de pachete
-  sunt simulate în directoare temporare; nu s-a dezinstalat Blender-ul real.
+  au fost simulate în directoare temporare la momentul livrării; testul real
+  ulterior este documentat în etapa curentă.
 - **67 verificări în editor la scară de telefon și 67 pe desktop**, zero eșecuri: flux manual,
   intenție restaurată, instalare/verificare, activare, dezinstalare, permisiune,
   fallback RUN_COMMAND, conector vechi, Jurnal și indicația de lipire derulată
@@ -112,9 +141,10 @@ Hash-ul copiei finale și checksum-ul au fost reverificate. În Download există
 un singur instalator al fork-ului; alte descărcări sunt păstrate.
 Raport: `.ai-qa/delivery-a23d260.json`.
 
-Nu s-au apelat furnizori plătiți. Instalarea/dezinstalarea reală prin managerul
-de pachete nu a fost executată asupra mediului utilizatorului. Fluxul fizic din
-APK-ul nou rămâne de verificat. Descrierea fluxului și limitele sale:
+Nu s-au apelat furnizori plătiți. La momentul livrării, instalarea/dezinstalarea
+reală prin managerul de pachete nu fusese executată asupra mediului
+utilizatorului; dezinstalarea reală ulterioară este documentată în etapa curentă.
+Fluxul fizic din APK-ul nou rămâne de verificat. Descrierea fluxului și limitele sale:
 [`docs/AI_TERMUX_BLENDER.md`](docs/AI_TERMUX_BLENDER.md).
 
 Jurnal: 25.10.2026 — simplificat Blender la status și acțiunea etapei curente;
