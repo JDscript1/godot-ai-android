@@ -3,6 +3,7 @@ extends RefCounted
 ## Optional Android Blender backend. The AI harness itself stays inside Godot.
 signal changed
 signal diagnostic(entry: Dictionary)
+signal workflow_finished(action: String, result: Dictionary)
 static var Common: GDScript
 static var Transport: GDScript
 static var FileRegistry: GDScript
@@ -29,6 +30,8 @@ var last_diagnostic = ""
 var last_check = 0
 var manual_setup_pending = false
 var discovery_complete = false
+var workflow: Dictionary = {}
+var requesting = false
 
 const ACTIVATION = "mkdir -p ~/.termux && touch ~/.termux/termux.properties && sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties && printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties && termux-reload-settings"
 const TERMINAL = ["completed", "failed", "cancelled", "interrupted"]
@@ -46,6 +49,8 @@ func configure(global_directory: String, project_data: String) -> void:
 	DirAccess.make_dir_recursive_absolute(project_directory)
 	verified = Common.read_json(directory.path_join("verified.json"), {})
 	pending = Common.read_json(project_directory.path_join("pending.json"), {})
+	workflow = Common.read_json(project_directory.path_join("workflow.json"), {})
+	if workflow.get("action", "") not in ["install", "uninstall"]: workflow = {}
 	var saved = Common.read_json(directory.path_join("diagnostics.json"), {})
 	log_entries = saved.get("entries", []).slice(-100)
 	job_log = str(saved.get("job_log", "")).right(LOG_LIMIT)
@@ -84,15 +89,15 @@ func diagnostics() -> Dictionary:
 	if not state.get("supported", true): return {"code": "unsupported_arch", "message": "Configurarea automată necesită Android ARM64.", "next_action": ""}
 	if not state.get("installed", false): return {"code": "missing_termux", "message": "Termux nu este instalat sau nu este vizibil editorului.", "next_action": "Instalează și deschide Termux o dată."}
 	if not state.get("compatible", true): return {"code": "incompatible_termux", "message": "Este necesar Termux 0.118 sau mai nou.", "next_action": "Actualizează Termux."}
-	if manual_mode() and not connected: return {"code": "manual_start_required", "message": "Această versiune Termux necesită pornirea conectorului din terminal.", "next_action": "Apasă Pornește în Termux, lipește comanda, apasă Enter și revino în Godot."}
-	if not manual_mode() and not state.get("permission", false): return {"code": "permission_required", "message": "Permisiunea Android pentru comenzi Termux nu este acordată.", "next_action": "Apasă Acordă permisiunea în Integrări → Blender."}
+	if manual_mode() and not connected: return {"code": "manual_start_required", "message": "Această versiune Termux necesită pornirea conectorului din terminal.", "next_action": "Apasă Instalează Blender, lipește comanda în Termux, apasă Enter și revino în Godot."}
+	if not manual_mode() and not state.get("permission", false): return {"code": "permission_required", "message": "Permisiunea Android pentru comenzi Termux nu este acordată.", "next_action": "Apasă Instalează Blender și confirmă permisiunea Android."}
 	if not str(state.get("error", "")).is_empty(): return {"code": "termux_start_failed", "message": _safe(str(state["error"])).left(6000), "next_action": "Verifică jurnalul și activarea comenzilor externe în Termux."}
 	if not str(state.get("error_code", "")).is_empty(): return {"code": str(state["error_code"]), "message": _safe(str(state.get("stage", "Conectarea Blender a eșuat."))), "next_action": "Deschide Integrări → Blender și verifică jurnalul."}
-	if not pending.is_empty(): return {"code": "pending_job", "message": "Există o sarcină Blender de recuperat.", "next_action": "Apasă Recuperează în Integrări → Blender."}
+	if not pending.is_empty(): return {"code": "pending_job", "message": "Există o sarcină Blender de recuperat.", "next_action": "Apasă Instalează Blender pentru a continua operația."}
 	if connected and discovery_complete and runtime.is_empty(): return {"code": "runtime_missing", "message": "Conectorul răspunde, dar Blender nu a fost detectat.", "next_action": "Apasă Instalează Blender în Integrări → Blender."}
-	if verified.is_empty(): return {"code": "setup_required", "message": "Configurarea inițială Blender nu a fost finalizată.", "next_action": "Apasă Conectează în Integrări → Blender."}
-	if not connected: return {"code": "disconnected", "message": "Conectorul Blender nu răspunde.", "next_action": "Deschide Termux, apoi apasă Conectează în Integrări → Blender."}
-	return {"code": "verification_required", "message": "Instalarea Blender necesită verificare.", "next_action": "Apasă Verifică în Integrări → Blender."}
+	if verified.is_empty(): return {"code": "setup_required", "message": "Configurarea inițială Blender nu a fost finalizată.", "next_action": "Apasă Instalează Blender în Integrări."}
+	if not connected: return {"code": "disconnected", "message": "Conectorul Blender nu răspunde.", "next_action": "Apasă Instalează Blender pentru reconectare."}
+	return {"code": "verification_required", "message": "Instalarea Blender necesită verificare.", "next_action": "Apasă Instalează Blender pentru verificare."}
 
 func _report_state() -> void:
 	var detail = diagnostics()
@@ -130,6 +135,80 @@ func prepare_manual() -> Dictionary:
 	state.erase("error")
 	return native("open_termux")
 
+func request_setup(action: String) -> Dictionary:
+	if requesting or working or refreshing: return Common.failure("Blender este ocupat.", "busy")
+	requesting = true
+	var result = await _request_setup(action)
+	requesting = false
+	changed.emit()
+	return result
+
+func _request_setup(action: String) -> Dictionary:
+	if action not in ["install", "uninstall"]: return Common.failure("Operație Blender invalidă.", "invalid_action")
+	if working or refreshing: return Common.failure("Blender este ocupat.", "busy")
+	# Persist only the user's explicit intent; periodic discovery never installs packages.
+	workflow = {"action": action, "runtime": runtime.duplicate(true)}
+	if Common.atomic_json(project_directory.path_join("workflow.json"), workflow) != OK:
+		workflow = {}
+		return Common.failure("Nu pot salva operația Blender.", "checkpoint_failed")
+	state.merge(native("status"), true)
+	if not state.get("installed", false):
+		_finish_workflow(Common.failure("Instalează Termux din Play Store.", "missing_termux"))
+		return Common.failure("Instalează Termux din Play Store.", "missing_termux")
+	var listening = await _health() if _credentials() else false
+	if manual_mode() and not listening:
+		connected = false
+		return prepare_manual()
+	if action == "uninstall" and connected and int(state.get("worker_revision", 0)) < 2:
+		if not str(state.get("worker_active", "")).is_empty():
+			var occupied = Common.failure("Conectorul vechi are o sarcină în curs. Așteaptă finalizarea înainte de actualizare.", "busy")
+			_finish_workflow(occupied)
+			return occupied
+		workflow["restart_required"] = true
+		if Common.atomic_json(project_directory.path_join("workflow.json"), workflow) != OK: return Common.failure("Nu pot salva operația Blender.", "checkpoint_failed")
+		note("Actualizează conectorul vechi: în Termux apasă Ctrl+C, lipește comanda copiată, apasă Enter și revino în Godot. Dezinstalarea va continua automat.", "worker_update_required")
+		return prepare_manual()
+	if not manual_mode() and not state.get("permission", false):
+		return native("permission")
+	return await _advance_workflow()
+
+func _finish_workflow(result: Dictionary) -> void:
+	var action = str(workflow.get("action", ""))
+	workflow = {}
+	manual_setup_pending = false
+	Common.atomic_json(project_directory.path_join("workflow.json"), {})
+	workflow_finished.emit(action, result)
+	changed.emit()
+
+func _advance_workflow() -> Dictionary:
+	var action = str(workflow.get("action", ""))
+	if action.is_empty(): return Common.failure("Nicio operație Blender în așteptare.", "invalid_action")
+	var result: Dictionary
+	if not pending.is_empty():
+		result = await setup("resume")
+		if not result.get("ok", false):
+			_finish_workflow(result)
+			return result
+		if result.get("result", {}).get("outputs") is Array: workflow_finished.emit("recover", result)
+		if action == "uninstall" and result.get("result", {}).get("removed", false):
+			_finish_workflow(result)
+			return result
+	if action == "install":
+		# Reuse an existing runtime, or install and verify it in the same operation.
+		result = Common.success(runtime) if available() else await setup("install")
+	else:
+		result = await setup("uninstall")
+	if not result.get("ok", false) and not manual_mode() and not connected and not workflow.get("manual_handoff", false) and result.get("code") in ["termux_start_failed", "connection_failed"]:
+		# Some direct variants expose RUN_COMMAND but disable external execution.
+		# Use the same paste handoff instead of adding activation/settings controls.
+		workflow["manual_handoff"] = true
+		if Common.atomic_json(project_directory.path_join("workflow.json"), workflow) == OK:
+			var prepared = prepare_manual()
+			if prepared.get("ok", false): return prepared
+			result = prepared
+	_finish_workflow(result)
+	return result
+
 static func fingerprint(value: Dictionary) -> String:
 	return "%s|%s|%s|%s|%s" % [value.get("kind", ""), value.get("container", ""), value.get("executable", ""), value.get("version", ""), value.get("binary_stamp", "")]
 
@@ -159,6 +238,8 @@ func _health(timeout: float = 1.0) -> bool:
 	var reply = await _http("/v1/health", HTTPClient.METHOD_GET, null, {"timeout": timeout})
 	connected = reply.get("ok", false) and int(reply.get("protocol", 0)) == 1
 	if connected:
+		state["worker_revision"] = int(reply.get("revision", 0))
+		state["worker_active"] = str(reply["active"]) if reply.get("active") != null else ""
 		runtime = reply.get("runtime", {})
 		if not runtime.is_empty(): discovery_complete = true
 		if state.get("error_code") in ["permission_required", "manual_start_required", "connection_failed", "termux_start_failed"]: state.erase("error_code")
@@ -167,14 +248,19 @@ func _health(timeout: float = 1.0) -> bool:
 	return connected
 
 func refresh() -> void:
-	if working or refreshing: return
+	if working or refreshing or requesting: return
 	refreshing = true
 	state.merge(native("status"), true)
 	connected = false
 	if state.get("installed", false) and (manual_mode() or state.get("permission", false)) and _credentials(): await _health()
 	last_check = Time.get_ticks_msec()
 	refreshing = false
-	if manual_mode() and connected and manual_setup_pending:
+	var worker_current = workflow.get("action") != "uninstall" or int(state.get("worker_revision", 0)) >= 2
+	var can_start_direct = not manual_mode() and state.get("permission", false) and not workflow.get("manual_handoff", false)
+	if not workflow.is_empty() and worker_current and (connected or can_start_direct):
+		manual_setup_pending = false
+		await _advance_workflow()
+	elif workflow.is_empty() and manual_mode() and connected and manual_setup_pending:
 		manual_setup_pending = false
 		if pending.is_empty(): await setup("connect")
 	_report_state()
@@ -245,7 +331,7 @@ func _wait(id: String, cancel: Dictionary) -> Dictionary:
 		var response = await _http("/v1/jobs/" + id)
 		if not response.get("ok", false):
 			connected = false
-			return Common.failure("Conexiune întreruptă. Folosește Recuperează pentru sarcina " + id + ".", "connection_lost")
+			return Common.failure("Conexiune întreruptă. Apasă Instalează Blender pentru a recupera sarcina " + id + ".", "connection_lost")
 		var job: Dictionary = response["result"]
 		state["stage"] = str(job.get("stage", "În lucru…"))
 		if job.get("cancel_requested", false): state["stage"] = "Oprire după etapa curentă…" if job.get("kind") == "install" else "Oprire…"
@@ -264,10 +350,10 @@ func _wait(id: String, cancel: Dictionary) -> Dictionary:
 
 func _submit(kind: String, args: Dictionary, cancel: Dictionary, id: String = "", context: Dictionary = {}) -> Dictionary:
 	if cancel.get("cancelled", false): return Common.failure("Sarcină oprită.", "cancelled")
-	if not pending.is_empty(): return Common.failure("Există o sarcină de recuperat. Folosește Recuperează în Integrări.", "pending_job")
+	if not pending.is_empty(): return Common.failure("Există o sarcină de recuperat. Apasă Instalează Blender în Integrări.", "pending_job")
 	if id.is_empty(): id = Common.uid()
 	job_log = ""
-	note(str({"discover": "Caut Blender în instalările existente.", "install": "Pornesc instalarea Blender.", "verify": "Verific exportul Blender și importul GLB în Godot.", "run": "Pornesc sarcina Blender."}.get(kind, "Pornesc sarcina Blender.")), kind)
+	note(str({"discover": "Caut Blender în instalările existente.", "install": "Pornesc instalarea Blender.", "uninstall": "Dezinstalez pachetul Blender; păstrez Termux și fișierele.", "verify": "Verific exportul Blender și importul GLB în Godot.", "run": "Pornesc sarcina Blender."}.get(kind, "Pornesc sarcina Blender.")), kind)
 	if kind == "verify":
 		verified = {}
 		Common.atomic_json(directory.path_join("verified.json"), {})
@@ -287,14 +373,18 @@ func setup(action: String) -> Dictionary:
 	working = true
 	setup_cancel = {}
 	var response = await _connect(action in ["connect", "install", "repair"])
+	if action == "uninstall" and response.get("ok", false) and int(state.get("worker_revision", 0)) < 2:
+		response = Common.failure("Actualizează conectorul Termux apăsând din nou Dezinstalează Blender.", "worker_update_required")
 	if response.get("ok", false):
 		if action == "resume":
 			response = await _resume(setup_cancel)
 		else:
-			var kind = "install" if action in ["install", "repair"] else "discover" if action == "connect" else "verify"
-			response = await _submit(kind, {"repair": true} if action == "repair" else {}, setup_cancel)
+			var kind = "uninstall" if action == "uninstall" else "install" if action in ["install", "repair"] else "discover" if action == "connect" else "verify"
+			var args = {"runtime": workflow.get("runtime", runtime)} if kind == "uninstall" else {"repair": true} if action in ["install", "repair"] else {}
+			response = await _submit(kind, args, setup_cancel)
 			if response.get("ok", false):
-				if kind == "verify": response = await _accept_verification(response["result"], setup_cancel)
+				if kind == "uninstall": response = await _accept_uninstall(response["result"])
+				elif kind == "verify": response = await _accept_verification(response["result"], setup_cancel)
 				else:
 					discovery_complete = true
 					runtime = response["result"] if response["result"].get("found", false) else {}
@@ -312,6 +402,17 @@ func setup(action: String) -> Dictionary:
 	changed.emit()
 	return response
 
+func _accept_uninstall(result: Dictionary) -> Dictionary:
+	if not result.get("removed", false): return Common.failure("Dezinstalarea Blender nu a fost confirmată.", "uninstall_failed")
+	if Common.atomic_json(directory.path_join("verified.json"), {}) != OK: return Common.failure("Nu pot salva starea Blender.", "checkpoint_failed")
+	verified = {}
+	runtime = {}
+	discovery_complete = true
+	var id = str(pending.get("id", ""))
+	if not _clear_pending(): return Common.failure("Reia confirmarea dezinstalării.", "checkpoint_failed")
+	await _http("/v1/jobs/" + id + "/ack", HTTPClient.METHOD_POST, {})
+	return Common.success(result)
+
 func _resume(cancel: Dictionary) -> Dictionary:
 	if pending.is_empty(): return Common.failure("Nu există o sarcină de recuperat.", "missing_job")
 	var status = await _http("/v1/jobs/" + str(pending["id"]))
@@ -327,6 +428,7 @@ func _resume(cancel: Dictionary) -> Dictionary:
 	var result = await _wait(str(pending["id"]), cancel)
 	if not result.get("ok", false): return result
 	match str(pending.get("kind")):
+		"uninstall": return await _accept_uninstall(result["result"])
 		"verify": return await _accept_verification(result["result"], cancel)
 		"run": return await _accept_run(result["result"], cancel)
 		_:
@@ -411,7 +513,7 @@ static func scene_mesh_count(scene: Node) -> int:
 	return count
 
 func run(args: Dictionary, cancel: Dictionary = {}) -> Dictionary:
-	if working or refreshing: return Common.failure("Blender este ocupat.", "busy")
+	if working or refreshing or requesting or not workflow.is_empty(): return Common.failure("Blender este ocupat.", "busy")
 	if not available(): return Common.failure("Verifică Blender din Integrări înainte de utilizare.", "blender_not_ready")
 	working = true
 	var response = await _connect()

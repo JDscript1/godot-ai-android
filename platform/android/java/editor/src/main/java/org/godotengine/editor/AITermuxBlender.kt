@@ -113,12 +113,15 @@ object AITermuxBlender {
                 "settings", "open_termux", "install_termux" -> {
                     val intent = when (action) {
                         "settings" -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${current.packageName}"))
-                        "install_termux" -> Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-app/releases/latest"))
+                        "install_termux" -> Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$PACKAGE")).setPackage("com.android.vending")
                         else -> current.packageManager.getLaunchIntentForPackage(PACKAGE)
                     }
                     if (intent == null) failure("Termux nu este instalat.") else {
                         main.post { try { current.startActivity(intent) } catch (_: Exception) {
-                            preferences(current).edit().putString("error", "Nu pot deschide aplicația. Verifică instalarea Termux.").apply()
+                            if (action == "install_termux") {
+                                try { current.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$PACKAGE"))) }
+                                catch (_: Exception) { preferences(current).edit().putString("error", "Nu pot deschide Play Store.").apply() }
+                            } else preferences(current).edit().putString("error", "Nu pot deschide aplicația. Verifică instalarea Termux.").apply()
                         } }
                         JSONObject().put("ok", true)
                     }

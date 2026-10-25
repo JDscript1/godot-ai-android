@@ -218,6 +218,98 @@ class BackendTests(unittest.TestCase):
             self.assertTrue(self.backend.install("unused")["reused"])
             command.assert_not_called()
 
+    def uninstall_fixture(self, native=False):
+        prefix = Path(self.scratch.name) / "prefix"
+        runtime = ({"kind": "native", "executable": str(prefix / "bin/blender")} if native else
+                   {"kind": "proot", "container": "existing-debian", "executable": "/usr/bin/blender"})
+        binary = (prefix / "bin/blender" if native else
+                  prefix / "var/lib/proot-distro/containers/existing-debian/rootfs/usr/bin/blender")
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"fixture executable")
+        runtime["version"] = "Blender fixture"
+        with patch.dict(os.environ, {"PREFIX": str(prefix)}):
+            runtime["binary_stamp"] = self.backend.binary_stamp(runtime)
+        self.backend.runtime = dict(runtime)
+        return prefix, runtime, binary
+
+    def test_uninstall_removes_only_blender_package_and_preserves_files(self):
+        for native in (False, True):
+            with self.subTest(native=native):
+                prefix, runtime, binary = self.uninstall_fixture(native)
+                asset = binary.parent / "user-project.blend"
+                asset.write_bytes(b"preserved")
+                commands = []
+                def remove_package(_id, argv, *_args):
+                    commands.append(argv)
+                    binary.unlink()
+                plan = type("Plan", (), {"returncode": 0, "stdout": "Remv blender [4.3.2]\n"})()
+                with patch.dict(os.environ, {"PREFIX": str(prefix)}), \
+                     patch.object(worker.subprocess, "run", return_value=plan), \
+                     patch.object(self.backend, "command", side_effect=remove_package):
+                    result = self.backend.uninstall(self.stage()["id"], runtime)
+                self.assertTrue(result["removed"])
+                self.assertEqual(commands[0][-3:], ["dpkg", "--remove", "blender"])
+                self.assertEqual(len(commands), 1)
+                self.assertEqual(asset.read_bytes(), b"preserved")
+                self.assertTrue(binary.parent.exists())
+                self.assertEqual(self.backend.runtime, {})
+                self.assertEqual(worker.read_json(self.backend.root / "runtime.json"), {})
+
+    def test_uninstall_refuses_changed_runtime_before_package_commands(self):
+        prefix, runtime, _binary = self.uninstall_fixture()
+        changed = dict(runtime, binary_stamp="stale")
+        with patch.dict(os.environ, {"PREFIX": str(prefix)}), patch.object(self.backend, "command") as command:
+            with self.assertRaises(worker.Fault) as failure:
+                self.backend.uninstall("unused", changed)
+            self.assertEqual(failure.exception.code, "runtime_changed")
+            command.assert_not_called()
+
+    def test_uninstall_refuses_dependency_removal_and_unknown_package_managers(self):
+        prefix, runtime, binary = self.uninstall_fixture()
+        for result in (type("Plan", (), {"returncode": 0, "stdout": "Remv blender [4.3]\nRemv user-addon [1]\n"})(),
+                       type("Plan", (), {"returncode": 100, "stdout": ""})()):
+            with patch.dict(os.environ, {"PREFIX": str(prefix)}), \
+                 patch.object(worker.subprocess, "run", return_value=result), \
+                 patch.object(self.backend, "command") as command:
+                with self.assertRaises(worker.Fault) as failure:
+                    self.backend.uninstall(self.stage()["id"], runtime)
+                self.assertEqual(failure.exception.code, "uninstall_conflict")
+                command.assert_not_called()
+        self.assertTrue(binary.exists())
+
+    def test_uninstall_rechecks_executable_after_package_plan(self):
+        prefix, runtime, binary = self.uninstall_fixture()
+        def plan(*_args, **_kwargs):
+            binary.write_bytes(b"changed executable")
+            return type("Plan", (), {"returncode": 0, "stdout": "Remv blender [4.3]\n"})()
+        with patch.dict(os.environ, {"PREFIX": str(prefix)}), \
+             patch.object(worker.subprocess, "run", side_effect=plan), \
+             patch.object(self.backend, "command") as command:
+            with self.assertRaises(worker.Fault) as failure:
+                self.backend.uninstall(self.stage()["id"], runtime)
+            self.assertEqual(failure.exception.code, "runtime_changed")
+            command.assert_not_called()
+
+    def test_uninstall_does_not_report_success_if_executable_remains(self):
+        prefix, runtime, _binary = self.uninstall_fixture()
+        plan = type("Plan", (), {"returncode": 0, "stdout": "Remv blender [4.3]\n"})()
+        with patch.dict(os.environ, {"PREFIX": str(prefix)}), \
+             patch.object(worker.subprocess, "run", return_value=plan), \
+             patch.object(self.backend, "command"):
+            with self.assertRaises(worker.Fault) as failure:
+                self.backend.uninstall(self.stage()["id"], runtime)
+            self.assertEqual(failure.exception.code, "uninstall_failed")
+        self.assertEqual(self.backend.runtime, runtime)
+
+    def test_repeated_uninstall_job_is_not_executed_twice(self):
+        request = {"id": str(uuid.uuid4()), "kind": "uninstall", "args": {"runtime": {"kind": "fixture"}}}
+        with patch.object(self.backend, "uninstall", return_value={"removed": True}) as uninstall:
+            self.backend.create(request)
+            self.assertEqual(self.wait(request["id"])["status"], "completed")
+            self.assertEqual(self.backend.create(request)["status"], "completed")
+            self.assertEqual(self.backend.start(request["id"])["status"], "completed")
+            self.assertEqual(uninstall.call_count, 1)
+
     def test_changed_or_removed_executable_invalidates_capabilities(self):
         binary = Path(self.scratch.name) / "blender"
         binary.write_bytes(b"original")

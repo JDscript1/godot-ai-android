@@ -7,57 +7,61 @@ sunt dependențe numai ale integrării opționale Blender. Legătura Android pri
 Intent și configurarea inițială trebuie verificate din aplicația instalată
 înainte ca funcția să fie declarată validată pe dispozitiv.
 
-## Configurare
+## Configurare simplificată în sursele curente — 25 octombrie 2026
 
-### Termux din Google Play
+Această interfață este implementată și verificată în editor; nu este încă inclusă
+în APK-ul `cd1acda` menționat mai sus.
 
-APK-ul curent verifică manifestul Termux, nu numai
-numărul versiunii. Distribuția Google Play verificată (`googleplay.2026.10.09`)
-nu declară `RUN_COMMAND` și nu include serviciul extern. În acest caz nu există
-un dialog Android pentru acea permisiune. Vezi
+Panoul Android conține statusul și un singur buton pentru etapa curentă:
+
+1. **Instalează Termux**, dacă aplicația lipsește, deschide
+   [Termux în Play Store](https://play.google.com/store/apps/details?id=com.termux).
+   Dacă magazinul nu poate fi deschis, se folosește pagina sa web.
+2. La revenire apare **Instalează Blender**. Acesta reutilizează Blender existent
+   sau instalează Blender CLI într-un mediu Debian dedicat, apoi verifică exportul
+   GLB și importul real în Godot. Agentul primește acces după verificare.
+3. Panoul afișează **Blender Active**, cu **Dezinstalează Blender** dedesubt.
+   Dezinstalarea elimină numai pachetul Blender. Termux, containerele, dependențele
+   și fișierele generate sunt păstrate. O instalare care nu este gestionată de
+   apt/dpkg sau a cărei eliminare ar afecta alte pachete este refuzată cu diagnostic.
+
+Nu există bifa de activare separată, butoane Conectează/Verifică/Recuperează,
+controale de permisiuni, reparare sau consolă în card. Progresul folosește statusul
+mic, iar diagnosticul și ieșirea Blender se găsesc în pagina principală **Jurnal**.
+
+### Pornirea prin Termux
+
+Distribuția Play Store verificată nu oferă serviciul extern `RUN_COMMAND`; vezi
 [manifestul distribuției](https://github.com/termux-play-store/termux-apps/blob/main/termux-app/src/main/AndroidManifest.xml).
+**Instalează Blender** copiază comanda privată și deschide Termux. La prima
+pornire, așteaptă inițializarea Termux, lipește comanda și apasă Enter, apoi revino
+în Godot. Instalarea și verificarea continuă automat. Acest pas manual nu poate
+fi înlocuit cu o solicitare de permisiune absentă din distribuție.
 
-În **Setări → Integrări → Blender**:
+Pentru variantele cu `RUN_COMMAND`, aceeași acțiune solicită permisiunea Android
+când este necesar și continuă după acordare. Dacă serviciul există, dar refuză
+execuția externă, se folosește aceeași pornire prin copiere/lipire. Nu se adaugă
+controale tehnice în panou și nu se modifică automat proprietățile Termux.
 
-1. Apasă **Pornește în Termux**. Comanda de conectare este copiată în clipboard
-   și se deschide terminalul.
-2. Lipește comanda și apasă Enter; păstrează sesiunea deschisă.
-3. Revino în Godot. Editorul detectează conectorul, caută instalarea Blender
-   existentă și verifică exportul GLB/importul Godot. Dacă Blender lipsește,
-   instalarea este propusă separat.
-4. Activează **Permite agentului să utilizeze Blender** după verificare.
+Operația cerută este salvată înainte de deschiderea Termux și poate continua după
+redeschiderea editorului. Dacă un job există deja, este recuperat cu același ID.
+Verificarea periodică nu instalează pachete fără o cerere explicită. O instalare
+verificată este reutilizată fără o nouă sarcină. Dacă procesul Termux a fost oprit,
+același buton de instalare îl reconectează și reutilizează Blender existent.
 
-Butonul **Copiază comanda** permite repetarea pasului. Comanda este privată și
-conține un token local de conectare, nu cheile furnizorilor AI. Scriptul și
-worker-ul provin din assets ale APK-ului. Python este instalat dacă lipsește,
-la această acțiune explicită. Instalarea Termux și containerele existente se
-păstrează. Pe durata folosirii editorului, integrarea manuală activată și
-verificată menține o conexiune prin ping periodic. După oprirea procesului,
-repetă pornirea din panou; tokenul și rezultatele existente sunt păstrate.
+Un conector rămas pornit din versiunea veche nu primește o cerere de dezinstalare
+pe care nu o suportă. Același buton copiază conectorul nou și arată temporar:
+Ctrl+C în vechea sesiune Termux, lipire, Enter, revenire în Godot. Operația continuă
+după detectarea reviziei noi; o sarcină activă în conectorul vechi blochează această
+actualizare. Protocolul și tokenul local rămân neschimbate.
 
-### Termux cu serviciu RUN_COMMAND
-
-În **Setări → Integrări → Blender**:
-
-1. **Instalează Termux** deschide distribuția oficială. Instalarea aplicației
-   și prima ei deschidere sunt operații ale utilizatorului.
-2. **Acordă permisiunea** solicită `com.termux.permission.RUN_COMMAND`.
-   **Setări Android** deschide pagina aplicației pentru dispozitivele care
-   cer activarea manuală sau au refuzat definitiv permisiunea.
-3. **Copiază comanda** și **Deschide Termux** ajută la activarea, o singură
-   dată, a `allow-external-apps=true`. Comanda păstrează celelalte proprietăți.
-4. **Conectează** pregătește procesul auxiliar și verifică instalările existente.
-   Dacă Python lipsește, acesta se instalează numai la această acțiune explicită.
-5. Dacă Blender lipsește, **Instalează Blender** pregătește PRoot-Distro și
-   containerul dedicat `godot-ai-blender`, din `debian:13-slim`, apoi Blender
-   prin catalogul oficial Debian. Instalarea nouă cere PRoot-Distro 5.x și
-   minimum 2 GB liberi. O versiune veche existentă nu este migrată automat.
-6. **Disponibil** apare după generarea unui GLB real, transfer, verificarea
-   hash-ului și importul în Godot. Randarea CPU este verificată separat.
-7. **Permite agentului să utilizeze Blender** activează tool-ul pentru proiect.
+Instalarea nouă necesită Android ARM64, PRoot-Distro 5.x și cel puțin 2 GB liberi.
+Se pregătește `debian:13-slim`, fără upgrade general sau migrarea containerelor
+existente. Reluarea instalării poate repara numai imaginea incompletă marcată ca
+aparținând aplicației. Fișierele existente ale utilizatorului sunt păstrate.
 
 Termux este detectat din nou la revenirea în panou. Versiunea, conexiunea și
-verificarea sunt comune dispozitivului; activarea și sarcinile de recuperat
+verificarea sunt comune dispozitivului; activarea, operația cerută și sarcinile de recuperat
 sunt asociate proiectului. Instalările Blender funcționale sunt reutilizate.
 Detectarea verifică atât PATH, cât și containerele PRoot în structura actuală
 și cea veche.
@@ -72,7 +76,8 @@ iar profilul nou utilizează [Blender Debian ARM64](https://packages.debian.org/
 `MeshInstance3D`, cât și `ImporterMeshInstance3D`, folosit de Godot în editor.
 Un GLB valid putea primi anterior `empty_mesh`, deși Blender terminase exportul
 și randarea. Corecția verifică suprafețele reale, inclusiv geometria la rădăcină,
-și permite **Recuperează** pentru verificarea deja terminată. Nu este necesară
+și permite recuperarea verificării deja terminate (în APK-ul `cd1acda`,
+prin **Recuperează**; în sursele curente, prin acțiunea unică). Nu este necesară
 o nouă instalare sau generare. Regresia rulează în editorul real, deoarece
 probele în modul joc nu expun aceeași clasă de import.
 
@@ -85,8 +90,9 @@ Jurnalul Blender este salvat în configurația privată a editorului, limitat la
 100 evenimente și ultima parte a ieșirii worker-ului. Tokenul conexiunii și
 cheile recunoscute sunt redactate înainte de salvare. Verificările periodice
 identice nu produc intrări noi. Evenimentele apar și în **Jurnalul** general.
-După o conectare eșuată, jurnalul se deschide și derulează la ultima eroare;
-butonul de copiere permite partajarea diagnosticului. Închiderea editorului nu
+În APK-ul `cd1acda`, jurnalul separat se deschide la eroare. În sursele curente,
+cardul arată numai o indicație scurtă, iar diagnosticul complet și ieșirea
+worker-ului sunt în pagina **Jurnal**, cu filtrare și copiere. Închiderea editorului nu
 șterge istoricul diagnosticelor.
 
 ## Rulare și fișiere
@@ -133,12 +139,13 @@ capacitățile detectate; nu primește tokenul conexiunii locale.
 - Proces auxiliar inclus în APK, bibliotecă standard Python, conexiune limitată
   la `127.0.0.1`, token aleator de 256 biți păstrat în seiful Android.
 - ID-uri persistente și manifest verificat: același ID nu execută comanda
-  de două ori. La pierderea conexiunii, **Recuperează** consultă sarcina existentă.
+  de două ori. La pierderea conexiunii, reluarea consultă sarcina existentă
+  (în sursele curente, prin aceeași acțiune de instalare).
 - O singură sarcină activă, două fire Blender, timeout, anularea grupului de
   procese propriu și limitarea logului. PRoot nu este un sandbox de securitate.
 - Instalarea se oprește după încheierea tranzacției curente, inclusiv pregătirea
   imaginii Debian. Nu se șterg lock-uri și nu se execută actualizări generale.
-- După o oprire forțată în timpul extragerii, **Repară instalarea** poate recrea
+- După o oprire forțată în timpul extragerii, reluarea instalării poate recrea
   exclusiv imaginea incompletă marcată ca aparținând aplicației. Mediile existente
   fără acest marcaj sunt refuzate, nu resetate.
 - După confirmarea importului, copiile de lucru sunt eliberate; metadatele

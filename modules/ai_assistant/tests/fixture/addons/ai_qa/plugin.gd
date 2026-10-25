@@ -76,12 +76,29 @@ class FixtureBlenderVerification:
 	var verification: Dictionary = {}
 	var acknowledged = false
 	var submissions = 0
+	var online = false
+	var revision = 2
+	var worker_runtime: Dictionary = {}
+	var submitted: Array = []
+	var job_result: Dictionary = {}
 	func request(url: String, _method: int, _headers: PackedStringArray, _body: Variant, options: Dictionary) -> Dictionary:
+		if url.ends_with("/health"):
+			return {"ok": true, "json": {"ok": true, "protocol": 1, "revision": revision, "runtime": worker_runtime}} if online else {"ok": false, "code": "connection_failed"}
 		if url.ends_with("/ack"):
 			acknowledged = true
 			return {"ok": true}
-		if _method == HTTPClient.METHOD_POST: submissions += 1
-		if not options.has("save_path"): return {"ok": true, "json": {"ok": true, "result": {"status": "completed", "kind": "verify", "result": verification}}}
+		if _method == HTTPClient.METHOD_POST:
+			submissions += 1
+			submitted.append(_body.duplicate(true))
+			match str(_body.get("kind", "")):
+				"install":
+					worker_runtime = verification.get("runtime", {}).duplicate(true)
+					job_result = worker_runtime.merged({"found": true})
+				"uninstall":
+					worker_runtime = {}
+					job_result = {"removed": true, "found": false}
+				_: job_result = verification
+		if not options.has("save_path"): return {"ok": true, "json": {"ok": true, "result": {"status": "completed", "kind": "verify", "result": verification if job_result.is_empty() else job_result}}}
 		var file = FileAccess.open(str(options.get("save_path", "")), FileAccess.WRITE)
 		if file == null: return {"ok": false, "error": "Fixture download could not be written"}
 		file.store_buffer(data)
@@ -1070,90 +1087,118 @@ func _termux_blender_card_tests() -> void:
 	page.remove_child(old_card)
 	old_card.queue_free()
 	var backend = embedded["termux_blender"].new(panel)
-	backend.configure(panel.data_directory, panel.project_directory)
-	var device = {"ok": true, "installed": false, "permission": false, "supported": true}
-	backend.native_override = func(action: String, _args: Dictionary) -> Dictionary: return device if action == "status" else {"ok": false}
+	var base = panel.data_directory.path_join("simple-blender")
+	backend.configure(base, base.path_join("project"))
+	var device = {"ok": true, "installed": false, "permission": false, "supported": true, "launch_mode": "manual"}
+	var calls = []
+	var native_call = func(action: String, _args: Dictionary) -> Dictionary:
+		calls.append(action)
+		if action == "status": return device.duplicate()
+		if action == "connection": return {"ok": true, "url": "http://127.0.0.1:34567", "token": "b".repeat(64)}
+		if action == "start": return {"ok": false, "code": "termux_start_failed", "error": "Fixture external commands disabled"}
+		return {"ok": true}
+	backend.native_override = native_call
+	var transport = FixtureBlenderVerification.new()
+	var source = panel.data_directory.path_join("qa-blender-import/probe.glb")
+	transport.data = FileAccess.get_file_as_bytes(source)
+	var runtime = {"kind": "proot", "container": "debian", "executable": "/usr/bin/blender", "version": "Blender 4.3.2", "binary_stamp": "fixture", "capabilities": {"formats": ["glb", "fbx"], "render_cpu": true}}
+	transport.verification = {"runtime": runtime, "artifacts": [{"path": "probe.glb", "bytes": transport.data.size(), "sha256": FileAccess.get_sha256(source)}]}
+	backend.transport = transport
 	panel.integrations.termux = backend
 	backend.changed.connect(panel._refresh_blender_card)
 	backend.diagnostic.connect(panel._blender_diagnostic)
+	backend.workflow_finished.connect(panel._blender_workflow_finished)
 	panel._build_termux_blender(page)
 	panel.open_settings("integrations")
 	await get_tree().create_timer(.2).timeout
 	var form: Dictionary = panel.forms["blender"]
-	_check(form["primary"].text == "Instalează Termux" and not form["guide"].visible, "Missing Termux offers installation without a broken setup form")
-	_check(not form["logs"].text.is_empty() and panel.journal_console.text.contains("blender_connection"), "Initial Termux detection fills the Blender journal and the general activity journal")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	_check(form["primary"].text == "Instalează Termux" and not form["hint"].visible, "Missing Termux shows only its install action")
+	_check(not form.has("logs") and not form.has("enabled") and not form.has("verify") and not form.has("cancel"), "The Blender card has no technical controls, activation checkbox or embedded console")
+	form["primary"].pressed.emit()
+	_check(calls.has("install_termux") and not calls.has("copy_bootstrap"), "Install Termux opens the native store action without running any commands")
+	_check(panel.journal_console.text.contains("blender_connection"), "Blender diagnostics remain accessible in the main journal")
 	device["installed"] = true
 	await backend.refresh()
-	_check(form["primary"].text == "Acordă permisiunea" and form["guide"].visible, "First setup exposes Android permission and activation guidance")
-	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	_check(form["primary"].text == "Instalează Blender" and transport.submissions == 0, "Returning after installing Termux exposes Blender installation without starting it silently")
 	panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).scroll_vertical = 10000
 	await get_tree().create_timer(.2).timeout
-	panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).scroll_vertical = 10000
-	await get_tree().create_timer(.1).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-setup.png"))
-	device["permission"] = true
-	await panel._blender_setup("connect")
-	_check(form["logs"].visible and form["logs"].text.contains("Conexiunea locală nu poate fi pregătită"), "A failed connection automatically opens a populated Blender journal")
-	_check(panel.journal_console.text.contains("missing_bridge"), "Pre-job connection failures are recorded in the main journal")
+	await panel._blender_setup("install")
+	_check(calls.has("copy_bootstrap") and calls.has("open_termux") and not calls.has("permission") and not calls.has("start"), "The install button performs the one-time Play Store terminal handoff without unavailable permissions")
+	_check(form["hint"].visible and form["hint"].text.contains("Lipește comanda") and backend.workflow.get("action") == "install", "Only the necessary paste instruction appears during pairing")
 	await get_tree().create_timer(.2).timeout
-	var visible_log = form["logs"].get_global_rect().intersection(panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).get_global_rect())
-	_check(visible_log.size.y >= form["logs"].size.y - 1, "The error journal scrolls into view rather than opening below the visible settings area")
-	var log_bar = form["logs"].get_v_scroll_bar()
-	_check(log_bar.value + log_bar.page >= log_bar.max_value - 1, "The last wrapped error line remains visible at phone scaling")
-	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-error.png"))
-	form["logs"].hide()
-	backend.state = device.duplicate()
-	backend.connected = true
-	backend.discovery_complete = true
+	var hint_rect = form["hint"].get_global_rect()
+	var visible_hint = hint_rect.intersection(panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).get_global_rect())
+	_check(visible_hint.size.y >= hint_rect.size.y - 1, "The one-time paste instruction scrolls fully into view at phone scaling")
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-manual.png"))
+	var restored = embedded["termux_blender"].new(panel)
+	restored.configure(base, base.path_join("project"))
+	_check(restored.workflow.get("action") == "install", "The authorized installation survives an editor restart during terminal pairing")
+	restored.native_override = native_call
+	restored.transport = transport
+	backend = restored
+	panel.integrations.termux = backend
+	backend.changed.connect(panel._refresh_blender_card)
+	backend.diagnostic.connect(panel._blender_diagnostic)
+	backend.workflow_finished.connect(panel._blender_workflow_finished)
+	transport.online = true
+	await backend.refresh()
+	_check(backend.available() and backend.workflow.is_empty() and backend.pending.is_empty(), "Returning from Termux automatically completes installation, real editor import verification and checkpoints")
+	_check(transport.submitted.map(func(item: Dictionary) -> String: return item.kind) == ["install", "verify"], "One install action submits exactly one installation and one verification")
+	_check(form["status"].text == "Blender Active" and form["primary"].text == "Dezinstalează Blender" and not form["hint"].visible, "Active Blender shows the compact status and only Uninstall")
+	_check(panel.integration_settings.get("blender_enabled", false), "Verified Blender becomes available to the agent without an extra activation checkbox")
+	_check(not panel.Integrations.definitions(false, true, false).any(func(item: Dictionary) -> bool: return item.name == "blender_run" and "inputs" in item.parameters.properties), "An unready Android backend remains hidden from the agent")
+	_check(panel.Integrations.definitions(false, true, true).any(func(item: Dictionary) -> bool: return item.name == "blender_run"), "The verified backend exposes Blender to the agent")
+	await backend.request_setup("install")
+	_check(transport.submissions == 2, "Repeated installation reuses the verified runtime without submitting another job")
+	backend.job_log = "Fixture Blender export output"
+	backend._save_log()
 	panel._refresh_blender_card()
-	_check(form["primary"].text == "Instalează Blender", "Connected Termux without Blender offers installation")
-	backend.state["error_code"] = "incomplete_image"
-	panel._refresh_blender_card()
-	_check(form["primary"].text == "Repară instalarea", "A partial owned image exposes explicit repair")
-	backend.state.erase("error_code")
-	backend.working = true
-	backend.state["stage"] = "Instalare Blender"
-	backend.log_text = "Pregătire Debian 13\nDescărcare pachete…\n"
-	panel._refresh_blender_card()
-	_check(form["primary"].disabled and form["cancel"].visible and not form["guide"].visible, "Install in progress prevents duplicate starts and exposes Stop")
-	backend.working = false
-	backend.pending = {"id": "fixture-interrupted", "kind": "run"}
-	panel._refresh_blender_card()
-	_check(form["primary"].text == "Recuperează", "Interrupted jobs expose explicit recovery")
-	backend.pending = {}
-	backend.runtime = {"kind": "proot", "container": "debian", "executable": "/usr/bin/blender", "version": "Blender 4.3.2", "capabilities": {"formats": ["glb", "fbx"], "render_cpu": true}}
-	backend.verified = {"fingerprint": backend.fingerprint(backend.runtime), "protocol": 1}
-	panel._refresh_blender_card()
-	_check(form["status"].text.begins_with("Disponibil") and not form["guide"].visible and not form["cancel"].visible, "Only a verified runtime is shown as available")
-	form["enabled"].button_pressed = true
-	_check(panel.integration_settings.get("blender_enabled", false), "Agent activation is saved independently of GitHub settings")
-	_check(not panel.Integrations.definitions(false, true, false).any(func(item: Dictionary) -> bool: return item.name == "blender_run" and "inputs" in item.parameters.properties), "An unready Android backend is not advertised")
-	_check(panel.Integrations.definitions(false, true, true).any(func(item: Dictionary) -> bool: return item.name == "blender_run" and "inputs" in item.parameters.properties), "A ready backend exposes the portable Blender input/output contract")
+	_check(panel.journal_console.text.contains("Fixture Blender export output"), "Full worker output is shown in Journal instead of the Blender card")
 	await get_tree().create_timer(.2).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-ready.png"))
-	form["logs"].show()
-	await get_tree().create_timer(.2).timeout
-	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-logs.png"))
-	for node in [form["primary"], form["status"], form["logs"]]:
-		_check(node.size.x <= panel.settings_window.size.x, "Blender card content stays inside the settings window")
+	for node in [form["primary"], form["status"], form["hint"]]:
+		_check(node.size.x <= panel.settings_window.size.x, "The minimal Blender card stays within the settings window")
+	transport.revision = 0
+	await panel._blender_setup("uninstall")
+	_check(transport.submissions == 2 and backend.workflow.get("restart_required", false) and form["hint"].text.contains("Ctrl+C"), "An older connector is updated through the same action before it can receive an unsupported uninstall request")
+	await backend.refresh()
+	_check(transport.submissions == 2, "Periodic checks never send uninstall to the older connector")
+	transport.revision = 2
+	await backend.refresh()
+	_check(transport.submitted[-1].kind == "uninstall" and transport.submitted[-1].args.runtime.binary_stamp == "fixture", "Uninstall targets the exact runtime selected by the user")
+	_check(not backend.available() and backend.verified.is_empty() and not panel.integration_settings.get("blender_enabled", true), "Successful uninstall clears readiness and removes agent access")
+	_check(form["primary"].text == "Instalează Blender" and form["status"].text != "Blender Active", "After uninstall the card returns to its single install action")
+	device["launch_mode"] = "direct"
+	transport.online = false
+	var count = transport.submissions
+	await panel._blender_setup("install")
+	_check(calls.has("permission") and transport.submissions == count and form["hint"].text.contains("permisiunea Android"), "RUN_COMMAND variants request permission through the same install action without starting an unauthorized job")
+	device["permission"] = true
+	transport.online = true
+	await backend.refresh()
+	_check(backend.available() and backend.workflow.is_empty() and transport.submissions == count + 2, "After the permission is granted the direct variant continues installation and verification automatically")
+	transport.online = false
 	backend.connected = false
-	backend.runtime = {}
-	backend.verified = {}
-	backend.state = {"ok": true, "installed": true, "supported": true, "permission": false, "launch_mode": "manual", "version": "googleplay.2026.10.09"}
-	backend.discovery_complete = false
-	backend._report_state()
+	await panel._blender_setup("install")
+	_check(calls.has("start") and backend.workflow.get("manual_handoff", false) and form["hint"].text.contains("Lipește comanda"), "A direct variant with external execution disabled falls back to the same paste step without extra settings controls")
+	count = calls.count("start")
+	await backend.refresh()
+	_check(calls.count("start") == count and not backend.workflow.is_empty(), "Periodic checks preserve the handoff without repeatedly launching a disabled service")
+	transport.online = true
+	await backend.refresh()
+	_check(backend.available() and backend.workflow.is_empty(), "Returning after the fallback handoff reuses Blender and clears the installation intent")
+	backend.working = true
+	backend.state["stage"] = "Instalare Blender…"
 	panel._refresh_blender_card()
-	form["logs"].hide()
-	_check(form["primary"].text == "Pornește în Termux" and not form["permission_actions"].visible and form["hint"].text.contains("lipește comanda"), "Google Play Termux exposes terminal pairing and hides unavailable Android permission actions")
-	backend.connected = true
+	_check(form["primary"].disabled and form["status"].text == "Instalare Blender…", "Progress uses the same small status and prevents duplicate actions")
+	backend.working = false
+	backend._failure({"code": "fixture_failed", "error": "Fixture detailed failure"})
 	panel._refresh_blender_card()
-	_check(form["primary"].text == "Conectează", "A newly paired worker discovers existing Blender before offering installation")
-	backend.connected = false
-	panel._refresh_blender_card()
+	_check(form["hint"].text.contains("Jurnal") and panel.journal_console.text.contains("Fixture detailed failure"), "Errors keep the card compact and preserve their diagnostic detail in Journal")
 	await get_tree().create_timer(.2).timeout
-	panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"]).scroll_vertical = 10000
-	await get_tree().create_timer(.1).timeout
-	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-manual.png"))
+	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-error.png"))
 	panel.settings_window.hide()
 	panel.integrations.termux = null
 

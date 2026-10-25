@@ -48,10 +48,17 @@ and appear in both the Blender and general journals. A failed connection opens
 and scrolls the journal to its latest error, with a copy button for diagnostics.
 Blender GLB verification accepts the editor's import mesh nodes, so a completed
 verification previously rejected as `empty_mesh` can be recovered without regenerating it.
+
 Termux variants without RUN_COMMAND, including the inspected Google Play build,
 use explicit terminal pairing: copy/paste the bundled bootstrap, then return to
 Godot for automatic discovery and export/import verification. Existing runtimes
 are reused; Android clipboard/activity behavior still needs physical validation.
+
+The current source iteration simplifies the Android Blender card to one install
+action, then **Blender Active** and **Uninstall Blender**. It resumes setup after
+terminal pairing and preserves containers/user files during package removal.
+This source iteration is not yet included in the linked APK; see the
+[current progress and checks](PROGRES_SI_PLAN.md).
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture

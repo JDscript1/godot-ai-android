@@ -62,9 +62,8 @@ func _run() -> void:
 	client.configure(OS.get_user_data_dir(), OS.get_user_data_dir().path_join("project"))
 	check(not client.available(), "Unverified backend is unavailable")
 	check(not client.valid_relative("a/../b.glb") and not client.valid_relative("/outside") and client.valid_relative("models/tree.glb"), "Artifact paths stay within their folder")
-	client.manual_setup_pending = true
-	await client.refresh()
-	check(client.available(), "Returning after manual pairing discovers Blender, verifies real export and Godot import automatically")
+	var requested = await client.request_setup("install")
+	check(requested.get("ok", false) and client.available() and client.workflow.is_empty(), "The single install action reuses real Blender, verifies export and Godot import, and completes the workflow")
 	check(not native_actions.has("start") and not native_actions.has("permission"), "The real manual connection works without RUN_COMMAND or its Android permission")
 	var result = {}
 	var detected = client.runtime.duplicate(true)
@@ -75,7 +74,7 @@ func _run() -> void:
 	client.runtime = {}
 	check(await client.ensure_ready() and client.available(), "A configured editor reconnects without reinstalling or re-running the verification job")
 	# The installer must reuse the existing executable, without invoking pkg/apt.
-	result = await client.setup("install")
+	result = await client.request_setup("install")
 	check(result.get("ok", false) and client.runtime.get("container") == detected.get("container"), "Install action reuses the existing Blender runtime")
 	write("res://parameters.py", "size = 1.25\n")
 	write("res://create_box.py", "import bpy,os\nfrom parameters import size\nassert os.path.isdir(os.environ['GODOT_AI_PROJECT_DIR'])\nbpy.ops.object.select_all(action='SELECT')\nbpy.ops.object.delete(use_global=False)\nbpy.ops.mesh.primitive_cube_add(size=size)\nroot=os.environ['GODOT_AI_OUTPUT_DIR']\nbpy.ops.export_scene.gltf(filepath=os.path.join(root,'box.glb'),export_format='GLB')\nbpy.ops.export_scene.gltf(filepath=os.path.join(root,'box.gltf'),export_format='GLTF_SEPARATE')\nbpy.ops.export_scene.fbx(filepath=os.path.join(root,'box.fbx'))\nbpy.ops.wm.save_as_mainfile(filepath=os.path.join(root,'box.blend'))\n")

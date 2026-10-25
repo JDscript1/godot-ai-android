@@ -122,7 +122,7 @@ class Backend:
             handle.write(("\n" + message + "\n").encode())
 
     def create(self, request):
-        if not isinstance(request, dict) or request.get("kind") not in ("discover", "install", "verify", "run"):
+        if not isinstance(request, dict) or request.get("kind") not in ("discover", "install", "uninstall", "verify", "run"):
             raise Fault("invalid_job", "Tip de sarcină invalid.")
         job_id = request.get("id")
         folder = self.directory(job_id)
@@ -426,6 +426,41 @@ class Backend:
         atomic_json(self.root / "runtime.json", self.runtime)
         return dict(self.runtime, found=True, reused=False)
 
+    def uninstall(self, job_id, expected):
+        current = self.snapshot()
+        identity = ("kind", "container", "executable", "version", "binary_stamp")
+        if not current or not isinstance(expected, dict) or any(current.get(key) != expected.get(key) for key in identity):
+            raise Fault("runtime_changed", "Instalarea Blender s-a schimbat. Repetă verificarea înainte de dezinstalare.")
+        # Remove only the Blender package, including in a reused container. Never
+        # remove a container, Python, Termux or generated/user files.
+        if current.get("kind") == "proot" and current.get("executable") == "/usr/bin/blender" and NAME_RE.fullmatch(current.get("container", "")):
+            shell = ["proot-distro", "login", current["container"], "--", "env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive"]
+        elif current.get("kind") == "native" and current.get("executable") == str(Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr")) / "bin/blender"):
+            shell = ["env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive"]
+        else:
+            raise Fault("uninstall_unsupported", "Această instalare Blender nu este gestionată de apt. Fișierele au fost păstrate.")
+        self.step(job_id, "Verificare dezinstalare Blender")
+        try:
+            plan = subprocess.run(shell + ["apt-get", "--simulate", "--no-auto-remove", "remove", "blender"],
+                                  capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            raise Fault("uninstall_unsupported", "Nu pot verifica dezinstalarea pachetului Blender. Fișierele au fost păstrate.")
+        packages = re.findall(r"(?m)^Remv (\S+)", plan.stdout)
+        if plan.returncode or not packages or any(name.split(":")[0] != "blender" for name in packages):
+            raise Fault("uninstall_conflict", "Dezinstalarea ar afecta alte pachete sau Blender nu este gestionat de apt. Nu am modificat instalarea.")
+        # Check again after planning; never remove an executable that changed.
+        if any(self.snapshot().get(key) != current.get(key) for key in identity):
+            raise Fault("runtime_changed", "Instalarea Blender s-a schimbat înainte de dezinstalare.")
+        self.step(job_id, "Dezinstalare Blender")
+        # dpkg removes this exact package and refuses broken reverse dependencies,
+        # even if another package transaction changed the plan in the meantime.
+        self.command(job_id, shell + ["dpkg", "--remove", "blender"], 900, False)
+        if self.binary_stamp(current):
+            raise Fault("uninstall_failed", "Executabilul Blender există încă. Verifică jurnalul.")
+        self.runtime = {}
+        atomic_json(self.root / "runtime.json", {})
+        return {"removed": True, "found": False}
+
     def blender(self, job_id, script, blend="", timeout=120):
         if not self.runtime:
             raise Fault("missing_blender", "Detectează Blender înainte de rulare.")
@@ -542,6 +577,8 @@ runpy.run_path(script,run_name="__main__")
                 result = self.discover(job_id)
             elif kind == "install":
                 result = self.install(job_id, repair=request.get("args", {}).get("repair") is True)
+            elif kind == "uninstall":
+                result = self.uninstall(job_id, request.get("args", {}).get("runtime"))
             elif kind == "verify":
                 result = self.verify(job_id)
             else:
@@ -585,7 +622,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             parts = urllib.parse.unquote(location.path).strip("/").split("/")
             backend = self.server.backend
             if method == "GET" and parts == ["v1", "health"]:
-                self.reply({"ok": True, "protocol": PROTOCOL, "active": backend.active, "runtime": backend.snapshot()})
+                self.reply({"ok": True, "protocol": PROTOCOL, "revision": 2, "active": backend.active, "runtime": backend.snapshot()})
                 return
             length = int(self.headers.get("Content-Length", "0"))
             if method == "POST":

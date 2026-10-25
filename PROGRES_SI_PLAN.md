@@ -1,6 +1,6 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **24 octombrie 2026**.
+Ultima actualizare: **25 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
@@ -33,7 +33,75 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — validare mesh Blender în editor, 24.10.2026
+## Etapa curentă — panou Blender simplificat, 25.10.2026
+
+**Implementat în surse; APK-ul din Download rămâne `cd1acda`.** Cardul Android
+are status și un singur buton: **Instalează Termux** → **Instalează Blender** →
+**Blender Active**, cu **Dezinstalează Blender** dedesubt. Instalarea Termux
+deschide Play Store, cu pagina web a magazinului ca fallback. Eliminate din card
+bifa separată de activare, controalele de permisiuni, conectare, verificare,
+reparare, recuperare, oprire și consola. Diagnosticul și ieșirea completă Blender
+sunt accesibile în **Jurnal**, inclusiv după redeschidere.
+
+- Butonul de instalare salvează operația, caută/reutilizează Blender existent
+  sau îl instalează, verifică exportul și importul GLB și activează accesul
+  agentului. Repetarea acțiunii cu un runtime deja verificat nu trimite alt job.
+  La reluare, jobul existent este recuperat cu același ID; rezultatele ajung în
+  proiect și în registrul de fișiere, fără o generare duplicată.
+- Pentru Termux Play Store, butonul copiază bootstrap-ul privat și deschide
+  terminalul. Rămâne necesară lipirea comenzii și Enter; după revenirea în Godot,
+  operația continuă automat. Intenția persistă și dacă editorul este redeschis.
+  Verificarea periodică fără o cerere explicită nu instalează pachete.
+- Variantele cu RUN_COMMAND folosesc permisiunea Android din aceeași acțiune.
+  Dacă serviciul refuză comenzile externe, se trece la aceeași lipire, fără alte
+  butoane sau modificarea automată a proprietăților Termux. În timpul operației,
+  pornirile duplicate și sarcinile noi ale agentului sunt blocate.
+- Dezinstalarea compară identitatea și amprenta executabilului, verifică planul
+  apt și elimină numai pachetul `blender` prin dpkg, fără autoremove. Refuză un
+  plan care ar elimina alte pachete, instalări nesuportate sau executabile
+  schimbate. Nu șterge containere, dependențe, Termux sau fișiere generate.
+  Succesul este confirmat numai după dispariția executabilului; readiness și
+  accesul agentului sunt apoi eliminate. Și acest job poate fi recuperat.
+- Worker-ul anunță revizia 2. Un proces vechi nu primește o cerere de dezinstalare
+  nesuportată: același buton oferă comanda nouă și indicația temporară Ctrl+C,
+  lipire, Enter, revenire. Actualizarea este refuzată cât procesul vechi are o
+  sarcină activă. Nicio sesiune sau sarcină existentă nu este terminată de teste.
+
+Verificări efectuate:
+
+- **427 aserțiuni runtime**, zero eșecuri:
+  `.ai-qa/blender-simple-runtime.log`.
+- **26 teste backend/bootstrap**, zero eșecuri: eliminare strictă Blender,
+  păstrarea fișierelor, refuz la dependențe/amprentă schimbată și idempotenta
+  dezinstalării. `.ai-qa/blender-simple-backend.log`. Tranzacțiile de pachete
+  sunt simulate în directoare temporare; nu s-a dezinstalat Blender-ul real.
+- **67 verificări în editor la scară de telefon și 67 pe desktop**, zero eșecuri: flux manual,
+  intenție restaurată, instalare/verificare, activare, dezinstalare, permisiune,
+  fallback RUN_COMMAND, conector vechi, Jurnal și indicația de lipire derulată
+  complet în zona vizibilă. Capturi inspectate în
+  `.ai-qa/blender-simple-ui/phone_compact/`; log în
+  `.ai-qa/blender-simple-ui-phone.log`. Regresia desktop este consemnată în
+  `.ai-qa/blender-simple-ui-desktop.log`.
+- **22 aserțiuni Godot → HTTP → Blender 4.3.2 real**, zero eșecuri, prin noua
+  acțiune unică: reutilizare fără instalare de pachete, verificare, exporturi,
+  recuperare și anulare. `.ai-qa/blender-simple-connector/report.json`.
+  Frontiera Android este substituită; `android_intent_tested=false`.
+- Conectorul Kotlin și seiful au compilat cu SDK Android 36:
+  `.ai-qa/blender-simple-kotlin.log`. Deschiderea Play Store, clipboard-ul,
+  permisiunea și revenirea fizică în APK-ul viitor rămân de verificat pe Android.
+
+La cererea utilizatorului din 25.10.2026, începe compilarea acestei iterații;
+instalatorul `cd1acda` din Download este păstrat până la verificarea pachetului nou.
+Nu s-au apelat furnizori plătiți. Instalarea/dezinstalarea reală prin managerul de pachete nu a fost
+executată asupra mediului utilizatorului. Descrierea fluxului și limitele sale:
+[`docs/AI_TERMUX_BLENDER.md`](docs/AI_TERMUX_BLENDER.md).
+
+Jurnal: 25.10.2026 — simplificat Blender la status și acțiunea etapei curente;
+adăugate continuarea automată, activarea după verificare și dezinstalarea strictă
+cu păstrarea mediului și fișierelor. Testat fluxul în editor și cu Blender real;
+Pornită pregătirea APK-ului solicitat; cel livrat rămâne `cd1acda` până la verificare.
+
+## Etapa precedentă — validare mesh Blender în editor, 24.10.2026
 
 Jurnalul utilizatorului confirmă conectarea manuală Android → Termux,
 descoperirea Blender **4.3.2**, exportul GLB și randarea CPU. Blocajul rămas era

@@ -175,6 +175,7 @@ func _ready() -> void:
 		integrations.termux.configure(data_directory, project_directory)
 		integrations.termux.changed.connect(_refresh_blender_card)
 		integrations.termux.diagnostic.connect(_blender_diagnostic)
+		integrations.termux.workflow_finished.connect(_blender_workflow_finished)
 	var editor_settings = EditorInterface.get_editor_settings()
 	var timeout = int(editor_settings.get_setting("ai_assistant/connection/request_timeout_seconds")) if editor_settings.has_setting("ai_assistant/connection/request_timeout_seconds") else 180
 	for service in [providers, mcp, assets, accounts]: service.transport.timeout_seconds = clampi(timeout, 10, 600)
@@ -731,50 +732,23 @@ func _build_integrations(parent: Node) -> void:
 func _build_termux_blender(parent: Node) -> void:
 	var card = _integration_card(parent, "Blender", "Models")
 	var b = _form(card, "blender")
-	b["status"] = _label(card, "Verificare Termux…")
+	b["status"] = _label(card, "Verificare…")
 	b["status"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_check(b, "enabled", "Permite agentului să utilizeze Blender")
-	b["enabled"].button_pressed = bool(integration_settings.get("blender_enabled", false))
-	b["enabled"].toggled.connect(func(value: bool) -> void:
-		var saved = integration_settings.duplicate(true)
-		saved["blender_enabled"] = value
-		if Common.atomic_json(project_directory.path_join("integrations.json"), saved) == OK: integration_settings = saved
-		else: _status("Activarea Blender nu a putut fi salvată.")
-		_refresh_blender_card())
-	b["actions"] = _row(card)
-	b["primary"] = _button(b["actions"], "Conectează", func() -> void: _blender_setup(str(b["primary"].get_meta("operation", "connect"))))
-	b["verify"] = _button(b["actions"], "Verifică", func() -> void: _blender_setup("verify"))
-	b["cancel"] = _button(b["actions"], "Oprește", func() -> void: integrations.termux.stop())
-	b["guide"] = VBoxContainer.new()
-	card.add_child(b["guide"])
-	b["hint"] = _label(b["guide"], "La prima conectare: deschide Termux, acordă permisiunea Android și activează comenzile externe.")
+	b["status"].add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
+	b["primary"] = _button(card, "Instalează Termux", func() -> void: _blender_setup(str(b["primary"].get_meta("operation", "install"))))
+	b["primary"].size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	b["hint"] = _label(card, "")
 	b["hint"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	b["permission_actions"] = _row(b["guide"])
-	_button(b["permission_actions"], "Permisiune", func() -> void: integrations.termux.native("permission"))
-	_button(b["permission_actions"], "Setări Android", func() -> void: integrations.termux.native("settings"))
-	var activation = _row(b["guide"])
-	_button(activation, "Copiază comanda", func() -> void:
-		if integrations.termux.manual_mode():
-			var copied = integrations.termux.native("copy_bootstrap", {"install_python": true})
-			if copied.get("ok", false): integrations.termux.manual_setup_pending = true
-			_status("Lipește comanda în Termux, apasă Enter și revino în Godot." if copied.get("ok", false) else str(copied.get("error", "Copierea a eșuat.")))
-		else:
-			DisplayServer.clipboard_set(integrations.termux.ACTIVATION)
-			_status("Comanda de activare a fost copiată. Lipește-o și ruleaz-o o dată în Termux."))
-	_button(activation, "Deschide Termux", func() -> void: integrations.termux.native("open_termux"))
-	var log_actions = _row(card)
-	var disclosure = _button(log_actions, "Jurnal", func() -> void:
-		b["logs"].visible = not b["logs"].visible
-		if b["logs"].visible: _reveal_blender_log.call_deferred())
-	disclosure.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	chat.icon_button(log_actions, "Copy", "Copiază jurnalul Blender", func() -> void: DisplayServer.clipboard_set(b["logs"].text))
-	b["logs"] = CodeEdit.new()
-	b["logs"].editable = false
-	b["logs"].custom_minimum_size.y = 150 * EditorInterface.get_editor_scale()
-	b["logs"].wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	b["logs"].visible = false
-	card.add_child(b["logs"])
+	b["hint"].add_theme_color_override("font_color", Color("a9b5cb"))
+	b["hint"].hide()
 	integrations.termux.refresh.call_deferred()
+
+func _set_blender_enabled(value: bool) -> void:
+	if bool(integration_settings.get("blender_enabled", false)) == value: return
+	var saved = integration_settings.duplicate(true)
+	saved["blender_enabled"] = value
+	if Common.atomic_json(project_directory.path_join("integrations.json"), saved) == OK: integration_settings = saved
+	else: _status("Starea Blender nu a putut fi salvată.")
 
 func _refresh_blender_card() -> void:
 	if not forms.has("blender") or integrations == null or integrations.termux == null: return
@@ -783,60 +757,55 @@ func _refresh_blender_card() -> void:
 	var device: Dictionary = backend.state
 	var installed = bool(device.get("installed", false))
 	var ready = backend.available()
-	var manual = backend.manual_mode()
-	var operation = "install_termux" if not installed else "manual_start" if manual and not backend.connected else "permission" if not manual and not device.get("permission", false) else "resume" if not backend.pending.is_empty() else "verify" if ready else "install" if backend.connected and backend.discovery_complete and backend.runtime.is_empty() else "connect"
-	if backend.connected and not backend.working and backend.pending.is_empty() and device.get("error_code") == "incomplete_image": operation = "repair"
-	var labels = {"install_termux": "Instalează Termux", "permission": "Acordă permisiunea", "resume": "Recuperează", "verify": "Verifică", "install": "Instalează Blender", "connect": "Conectează", "repair": "Repară instalarea", "manual_start": "Pornește în Termux"}
-	b["primary"].text = labels[operation]
+	var operation = "install_termux" if not installed else "uninstall" if ready else "install"
+	b["primary"].text = {"install_termux": "Instalează Termux", "install": "Instalează Blender", "uninstall": "Dezinstalează Blender"}[operation]
 	b["primary"].set_meta("operation", operation)
-	b["primary"].disabled = backend.working or backend.refreshing or busy
-	b["verify"].visible = not ready and backend.connected and not backend.runtime.is_empty() and backend.pending.is_empty()
-	b["verify"].disabled = backend.working or busy
-	b["cancel"].visible = backend.working or not backend.pending.is_empty()
-	b["guide"].visible = installed and not ready and (not backend.working or not backend.connected)
-	b["permission_actions"].visible = not manual
-	b["hint"].text = "Termux cu pornire din terminal: apasă Pornește în Termux, lipește comanda și apasă Enter. Revino în Godot pentru verificare." if manual else "La prima conectare: deschide Termux, acordă permisiunea Android și activează comenzile externe."
-	var detail = str(backend.runtime.get("version", ""))
-	if backend.runtime.get("kind") == "proot": detail += " · " + str(backend.runtime.get("container", ""))
-	b["status"].text = ("Disponibil · " + detail) if ready and not backend.working else str(device.get("stage", "Termux conectat" if backend.connected else "Termux detectat" if installed else "Termux nu este instalat"))
-	if not device.get("supported", true): b["status"].text = "Configurarea automată necesită Android ARM64."
-	var logs = backend.log_text if not backend.log_text.is_empty() else str(backend.diagnostics().get("message", "Verificare conexiune…"))
-	if b["logs"].text != logs:
-		var view: CodeEdit = b["logs"]
-		var position = view.scroll_vertical
-		var bar = view.get_v_scroll_bar()
-		var following = view.text.is_empty() or bar.value + bar.page >= bar.max_value - 1
-		view.text = logs
-		view.scroll_vertical = view.get_v_scroll_bar().max_value if following else position
+	b["primary"].disabled = backend.working or backend.refreshing or backend.requesting or busy or not device.get("supported", true)
+	b["status"].text = "Blender Active" if ready else "Termux necesar" if not installed else "Blender inactiv"
+	if backend.working or backend.refreshing: b["status"].text = str(device.get("stage", "Verificare…"))
+	b["status"].add_theme_color_override("font_color", Color("8fdfb5") if ready else Color("a9b5cb"))
+	var previous_hint = str(b["hint"].text)
+	b["hint"].text = ""
+	if backend.workflow.get("restart_required", false):
+		b["hint"].text = "În Termux: Ctrl+C, lipește comanda, Enter, apoi revino aici. Continuăm automat."
+	elif not backend.workflow.is_empty() and (backend.manual_mode() or backend.workflow.get("manual_handoff", false)) and not backend.connected:
+		b["hint"].text = "Lipește comanda în Termux, apasă Enter și revino aici. Continuăm automat."
+	elif not backend.workflow.is_empty() and not device.get("permission", false) and not backend.manual_mode():
+		b["hint"].text = "Confirmă permisiunea Android pentru a continua."
+	elif not str(device.get("error_code", "")).is_empty():
+		b["hint"].text = "Operația nu s-a finalizat. Detalii în Jurnal."
+	if not device.get("supported", true): b["hint"].text = "Este necesar Android ARM64."
+	b["hint"].visible = not str(b["hint"].text).is_empty()
+	if b["hint"].visible and str(b["hint"].text) != previous_hint: _reveal_blender_hint.call_deferred()
+	if ready and not backend.working: _set_blender_enabled(true)
+	_refresh_journal()
+
+func _reveal_blender_hint() -> void:
+	await get_tree().process_frame
+	if not forms.has("blender") or not settings_window.visible or settings_tabs.current_tab != section_tabs["integrations"]: return
+	var hint: Label = forms["blender"]["hint"]
+	if hint.visible: settings_tabs.get_tab_control(section_tabs["integrations"]).ensure_control_visible(hint)
 
 func _blender_diagnostic(entry: Dictionary) -> void:
 	_record_event("blender_connection", {"stage": entry.get("code", "blender")}, {"ok": not entry.get("failed", false), "message": entry.get("message", "")})
 
-func _reveal_blender_log() -> void:
-	await get_tree().process_frame
-	if not forms.has("blender") or not settings_window.visible: return
-	var logs: CodeEdit = forms["blender"]["logs"]
-	if logs.visible:
-		settings_tabs.get_tab_control(section_tabs["integrations"]).ensure_control_visible(logs)
-		logs.scroll_vertical = logs.get_v_scroll_bar().max_value
+func _blender_workflow_finished(action: String, result: Dictionary) -> void:
+	if result.get("ok", false):
+		if action == "uninstall": _set_blender_enabled(false)
+		if result.get("result", {}).get("outputs") is Array: _register_blender_outputs(result)
+	_refresh_blender_card()
 
 func _blender_setup(operation: String) -> void:
-	if busy or integrations.termux.working: return
-	if operation in ["install_termux", "permission"]:
-		integrations.termux.native(operation)
+	if busy or integrations.termux.working or integrations.termux.refreshing: return
+	if operation == "install_termux":
+		integrations.termux.native("install_termux")
 		return
-	if operation == "manual_start":
-		var prepared = integrations.termux.prepare_manual()
-		_status("Lipește comanda în Termux, apasă Enter și revino în Godot." if prepared.get("ok", false) else str(prepared.get("error", "Pregătirea a eșuat.")))
-		_refresh_blender_card()
-		return
-	var result = await integrations.termux.setup(operation)
+	var result = await integrations.termux.request_setup(operation)
 	_refresh_secrets()
 	_refresh_blender_card()
 	if not result.get("ok", false):
-		forms["blender"]["logs"].show()
-		_reveal_blender_log.call_deferred()
-	if result.get("ok", false) and result.get("result", {}).get("outputs") is Array: _register_blender_outputs(result)
+		integrations.termux._failure(result)
+		_status("Blender: operația nu s-a finalizat. Vezi Jurnal.")
 
 func _build_skills(skills: Node) -> void:
 	lists["skills"] = ItemList.new()
@@ -1978,6 +1947,10 @@ func _refresh_journal() -> void:
 			lines.append(_redact(text))
 			length += text.length()
 	lines.reverse()
+	if integrations != null and integrations.termux != null:
+		var blender_log = integrations.termux.log_text
+		if not blender_log.is_empty() and (query.is_empty() or query in blender_log.to_lower() or query == "blender"):
+			lines.append("--- Blender ---\n" + _redact(blender_log))
 	var scroll = journal_console.scroll_vertical
 	journal_console.text = "\n\n".join(lines)
 	journal_console.scroll_vertical = journal_console.get_line_count() if journal_follow != null and journal_follow.button_pressed else scroll
