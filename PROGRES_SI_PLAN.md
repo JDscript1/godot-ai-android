@@ -12,8 +12,8 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`5baf890`**
-  (`5baf8904353fcf5bff9e3404846033f54dda8867`).
+- Ultimul commit livrat și verificat ca pachet: **`644a3b0`**
+  (`644a3b09553cd57eced3bbe837f542e1067ebfbd`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -25,7 +25,9 @@ drept funcție validată cu un serviciu real.
   diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
   inclusiv Google Play, folosește pornire explicită din terminal și verificare
   automată la revenirea în Godot.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `a23d260` a fost
+- Include și PRoot propriu, loader ARM64 și proba Linux automată în procesul
+  separat; aceasta nu activează încă Blender fără Termux.
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `5baf890` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -33,7 +35,7 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa în lucru — PRoot propriu în APK, 25.10.2026
+## Etapa curentă — PRoot propriu compilat și livrat în APK, 25.10.2026
 
 Adăugat buildul din surse pentru PRoot 5.1.107.101, talloc 2.5.0 și
 libandroid-shmem 0.7, cu versiuni/hash-uri fixate și dependențe nesistem legate
@@ -52,8 +54,8 @@ deci nu este prezentată ca probă Linux reușită. Urmează buildul NDK și
 verificarea din APK, unde loader-ul este extras de Android în zona nativă.
 Dovezi: `.ai-qa/embedded-proot-build.log`, `.ai-qa/embedded-proot-sources/build.log`,
 `.ai-qa/embedded-proot-smoke/result.json`, `.ai-qa/embedded-runtime-godot-tests.log`
-și `.ai-qa/embedded-runtime-kotlin-v2.log`. Instalarea Termux, containerul Debian
-și APK-ul stabil din Downloads sunt păstrate. Blender nu este încă inclus.
+și `.ai-qa/embedded-runtime-kotlin-v2.log`. Instalarea Termux și containerul
+Debian sunt păstrate. Blender nu este încă inclus.
 
 Jurnal: 25.10.2026 — construit PRoot propriu din surse și pregătită proba Linux
 din procesul Android separat, cu verificarea hash-urilor și diagnostic în Jurnal.
@@ -69,6 +71,30 @@ la loader-ul nou din stocarea privată. Acesta este un control al probei, nu
 dovada că runtime-ul nostru funcționează în APK.
 Corectată și detectarea versiunii PRoot: generatorul upstream moștenea tag-ul
 Godot din checkout-ul părinte. Buildul folosește acum versiunea din sursa fixată.
+
+**Compilat și livrat:** [workflow `40193820909`](https://github.com/JDscript1/godot-ai-android/actions/runs/40193820909)
+a trecut toate cele trei joburi pentru commitul `644a3b0`. APK-ul are
+**80.199.176 bytes**, SHA-256
+`8fddf9fabc6b1cbe8ec51b411b828ac3d27e5c8b2cf4246269e2a07777d353eb`.
+Verificate local: semnătura persistentă, toate cele 27 de scripturi GD față de
+commit, hash-urile runtime-ului și sursele corespunzătoare. PRoot are 280.376
+bytes, loader-ul 17.800 bytes și proba Linux 1.136 bytes. Executabilul PRoot
+extras din APK raportează corect versiunea 5.1.107.101; nu are RPATH către
+Termux și depinde numai de biblioteci de sistem. Serviciul și receiver-ul sunt
+neexportate, iar `extractNativeLibs=true` este prezent în manifestul compilat.
+
+Înlocuit atomic APK-ul anterior din Download la **13:47:04 Europe/Rome**;
+rămâne un singur installer al fork-ului. Rapoarte:
+`.ai-qa/delivery-644a3b0.json` și
+`.ai-qa/artifacts/644a3b0/embedded-verification.json`. Arhiva surselor exacte
+este în același director și în artefactul CI `Godot-embedded-runtime-sources-644a3b0…`.
+Urmează instalarea APK-ului și deschiderea unui proiect: proba pornește singură,
+iar în **Agent → Setări → Jurnal** trebuie verificată linia runtime-ului.
+**Pornirea din APK și Blender complet rămân nevalidate.** Nu s-a reinstalat
+Blender în Termux și nu s-a modificat containerul Debian existent.
+
+Jurnal: 25.10.2026 — verificat și livrat APK-ul `644a3b0` cu PRoot și proba
+Linux automate; înlocuit `5baf890`, păstrând un singur APK în Downloads.
 
 ## Etapa precedentă — probă nativă de executare în APK, 25.10.2026
 

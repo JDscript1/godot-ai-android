@@ -46,3 +46,14 @@ sistem în `DT_NEEDED`. Lansarea loader-ului din fișierele private a întors
 loader-ul ambalat al Termux este `apk_data_file`. Este necesară proba cu fișierul
 nou ambalat efectiv în APK. Nici PRoot-ul instalat, nici containerul Debian al
 utilizatorului nu au fost modificate.
+
+**APK disponibil pentru proba fizică:** `644a3b0`, [CI `40193820909`](https://github.com/JDscript1/godot-ai-android/actions/runs/40193820909),
+toate joburile trecute. Installerul verificat este în
+`/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk` și înlocuiește
+versiunea anterioară. Hash-urile native, semnătura, scripturile încorporate și
+arhiva surselor au fost verificate independent local. Acest APK rulează automat
+proba la deschiderea editorului; deschide un proiect, apoi **Agent → Setări →
+Jurnal** și verifică rezultatul după aproximativ 20 de secunde. Rezultatul
+`Runtime integrat verificat: proces Android separat și program Linux ARM64.`
+este următorul prag necesar înaintea pachetului Blender complet. Instalarea și
+proba fizică nu au fost executate de agent.
