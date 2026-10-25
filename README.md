@@ -61,7 +61,7 @@ See the [current progress and checks](PROGRES_SI_PLAN.md).
 
 An [embedded Android runtime probe](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) is under
 development as the first step toward Blender without a separate Termux app.
-It is source-only until APK packaging and execution are verified on Android.
+It is packaged in a CI APK; execution from that APK still needs a device test.
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture

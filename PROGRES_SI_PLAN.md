@@ -48,9 +48,15 @@ Verificare locală inițială: același cod C a fost compilat cu Clang Android p
 dispozitiv, a rulat și a raportat `arch=aarch64`; ELF este `ET_DYN`/AArch64.
 Clasa Kotlin a serviciului a trecut compilarea locală cu Android SDK 36;
 cele 28 de teste ale integrării Blender existente au trecut. Gradle local nu
-poate rezolva offline pluginul Nexus al proiectului, astfel că împachetarea în
-APK și rularea din procesul separat se verifică în continuare. Binarul PRoot
-existent în Termux are `RUNPATH` fix spre
+poate rezolva offline pluginul Nexus al proiectului. [CI `40185968028`](https://github.com/JDscript1/godot-ai-android/actions/runs/40185968028)
+a trecut toate cele trei joburi. APK-ul compilat (`db550ea`, SHA-256
+`4c1763ece3d8b0c9170e17d1bfd76d3641184261bad584c72a4f0457652af07b`)
+conține proba ELF AArch64/PIE, serviciul `:ai_runtime` neexportat și
+`extractNativeLibs=true`; semnătura coincide cu APK-ul stabil. Binarul extras
+din artefact a rulat în Termux pe dispozitiv, dar lansarea din procesul
+aplicației Godot **nu este încă testată**. Artefactul verificat este în
+`.ai-qa/artifacts/db550ea/`; versiunea stabilă din Downloads a fost păstrată.
+Binarul PRoot existent în Termux are `RUNPATH` fix spre
 `/data/data/com.termux/files/usr/lib` și trebuie reconstruit pentru aplicație.
 
 ## Etapa curentă — comandă scurtă pentru conectarea Termux, 25.10.2026
