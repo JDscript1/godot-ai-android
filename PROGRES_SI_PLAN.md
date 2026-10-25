@@ -12,8 +12,8 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- Ultimul commit livrat și verificat ca pachet: **`a23d260`**
-  (`a23d26033c4553621540bdfd32312ccb71617846`).
+- Ultimul commit livrat și verificat ca pachet: **`5baf890`**
+  (`5baf8904353fcf5bff9e3404846033f54dda8867`).
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -25,7 +25,7 @@ drept funcție validată cu un serviciu real.
   diagnostic înainte de pornirea unei sarcini. Termux fără RUN_COMMAND,
   inclusiv Google Play, folosește pornire explicită din terminal și verificare
   automată la revenirea în Godot.
-- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `cd1acda` a fost
+- Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; `a23d260` a fost
   înlocuit atomic după verificare. În Download rămâne un singur APK al fork-ului.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -47,7 +47,16 @@ este refuzat dacă ar elimina alte pachete.
 **Verificat în surse:** 28 teste Python ale worker-ului/bootstrap-ului au trecut,
 inclusiv reinstalarea în containerul anterior și refuzul unui plan ce elimină
 alt pachet. Conectorul Kotlin și seiful compilează cu Android SDK 36; logul este
-în `.ai-qa/blender-short-bootstrap-kotlin/compile.log`. Transferul local,
+în `.ai-qa/blender-short-bootstrap-kotlin/compile.log`. Simularea apt în
+containerul real `debian` ar instala numai pachetul `blender`.
+
+**Compilat și livrat:** [workflow `40177136086`](https://github.com/JDscript1/godot-ai-android/actions/runs/40177136086)
+are toate cele trei joburi reușite. APK-ul ARM64 de **145.350.814 bytes**, SHA-256
+`8982c87ce00193f70b4847a08431de26180aba0812b5808d1032a667c79d857e`,
+are semnătura persistentă și worker-ul Blender identic sursei. Toate cele **27**
+scripturi GD incluse corespund commitului compilat; raportul de verificare este
+`.ai-qa/artifacts/5baf890/extended-verification.json`. Înlocuirea atomică și
+checksum-ul final sunt în `.ai-qa/delivery-5baf890.json`. Transferul local,
 lipirea comenzii și instalarea efectivă din APK-ul nou rămân de confirmat pe
 dispozitiv. Pachetul Blender complet nu este inclus în memoria privată a
 aplicației: Termux nu o poate citi direct și, în varianta Play Store, nu acceptă
@@ -56,7 +65,8 @@ lungă; prima lipire scurtă rămâne necesară pentru această variantă Termux
 
 Jurnal: 25.10.2026 — reprodusă cauza raportată de utilizator (comanda veche nu
 s-a lipit), redus transferul inițial la o comandă locală scurtă și adăugată
-reutilizarea containerului Debian anterior, cu verificarea planului apt.
+reutilizarea containerului Debian anterior, cu verificarea planului apt. Compilat
+și livrat APK-ul `5baf890`, înlocuind `a23d260` în Download.
 
 ## Etapa precedentă — dezinstalare reală Blender pentru testul instalării, 25.10.2026
 

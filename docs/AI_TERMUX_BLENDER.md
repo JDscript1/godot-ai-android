@@ -1,6 +1,6 @@
 # Blender în Integrări, prin Termux
 
-Inclus în APK-ul Android ARM64 `a23d260`, livrat la 25 octombrie 2026.
+Inclus în APK-ul Android ARM64 `5baf890`, livrat la 25 octombrie 2026.
 Clasele Android, permisiunea, intrarea JNI, cele 27 scripturi și worker-ul inclus
 au fost verificate în pachet. Harness-ul AI rulează în Godot; Termux și Python
 sunt dependențe numai ale integrării opționale Blender. Legătura Android prin
@@ -9,7 +9,7 @@ Intent și configurarea inițială trebuie verificate din aplicația instalată
 
 ## Configurare simplificată — 25 octombrie 2026
 
-Această interfață este inclusă în APK-ul `a23d260`, cu verificări în editor și
+Această interfață este inclusă în APK-ul `5baf890`, cu verificări în editor și
 surse incluse în pachet identice cu snapshot-ul compilat. Fluxul fizic Android
 rămâne de confirmat după instalare.
 
@@ -39,13 +39,14 @@ pornire, așteaptă inițializarea Termux, lipește comanda și apasă Enter, ap
 în Godot. Instalarea și verificarea continuă automat. Acest pas manual nu poate
 fi înlocuit cu o solicitare de permisiune absentă din distribuție.
 
-După proba pe dispozitiv în care comanda veche nu s-a putut lipi, sursele noi
-folosesc o **comandă scurtă**. Godot servește o singură dată conectorul inclus
+După proba pe dispozitiv în care comanda veche nu s-a putut lipi, APK-ul `5baf890`
+folosește o **comandă scurtă**. Godot servește o singură dată conectorul inclus
 în aplicație pe `127.0.0.1`, pentru maximum zece minute, printr-un URL aleator;
 Termux îl preia și îl pornește. Comanda nu conține conectorul codificat și nu
 expune tokenul către GDScript sau agent. Dacă transferul expiră, repetarea
-butonului pregătește un URL nou. Această corecție necesită un APK nou și nu
-trebuie confundată cu APK-ul `a23d260` descris mai sus.
+butonului pregătește un URL nou. Corecția este inclusă în APK-ul din Download
+livrat la 25 octombrie 2026, 09:49 CET; lipirea și instalarea fizică rămân de
+verificat pe dispozitiv.
 
 La reinstalare, conectorul încearcă întâi containerul Debian în care a verificat
 anterior Blender, după un plan apt care nu elimină alte pachete. Dacă nu există
