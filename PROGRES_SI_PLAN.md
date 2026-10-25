@@ -36,7 +36,46 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — Agent înainte de proiect și acces direct la rezultatul 3D, 25.10.2026
+## Etapa curentă — catalog DeepSeek după salvarea cheii, 25.10.2026
+
+Inspectată captura fizică `Screenshot_20261025_183822.jpg`: sertarul DeepSeek
+este deschis, dar nu are modele și afișează doar mesajul generic de lipsă
+rezultate. Captura nu demonstrează că o cheie este invalidă. În fluxul anterior,
+butonul de salvare interoga automat catalogul doar pentru conexiunile locale;
+pentru cloud salva cheia și lăsa descoperirea modelelor la o verificare separată.
+
+**Corectat în surse:** salvarea unei chei cloud interoghează și catalogul,
+selectând un model întors de furnizor. Alegerea unei conexiuni cu lista goală
+în chat pornește încărcarea; sertarul are și buton **Actualizează**. Lista se
+actualizează în același sertar. Dacă verificarea eșuează, apare un mesaj
+specific și se păstrează catalogul anterior și selecția utilizatorului.
+Răspunsul gol nu este marcat drept verificare reușită. Erorile cloud sunt
+separate de indicațiile pentru servere LAN. Activitatea se salvează în jurnal
+fără cheia API. Modelele și nivelurile de reasoning provin din răspunsul API,
+nu dintr-o listă DeepSeek inventată sau introdusă ca rezervă.
+
+Confirmată ruta `GET /models` și structura metadatelor din
+[documentația oficială DeepSeek](https://api-docs.deepseek.com/api/list-models/).
+Probe deterministe pentru salvarea cheii cloud, încărcarea automată din sertar,
+reasoning, eroare 401, răspuns gol, păstrarea modelului selectat și reîncercare.
+**428 aserțiuni runtime**, **414 verificări UI pe formatul tabletei** și
+**61 verificări UI pe ecran îngust**, fără eșecuri la verificarea finală.
+Capturile finale ale sertarului pe ecran îngust au fost inspectate vizual.
+
+Dovezi: `.ai-qa/deepseek-discovery-runtime.log`,
+`.ai-qa/deepseek-discovery-full/phone_landscape/` și
+`.ai-qa/deepseek-discovery/narrow/`. Acestea folosesc un server HTTP și un
+catalog simulate. Cheia utilizatorului salvată în aplicația Android nu a fost
+citită și nu a fost probată cu serviciul DeepSeek real.
+
+**APK-ul nu a fost recompilat sau înlocuit; nu s-a făcut push.** În APK-ul
+existent, selectarea conexiunii din Setări → Furnizori AI și apăsarea
+**Verifică / modele** rămâne calea pentru încărcarea catalogului. Dacă ea
+întoarce o eroare, aceea trebuie verificată separat de problema fluxului UI.
+Jurnal: 25.10.2026 — descoperire automată a modelelor cloud după salvarea cheii,
+actualizare direct din chat și diagnostic de catalog, verificări locale trecute.
+
+## Etapa precedentă — Agent înainte de proiect și acces direct la rezultatul 3D, 25.10.2026
 
 **Implementat în surse, fără recompilare APK.** Managerul de proiecte primește
 un tab **Agent**, lângă **Projects / Asset Store**. Același chat, aceiași

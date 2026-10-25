@@ -44,6 +44,8 @@ var drawer_hint: Label
 var drawer_step: Label
 var drawer_icon: TextureRect
 var drawer_back: Button
+var drawer_refresh: Button
+var catalog_loading = ""
 var drawer_stage = "providers"
 var drawer_profile = ""
 var pending_selection: Dictionary = {}
@@ -776,6 +778,9 @@ func _build_drawer() -> void:
 	body.add_child(footer)
 	drawer_back = button(footer, "Înapoi", _drawer_back)
 	drawer_back.icon = _icon("Back")
+	drawer_refresh = button(footer, "Actualizează", func() -> void: action.emit("models_refresh", {"profile": drawer_profile}))
+	drawer_refresh.icon = _icon("Retry")
+	drawer_refresh.tooltip_text = "Caută modelele folosind cheia salvată"
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(spacer)
@@ -796,6 +801,7 @@ func _show_drawer(stage: String) -> void:
 	drawer_back.visible = stage != "providers"
 	drawer_step.text = {"providers": "1 / 3 · Furnizor", "models": "2 / 3 · Model", "reasoning": "3 / 3 · Reasoning"}[stage]
 	var profile = _drawer_profile_data()
+	drawer_refresh.visible = stage == "models" and profile.get("kind") not in ["siwc", "companion"]
 	drawer_title.text = {"providers": "Alege furnizorul", "models": str(profile.get("name", "Modele")), "reasoning": "Nivel de raționament"}[stage]
 	drawer_icon.texture = _icon("Providers") if stage == "providers" else (provider_icon(profile) if stage == "models" else _icon("Reasoning"))
 	picker_search.placeholder_text = "Caută un furnizor sau profil…" if stage == "providers" else "Caută un model la acest furnizor…"
@@ -907,7 +913,11 @@ func _filter_models() -> void:
 				picker_list.set_item_metadata(picker_list.item_count - 1, {"profile": profile["id"]})
 	elif drawer_stage == "models":
 		var current = _current_selection()
-		for model in _drawer_profile_data().get("models", []):
+		var profile = _drawer_profile_data()
+		if catalog_loading == drawer_profile: drawer_hint.text = "Se încarcă modelele…"
+		elif not str(profile.get("model_catalog_error", "")).is_empty(): drawer_hint.text = str(profile["model_catalog_error"])
+		else: drawer_hint.text = "Alege modelul, apoi nivelul de reasoning."
+		for model in profile.get("models", []):
 			var text = str(model.get("name", model["id"]))
 			if not query.is_empty() and not query in (text + " " + str(model["id"])).to_lower(): continue
 			var active = current["profile"] == drawer_profile and current["model"] == model["id"]
@@ -925,7 +935,10 @@ func _filter_models() -> void:
 			picker_list.add_item(effort_label(str(effort)), _icon("Check" if selected_effort == str(effort) else "Reasoning"))
 			picker_list.set_item_metadata(picker_list.item_count - 1, {"effort": str(effort)})
 		if efforts.is_empty(): drawer_hint.text += "\nNu sunt disponibile niveluri configurabile pentru acest model."
-	if picker_list.item_count == 0: label_once("Niciun rezultat. Verifică filtrele sau catalogul din Setări.")
+	if picker_list.item_count == 0:
+		if drawer_stage == "models" and query.is_empty():
+			label_once("Se încarcă modelele…" if catalog_loading == drawer_profile else "Lista este goală. Apasă Actualizează pentru a căuta modelele.")
+		else: label_once("Niciun rezultat pentru căutarea ta.")
 
 func label_once(text: String) -> void:
 	picker_list.add_item(text)
@@ -938,6 +951,8 @@ func _pick_model(index: int) -> void:
 	if drawer_stage == "providers":
 		drawer_profile = str(selected["profile"])
 		_show_drawer("models")
+		var profile = _drawer_profile_data()
+		if profile.get("models", []).is_empty() and profile.get("kind") not in ["siwc", "companion"]: action.emit("models_refresh", {"profile": drawer_profile})
 	elif drawer_stage == "models":
 		pending_selection = selected.duplicate()
 		_show_drawer("reasoning")

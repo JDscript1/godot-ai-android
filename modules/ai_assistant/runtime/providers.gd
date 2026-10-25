@@ -74,12 +74,14 @@ static func connection_error(profile: Dictionary, result: Dictionary, android: b
 	var parsed = Common.parse_url(str(profile.get("url", "")), true)
 	var host = str(parsed.get("host", ""))
 	if result.get("code") == "cancelled": return "Verificare oprită."
-	if int(result.get("status", 0)) in [401, 403]: return "Serverul este accesibil, dar cere un token valid. Introdu tokenul în Cheie API."
+	var local = hosting(profile) == "local"
+	if int(result.get("status", 0)) in [401, 403]: return "Serverul este accesibil, dar cere un token valid. Introdu tokenul în Cheie API." if local else "Cheia API nu a fost acceptată de " + str(profile.get("name", "furnizor")) + ". Verifică cheia și furnizorul selectat."
 	if android and host in ["localhost", "127.0.0.1", "::1"]: return "Adresa locală indică acest dispozitiv. Pentru serverul de pe calculator introdu IP-ul Wi-Fi al calculatorului."
 	if host.begins_with("169.254."): return "Adresa nu răspunde. Folosește IPv4-ul adaptorului Wi-Fi activ al calculatorului."
 	if result.get("code") in ["timeout", "connection_failed"]:
-		return "Serverul nu răspunde. Verifică IP-ul actual, aceeași rețea Wi-Fi/hotspot și accesul LAN al serverului."
-	if int(result.get("status", 0)) == 404: return "Ruta API nu este disponibilă. Folosește adresa serverului cu /v1."
+		return "Serverul nu răspunde. Verifică IP-ul actual, aceeași rețea Wi-Fi/hotspot și accesul LAN al serverului." if local else "Furnizorul nu răspunde. Verifică accesul la internet și reîncearcă actualizarea modelelor."
+	if int(result.get("status", 0)) == 429: return "Furnizorul a limitat cererile. Reîncearcă actualizarea modelelor mai târziu."
+	if int(result.get("status", 0)) == 404: return "Ruta API nu este disponibilă. Folosește adresa serverului cu /v1." if local else "Ruta API nu este disponibilă. Verifică furnizorul și adresa configurată."
 	return str(result.get("error", "Conexiunea nu a putut fi verificată."))
 
 static func inference_options(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:

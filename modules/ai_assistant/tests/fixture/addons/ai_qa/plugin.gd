@@ -70,6 +70,16 @@ class FixtureLocalCatalog:
 		requests += 1
 		return {"ok": true, "result": [{"id": "unloaded-code", "loaded": false, "capabilities": {}}, {"id": "loaded-code", "loaded": true, "context": 4096, "capabilities": {}}]}
 
+class FixtureCloudCatalog:
+	extends RefCounted
+	var owner: Node
+	var requests = 0
+	var response = {"ok": true, "result": [{"id": "deepseek-flash", "name": "DeepSeek-V4.1-Flash", "efforts": ["low", "high", "max"], "capabilities": {"tools": true, "vision": true}}, {"id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro", "efforts": ["low", "high", "max"], "capabilities": {"tools": true}}]}
+	func list_models(_profile: Dictionary, _cancel: Dictionary = {}) -> Dictionary:
+		requests += 1
+		await owner.get_tree().create_timer(0.05).timeout
+		return response.duplicate(true)
+
 class FixtureBlenderVerification:
 	extends RefCounted
 	var data = PackedByteArray()
@@ -204,6 +214,7 @@ func _run() -> void:
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "providers":
 		await _provider_connection_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		await _provider_discovery_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "blender":
@@ -237,6 +248,7 @@ func _run() -> void:
 	await _history_button_tests()
 	await _settings_action_tests()
 	await _provider_connection_tests("")
+	await _provider_discovery_tests("")
 	await _handoff_tests()
 	await _generated_preview_tests()
 	await _layout_tests()
@@ -2056,3 +2068,70 @@ func _generated_preview_tests() -> void:
 		panel.media_view.hide()
 	panel.assets.jobs.erase(job)
 	panel._new_conversation()
+
+func _provider_discovery_tests(output: String) -> void:
+	var old_profiles = panel.config["providers"].duplicate(true)
+	var service = panel.providers
+	var original_selection = panel._selection()
+	panel.config["providers"] = []
+	panel._refresh_lists()
+	panel._new_provider()
+	panel._select_issuer("deepseek")
+	var form: Dictionary = panel.forms["provider"]
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	form["key"].text = "fixture-deepseek-secret"
+	var catalog = FixtureCloudCatalog.new()
+	catalog.owner = self
+	panel.providers = catalog
+	panel.open_settings("providers")
+	await panel._provider_save_action()
+	var id = str(form["editing"])
+	var profile = panel._profile_by_id(id)
+	_check(catalog.requests == 1 and profile.get("models", []).size() == 2 and profile.has("verified_at"), "Saving a cloud API key immediately discovers its models just like a local provider")
+	_check(panel._current_profile().get("id") == id and panel._selection().get("model") == "deepseek-flash", "New DeepSeek connection selects an actual returned model instead of leaving the chat empty")
+	_check(panel.vault.read(id) == "fixture-deepseek-secret" and form["key"].text.is_empty(), "Automatic model discovery preserves the vault credential and clears the visible key field")
+	panel.settings_window.hide()
+	profile["models"] = []
+	panel._refresh_profiles()
+	panel.chat._open_picker()
+	var row = -1
+	for index in range(panel.chat.picker_list.item_count):
+		var value: Variant = panel.chat.picker_list.get_item_metadata(index)
+		if value is Dictionary and value.get("profile") == id: row = index
+	_check(row >= 0, "Saved DeepSeek connection is available in the chat provider drawer")
+	panel.chat._pick_model(row)
+	_check(panel.provider_testing and panel.chat.drawer_refresh.disabled, "An empty catalog begins loading on provider selection and prevents duplicate refreshes")
+	while panel.provider_testing: await get_tree().process_frame
+	_check(catalog.requests == 2 and panel.chat.picker.visible and panel.chat.drawer_stage == "models" and panel.chat.picker_list.item_count == 2, "Loading an empty saved catalog updates the open model drawer in place")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		panel.get_viewport().get_texture().get_image().save_png(output.path_join("deepseek-models.png"))
+	panel.chat._pick_model(0)
+	_check(panel.chat.drawer_stage == "reasoning" and panel.chat.picker_list.item_count == 4, "Returned DeepSeek reasoning levels remain selectable after discovery")
+	panel.chat._pick_model(3)
+	panel._choose({"profile": id, "model": "deepseek-v4-pro", "effort": "high"})
+	panel.chat.drawer_profile = id
+	panel.chat._show_drawer("models")
+	catalog.response = {"ok": false, "status": 401, "code": "http_error", "error": "Unauthorized fixture"}
+	var before = profile["models"].duplicate(true)
+	_check(not await panel._test_provider(id), "Rejected credentials fail model verification")
+	_check(profile["models"] == before and not profile.has("verified_at") and panel._selection().get("model") == "deepseek-v4-pro", "A failed refresh preserves cached models and the user's current selection without claiming verification")
+	_check(panel.chat.picker.visible and panel.chat.drawer_hint.text.contains("Cheia API") and not panel.chat.drawer_hint.text.contains("Wi-Fi"), "Cloud authentication errors appear in the model drawer without irrelevant LAN advice")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		panel.get_viewport().get_texture().get_image().save_png(output.path_join("deepseek-key-error.png"))
+	catalog.response = {"ok": true, "result": []}
+	_check(not await panel._test_provider(id) and not profile.has("verified_at") and not profile["models"].is_empty(), "An empty catalog is reported as a failure while preserving previously discovered models")
+	catalog.response = {"ok": true, "result": before}
+	_check(await panel._test_provider(id) and not profile.has("model_catalog_error"), "A successful retry clears the previous model-catalog error")
+	_check(panel.journal.any(func(entry: Dictionary) -> bool: return entry.get("tool") == "provider_models") and not JSON.stringify(panel.journal).contains("fixture-deepseek-secret"), "Model discovery records activity without storing the API key in logs")
+	panel.chat._close_drawer()
+	panel.vault.erase(id)
+	panel.providers = service
+	panel.config["providers"] = old_profiles
+	panel._refresh_lists()
+	panel._refresh_profiles()
+	panel._choose(original_selection)
+	if old_profiles.is_empty(): panel._new_provider()
+	else: panel._edit_provider(0)
+	panel.settings_window.hide()

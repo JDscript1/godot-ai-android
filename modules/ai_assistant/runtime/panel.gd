@@ -1394,6 +1394,7 @@ func _action_button(parent: Node, title: String, key: String, callback: Callable
 	return control
 
 func _update_settings_controls() -> void:
+	if chat != null and chat.drawer_refresh != null: chat.drawer_refresh.disabled = busy or provider_testing
 	if forms.has("provider") and forms["provider"].has("save"): forms["provider"]["save"].disabled = busy or provider_testing
 	if forms.has("provider") and forms["provider"].has("new_connection"): forms["provider"]["new_connection"].disabled = busy or provider_testing
 	if forms.has("generation") and forms["generation"].has("export_stop"): forms["generation"]["export_stop"].visible = busy and exporting_asset
@@ -1497,14 +1498,13 @@ func _save_provider() -> bool:
 	p["editing"] = id
 	_upsert("providers", profile)
 	_refresh_provider_vision(profile)
-	_status("Conexiune salvată. Apasă Testează pentru modele.")
+	_status("Conexiune salvată.")
 	return true
 
 func _provider_save_action() -> void:
-	var local = bool(_provider_issuer().get("local", false))
-	if not _save_provider() or not local: return
+	if not _save_provider(): return
 	var id = str(forms["provider"].get("editing", ""))
-	if not await _test_provider() or str(forms["provider"].get("editing", "")) != id: return
+	if not await _test_provider(id) or str(forms["provider"].get("editing", "")) != id: return
 	var profile = _profile_by_id(id)
 	var models: Array = profile.get("models", [])
 	if models.is_empty(): return
@@ -1526,35 +1526,51 @@ func _edit_provider(index: int) -> void:
 	_refresh_provider_connections()
 	settings_status.hide()
 
-func _test_provider() -> bool:
+func _test_provider(profile_id: String = "") -> bool:
 	if busy or provider_testing: return false
-	var id = str(forms["provider"].get("editing", ""))
+	var id = profile_id if not profile_id.is_empty() else str(forms["provider"].get("editing", ""))
 	for profile in config["providers"]:
 		if profile["id"] != id: continue
 		provider_testing = true
+		chat.catalog_loading = id
 		_update_settings_controls()
+		if chat.picker.visible and chat.drawer_stage == "models" and chat.drawer_profile == id: chat._filter_models()
 		var started = Time.get_ticks_msec()
 		_status("Interoghez catalogul…")
+		var result: Dictionary
 		if profile.get("kind") == "siwc":
-			var access = await accounts.ensure_access(profile, {})
-			if not access.get("ok", false):
-				provider_testing = false
-				_update_settings_controls()
-				_status(str(access["error"]))
-				return false
-		var result = await providers.list_models(profile)
+			result = await accounts.ensure_access(profile, {})
+			if result.get("ok", false): result = await providers.list_models(profile)
+		else: result = await providers.list_models(profile)
+		if result.get("ok", false) and (not result.get("result") is Array or result["result"].is_empty()):
+			result = Common.failure("Furnizorul a răspuns, dar nu a returnat modele disponibile pentru această conexiune.", "empty_model_catalog")
 		provider_testing = false
+		chat.catalog_loading = ""
 		_update_settings_controls()
-		if not result.get("ok", false):
-			if profile.erase("verified_at"): _save_config()
-			_status(Providers.connection_error(profile, result, OS.has_feature("android")))
-			return false
-		profile["models"] = result["result"]
-		profile["verified_at"] = Time.get_unix_time_from_system()
-		if str(forms["provider"].get("editing", "")) == id: _refresh_provider_vision(profile, true)
+		var error = "" if result.get("ok", false) else Providers.connection_error(profile, result, OS.has_feature("android"))
+		if result.get("ok", false):
+			profile["models"] = result["result"]
+			profile["verified_at"] = Time.get_unix_time_from_system()
+			profile.erase("model_catalog_error")
+			if str(forms["provider"].get("editing", "")) == id: _refresh_provider_vision(profile, true)
+		else:
+			profile.erase("verified_at")
+			profile["model_catalog_error"] = _redact(error)
+		var restore_drawer = chat.picker.visible and chat.drawer_stage == "models" and chat.drawer_profile == id
+		var query = chat.picker_search.text
+		var selection = _selection()
 		_save_config()
+		_choose(selection)
+		if restore_drawer:
+			chat.drawer_profile = id
+			chat._show_drawer("models")
+			chat.picker_search.text = query
+		_record_event("provider_models", {"profile": id, "issuer": profile.get("issuer", ""), "duration_ms": Time.get_ticks_msec() - started}, {"ok": result.get("ok", false), "code": result.get("code", ""), "error": _redact(error), "models": profile.get("models", []).size()})
+		if not result.get("ok", false):
+			_status(error)
+			return false
 		var loaded = profile["models"].filter(func(item: Dictionary) -> bool: return item.get("loaded", false)).size()
-		_status("Server conectat · %s modele%s · %s ms" % [profile["models"].size(), " · %s încărcate" % loaded if profile["models"].any(func(item: Dictionary) -> bool: return item.has("loaded")) else "", Time.get_ticks_msec() - started])
+		_status("Conectat · %s modele%s · %s ms" % [profile["models"].size(), " · %s încărcate" % loaded if profile["models"].any(func(item: Dictionary) -> bool: return item.has("loaded")) else "", Time.get_ticks_msec() - started])
 		return true
 	_status("Salvează mai întâi profilul.")
 	return false
@@ -2734,6 +2750,7 @@ func _chat_action(name: String, args: Dictionary) -> void:
 		"new": _new_conversation()
 		"history": _refresh_conversations()
 		"model": _choose(args)
+		"models_refresh": await _test_provider(str(args.get("profile", "")))
 		"voice": speech.start(config.get("preferences", {}))
 		"attach": _pick_attachment()
 		"remove_attachment":

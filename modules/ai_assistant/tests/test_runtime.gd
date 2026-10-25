@@ -616,6 +616,12 @@ func _local_connection_tests(node: Node) -> void:
 	check(local_options["connect_timeout"] < local_options["first_response_timeout"] and local_options["idle_timeout"] > 0 and local_options["timeout"] > local_options["first_response_timeout"], "Local inference has independent connect, initial-response, idle and total budgets")
 	var vault = FakeVault.new()
 	var service = script.new(node, vault)
+	var deepseek = {"id": "deepseek", "issuer": "deepseek", "name": "DeepSeek", "kind": "chat", "url": mock_url + "/deepseek", "allow_http": true}
+	vault.store("deepseek", "deepseek-fixture-token")
+	var discovered = await service.list_models(deepseek)
+	check(discovered.get("ok", false) and discovered["result"].size() == 2 and discovered["result"][0]["id"] == "deepseek-flash", "DeepSeek model discovery uses GET /models with the saved bearer credential")
+	check(discovered["result"][0]["context"] == 1048576 and discovered["result"][0]["efforts"] == ["low", "high", "max"] and discovered["result"][0]["capabilities"].get("vision", false), "DeepSeek catalog preserves returned context, reasoning levels and image support")
+	check(script.connection_error(deepseek.merged({"url": "https://api.deepseek.com"}, true), {"status": 401}).contains("Cheia API") and not script.connection_error({"issuer": "deepseek", "url": "https://api.deepseek.com"}, {"code": "timeout"}).contains("Wi-Fi"), "Cloud model discovery distinguishes key errors and network failures from LAN setup")
 	var lm = await service.list_models({"id": "lm", "issuer": "lmstudio", "kind": "chat", "url": mock_url + "/local-lm", "allow_http": true})
 	check(lm.get("ok", false) and lm.get("result", []).size() == 1 and lm["result"][0]["loaded"] and lm["result"][0]["context"] == 4096, "LM Studio connection reads the actual loaded context and excludes embedding models")
 	var ollama = await service.list_models({"id": "ollama", "issuer": "ollama", "kind": "chat", "url": mock_url + "/local-ollama/v1", "allow_http": true})

@@ -76,6 +76,10 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
+        if location.path == "/deepseek/models":
+            valid = self.headers.get("Authorization") == "Bearer deepseek-fixture-token"
+            self.reply({"data": [{"id": "deepseek-flash", "name": "DeepSeek-V4.1-Flash", "context_window": 1048576, "input_modalities": ["text", "image"], "effort": {"supported_levels": ["low", "high", "max"]}}, {"id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro", "context_window": 1048576, "input_modalities": ["text"], "effort": {"supported_levels": ["low", "high", "max"]}}]} if valid else {"error": "Unauthorized"}, 200 if valid else 401)
+            return
         if location.path == "/local-lm/v1/models":
             self.reply({"data": [{"id": "local-code"}, {"id": "local-embedding"}]})
             return
