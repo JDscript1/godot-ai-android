@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40224731049/artifacts/12611036313)
-(GitHub Actions artifact, source `8878801`, delivered 25 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40228109943/artifacts/12612397093)
+(GitHub Actions artifact, source `afcf2cb`, delivered 25 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -37,6 +37,11 @@ bug, the source fixes and the limits of testing outside the Android APK.
 
 The APK includes a [collapsible activity bar](docs/AI_ACTIVITY_DRAWER.md)
 above the chat input, showing plan progress, background tasks and tool outcomes.
+
+The bottom dock has a dedicated minimize arrow. Expanding chat from its header
+also collapses Output and the side docks; restoring recovers the previous panel
+and chat placement while preserving diagnostics and the message draft.
+The compiled editor passed the layout checks; Android touch validation follows installation.
 
 The APK includes a [persistent embedded Linux runtime](docs/AI_LINUX_RUNTIME.md)
 with native Android PRoot and a pinned Debian ARM64 filesystem. The base prepares

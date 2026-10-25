@@ -12,9 +12,9 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download este **`8878801`**
-  (`8878801c5cb37f5f57e4b21086ae75f5528dcc09`), livrat la
-  **25.10.2026, 20:21 +01:00**, cu Linux integrat și pregătire automată.
+- APK-ul curent din Download este **`afcf2cb`**
+  (`afcf2cb64660997d86a5046a8121daefe324bfc5`), livrat la
+  **25.10.2026, 21:03 +01:00**, cu panouri minimizabile, chat extins și Linux automat.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -28,7 +28,7 @@ drept funcție validată cu un serviciu real.
 - PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
   Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
-  `5baf890` a fost înlocuită atomic după verificare. În Download rămâne un
+  `8878801` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -43,7 +43,7 @@ parte mare din înălțime, iar Scene/Inspector limitează lățimea chatului.
 Butonul de extindere folosea modul Godot fără distrageri, care ascundea doar
 dock-urile laterale.
 
-Corecție în surse: buton dedicat de minimizare pentru panoul inferior nativ,
+Corecție compilată în APK: buton dedicat de minimizare pentru panoul inferior nativ,
 valabil pentru Output, Debugger și celelalte file. Extinderea din antetul
 chatului ascunde și panoul inferior; revenirea restaurează fila deschisă și
 poziția chatului, inclusiv stânga/dreapta. Textul din composer și mesajele
@@ -55,12 +55,27 @@ Iconul de revenire este Lucide original, adăugat în catalogul local verificat.
 Probe: scenariu UI dedicat cu panou diagnostic real, extindere/revenire,
 minimizare nativă, controale accesibile, păstrarea textelor și poziții laterale.
 Capturile și rapoartele sunt în `.ai-qa/chat-panels-*`; verificarea runtime
-Godot a trecut **429 aserțiuni**. Livrarea APK-ului se consemnează după build
-și verificarea installerului. Captura utilizatorului dovedește problema din
-versiunea instalată; testele desktop nu sunt probă fizică a corecției Android.
+Godot a trecut **429 aserțiuni**. Pe editorul nativ compilat au trecut
+**458 verificări × 5 dimensiuni**, plus **56 de verificări dedicate panourilor**
+pe formatul tabletei. Scenariul focalizat pe ecran îngust a trecut 53 de verificări.
+Capturile compilate cu panoul deschis, minimizat și chatul extins au fost
+inspectate vizual. Captura utilizatorului dovedește problema din versiunea
+anterioară; testele desktop nu sunt probă fizică a corecției Android.
+
+**APK livrat:** [workflow 40228109943](https://github.com/JDscript1/godot-ai-android/actions/runs/40228109943),
+toate cele trei joburi reușite; **112.271.390 bytes**, SHA-256
+`4ba0cebd77acc315cc097cee715258cf9cfe00830214004b09f4f2bf8855bffc`.
+Verificate semnătura persistentă, cele 28 de scripturi exacte, implementarea
+nativă a butonului de minimizare și păstrarea pachetului Linux complet.
+Installerul a fost înlocuit atomic, fără duplicate în Download.
+Dovezi: `.ai-qa/delivery-afcf2cb.json`,
+`.ai-qa/artifacts/afcf2cb/panel-verification.json`,
+`.ai-qa/artifacts/afcf2cb/linux-verification.json`, `.ai-qa/afcf2cb-native/`
+și `.ai-qa/chat-panels-verification.json`.
 
 Jurnal: 25.10.2026 — adăugată minimizarea explicită a panourilor inferioare și
-extinderea completă a chatului cu restaurarea layoutului și păstrarea mesajelor.
+extinderea completă a chatului cu restaurarea layoutului și păstrarea mesajelor;
+compilat și livrat APK-ul `afcf2cb`.
 
 ## Etapa precedentă — APK livrat cu Linux automat, 25.10.2026
 

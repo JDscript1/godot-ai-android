@@ -1,5 +1,22 @@
 # Audit interfață AI — 22 octombrie 2026
 
+## Actualizare 25 octombrie — panouri de diagnostic
+
+Captura `Screenshot_20261025_203433.jpg` arată Output deschis sub chat.
+În APK-ul `afcf2cb`, săgeata din dreapta jos minimizează panoul inferior,
+păstrând filele disponibile. Extinderea din antetul chatului restrânge și
+Output, și dock-urile laterale. Revenirea păstrează fila anterioară, mesajele,
+textul din composer și poziția chatului. Dacă utilizatorul alege altă filă
+între timp, alegerea sa este păstrată. Încadrarea pe lățime acoperă și
+chatul central extins.
+
+Editorul nativ compilat a trecut 458 verificări la fiecare dintre cinci
+dimensiuni și 56 pentru scenariul dedicat; capturile au fost inspectate vizual.
+APK-ul a fost verificat și livrat în Download. Proba tactilă pe Android rămâne
+separată. Dovezi: `.ai-qa/afcf2cb-native/`, `.ai-qa/delivery-afcf2cb.json`.
+
+## Auditul inițial — 22 octombrie
+
 Captura de referință: `Screenshot_20261022_200421.jpg`. Dock-ul stâng tăia
 Setări și Trimite, iar Șterge impunea arhivarea fără să indice această condiție.
 

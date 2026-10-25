@@ -108,6 +108,6 @@ Dovezi locale: `.ai-qa/linux-runtime-package/`,
 
 Urmează proba fizică în APK cu propriul loader, foreground service, instalare,
 oprire și reluare după trecerea aplicației în fundal. Blender complet și un
-harness extern sunt probe distincte. Dovada livrării APK-ului curent este
+harness extern sunt probe distincte. Dovada primei livrări cu Linux automat este
 `.ai-qa/delivery-8878801.json`; verificarea pachetului este în
 `.ai-qa/artifacts/8878801/linux-verification.json`.
