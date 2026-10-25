@@ -32,6 +32,7 @@ var manual_setup_pending = false
 var discovery_complete = false
 var workflow: Dictionary = {}
 var requesting = false
+var embedded_reported = ""
 
 const ACTIVATION = "mkdir -p ~/.termux && touch ~/.termux/termux.properties && sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties && printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties && termux-reload-settings"
 const TERMINAL = ["completed", "failed", "cancelled", "interrupted"]
@@ -251,6 +252,7 @@ func refresh() -> void:
 	if working or refreshing or requesting: return
 	refreshing = true
 	state.merge(native("status"), true)
+	_report_embedded_probe()
 	connected = false
 	if state.get("installed", false) and (manual_mode() or state.get("permission", false)) and _credentials(): await _health()
 	last_check = Time.get_ticks_msec()
@@ -265,6 +267,15 @@ func refresh() -> void:
 		if pending.is_empty(): await setup("connect")
 	_report_state()
 	changed.emit()
+
+func _report_embedded_probe() -> void:
+	var probe = native("embedded_status")
+	var run_id = str(probe.get("run_id", ""))
+	if run_id.is_empty() or run_id == embedded_reported or probe.get("status", "") not in ["completed", "failed"]: return
+	embedded_reported = run_id
+	var failed = probe.get("status") == "failed"
+	var message = "Runtime integrat: " + str(probe.get("error", "Verificarea a eșuat.")) if failed else str(probe.get("result", "Runtime integrat verificat."))
+	note(message, "embedded_runtime_failed" if failed else "embedded_runtime_verified", failed)
 
 func _connect(prepare: bool = false) -> Dictionary:
 	note("Verificare Termux și permisiune Android.", "preflight")

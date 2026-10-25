@@ -18,3 +18,31 @@ Proba nu cere acces la Termux, stocare partajată sau rețea. Modulul nu primeș
 4. Pornim Blender din serviciul separat, cu joburi limitate, anulare, jurnal, import GLB în Godot și verificarea unui mesh real. Abia după o probă fizică în APK mutăm butonul **Instalează Blender** la noul backend și eliminăm fluxul Termux.
 
 Licențele PRoot/PRoot-Distro și Blender, sursele corespunzătoare și notele de distribuție trebuie incluse/verificate înainte de livrarea unui APK care le conține. Dimensiunea finală a pachetului și compatibilitatea Blender pe Android rămân de măsurat.
+
+## Etapa 2: PRoot propriu și probă Linux
+
+`tools/embedded-runtime/build.py` construiește din surse verificate PRoot
+5.1.107.101, talloc 2.5.0 și libandroid-shmem 0.7. Dependențele nesistem sunt
+legate static în PRoot; loader-ul ARM64 este ambalat separat. Căile loader-ului
+și fișierelor temporare sunt date la pornire, astfel încât același build poate
+funcționa cu ID-ul debug sau release al aplicației. Nu instalăm Termux sau
+PRoot-Distro în aplicație.
+
+Gradle pregătește bibliotecile native, un program Linux minimal fără libc,
+manifestul cu hash-uri și licențele. Sursele exacte și scriptul cu toate
+modificările sunt păstrate în `corresponding-sources.tar.gz`. Serviciul verifică
+hash-urile, extrage numai proba mică într-un director de cache propriu și rulează
+mai întâi proba Android, apoi programul Linux prin PRoot. Nu acceptă comenzi sau
+căi furnizate de model. La final, curăță doar directorul acelei probe.
+
+Proba pornește automat la deschiderea procesului principal al editorului;
+rezultatul este preluat în **Jurnal** la verificarea statusului din setări.
+Rezultatele vechi sunt separate prin ID-ul probei, iar succesul Linux **nu**
+activează uneltele Blender. În această etapă Blender nu este încă inclus.
+
+Local: executabilul PRoot și loader-ul s-au compilat, cu numai biblioteci de
+sistem în `DT_NEEDED`. Lansarea loader-ului din fișierele private a întors
+`Permission denied`; SELinux etichetează acel fișier `app_data_file`, pe când
+loader-ul ambalat al Termux este `apk_data_file`. Este necesară proba cu fișierul
+nou ambalat efectiv în APK. Nici PRoot-ul instalat, nici containerul Debian al
+utilizatorului nu au fost modificate.

@@ -33,7 +33,32 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa în lucru — runtime Blender în APK, 25.10.2026
+## Etapa în lucru — PRoot propriu în APK, 25.10.2026
+
+Adăugat buildul din surse pentru PRoot 5.1.107.101, talloc 2.5.0 și
+libandroid-shmem 0.7, cu versiuni/hash-uri fixate și dependențe nesistem legate
+static. Loader-ul și directorul temporar sunt configurate la pornire, fără
+căi fixe către aplicația Termux. Gradle ambalează bibliotecile, o probă Linux
+ARM64 minimală, hash-urile și licențele; CI păstrează și arhiva surselor exacte.
+Serviciul separat verifică integritatea și încearcă automat proba Android și
+proba Linux. Rezultatul ajunge în **Jurnal**, fără a declara Blender disponibil.
+
+Verificări locale: **425 aserțiuni Godot**, zero eșecuri, inclusiv lipsa activării
+false a Blender și jurnalizarea o singură dată a probei. Kotlin compilează cu
+SDK 36. Buildul PRoot local produce un ELF ARM64 de 280.072 bytes și un loader
+de 17.800 bytes; `DT_NEEDED` conține numai biblioteci Android. Încercarea de a
+executa loader-ul din fișierele private a fost refuzată (`Permission denied`),
+deci nu este prezentată ca probă Linux reușită. Urmează buildul NDK și
+verificarea din APK, unde loader-ul este extras de Android în zona nativă.
+Dovezi: `.ai-qa/embedded-proot-build.log`, `.ai-qa/embedded-proot-sources/build.log`,
+`.ai-qa/embedded-proot-smoke/result.json`, `.ai-qa/embedded-runtime-godot-tests.log`
+și `.ai-qa/embedded-runtime-kotlin-v2.log`. Instalarea Termux, containerul Debian
+și APK-ul stabil din Downloads sunt păstrate. Blender nu este încă inclus.
+
+Jurnal: 25.10.2026 — construit PRoot propriu din surse și pregătită proba Linux
+din procesul Android separat, cu verificarea hash-urilor și diagnostic în Jurnal.
+
+## Etapa precedentă — probă nativă de executare în APK, 25.10.2026
 
 Am început [runtime-ul Blender integrat](docs/AI_EMBEDDED_BLENDER_RUNTIME.md) cu
 o probă ARM64 reproductibilă: Gradle construiește un executabil PIE mic cu NDK,

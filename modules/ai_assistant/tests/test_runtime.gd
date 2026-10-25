@@ -105,6 +105,17 @@ func _blender_diagnostic_tests(node: Node) -> void:
 	result = backend.prepare_manual()
 	check(result.get("ok", false) and calls.has("copy_bootstrap") and calls.has("open_termux") and backend.manual_setup_pending, "Explicit manual setup copies the private bootstrap and opens Termux for user execution")
 	check(not backend.log_text.contains(secret) and not JSON.stringify(result).contains(secret), "Manual pairing does not return its private command or token to GDScript results or logs")
+	var probe = {"ok": true, "run_id": "probe-1", "status": "completed", "result": "Runtime Linux ARM64 verificat."}
+	backend.native_override = func(action: String, _args: Dictionary) -> Dictionary:
+		return probe.duplicate() if action == "embedded_status" else device.duplicate()
+	count = backend.log_entries.size()
+	backend._report_embedded_probe()
+	backend._report_embedded_probe()
+	check(backend.log_entries.size() == count + 1 and backend.log_entries[-1].get("code") == "embedded_runtime_verified", "A completed native runtime probe is journaled once per run")
+	check(not backend.available() and backend.runtime.is_empty(), "A Linux probe alone never enables Blender or advertises its tools")
+	probe.merge({"run_id": "probe-2", "status": "failed", "error": "Loader rejected by Android"}, true)
+	backend._report_embedded_probe()
+	check(backend.log_entries[-1].get("failed") and backend.log_text.contains("Loader rejected by Android"), "Android loader errors remain visible in the persistent journal")
 
 func _initialize() -> void:
 	_run.call_deferred()

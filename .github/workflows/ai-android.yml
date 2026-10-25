@@ -11,6 +11,7 @@ on:
       - "modules/ai_assistant/**"
       - "platform/android/java/editor/**"
       - "tools/ai-companion/**"
+      - "tools/embedded-runtime/**"
       - ".github/workflows/ai-android.yml"
 
 permissions:
@@ -124,6 +125,14 @@ jobs:
               assert probe[:4] == b'\x7fELF' and probe[4] == 2, 'Missing 64-bit embedded runtime probe'
               assert int.from_bytes(probe[16:18], 'little') == 3, 'Probe must be PIE/ET_DYN'
               assert int.from_bytes(probe[18:20], 'little') == 183, 'Probe must target AArch64'
+              import json
+              manifest = json.loads(archive.read('assets/godot_ai/embedded/manifest.json'))
+              for path, spec in manifest['files'].items():
+                  entry = path.replace('jniLibs/', 'lib/', 1) if path.startswith('jniLibs/') else path
+                  data = archive.read(entry)
+                  assert hashlib.sha256(data).hexdigest() == spec['sha256'], entry
+              assert 'lib/arm64-v8a/libai_proot.so' in archive.namelist()
+              assert 'lib/arm64-v8a/libai_proot_loader.so' in archive.namelist()
           if os.environ.get('GODOT_AI_DEBUG_KEYSTORE_FILE'):
               certificate = subprocess.run(['keytool', '-exportcert', '-keystore', os.environ['GODOT_AI_DEBUG_KEYSTORE_FILE'], '-storepass', 'android', '-alias', 'androiddebugkey'], check=True, capture_output=True).stdout
               expected = hashlib.sha256(certificate).hexdigest()
@@ -142,6 +151,12 @@ jobs:
             bin/android_editor_builds/android_editor-android-debug.apk
             bin/android_editor_builds/android_editor-android-debug.apk.sha256
             bin/android_editor_builds/android_editor-android-debug.apk.badging.txt
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Godot-embedded-runtime-sources-${{ github.sha }}
+          path: platform/android/java/editor/build/generated/ai-runtime/corresponding-sources.tar.gz
           if-no-files-found: error
 
   native-editor:

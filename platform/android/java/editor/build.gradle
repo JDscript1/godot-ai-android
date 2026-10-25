@@ -76,6 +76,7 @@ android {
 
     sourceSets {
         main.jniLibs.srcDir "$buildDir/generated/ai-runtime/jniLibs"
+        main.assets.srcDir "$buildDir/generated/ai-runtime/assets"
     }
 
     namespace = "org.godotengine.editor"
@@ -169,6 +170,7 @@ android {
         jniLibs {
             // The executable probe must exist as a real file in nativeLibraryDir.
             useLegacyPackaging = true
+            keepDebugSymbols += '**/libai_proot*.so'
         }
         // Debug symbols are kept for development within Android Studio.
         if (shouldNotStrip()) {
@@ -217,10 +219,13 @@ android {
 
 // Android 10+ permits exec from the installed native-library directory. Build a
 // tiny PIE first; PRoot must later be rebuilt for this app ID and verified here.
-tasks.register('buildAiRuntimeProbe') {
-    def output = file("$buildDir/generated/ai-runtime/jniLibs/arm64-v8a/libai_runtime_probe.so")
+tasks.register('buildAiEmbeddedRuntime') {
+    def runtimeTools = new File(rootDir, '../../../tools/embedded-runtime').canonicalFile
+    def generated = file("$buildDir/generated/ai-runtime")
+    def output = new File(generated, 'jniLibs/arm64-v8a/libai_runtime_probe.so')
     inputs.file('src/main/native/ai_runtime_probe.c')
-    outputs.file(output)
+    inputs.dir(runtimeTools)
+    outputs.dir(generated)
     doLast {
         def ndk = android.ndkDirectory
         def host = System.getProperty('os.name').toLowerCase().contains('mac') ? 'darwin-x86_64' : 'linux-x86_64'
@@ -231,12 +236,16 @@ tasks.register('buildAiRuntimeProbe') {
             commandLine clang, '--target=aarch64-linux-android24', '-fPIE', '-pie',
                     '-Wl,--build-id=none', '-s', file('src/main/native/ai_runtime_probe.c'), '-o', output
         }
+        exec {
+            commandLine 'python3', new File(runtimeTools, 'build.py'), '--ndk', ndk,
+                    '--work', file("$buildDir/ai-runtime-build"), '--output', generated
+        }
     }
 }
 
 tasks.configureEach {
-    if (name.startsWith('merge') && name.endsWith('JniLibFolders')) {
-        dependsOn 'buildAiRuntimeProbe'
+    if (name.startsWith('merge') && (name.endsWith('JniLibFolders') || name.endsWith('Assets'))) {
+        dependsOn 'buildAiEmbeddedRuntime'
     }
 }
 
