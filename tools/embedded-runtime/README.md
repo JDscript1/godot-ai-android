@@ -32,6 +32,8 @@ Samba's portable `memset_explicit` at API 29; and remove the Termux-specific
 diagnostic path. No runtime component is copied from the host Termux install.
 The ashmem extension also receives its missing explicit `string.h` include,
 required by the NDK's headers.
+PRoot's generated version is pinned instead of inheriting the enclosing Godot
+repository's git tag.
 
 PRoot's COPYING, talloc's LGPLv3 license and libandroid-shmem's BSD license are
 preserved from their source archives. The exact source/build bundle accompanies

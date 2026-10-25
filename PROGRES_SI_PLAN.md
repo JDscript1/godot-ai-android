@@ -67,6 +67,8 @@ Proba guest Linux a trecut separat cu PRoot-ul și loader-ul deja ambalate ale
 Termux (`.ai-qa/embedded-proot-smoke/guest-control.json`), izolând refuzul local
 la loader-ul nou din stocarea privată. Acesta este un control al probei, nu
 dovada că runtime-ul nostru funcționează în APK.
+Corectată și detectarea versiunii PRoot: generatorul upstream moștenea tag-ul
+Godot din checkout-ul părinte. Buildul folosește acum versiunea din sursa fixată.
 
 ## Etapa precedentă — probă nativă de executare în APK, 25.10.2026
 

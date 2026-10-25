@@ -175,7 +175,10 @@ def main():
     env["CPPFLAGS"] = f"-I{prefix / 'include'} -DARG_MAX=131072 -DVERSION=\\\"{specs['proot']['version']}\\\""
     env["LDFLAGS"] = f"-L{prefix / 'lib'} -llog -landroid -Wl,-z,max-page-size=16384"
     env["PROOT_UNBUNDLE_LOADER"] = "/__godot_requires_PROOT_LOADER__"
-    run(["make", "-C", "src", "-j4", "PROOT_WITH_LIBANDROID_SHMEM=true", f"STRIP={strip}"], proot, env, log)
+    # Upstream otherwise walks into the enclosing Godot git checkout and uses
+    # the Godot tag as PRoot's VERSION. The lock file is authoritative here.
+    (proot / "src/build.h").unlink(missing_ok=True)
+    run(["make", "-C", "src", "-j4", "GIT=false", "PROOT_WITH_LIBANDROID_SHMEM=true", f"STRIP={strip}"], proot, env, log)
     libraries = output / "jniLibs/arm64-v8a"
     libraries.mkdir(parents=True, exist_ok=True)
     for name, original in [("libai_proot.so", proot / "src/proot"), ("libai_proot_loader.so", proot / "src/loader/loader")]:
@@ -189,6 +192,8 @@ def main():
             run(["patchelf", "--remove-rpath", target], output, env, log)
         if b"/data/data/com.termux/" in target.read_bytes():
             raise RuntimeError(f"Termux-private path leaked into {target}")
+        if name == "libai_proot.so" and specs["proot"]["version"].encode() not in target.read_bytes():
+            raise RuntimeError("PRoot version does not match the source lock")
         elf(target, 3 if name == "libai_proot.so" else 2)
     guest = output / "assets/godot_ai/embedded/linux-probe"
     guest.parent.mkdir(parents=True, exist_ok=True)
