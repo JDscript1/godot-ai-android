@@ -2160,7 +2160,7 @@ class FixtureLinuxBridge:
 			if fail: return {"ok": true, "status": "failed", "error": "Verificarea runtime a eșuat.", "output": "diagnostic fixture"}
 			var result = {}
 			match str(pending.get("action", "")):
-				"install", "verify": state.merge({"installed": true, "ready": true}, true); result = state.duplicate(true)
+				"prepare", "install", "verify": state.merge({"installed": true, "ready": true}, true); result = state.duplicate(true)
 				"tool_install":
 					state["tools"][pending["args"]["tool"]] = {"ready": true, "version": "fixture 1.0"}
 					result = state.duplicate(true)
@@ -2187,14 +2187,17 @@ func _linux_runtime_tests(output: String) -> void:
 	panel.open_settings("integrations")
 	await get_tree().create_timer(0.2).timeout
 	var form: Dictionary = panel.forms["linux"]
-	_check(form["primary"].text == "Instalează Linux" and not form["primary"].disabled and not form["tools"].visible, "Runtime setup offers one install action before the app-owned filesystem exists")
+	_check(form["primary"].text == "Repară" and not form.has("remove") and not form["tools"].visible, "The required Linux base has recovery controls and no manual install or uninstall actions")
 	var catalog = panel.ToolRegistry.new(backend.definitions(false), true)
 	_check(catalog.discover("tool_describe", {"name": "linux_execute"}).get("code") == "tool_unavailable", "No Linux execution tool is exposed before successful runtime verification")
-	await panel._linux_setup("install")
+	await backend.ensure_ready()
 	_check(backend.available() and form["status"].text == "Linux activ" and form["tools"].visible, "Only a completed and verified Linux job enables the runtime and its utility controls")
+	_check(bridge.requests[0]["action"] == "prepare" and not form["primary"].visible, "Linux prepares automatically and hides recovery controls after success")
 	_check(panel.integration_settings.get("linux_enabled", false) and not form["buttons"]["python"].disabled, "Verified runtime becomes available for optional Python installation")
 	await panel._linux_setup("tool_install", "python")
 	_check(form["buttons"]["python"].text == "Instalat" and form["buttons"]["python"].disabled and not form["buttons"]["node"].disabled, "Tool installation reflects measured capability without claiming other tools are installed")
+	await backend.ensure_ready()
+	_check(form["buttons"]["python"].text == "Instalat" and backend.available(), "Automatic startup verification preserves installed optional utilities")
 	if not output.is_empty():
 		await get_tree().create_timer(0.2).timeout
 		var page = panel.settings_tabs.get_tab_control(panel.section_tabs["integrations"])
@@ -2217,12 +2220,11 @@ func _linux_runtime_tests(output: String) -> void:
 	var failed = await backend.setup("verify")
 	_check(not failed.get("ok", false) and backend.log_text.contains("diagnostic"), "Failed runtime jobs retain their diagnostic output")
 	bridge.fail = false
-	panel._linux_remove()
-	var dialogs = panel.find_children("*", "ConfirmationDialog", true, false).filter(func(item: ConfirmationDialog) -> bool: return item.title == "Dezinstalează Linux")
-	_check(dialogs.size() == 1 and not bridge.requests.any(func(request: Dictionary) -> bool: return request["action"] == "uninstall"), "Removing the runtime requires confirming removal of its tools while preserving projects")
-	if not dialogs.is_empty(): dialogs[0].canceled.emit()
-	await panel._linux_setup("uninstall")
-	_check(not backend.available() and not form["tools"].visible and not panel.integration_settings.get("linux_enabled", true), "Completed uninstall removes Linux availability from the agent")
+	bridge.state["ready"] = false
+	backend.refresh()
+	_check(form["primary"].visible and form["primary"].text == "Repară", "A runtime requiring verification offers recovery without deleting tools")
+	await panel._linux_setup("prepare")
+	_check(backend.available() and form["buttons"]["python"].text == "Instalat", "Runtime recovery preserves optional utilities")
 	panel.mode_picker.select(old_mode)
 	panel.full_control.button_pressed = old_yolo
 	panel.active_definitions = old_definitions

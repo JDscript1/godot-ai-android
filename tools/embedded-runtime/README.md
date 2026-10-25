@@ -3,7 +3,8 @@
 This directory builds PRoot and its loader for Android ARM64/API 29+. The
 result depends on Android system libraries, not on an installed Termux app.
 Python and make are build tools only. The current source also packages a pinned
-Debian filesystem; Python/Node/Git/ripgrep/Blender are optional in-app installs.
+Debian filesystem which prepares automatically on first launch;
+Python/Node/Git/ripgrep/Blender are optional in-app installs.
 Blender and third-party agent harnesses have not been validated in the Godot APK.
 
 ```sh

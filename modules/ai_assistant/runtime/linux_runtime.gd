@@ -12,6 +12,7 @@ var active_job = ""
 var log_text = ""
 var last_refresh = 0
 var stopping = false
+var preparing = false
 
 func _init(node: Node = null, native_bridge: Node = null) -> void:
 	owner = node
@@ -36,7 +37,7 @@ func available() -> bool:
 	return bool(state.get("ok", false)) and bool(state.get("ready", false)) and bool(state.get("installed", false))
 
 static func definitions(ready: bool) -> Array:
-	var result = [Common.tool("linux_status", "Inspect the optional app-owned Linux runtime and verified Python, Node.js, Git, ripgrep or Blender utilities. No separate Termux app is required. Availability is measured; do not assume a CLI harness is installed or integrated.", {}, [])]
+	var result = [Common.tool("linux_status", "Inspect the built-in Linux runtime and verified Python, Node.js, Git, ripgrep or Blender utilities. The base prepares automatically; no separate Termux app is required. Availability is measured; do not assume a CLI harness is installed or integrated.", {}, [])]
 	if ready:
 		result.append(Common.tool("linux_execute", "Execute a shell command in the app-owned Debian runtime with the current Godot project mounted at /workspace. Use explicit paths; output is bounded, jobs are cancellable and return the actual exit code. This can modify project files and use network access. PRoot is not a security sandbox. Never read or print credentials; never claim a CLI agent integration merely because its executable runs. Use native Godot tools for scene operations and GLB previews.", {"command": {"type": "string", "minLength": 1, "maxLength": 16000}, "seconds": {"type": "integer", "minimum": 1, "maximum": 600}}, ["command"], "external"))
 		result.append(Common.tool("linux_install_tool", "Install an optional utility into the integrated Linux runtime. Only use when the user requested that utility; package downloads need network access. Confirm availability from the completed job, not from a queued installation.", {"tool": {"type": "string", "enum": ["python", "node", "git", "ripgrep", "blender"]}}, ["tool"], "external"))
@@ -45,8 +46,15 @@ static func definitions(ready: bool) -> Array:
 func setup(action: String, tool: String = "") -> Dictionary:
 	return await _start(action, {"tool": tool} if action == "tool_install" else {}, {})
 
+func ensure_ready() -> Dictionary:
+	if working: return Common.success({"in_progress": true})
+	var current = refresh()
+	if not current.get("supported", false) or not current.get("packaged", false): return current
+	if not str(current.get("active_job", "")).is_empty(): return Common.success({"in_progress": true})
+	return await setup("prepare")
+
 func execute(args: Dictionary, cancel: Dictionary) -> Dictionary:
-	if not available(): return Common.failure("Instalează și verifică Linux din Integrări → Runtime Linux.", "runtime_unavailable")
+	if not available(): return Common.failure("Linux se pregătește automat. Verifică starea în Integrări → Runtime Linux.", "runtime_unavailable")
 	return await _start("execute", args, cancel)
 
 func resume(id: String) -> Dictionary:
@@ -63,6 +71,7 @@ func _start(action: String, args: Dictionary, cancel: Dictionary) -> Dictionary:
 		return submitted
 	var id = str(submitted.get("id", ""))
 	if id.is_empty(): return Common.failure("Sarcina Linux nu are ID.", "runtime_protocol_error")
+	preparing = action == "prepare"
 	return await _wait(id, cancel)
 
 func _wait(id: String, cancel: Dictionary) -> Dictionary:
@@ -78,6 +87,7 @@ func _wait(id: String, cancel: Dictionary) -> Dictionary:
 			_request("cancel", {"id": id})
 		var response = _request("poll", {"id": id})
 		if not response.get("ok", false): outcome = response; break
+		if response.has("kind"): preparing = str(response["kind"]) == "prepare"
 		var text = str(response.get("output", ""))
 		if is_instance_valid(owner) and owner.has_method("_redact"): text = owner._redact(text)
 		if log_text != text: log_text = text.right(131072); changed.emit()
@@ -94,6 +104,7 @@ func _wait(id: String, cancel: Dictionary) -> Dictionary:
 	working = false
 	active_job = ""
 	stopping = false
+	preparing = false
 	state = _request("status")
 	changed.emit()
 	_note("job", outcome, id)

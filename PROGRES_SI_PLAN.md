@@ -36,7 +36,18 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — runtime Linux persistent pentru utilitare, 25.10.2026
+## Livrare în pregătire — Linux automat, 25.10.2026
+
+Utilizatorul a cerut compilarea și înlocuirea APK-ului. Baza Linux este acum
+pregătită automat la pornirea asistentului, inclusiv în lista de proiecte.
+Eliminate acțiunile manuale Instalează/Dezinstalează Linux; rămân statusul,
+Repară la eșec și instalarea utilitarelor opționale. Pregătirea bazei continuă
+la trecerea din lista de proiecte în editor. Revalidarea păstrează pachetele.
+Compilarea verifică și pachetul Debian, clasele serviciului Linux și conținutul
+exact al scripturilor AI înglobate. Livrarea se confirmă după verificarea
+artefactului semnat și înlocuirea atomică a installerului din Download.
+
+## Etapa precedentă — runtime Linux persistent pentru utilitare, 25.10.2026
 
 **Implementat în surse, fără recompilare APK:** un runtime comun în
 **Integrări → Runtime Linux**, cu bază Debian ARM64 ambalată în build, instalare

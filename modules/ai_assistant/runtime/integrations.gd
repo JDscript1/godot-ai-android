@@ -110,7 +110,7 @@ func github_request(repository: String, args: Dictionary, cancel: Dictionary = {
 	return Common.success(value)
 
 func stop() -> void:
-	if linux != null: linux.stop()
+	if linux != null and not linux.preparing: linux.stop()
 	github_invalidate()
 	if termux != null: termux.stop()
 	for pid in processes:

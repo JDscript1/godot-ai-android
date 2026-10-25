@@ -305,7 +305,7 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     command = [args.godot, "--headless", "--path", str(source / "tests/fixture"), "--script", str(source / "tests/test_runtime.gd"), "--", "--source=" + str(source), f"--mock-url=http://127.0.0.1:{server.server_port}"]
     if args.proot:
-        prefix = ["proot-distro", "login", "debian", "--shared-home", "--"]
+        prefix = ["proot-distro", "login", "--shared-home", "debian", "--"]
         if os.environ.get("GODOT_AI_TERRAIN3D_ZIP"):
             prefix += ["env", "GODOT_AI_TERRAIN3D_ZIP=" + os.environ["GODOT_AI_TERRAIN3D_ZIP"]]
         command = prefix + command

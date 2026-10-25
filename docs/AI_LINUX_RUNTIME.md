@@ -6,9 +6,12 @@ a serviciului din aplicația Godot instalată.
 
 ## Funcționare
 
-În **Integrări → Runtime Linux**, butonul **Instalează Linux** extrage în
-stocarea privată a aplicației un pachet Debian ARM64 inclus în build. După
-pornirea și verificarea reală a shell-ului prin PRoot, apare **Linux activ**.
+Linux este o componentă de bază: la pornirea asistentului, inclusiv în lista
+de proiecte, aplicația pregătește automat în stocarea privată pachetul Debian
+ARM64 inclus în build. După pornirea și verificarea shell-ului prin PRoot,
+în **Integrări → Runtime Linux** apare **Linux activ**. Nu există butoane
+pentru instalarea sau dezinstalarea manuală a bazei; **Repară** apare când
+verificarea nu a reușit. Verificarea ulterioară păstrează pachetele instalate.
 Nu sunt necesare Termux, copierea comenzilor sau o aplicație companion.
 
 Utilitare opționale: **Python**, **Node.js și npm**, **Git**, **ripgrep** și
@@ -45,8 +48,10 @@ extern instalat, autentificat și validat în Godot.
 - `linux_status`, `linux_execute` și `linux_install_tool` folosesc catalogul și
   permisiunile existente. Execuția este o operație externă: modul Plan nu o
   autorizează. Instrumentele active sunt oferite numai după verificarea Linux.
-- Ștergerea Linux cere confirmare și elimină doar propriul filesystem/pachete.
-  Proiectele montate sunt păstrate. Ștergerea recursivă nu urmărește symlink-uri.
+- La trecerea din lista de proiecte în editor, pregătirea automată continuă
+  în serviciu; noul panou urmărește jobul existent. Comenzile agentului nu
+  sunt relansate automat. Dezinstalarea bazei rămâne doar o operație internă
+  de dezvoltare; nu este expusă în interfață sau agentului.
 
 PRoot este un mediu de compatibilitate, nu un sandbox de securitate sau o
 mașină virtuală. Programele rulează cu permisiunile aplicației și kernelul

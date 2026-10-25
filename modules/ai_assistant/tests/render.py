@@ -47,7 +47,7 @@ def main():
                        "--audio-driver", "Dummy", "--resolution", resolution,
                        "--path", str(fixture)]
             if args.proot:
-                command = ["proot-distro", "login", "debian", "--shared-home", "--", "env",
+                command = ["proot-distro", "login", "--shared-home", "debian", "--", "env",
                            *(f"{key}={value}" for key, value in environment.items()), *command]
             report_path = destination / "editor-report.json"
             report_path.unlink(missing_ok=True)

@@ -201,6 +201,7 @@ func _ready() -> void:
 	_refresh_conversations()
 	set_process(true)
 	_status("Configurează un furnizor din Setări pentru a începe.")
+	integrations.linux.ensure_ready.call_deferred()
 
 func _exit_tree() -> void:
 	_restore_dock_groups()
@@ -3660,9 +3661,8 @@ func _build_linux_runtime(parent: Node) -> void:
 	var form = _form(card, "linux")
 	form["status"] = _label(card, "Verific runtime-ul…")
 	var actions = _row(card)
-	form["primary"] = _button(actions, "Instalează Linux", func() -> void: _linux_setup("verify" if integrations.linux.state.get("installed", false) else "install"))
+	form["primary"] = _button(actions, "Repară", func() -> void: _linux_setup("prepare"))
 	form["cancel"] = _button(actions, "Oprește", func() -> void: integrations.linux.stop())
-	form["remove"] = _button(actions, "Dezinstalează", _linux_remove)
 	form["tools"] = VBoxContainer.new()
 	card.add_child(form["tools"])
 	form["buttons"] = {}
@@ -3674,7 +3674,7 @@ func _build_linux_runtime(parent: Node) -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var button = _button(row, "Instalează", func() -> void: _linux_setup("tool_install", entry[0]))
 		form["buttons"][entry[0]] = button
-	form["hint"] = _label(card, "Unelte Linux în memoria aplicației, fără Termux. Comenzile au permisiunile aplicației.")
+	form["hint"] = _label(card, "Linux se pregătește automat. Adaugă doar uneltele de care ai nevoie.")
 	integrations.linux.refresh()
 	_refresh_linux_card()
 
@@ -3685,11 +3685,9 @@ func _refresh_linux_card() -> void:
 	var state: Dictionary = runtime.state
 	var supported = bool(state.get("supported", false)) and bool(state.get("packaged", false))
 	var installed = bool(state.get("installed", false))
-	form["status"].text = "În lucru…" if runtime.working else ("Linux activ" if runtime.available() else ("Necesită verificare" if installed else ("Linux neinstalat" if supported else "Disponibil în APK-ul Android cu runtime Linux")))
-	form["primary"].text = "Verifică Linux" if installed else "Instalează Linux"
+	form["status"].text = ("Pregătesc Linux…" if runtime.preparing else "În lucru…") if runtime.working else ("Linux activ" if runtime.available() else ("Necesită verificare" if installed else ("Linux în așteptare" if supported else "Disponibil în APK-ul Android cu runtime Linux")))
+	form["primary"].visible = supported and not runtime.available() and not runtime.working
 	form["primary"].disabled = busy or runtime.working or not supported
-	form["remove"].visible = installed
-	form["remove"].disabled = busy or runtime.working
 	form["cancel"].visible = runtime.working
 	form["tools"].visible = installed
 	for key in form["buttons"]:
@@ -3707,16 +3705,6 @@ func _linux_setup(action: String, tool: String = "") -> void:
 	var result = await integrations.linux.setup(action, tool)
 	_status("Linux pregătit." if result.get("ok", false) and action != "uninstall" else ("Linux dezinstalat." if result.get("ok", false) else str(result.get("error", "Sarcina Linux nu s-a finalizat."))))
 	_refresh_linux_card()
-
-func _linux_remove() -> void:
-	if busy or integrations.linux.working: return
-	var dialog = ConfirmationDialog.new()
-	dialog.title = "Dezinstalează Linux"
-	dialog.dialog_text = "Se șterg Linux și utilitarele instalate în runtime. Proiectele Godot sunt păstrate."
-	dialog.confirmed.connect(func() -> void: dialog.queue_free(); _linux_setup("uninstall"))
-	dialog.canceled.connect(dialog.queue_free)
-	_mount_dialog(dialog)
-	dialog.popup_centered_clamped(Vector2i(500, 220), 0.9)
 
 func _linux_diagnostic(entry: Dictionary) -> void:
 	_record_event("linux_runtime", {"action": entry.get("action", "")}, entry)

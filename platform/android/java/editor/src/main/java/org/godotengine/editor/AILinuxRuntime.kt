@@ -51,8 +51,10 @@ object AILinuxRuntime {
                     recoverStale(job, file)
                     job.put("ok", true).toString()
                 }
-                "install", "verify", "tool_install", "execute", "uninstall" -> {
-                    check(active(current).isEmpty()) { "O sarcină Linux este deja în lucru." }
+                "prepare", "install", "verify", "tool_install", "execute", "uninstall" -> {
+                    val active = active(current)
+                    if (action == "prepare" && active.isNotEmpty()) return JSONObject().put("ok", true).put("id", active).put("status", "running").toString()
+                    check(active.isEmpty()) { "O sarcină Linux este deja în lucru." }
                     if (action == "tool_install") check(AILinuxRuntimeFiles.TOOL_PACKAGES.containsKey(arguments.getString("tool"))) { "Utilitar necunoscut." }
                     if (action == "execute") {
                         val command = arguments.getString("command")
@@ -159,10 +161,11 @@ class AILinuxRuntimeService : Service() {
             synchronized(lock) { job.put("status", "running").put("pid", Process.myPid()); save() }
             val args = job.getJSONObject("arguments")
             val result = when (job.getString("kind")) {
-                "install" -> {
+                "prepare", "install" -> {
                     val network = getSystemService(ConnectivityManager::class.java)
                     val dns = network.getLinkProperties(network.activeNetwork)?.dnsServers?.mapNotNull { it.hostAddress }.orEmpty()
-                    runtime.install(dns); runtime.state()
+                    if (job.getString("kind") == "prepare" && runtime.state().optBoolean("installed")) runtime.verify()
+                    else { runtime.install(dns); runtime.state() }
                 }
                 "verify" -> runtime.verify()
                 "tool_install" -> runtime.installTool(args.getString("tool"))
