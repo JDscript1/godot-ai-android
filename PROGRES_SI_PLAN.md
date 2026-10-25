@@ -57,6 +57,9 @@ Dovezi: `.ai-qa/embedded-proot-build.log`, `.ai-qa/embedded-proot-sources/build.
 
 Jurnal: 25.10.2026 — construit PRoot propriu din surse și pregătită proba Linux
 din procesul Android separat, cu verificarea hash-urilor și diagnostic în Jurnal.
+Prima rulare CI (`40190593253`) s-a oprit înaintea compilării PRoot din cauza
+unui HTTP 503 de la sursa talloc. Adăugate reîncercări, mirror oficial Samba,
+cache pentru arhive și teste pentru refuzul unui checksum modificat.
 
 ## Etapa precedentă — probă nativă de executare în APK, 25.10.2026
 

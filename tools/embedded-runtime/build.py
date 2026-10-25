@@ -15,6 +15,8 @@ import struct
 import subprocess
 import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -23,6 +25,28 @@ HERE = Path(__file__).resolve().parent
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def download(archive, spec):
+    partial = archive.with_suffix(archive.suffix + ".part")
+    urls = [spec["url"], *spec.get("mirrors", [])]
+    for attempt in range(4):
+        url = urls[attempt % len(urls)]
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "GodotEmbeddedRuntimeBuild/1"})
+            with urllib.request.urlopen(request, timeout=90) as response, partial.open("wb") as target:
+                shutil.copyfileobj(response, target)
+            if digest(partial) != spec["sha256"]:
+                raise RuntimeError(f"Checksum mismatch: {url}")
+            partial.replace(archive)
+            return
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if attempt == 3:
+                raise RuntimeError(f"Could not download verified source: {url}") from error
+            print(f"Source download unavailable; retry {attempt + 1}/3", flush=True)
+            time.sleep(2 ** attempt)
+        finally:
+            partial.unlink(missing_ok=True)
 
 
 def run(args, cwd, env, log):
@@ -39,10 +63,7 @@ def source(work, name, spec):
     cache.mkdir(parents=True, exist_ok=True)
     archive = cache / Path(spec["url"]).name
     if not archive.exists():
-        partial = archive.with_suffix(archive.suffix + ".part")
-        with urllib.request.urlopen(spec["url"], timeout=90) as response, partial.open("wb") as target:
-            shutil.copyfileobj(response, target)
-        partial.replace(archive)
+        download(archive, spec)
     if digest(archive) != spec["sha256"]:
         raise RuntimeError(f"Checksum mismatch: {archive}")
     directory = work / "src" / spec["directory"]

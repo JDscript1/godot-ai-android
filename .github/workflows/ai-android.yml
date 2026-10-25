@@ -36,6 +36,7 @@ jobs:
           python modules/ai_assistant/tests/run.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
           python modules/ai_assistant/tests/test_delivery.py
           python modules/ai_assistant/tests/test_termux_blender.py
+          python tools/embedded-runtime/test_build.py
       - name: Render desktop and narrow editor panels
         run: |
           sudo apt-get update -qq
@@ -95,8 +96,14 @@ jobs:
             chmod 600 "$HOME/.android/debug.keystore"
             echo "GODOT_AI_DEBUG_KEYSTORE_FILE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
           fi
+      - uses: actions/cache@v4
+        with:
+          path: platform/android/java/editor/build/ai-runtime-build/downloads
+          key: godot-runtime-sources-${{ hashFiles('tools/embedded-runtime/sources.json') }}
       - name: Compile editor and APK
-        run: scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes cache_path="$SCONS_CACHE" -j4
+        run: |
+          scons platform=android target=editor arch=arm64 optimize=size debug_symbols=no generate_android_binaries=yes cache_path="$SCONS_CACHE" -j4
+          test -f bin/android_editor_builds/android_editor-android-debug.apk
       - uses: actions/cache/save@v4
         if: always()
         with:
