@@ -64,7 +64,9 @@ development as the first step toward Blender without a separate Termux app.
 It is packaged in a CI APK; execution from that APK still needs a device test.
 The experimental PRoot APK was withdrawn from Download after a report of missing
 editor UI. Download now contains the previous `5baf890` installer; the experimental
-artifact remains in CI and project evidence. The UI cause is not yet confirmed.
+artifact remains in CI and project evidence. A subsequent screenshot shows the
+empty project manager with Asset Store visible. Open a project to check the
+agent editor tab; physical verification of the experimental runtime is pending.
 
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture

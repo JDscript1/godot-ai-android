@@ -36,7 +36,25 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — restaurare APK anterior după raport de interfață lipsă, 25.10.2026
+## Etapa curentă — captura arată managerul de proiecte, 25.10.2026
+
+Inspectată captura fizică `Screenshot_20261025_171509.jpg` din
+`/storage/emulated/0/Pictures/Screenshots/`. Ea arată **managerul de proiecte**,
+lista goală și tabul **Asset Store vizibil sus**. Versiunea din colț este
+`5baf89043`, deci captura este din APK-ul restaurat. Agentul este înregistrat
+în editorul unui proiect (`editor/editor_node.cpp`), nu în managerul inițial.
+Următorul pas este importarea fișierului `project.godot` și deschiderea
+proiectului cu **Modificare**. Lista goală nu demonstrează că fișierele
+proiectului au fost șterse.
+
+Captura explică absența Agentului din ecranul prezentat și nu constituie
+dovadă de regresie în editor pentru `644a3b0`. Nu am observat încă editorul
+deschis în acel build și nu am validat proba PRoot din APK. Nu s-a schimbat
+codul, nu s-a recompilat și nu s-a înlocuit din nou APK-ul din Download.
+Jurnal: 25.10.2026 — clarificat prin captură ecranul afișat; verificarea
+Agentului trebuie continuată într-un proiect deschis.
+
+## Etapa precedentă — restaurare APK anterior după raport de interfață lipsă, 25.10.2026
 
 Utilizatorul raportează că buildul experimental `644a3b0` nu mai afișează Agent,
 Asset Store și alte elemente ale editorului. Verificarea locală a pachetului
@@ -44,8 +62,8 @@ confirmă prezența codului pentru Agent și Asset Store, toate cele 27 de
 scripturi încorporate și niciun asset anterior eliminat sau schimbat. Diferența
 de dimensiune provine din comprimare: biblioteca motorului are aproximativ
 131 MB în ambele APK-uri, dar în `644a3b0` ocupă aproximativ 70 MB în ZIP.
-Acestea sunt dovezi despre conținut, nu despre funcționarea fizică a interfeței;
-cauza raportului rămâne neconfirmată și necesită o captură sau un jurnal actual.
+Acestea sunt dovezi despre conținut, nu despre funcționarea fizică a interfeței.
+Captura primită ulterior este analizată în etapa curentă de mai sus.
 
 Readus în Download installerul anterior **`5baf890`**, 145.350.814 bytes,
 SHA-256 `8982c87ce00193f70b4847a08431de26180aba0812b5808d1032a667c79d857e`.

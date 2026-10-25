@@ -58,3 +58,8 @@ Jurnal** și verifică rezultatul după aproximativ 20 de secunde. Rezultatul
 `Runtime integrat verificat: proces Android separat și program Linux ARM64.`
 este următorul prag necesar înaintea pachetului Blender complet. Instalarea și
 proba fizică nu au fost executate de agent.
+
+Captura fizică primită ulterior (`Screenshot_20261025_171509.jpg`) prezintă
+managerul de proiecte gol din `5baf890`, cu Asset Store vizibil. Agentul apare
+în editor după deschiderea unui proiect; această captură nu dovedește o regresie
+a editorului în buildul experimental. Verificarea PRoot rămâne în așteptare.
