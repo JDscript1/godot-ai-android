@@ -37,7 +37,17 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — test 02 trecut pe Android, 26.10.2026
+## Etapa curentă — cerințe UI adăugate în TODO, 26.10.2026
+
+Adăugate în [TODO_AGENT.md](TODO_AGENT.md) punctele AG-13/14/15: eticheta exactă
+Running Tools cu unealta activă actualizată dinamic, fără dropdown; imagini și
+mesh-uri generate afișate compact în chat, cu viewer deschis la apăsare sau
+cerere explicită; cadru TODO/plan mai îngust și adaptiv. Observarea în background
+de către agent rămâne distinctă de deschiderea preview-ului pentru utilizator.
+Sunt cerințe consemnate, încă neimplementate. Nu s-au schimbat sursele runtime,
+nu s-au rulat probe de interfață și nu s-a recompilat APK-ul.
+
+## Etapa precedentă — test 02 trecut pe Android, 26.10.2026
 
 Utilizatorul a transmis cerința agentului instalat, în proiectul Vampyr, folosind
 aceeași conversație ca la cub. Jurnalul, checkpoint-ul și istoricul au fost
@@ -2040,6 +2050,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** adăugate în TODO cerințele Running Tools fără dropdown,
+  generări compacte cu preview la cerere și card de plan mai îngust. Etapă de
+  documentare; implementarea și verificarea rămân de făcut.
 
 - **26.10.2026:** testul 02 trecut cu agentul real pe Android: reparate două
   linii, parser valid, Output=20, oprire confirmată și fișiere păstrate; 17

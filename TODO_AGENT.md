@@ -105,6 +105,32 @@ rulat scena test_02, a citit `TEST_02_TOTAL=20`, a oprit rularea și a confirmat
   tool_not_loaded`, apoi încărcare și recuperare. **Acceptare:** continuare și
   Resume fără apeluri către scheme indisponibile sau expunerea tool-urilor excluse.
 
+## P1 — interfața chatului, cerințe adăugate de utilizator
+
+- [ ] **AG-13 · Running Tools fără dropdown.** Înlocuiește zona „Operațiuni”
+  cu eticheta exactă **Running Tools**. În dreptul ei se afișează unealta
+  folosită în acel moment, actualizată automat la fiecare operație următoare.
+  Zona nu se extinde și nu are săgeată sau comportament de dropdown.
+  **Acceptare:** numele urmărește execuția reală și nu rămâne blocat pe o unealtă
+  după finalizare sau Stop; planul agentului rămâne în cadrul său separat.
+- [ ] **AG-14 · Generări compacte în chat, preview la cerere.** După generare,
+  imaginile și mesh-urile apar automat în conversație ca mici carduri cu
+  miniatură, nume și acces la fișier. Agentul nu deschide automat viewer-ul și
+  nu schimbă ecranul utilizatorului. Preview-ul se deschide la apăsarea cardului
+  sau când utilizatorul îi cere explicit agentului să deschidă generarea.
+  Observarea de către agent în background rămâne disponibilă fără deschiderea
+  viewer-ului. **Acceptare:** imagine și mesh finalizate apar compact în chat,
+  rămân accesibile și după reluarea conversației și se deschid numai la cerere.
+- [ ] **AG-15 · Cadru mai îngust pentru pașii agentului.** Limitează adaptiv
+  lățimea cardului TODO/plan, cu text încadrat și margini compacte. Cadrul
+  trebuie să ocupe mai puțin spațiu vizual în conversație și să se încadreze în
+  dockurile înguste. **Acceptare:** verificare pe telefon/tabletă și chat
+  central/stânga/dreapta; fără depășire, scroll orizontal sau lățime minimă care
+  forțează extinderea panoului; pașii și stările rămân lizibile.
+
+Aceste trei puncte sunt cerințe pentru implementare, nu modificări deja
+aplicate sau validate în APK.
+
 ## Din probele anterioare — de reverificat separat
 
 - [ ] **AG-10 · Setări tipizate.** `godot_set_setting` a acceptat anterior
