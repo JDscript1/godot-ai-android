@@ -1,8 +1,8 @@
 # Suită de 50 de use case-uri pentru agent
 
 26.10.2026. Catalog de probe pentru aplicația Godot AI Android. **Pregătirea
-unui scenariu nu înseamnă că agentul l-a trecut.** UC-01 și UC-02 păstrează
-rezultatele deja verificate; celelalte 48 sunt de executat și evaluat.
+unui scenariu nu înseamnă că agentul l-a trecut.** UC-01/02/03 au rezultate consemnate mai jos;
+**47 de scenarii rămân de executat și evaluat**.
 
 ## Protocol
 
@@ -34,7 +34,7 @@ rezultatele deja verificate; celelalte 48 sunt de executat și evaluat.
 | --- | --- | --- | --- |
 | UC-01 | Cub verde, cameră și lumină | Parțial — rezultat creat, workflow limitat | Modul folosit în proba existentă |
 | UC-02 | Reparare sintaxă și calcul | Trecut — Android, 48,8 s / 17 cereri | Default / Implicit în conversația existentă |
-| UC-03 | Plan fără modificări | Pregătit | Plan |
+| UC-03 | Plan fără modificări | Trecut — plan fără modificări, 25,9 s / 6 cereri | Plan |
 | UC-04 | Refuz de permisiune | Pregătit | Default / Implicit, YOLO oprit |
 | UC-05 | Acordarea permisiunii într-un mesaj nou | Neexecutat | Default / Implicit, YOLO oprit |
 | UC-06 | Stop în timpul implementării | Neexecutat | Auto |
@@ -119,7 +119,7 @@ rezultatele deja verificate; celelalte 48 sunt de executat și evaluat.
 
 ### UC-03 — Plan fără modificări
 
-**Grup:** Control și continuitate · **Stare:** Pregătit
+**Grup:** Control și continuitate · **Stare:** Trecut — plan fără modificări, 25,9 s / 6 cereri
 
 **Mod:** Plan
 
@@ -132,6 +132,12 @@ rezultatele deja verificate; celelalte 48 sunt de executat și evaluat.
 > Inspectează proiectul și propune un plan pentru o mini scenă de colectat monede, folosind un cub ca jucător, trei monede și un contor. Indică fișierele care ar trebui create și verificările necesare. În această etapă livrează numai planul, fără a crea sau modifica fișiere, fără rulare și fără generări. Păstrează răspunsul compact.
 
 **Trece dacă:** Plan concret; nicio scriere, rulare, generare sau schimbare de setări; hash-urile și jurnalul confirmă citirea fără mutații.
+
+**Dovadă:** jurnalul arată inspecție și publicare de plan, fără scrieri, rulare
+sau generare. Nu s-a exercitat o tentativă forțată de scriere în modul UI Plan.
+După mesajul separat „continuă”, utilizatorul a autorizat implementarea; acele
+scrieri sunt evaluate separat. Dovezi locale:
+`.ai-qa/manual-agent-uc03-result-20261026T215150Z/`.
 
 ### UC-04 — Refuz de permisiune
 
@@ -887,7 +893,7 @@ rezultatele deja verificate; celelalte 48 sunt de executat și evaluat.
 
 ## Ordine recomandată
 
-1. UC-03 → UC-04 → UC-05: Plan, refuz și acordare de permisiune.
+1. UC-03 a trecut pentru plan fără modificări; urmează UC-04 → UC-05: refuz și acordare de permisiune.
 2. UC-06 → UC-07 → UC-08 → UC-09: Stop, Resume, steering și context nou.
 3. UC-10–26: fișiere, precizie, recuperare, conflicte și scene funcționale.
 4. UC-27–36: media, Store, Linux, Blender, GitHub și delegare, după precondiții.

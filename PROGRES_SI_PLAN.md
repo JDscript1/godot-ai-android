@@ -37,7 +37,36 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — suită de 50 de use case-uri, 26.10.2026
+## Etapa curentă — UC-03 verificat și derulare tactilă în TODO, 26.10.2026
+
+Adăugat AG-16 pentru problema raportată de utilizator: glisarea verticală peste
+mesaje selectează text în loc să deruleze. Cerința este derulare normală peste
+text/cod și selecție intenționată prin apăsare lungă, păstrând gesturile de
+menționare și mouse-ul. Nu este o corecție implementată sau reprodusă fizic aici.
+
+Colectate direct 108 evenimente noi din APK-ul c418f97. **UC-03 a trecut pentru
+cerința de plan fără modificări:** 6 cereri, 25,9 s, doar inspecție și publicarea
+planului. Prima publicare a eșuat deoarece un pas avea 604 caractere, peste
+limita internă de 600 nedeclarată în schemă; agentul a scurtat pașii și a reluat.
+Aceasta nu este proba respingerii unei scrieri forțate în modul UI Plan.
+
+Utilizatorul a trimis apoi separat „continuă”. Implementarea autorizată a creat
+șase fișiere mini_coins, a validat trei scripturi și a pornit/oprit scena:
+17 cereri, 109,7 s, 20 operații și 4 descoperiri. Output-ul agentului verifică
+`CONNECTED_COINS=3`; nu dovedește colectarea. Cele opt fișiere protejate sunt
+identice. Agentul a declarat colectarea neverificată și nevoia de input manual,
+dar a marcat planul și harness-ul completed fără să verifice ruta Playtest.
+AG-17 urmărește finalizarea pe criterii, iar AG-18 contractul formatului de plan.
+
+Proba independentă a evaluatorului, în Godot Linux ARM64, pe copia exactă a celor
+șase fișiere: input de mișcare fără teleportare, contor 0/3→1/3→2/3→3/3, zero
+monede rămase. Trecut; nu este playtest executat de agentul Android sau probă de
+control tactil. Dovezi: `.ai-qa/manual-agent-uc03-result-20261026T215150Z/`.
+Actualizate TODO-ul și catalogul/copia din Documents; 47 de scenarii rămân
+neexecutate. Evaluatorul nu a modificat proiectul și nu a trimis cereri noi de
+model/generare. Fără schimbări runtime sau APK nou.
+
+## Etapa precedentă — suită de 50 de use case-uri, 26.10.2026
 
 Creat [catalogul de teste](docs/AI_AGENT_USE_CASES.md), legat din README și TODO:
 **50 de scenarii**, incluzând cubul parțial și depanarea trecută, plus **48 de
@@ -2079,6 +2108,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** UC-03 plan-only trecut, apoi implementare autorizată separat
+  de utilizator; colectarea 0→3 verificată ulterior pe copie, nu de agentul
+  Android. Adăugate AG-16 pentru scroll tactil, AG-17 pentru finalizare verificată
+  și AG-18 pentru limita de text a planului. Fără fix runtime sau APK nou.
 
 - **26.10.2026:** catalog cu 50 de use case-uri, cerințe și criterii, inclusiv
   48 de probe noi neexecutate. Copie în Documents, UC-03 pregătit și fișierele
