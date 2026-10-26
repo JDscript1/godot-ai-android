@@ -37,7 +37,47 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — tarife automate pentru modelele agenților, 26.10.2026
+## Etapa curentă — test automat în aplicația Android instalată, 26.10.2026
+
+**Proba fizică a APK-ului c418f97; fără recompilare.** La cererea utilizatorului,
+am înlocuit operarea manuală a interfeței cu un plugin temporar într-un proiect
+nou. Acesta identifică panoul nativ al aplicației, trimite cerința pe intrarea
+normală a chatului și colectează evenimentele/jurnalul. Nu încarcă alte surse ale
+agentului și nu extrage cheile. Asocierea ADB a fost autorizată de utilizator.
+Adăugat controlerul reutilizabil `tests/device_workflow.py` și driverul Godot.
+
+Pe NX729J / Android 15, hash-ul panoului încărcat corespunde sursei c418f97.
+Agentul a folosit profilurile existente DeepSeek și Runware (Grok Imagine Image /
+TRELLIS.2), Auto, reasoning medium; YOLO a fost activat doar în memorie pentru
+proba autorizată și restaurat. Limita de 30 de pași a aplicației nu a fost mărită.
+
+Runda: **243,8 secunde, 30 cereri, 39 rezultate de tool, 7 nereușite**.
+Terrain3D v1.0.2 s-a instalat (163 fișiere); o probă rulată efectiv pe Android a
+confirmat clasa nativă și instanțierea. Agentul nu a interogat separat starea
+pluginului editor. Runware a raportat imaginea generată și 0,02 USD, dar răspunsul
+recepționat avea HTTP 500 cu payload de succes: adaptorul a respins și recuperarea
+aceluiași job. `asset_import` a eșuat, iar harness-ul s-a oprit corect cu
+`limited / step_limit`. **Mesh-ul și mini harta nu au fost finalizate autonom.**
+Nu am repetat generarea și nu am construit manual scena pentru a trece proba.
+
+Originalul PNG a fost recuperat separat din URL-ul furnizorului, fără altă
+generare; această intervenție nu este import autonom. Imaginea are fundal opac,
+deci eliminarea fundalului mai trebuie exercitată după corectarea recuperării.
+Costul Runware raportat nu include cererile DeepSeek. Markerul proiectului a
+rămas intact. Proiectele existente nu au fost editate.
+
+Constatări pentru corecții: recuperare strictă după HTTP contradictoriu, consum
+excesiv de pași la descoperirea/verificarea tool-urilor, două editări respinse
+ale setărilor prin unelte de fișiere și plan rămas în urmă față de operațiile
+executate. Adaptoarele instalate nu au fost înlocuite pentru această probă.
+
+Dovezi: [metodă și raport](docs/AI_DEVICE_WORKFLOW.md),
+`.ai-qa/device-world-workflow-20261026/` și proiectul
+`/storage/emulated/0/Documents/GodotAI-Workflow-Test-20261026/project`.
+Controlerul status/collect a fost verificat pe dispozitiv; driverul final are
+verificare de compilare separată. Nu este încă verificată o rundă cu corecții.
+
+## Etapa precedentă — tarife automate pentru modelele agenților, 26.10.2026
 
 **Implementat în sursă; APK-ul din Download rămâne c418f97.** Formularul
 Furnizori AI verifică automat cheia lipită, după 800 ms, și afișează modelele
@@ -1810,6 +1850,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** conector de test în APK-ul instalat; Terrain3D verificat pe
+  Android, recuperare Runware eșuată la HTTP 500 cu rezultat de succes; probă
+  încheiată limitat la 30 de pași, fără mini hartă sau regenerare dublă.
 
 - **26.10.2026:** modele pentru agenți încărcate la lipirea cheii, tarife per 1M
   tokeni în setări/chat și actualizare publică la 6h; verificări separate pentru

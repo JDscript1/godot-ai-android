@@ -25,6 +25,11 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+[Installed Android workflow testing](docs/AI_DEVICE_WORKFLOW.md) uses a temporary
+test-project plugin to submit tasks to the actual APK agent and collect its logs,
+without rebuilding or extracting keys. The first physical Runware/Terrain3D probe
+reproduced a result-recovery failure and did not complete the map.
+
 [Automatic agent tariffs](docs/AI_MODEL_PRICING.md) are implemented in source:
 key paste discovers models, with input/output token rates, a six-hour public
 price cache, source dates and offline retention. This update is not yet in the
