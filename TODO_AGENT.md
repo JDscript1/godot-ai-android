@@ -25,6 +25,20 @@ nemodificate confirmă cubul vizibil. Captura editorului după închiderea manua
   `report.json`, `REPORT.md`, jurnal, conversație, checkpoint, diff, captura
   editorului, copia scenei și `control-render/scene.png`.
 
+## Test 02 — depanare GDScript, pregătit
+
+**Așteaptă execuția manuală prin agent.** Fișiere noi, separate, în proiectul
+Vampyr: `res://agent_tests/test_02/{counter.gd,test_02.tscn,KEEP.txt}`. Scriptul
+conține intenționat o eroare de sintaxă și un calcul incorect. Cerința verifică
+repararea funcției de acumulare, păstrarea semnăturii/markerului și a KEEP.txt,
+validarea, rularea scenei explicite, citirea Output-ului și oprirea rulării.
+Exemplul cerut: 10 + [2,3,5] = 20; verificarea ulterioară include alte intrări.
+
+Eroarea de parser a fost confirmată pe o copie izolată în Godot Linux; nu este
+rezultat al agentului instalat. Snapshot-uri, hash-uri, cazuri independente și
+jurnal inițial: `.ai-qa/manual-agent-test-02-20261026T205531Z/`. Înaintea probei,
+configurația proiectului, icon.svg și scena test_01 sunt păstrate identic.
+
 ## P0 — corectitudinea operațiilor și livrare
 
 - [ ] **AG-01 · Salvează scena în directoare noi.** Creează părinții prin

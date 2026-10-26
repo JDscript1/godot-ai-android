@@ -37,7 +37,23 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — audit fizic test 01 și TODO agent, 26.10.2026
+## Etapa curentă — test 02 pregătit pentru depanare, 26.10.2026
+
+La cererea utilizatorului, pregătite trei fișiere noi în
+`Documents/vampyr/agent_tests/test_02/`: script cu eroare de sintaxă și calcul,
+scenă dedicată și fișier de control. Niciun fișier existent nu a fost suprascris.
+Hash-urile configurației, icon.svg și scenei test_01 au rămas identice. ADB este
+conectat, iar jurnalul inițial al proiectului a fost salvat direct, 158 intrări.
+
+Pe o copie izolată, Godot 4.7.2 Linux a confirmat eroarea intenționată de parser.
+Cazurile pentru verificarea logicii și snapshot-urile rămân în afara proiectului.
+Utilizatorul va trimite cerința agentului prin conversație nouă; evaluatorul nu a
+trimis cereri de model sau generare. **Proba agentului este în așteptare**, nu
+este marcată trecută. Dovezi: `.ai-qa/manual-agent-test-02-20261026T205531Z/`;
+stare și criterii în [TODO_AGENT.md](TODO_AGENT.md). Fără corecții runtime sau
+APK nou în această etapă.
+
+## Etapa precedentă — audit fizic test 01 și TODO agent, 26.10.2026
 
 Reconectare ADB autorizată; citite direct jurnalele aplicației și salvate probele
 fără copiere în conversație sau extragerea cheilor. Cerința a fost transmisă de
@@ -1994,6 +2010,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** pregătit testul manual 02 pentru depanare GDScript, acumulare,
+  păstrarea fișierelor și verificarea Output-ului. Eroarea intenționată este
+  confirmată pe copie izolată; execuția prin agent încă nu a avut loc.
 
 - **26.10.2026:** audit direct prin ADB al probei manuale cu cub verde; scena și
   preview-ul confirmate, limită de 30 de pași reprodusă, salvare fals pozitivă și
