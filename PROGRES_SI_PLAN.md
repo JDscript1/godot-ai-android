@@ -12,9 +12,10 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download este **`afcf2cb`**
-  (`afcf2cb64660997d86a5046a8121daefe324bfc5`), livrat la
-  **25.10.2026, 21:03 +01:00**, cu panouri minimizabile, chat extins și Linux automat.
+- APK-ul curent din Download este **`e401e8f`**
+  (`e401e8f0de89d4d816ed936058faa093ff7f5cc7`), livrat la
+  **26.10.2026, 06:59 +01:00**, cu URL DeepSeek reparat și denumire unitară,
+  panouri minimizabile, chat extins și Linux automat.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -28,7 +29,7 @@ drept funcție validată cu un serviciu real.
 - PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
   Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
-  `8878801` a fost înlocuită atomic după verificare. În Download rămâne un
+  `afcf2cb` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -46,7 +47,7 @@ cheie fără schimbarea selectorului produce exact eroarea de URL.
 
 Implementat în surse: adresa lipsă a unui furnizor cloud cunoscut se reface
 din catalog la salvare, descoperirea modelelor și conversație. Pentru DeepSeek
-este `https://api.deepseek.com`, conform documentației oficiale.
+este `https://api.deepseek.com`, conform [documentației oficiale](https://api-docs.deepseek.com/).
 Adresele explicite și gateway-urile se păstrează; o adresă explicită invalidă
 este afișată pentru corectare. Repararea unui profil vechi cu URL gol păstrează
 cheia și modelele memorate. Schimbarea serverului real cere în continuare
@@ -66,12 +67,30 @@ Corectată ordinea argumentelor proot-distro 5 în lansatorul testului global.
 
 Dovezi: `.ai-qa/deepseek-endpoint-before/`,
 `.ai-qa/deepseek-endpoint-runtime.log`, `.ai-qa/deepseek-endpoint-fixed-tablet/`,
-`.ai-qa/deepseek-endpoint-start/`. Cheile probelor sunt fictive; nu reprezintă
-autentificare verificată cu cheia utilizatorului. APK-ul afcf2cb rămâne livrarea
-curentă până la finalizarea compilării și verificării noii versiuni.
+`.ai-qa/deepseek-endpoint-start/` și `.ai-qa/deepseek-endpoint-verification.json`.
+Cheile probelor sunt fictive; nu reprezintă autentificare verificată cu cheia
+utilizatorului.
+
+**APK compilat și livrat:** [workflow 40276596026](https://github.com/JDscript1/godot-ai-android/actions/runs/40276596026),
+toate cele trei joburi reușite. Pe fork-ul nativ compilat au trecut
+**463 verificări × 5 dimensiuni**, **56 pentru panouri** și **53 în lista de
+proiecte**, inclusiv folosirea panoului încorporat și a numelui AI Assistant.
+Capturile ecranului principal compilat au fost inspectate vizual.
+APK ARM64: **112.270.246 bytes**, SHA-256
+`62e8ac1775d5c513f013d6ca01ceb9fbfb58b5a1d066bf5d3932dcfdb4a291ba`.
+Verificate semnătura persistentă, pachetul aplicației, cele 28 de scripturi
+exacte, minimizarea panourilor și întregul pachet Linux. Înlocuit atomic
+installerul afcf2cb și checksum-ul la 26.10.2026 06:59 +01:00; un singur APK
+al fork-ului în Download. Instalarea fizică și autentificarea cu cheia
+utilizatorului rămân de verificat separat.
+Dovezi: `.ai-qa/e401e8f-native/`, `.ai-qa/e401e8f-ci.log`,
+`.ai-qa/artifacts/e401e8f/panel-verification.json`,
+`.ai-qa/artifacts/e401e8f/linux-verification.json`,
+`.ai-qa/delivery-e401e8f.json` și `.ai-qa/e401e8f-delivery.log`.
 
 Jurnal: 26.10.2026 — reprodus și corectat URL-ul cloud gol după ștergerea unei
-conexiuni DeepSeek; aliniată denumirea asistentului în cele două contexte.
+conexiuni DeepSeek; aliniată denumirea asistentului în cele două contexte;
+compilat, verificat și livrat APK-ul e401e8f.
 
 ## Etapa precedentă — panouri minimizabile și chat extins, 25.10.2026
 
