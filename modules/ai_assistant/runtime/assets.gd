@@ -6,11 +6,14 @@ signal artifact_ready(job: Dictionary)
 static var Common: GDScript
 static var Transport: GDScript
 static var AssetExports: GDScript
+static var GenerationCatalog: GDScript
 var transport: RefCounted
 var vault: RefCounted
 var owner: Node
 var cache_directory = ""
 var jobs: Array = []
+var catalog_urls = {"runware": "https://runware.ai/docs/models/index.json"}
+var catalog_prices: Dictionary = {}
 
 # Endpoints are fixed in production. Tests can replace this instance map only.
 var api_urls = {"runware": "https://api.runware.ai/v1", "meshy": "https://api.meshy.ai", "tripo": "https://openapi.tripo3d.ai/v3", "openai_image": "https://api.openai.com/v1"}
@@ -29,6 +32,8 @@ func configure(directory: String) -> void:
 	cache_directory = directory
 	DirAccess.make_dir_recursive_absolute(cache_directory)
 	jobs = Common.read_json(cache_directory.path_join("jobs.json"), [])
+	var saved_prices: Variant = Common.read_json(cache_directory.path_join("catalog-prices.json"), {})
+	catalog_prices = saved_prices if saved_prices is Dictionary else {}
 	var interrupted = false
 	for job in jobs:
 		if job.get("status") == "submitting":
@@ -77,43 +82,84 @@ static func image_quality(path: String, expected: String) -> Dictionary:
 	elif not ready: warning = "Lipsește transparența reală. Elimină fundalul imaginii existente înainte de utilizare; nu regenera automat." if expected == "transparent" else "Imaginea conține transparență, dar a fost cerut un rezultat opac."
 	return {"ready_for_use": ready, "background_expected": expected, "has_transparency": transparent, "empty": empty, "warning": warning}
 
-func verify_key(profile: Dictionary, cancel: Dictionary) -> Dictionary:
+func verify_key(profile: Dictionary, cancel: Dictionary, key: String = "") -> Dictionary:
 	if str(profile.get("kind", "")) == "runware":
-		if _headers(profile).is_empty(): return Common.failure("Adaugă o cheie Runware.", "missing_credentials")
-		var response = await _runware(profile, [{"taskType": "ping", "ping": true}], cancel)
+		if _headers(profile, key).is_empty(): return Common.failure("Adaugă o cheie Runware.", "missing_credentials")
+		var response = await _runware(profile, [{"taskType": "ping", "ping": true}], cancel, key)
 		if not response.get("ok", false): return response
 		return Common.success({"credential_verified": true}) if response.get("result", []).any(func(item: Variant) -> bool: return item is Dictionary and item.get("pong", false)) else Common.failure("Runware nu a confirmat cheia.")
-	var checked = await models(profile, cancel)
+	var checked = await models(profile, cancel, key)
 	if not checked.get("ok", false): return checked
 	return Common.success({"credential_verified": bool(checked.get("credential_verified", false))})
 
-func models(profile: Dictionary, cancel: Dictionary) -> Dictionary:
+func catalog(profile: Dictionary, cancel: Dictionary, key: String = "", update: Callable = Callable()) -> Dictionary:
+	# The draft key is held in memory, never put in a profile or sent to public docs.
+	if profile.get("kind") == "runware":
+		var verified = await verify_key(profile, cancel, key)
+		if not verified.get("ok", false): return verified
+	var forward = func(event: Dictionary) -> void:
+		if profile.get("kind") == "runware" and event.has("result"): event["credential_verified"] = true
+		if update.is_valid(): update.call(event)
+	var result = await models(profile, cancel, key, forward)
+	if result.get("ok", false) and profile.get("kind") == "runware": result["credential_verified"] = true
+	return result
+
+func models(profile: Dictionary, cancel: Dictionary, key: String = "", update: Callable = Callable()) -> Dictionary:
 	var provider = str(profile.get("kind", "runware"))
+	var kind = str(profile.get("asset_kind", "image"))
 	if provider in ["meshy", "tripo", "openai_image"]:
 		var endpoint = "/openapi/v1/balance" if provider == "meshy" else ("/account/balance" if provider == "tripo" else "/models")
-		var checked = await _cloud_request(profile, endpoint, null, cancel)
+		var checked = await _cloud_request(profile, endpoint, null, cancel, [], key)
 		if not checked.get("ok", false): return checked
-		var available = []
-		if provider == "meshy": available = [{"id": "latest", "name": "Meshy · implicit"}]
-		elif provider == "tripo": available = [{"id": "v3.1-20260211", "name": "Tripo H 3.1"}] if profile.get("asset_kind") == "mesh" else [{"id": "seedream_v5", "name": "Seedream V5"}]
-		else:
+		var available = GenerationCatalog.presets(provider, kind)
+		if provider == "openai_image" and kind == "image":
 			for model in checked.get("result", {}).get("data", []):
-				if model is Dictionary and str(model.get("id", "")).begins_with("gpt-image-"): available.append(model)
-		return {"ok": true, "result": available, "credential_verified": true, "source": "documented_presets" if provider != "openai_image" else "account_catalog"}
-	if profile.get("kind") == "comfy":
-		return await transport.request(str(profile["url"]).trim_suffix("/") + "/object_info", HTTPClient.METHOD_GET, _headers(profile), null, _options(profile, cancel))
-	var result = await transport.request("https://runware.ai/docs/models/index.json", HTTPClient.METHOD_GET, [], null, {"cancel": cancel})
+				if not model is Dictionary: continue
+				var id = str(model.get("id", ""))
+				if not id.begins_with("gpt-image-") or id == "gpt-image-1" or id.begins_with("gpt-image-1-20"): continue
+				available.append({"id": id, "name": str(model.get("name", id)), "price": GenerationCatalog.openai_price(id)})
+		var result = {"ok": true, "result": available, "credential_verified": true, "source": "documented_presets" if provider != "openai_image" else "account_catalog"}
+		if update.is_valid(): update.call(result)
+		return result
+	if provider == "comfy":
+		return await transport.request(str(profile["url"]).trim_suffix("/") + "/object_info", HTTPClient.METHOD_GET, _headers(profile, key), null, _options(profile, cancel))
+	if provider != "runware": return Common.failure("Furnizor de generare necunoscut.")
+	var result = await _catalog_document(str(catalog_urls["runware"]), cancel)
 	if not result.get("ok", false): return result
 	if not result.get("json") is Array: return Common.failure("Catalogul public Runware nu este disponibil.")
-	var available = []
-	for model in result["json"]:
-		if not model is Dictionary or model.get("status") == "retired": continue
-		# SAM also requires a mask; the simple one-reference form cannot supply it.
-		if str(model.get("air", "")).begins_with("meta:sam@3d"): continue
-		var capabilities: Array = model.get("capabilities", [])
-		var suitable = "text-to-image" in capabilities if profile.get("asset_kind", "image") == "image" else ("text-to-3d" in capabilities or "image-to-3d" in capabilities)
-		if suitable: available.append(model)
-	return {"ok": true, "result": available, "source": "public_catalog", "credential_verified": false}
+	var available = GenerationCatalog.runware_models(result["json"], kind)
+	var queue: Array = []
+	for model in available:
+		var cached_value: Variant = catalog_prices.get(model["id"], {})
+		var cached: Dictionary = cached_value if cached_value is Dictionary else {}
+		var age = Time.get_unix_time_from_system() - float(cached.get("fetched_at", 0))
+		if not cached.is_empty() and age >= 0 and age < 86400:
+			model["price"] = cached
+		else: queue.append(model)
+	var response = {"ok": true, "result": available, "source": "public_catalog", "credential_verified": false}
+	if update.is_valid(): update.call(response)
+	var state = {"workers": 4}
+	for worker in range(4): _catalog_price_worker(queue, cancel, update, state)
+	while state["workers"] > 0 and is_instance_valid(owner) and owner.is_inside_tree(): await owner.get_tree().process_frame
+	if not cache_directory.is_empty(): Common.atomic_json(cache_directory.path_join("catalog-prices.json"), catalog_prices)
+	return Common.failure("Încărcarea catalogului a fost oprită.", "cancelled") if cancel.get("cancelled", false) else response
+
+func _catalog_document(url: String, cancel: Dictionary) -> Dictionary:
+	var trusted = url.begins_with("https://runware.ai/docs/models/") and not ".." in url and not "?" in url and not "#" in url
+	if not trusted and not (test_http and url.begins_with(str(catalog_urls["runware"]).get_base_dir() + "/")): return Common.failure("Adresă de catalog nepermisă.", "untrusted_catalog")
+	return await transport.request(url, HTTPClient.METHOD_GET, ["Accept: application/json", "User-Agent: Mozilla/5.0 Godot-AI-Catalog/1.0"], null, {"cancel": cancel, "allow_http": test_http, "timeout": 15, "connect_timeout": 5, "max_bytes": 2097152})
+
+func _catalog_price_worker(queue: Array, cancel: Dictionary, update: Callable, state: Dictionary) -> void:
+	while not queue.is_empty() and not cancel.get("cancelled", false):
+		var model: Dictionary = queue.pop_front()
+		var response = await _catalog_document(str(model.get("schema", "")), cancel)
+		if cancel.get("cancelled", false): break
+		var value = GenerationCatalog.runware_price(response["json"], str(model.get("asset_kind", ""))) if response.get("ok", false) and response.get("json") is Dictionary else {"basis": "unknown", "source": GenerationCatalog.SOURCES["runware"]}
+		value["fetched_at"] = Time.get_unix_time_from_system()
+		if value.get("basis") != "unknown": catalog_prices[model["id"]] = value
+		model["price"] = value
+		if update.is_valid(): update.call({"model": model})
+	state["workers"] -= 1
 
 func submit(profile: Dictionary, prompt: String, reference: String, cancel: Dictionary, options: Dictionary = {}) -> Dictionary:
 	if cancel.get("cancelled", false): return Common.failure("Generarea nu a fost trimisă.", "cancelled")
@@ -397,15 +443,15 @@ static func validate_artifact(path: String, kind: String) -> Dictionary:
 		if image.load_png_from_buffer(file.get_buffer(file.get_length())) != OK or image.is_empty(): return Common.failure("Imagine PNG coruptă.")
 	return Common.success()
 
-func _headers(profile: Dictionary) -> PackedStringArray:
-	var secret = vault.read(str(profile.get("credential_id", profile["id"]))) if vault != null else ""
+func _headers(profile: Dictionary, key: String = "") -> PackedStringArray:
+	var secret = key if not key.is_empty() else (vault.read(str(profile.get("credential_id", profile["id"]))) if vault != null else "")
 	return PackedStringArray(["Authorization: Bearer " + secret]) if not secret.is_empty() else PackedStringArray()
 
 func _options(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 	return {"allow_http": profile.get("allow_http", false), "cancel": cancel}
 
-func _runware(profile: Dictionary, tasks: Array, cancel: Dictionary) -> Dictionary:
-	var result = await transport.request(str(api_urls["runware"]), HTTPClient.METHOD_POST, _headers(profile), tasks, {"cancel": cancel, "allow_http": test_http})
+func _runware(profile: Dictionary, tasks: Array, cancel: Dictionary, key: String = "") -> Dictionary:
+	var result = await transport.request(str(api_urls["runware"]), HTTPClient.METHOD_POST, _headers(profile, key), tasks, {"cancel": cancel, "allow_http": test_http})
 	if not result.get("ok", false): return result
 	var json: Variant = result.get("json")
 	if not json is Dictionary: return Common.failure("Răspuns Runware invalid.")
@@ -449,9 +495,14 @@ static func cloud_payload(profile: Dictionary, prompt: String, reference: String
 	var endpoint = ""
 	match provider:
 		"meshy":
-			if kind != "mesh": return Common.failure("Meshy este configurat pentru modele GLB.")
-			endpoint = "/openapi/v2/text-to-3d" if reference.is_empty() else "/openapi/v1/image-to-3d"
-			body = {"mode": "preview", "prompt": prompt, "target_formats": ["glb"]} if reference.is_empty() else {"image_url": reference, "should_texture": true, "enable_pbr": true, "target_formats": ["glb"]}
+			if kind == "image":
+				if not reference.is_empty(): return Common.failure("Profilul Meshy de imagini generează din text în acest adaptor.")
+				endpoint = "/openapi/v1/text-to-image"
+				body = {"ai_model": model if not model.is_empty() else "nano-banana-2", "prompt": prompt, "aspect_ratio": "1:1"}
+			else:
+				endpoint = "/openapi/v2/text-to-3d" if reference.is_empty() else "/openapi/v1/image-to-3d"
+				body = {"mode": "preview", "prompt": prompt, "target_formats": ["glb"]} if reference.is_empty() else {"image_url": reference, "should_texture": true, "enable_pbr": true, "target_formats": ["glb"]}
+				if model.begins_with("meshy-t"): body["model_type"] = "smart-topology"
 			if not model.is_empty(): body["ai_model"] = model
 		"tripo":
 			if kind == "image":
@@ -471,12 +522,12 @@ static func cloud_payload(profile: Dictionary, prompt: String, reference: String
 			return Common.failure("Furnizor de generare necunoscut.")
 	return Common.success({"endpoint": endpoint, "body": body})
 
-func _cloud_request(profile: Dictionary, endpoint: String, body: Variant, cancel: Dictionary, extra_headers: PackedStringArray = []) -> Dictionary:
+func _cloud_request(profile: Dictionary, endpoint: String, body: Variant, cancel: Dictionary, extra_headers: PackedStringArray = [], key: String = "") -> Dictionary:
 	var provider = str(profile.get("kind", ""))
 	if not api_urls.has(provider): return Common.failure("Furnizor de generare necunoscut.")
-	if _headers(profile).is_empty(): return Common.failure("Adaugă cheia API pentru acest profil.", "missing_credentials")
+	if _headers(profile, key).is_empty(): return Common.failure("Adaugă cheia API pentru acest profil.", "missing_credentials")
 	var options = {"cancel": cancel, "allow_http": test_http, "timeout": 240, "max_bytes": Common.MAX_ASSET_BYTES}
-	var headers = _headers(profile)
+	var headers = _headers(profile, key)
 	headers.append_array(extra_headers)
 	var response = await transport.request(str(api_urls[provider]) + endpoint, HTTPClient.METHOD_GET if body == null else HTTPClient.METHOD_POST, headers, body, options)
 	if not response.get("ok", false): return response
@@ -551,6 +602,9 @@ func _cloud_poll(job: Dictionary, profile: Dictionary, cancel: Dictionary) -> Di
 		_save()
 		return Common.success("")
 	var url = str(data.get("model_urls", {}).get("glb", "")) if provider == "meshy" else str(data.get("output", {}).get("model_url" if job["kind"] == "mesh" else "generated_image_url", ""))
+	if provider == "meshy" and job["kind"] == "image":
+		var images: Variant = data.get("image_urls", [])
+		url = str(images[0]) if images is Array and not images.is_empty() else ""
 	if url.is_empty():
 		job["status"] = "failed"
 		job["error"] = "Generarea s-a încheiat fără fișierul PNG/GLB cerut."

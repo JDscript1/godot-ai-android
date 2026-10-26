@@ -134,7 +134,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -143,7 +143,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -868,6 +868,15 @@ func _image_purpose_tests(assets: RefCounted, vault: RefCounted, cache: String) 
 func _cloud_generation_tests(node: Node) -> void:
 	var script = scripts["assets"]
 	var common = scripts["common"]
+	var catalog_script = scripts["generation_catalog"]
+	var measured = catalog_script.runware_price({"info": {"x-pricing": {"measured": [{"price": 0.0045, "configuration": "1024 × 1024 · steps 20"}]}}})
+	check(measured.get("basis") == "estimate" and catalog_script.price_label(measured).begins_with("≈"), "Measured GPU costs are shown as estimates, not fixed generation prices")
+	var token_price = catalog_script.runware_price({"info": {"x-pricing": {"rates": [{"amount": 0.00003, "unit": "outputToken"}]}}})
+	check(token_price.get("basis") == "usage" and not token_price.has("amount"), "Per-token rates cannot become a misleading per-generation amount")
+	check(catalog_script.price_label({"basis": "unknown"}) == "Indisponibil" and catalog_script.price_label({"amount": 0.0, "currency": "USD", "basis": "fixed"}) == "0 USD", "Unknown prices differ visibly from a genuinely zero tariff")
+	check(catalog_script.openai_price("gpt-image-2-2026-04-21").get("amount") == 0.006 and not catalog_script.openai_price("gpt-image-unannounced").has("amount"), "Only documented OpenAI versions inherit a documented estimate")
+	check(catalog_script.presets("meshy", "image").size() == 7 and catalog_script.presets("meshy", "mesh").size() == 5, "Meshy image and mesh catalogs are distinct and priced in provider credits")
+	check(not catalog_script.presets("tripo", "image").any(func(item: Dictionary) -> bool: return item["id"] == "chat_image_1"), "Retired Tripo image models are not offered for new profiles")
 	check(common.work_mode_index({"ui_mode": 1}) == 2 and common.work_mode_index({"work_mode": "default", "ui_mode": 1}) == 1, "Old Plan selections migrate safely and Default has a stable name")
 	var meshy_text = script.cloud_payload({"kind": "meshy", "asset_kind": "mesh", "model": "latest"}, "bird")
 	check(meshy_text.get("result", {}).get("endpoint") == "/openapi/v2/text-to-3d" and meshy_text["result"]["body"]["mode"] == "preview", "Meshy text-to-3D uses preview v2 schema")
@@ -889,10 +898,19 @@ func _cloud_generation_tests(node: Node) -> void:
 	vault.store("generation_runware", "invalid-fixture-key")
 	check(not (await assets.verify_key(runware_profile, {})).get("ok", false), "Invalid Runware key is rejected by the authenticated ping")
 	vault.store("generation_runware", "generation-fixture-key")
+	assets.catalog_urls["runware"] = mock_url + "/catalog/index.json"
+	var catalog_events = []
+	var cloud_catalog = await assets.catalog(runware_profile, {}, "", func(event: Dictionary) -> void: catalog_events.append(event.duplicate(true)))
+	check(cloud_catalog.get("ok", false) and cloud_catalog.get("credential_verified", false) and cloud_catalog.get("result", []).size() == 1 and cloud_catalog["result"][0]["id"] == "fixture:image@1", "Draft Runware catalog validates the key and filters out meshes and retired models")
+	check(cloud_catalog["result"][0]["price"].get("amount") == 0.04 and cloud_catalog["result"][0]["price"].get("basis") == "from" and catalog_events.size() >= 2, "Runware schema prices load progressively without sending credentials to public docs")
+	var mesh_catalog = await assets.catalog({"id": "runware-mesh", "kind": "runware", "credential_id": "generation_runware", "asset_kind": "mesh"}, {})
+	check(mesh_catalog.get("result", []).size() == 1 and mesh_catalog["result"][0]["id"] == "fixture:mesh@1", "The same Runware key discovers the separate 3D catalog")
+	var bad_catalog = await assets.catalog(runware_profile, {}, "invalid-fixture-key")
+	check(not bad_catalog.get("ok", false) and vault.read("generation_runware") == "generation-fixture-key", "A failing draft credential cannot overwrite the saved shared key")
 	var reference = "res://ai_test_reference.png"
 	var transport = scripts["transport"].new(node)
 	await transport.request(mock_url + "/artifact/image.png", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "save_path": reference})
-	for entry in [["meshy", "mesh", ""], ["meshy", "mesh", reference], ["tripo", "mesh", ""], ["tripo", "mesh", reference], ["tripo", "image", ""], ["openai_image", "image", ""]]:
+	for entry in [["meshy", "image", ""], ["meshy", "mesh", ""], ["meshy", "mesh", reference], ["tripo", "mesh", ""], ["tripo", "mesh", reference], ["tripo", "image", ""], ["openai_image", "image", ""]]:
 		var profile = {"id": "fixture-" + entry[0], "kind": entry[0], "asset_kind": entry[1], "model": "", "destination": "res://ai_test_assets"}
 		vault.store(profile["id"], "generation-fixture-key")
 		var catalog = await assets.models(profile, {})

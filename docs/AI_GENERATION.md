@@ -1,33 +1,74 @@
 # Native generation providers
 
-Configure profiles in **Setări → Generare**. Cloud profiles of the same provider
-share one API key in the credential vault, so Runware image and 3D profiles use
-the same key; ComfyUI keeps credentials per endpoint. Cloud endpoints use fixed official HTTPS URLs. ComfyUI alone
-accepts a configurable local endpoint with explicit HTTP opt-in. Select a saved
-profile from the list below the configuration form or use its ID with `asset_generate` in chat.
-Generation consumes provider credits; an API key and access to the model are
-required. A chat subscription does not supply these API credits.
+The catalog flow below is implemented in source on 26 October 2026; the current
+Download APK `e401e8f` predates it. Physical Android and paid-provider generation
+are separate from the checks listed below.
 
-| Service | Images | 3D | Reference input |
+Configure profiles in **Setări → Generare**:
+
+1. Select **Imagini** or **Mesh-uri 3D**, then the cloud provider.
+2. Paste the API key. After a short debounce, the app validates it through a
+   non-generating request and loads models without first saving a profile.
+3. Search the model list and select a row. Its right column shows the price;
+   selecting it shows the billing conditions, source and publication/check date.
+4. Choose the project destination and preferred 3D export format, then save.
+   The agent uses that saved profile for generation.
+
+Cloud profiles of the same provider share one key in the credential vault.
+Runware, Meshy and Tripo can use it for both images and meshes. Switching result
+type starts an independent profile; changing provider clears the draft key.
+Invalid replacement keys do not replace the last validated credential or retain
+stale model choices. Keys from older per-profile entries are verified and reused.
+Keys remain out of configuration/model metadata and are masked in errors.
+ComfyUI keeps endpoint-specific credentials and its workflow configuration.
+
+Cloud endpoints are fixed official HTTPS URLs. **Actualizează modele** also
+works before saving; it checks the current draft key or the saved provider key.
+A model ID override and optional profile name remain under **Opțiuni profil**.
+New cloud profiles require a verified catalog and a selected/nonempty model ID.
+Older profiles without a model ID keep their adapter defaults until edited.
+A chat subscription does not supply generation API credits.
+
+| Service | Images | 3D | Catalog source |
 | --- | --- | --- | --- |
-| Runware | Text → PNG | Supported AIR models → GLB | Per-model 3D binding |
-| ComfyUI | Workflow → PNG | Workflow → GLB | Bound workflow input |
-| Meshy | — | Text → preview GLB; image → textured GLB | Project PNG/JPEG/WebP |
-| Tripo v3 | Text → PNG | Text/image → textured GLB | Multipart upload; WebP converted to PNG |
-| OpenAI Images | GPT Image text → PNG | — | Not supported by this initial adapter |
+| Runware | Text → PNG | Supported AIR models → GLB | Live public index + per-model schemas; authenticated ping checks the key |
+| ComfyUI | Workflow → PNG | Workflow → GLB | Local node definitions/workflow |
+| Meshy | Text → image | Text → preview GLB; image → textured GLB | Documented model presets; authenticated balance checks the key |
+| Tripo v3 | Text → PNG | Text/image → textured GLB | Documented model presets; authenticated balance checks the key |
+| OpenAI Images | GPT Image text → PNG | — | Authenticated account model list, restricted to image models |
 
-An empty model field uses the documented default for Meshy/Tripo. Tripo image
-profiles use `seedream_v5`; OpenAI image profiles use `gpt-image-2.5-flare`.
-You can enter another compatible model ID. Provider changes clear a previous
-model ID to avoid sending a model to the wrong service. Meshy uses GLB for the original preview and
-OpenAI forces PNG; Tripo supports separate profiles for either result type.
+Runware prices load progressively with at most four public schema requests in
+flight and a 24-hour cache. No API key is sent to the documentation host.
+Retired models and the unsupported mask-dependent SAM 3D workflow are excluded.
+OpenAI's retired GPT Image 1 aliases are excluded from new selections.
+Meshy/Tripo do not expose an account-specific discovery endpoint in this adapter:
+the list is a documented catalog, and a valid key does not guarantee entitlement
+to every listed model, sufficient credits or access to every option.
 
-**Testează cheia / modele** uses an authenticated, non-generating Runware ping,
-Meshy/Tripo balance endpoints or the OpenAI
-model catalog without submitting a generation. Meshy/Tripo choices are documented
-presets, not a dynamic account-specific discovery endpoint. A successful key
-check does not establish access to every model. Runware's model list is public;
-the separate ping validates the saved key.
+## Price meaning
+
+Each row has a price cell. **USD** and **cr.** retain the provider's billing unit;
+Meshy credit prices are not converted using an invented subscription exchange rate.
+A `+` means a starting price, and `≈` identifies a measured example/estimate.
+Token billing is **Variabil** when a defensible per-generation amount is unavailable.
+Unpublished/failed pricing is **Indisponibil**, distinct from a real zero tariff.
+Conditions such as reference input, textures, resolution, quality and prompt
+usage can add costs. In particular, OpenAI's documented low-quality output
+example is a starting point, not a quote for automatic quality or the input prompt.
+The adapter preserves its existing generation defaults.
+
+Runware rates come from `info["x-pricing"]` in the official model schemas;
+measured GPU examples never become fixed tariffs. Meshy and Tripo presets and
+tariffs were checked on **2026-10-26**. The saved profile includes the selected
+model's public price metadata so the agent can see the same conditions. It must
+not describe an estimate as the final charge. Reading catalogs, prices and
+validating keys never submits a generation or conversion.
+
+Sources: [Runware pricing JSON](https://runware.ai/docs/models-api/pricing),
+[Meshy API prices](https://docs.meshy.ai/en/api/pricing),
+[Tripo API prices](https://developers.tripo3d.ai/en/pricing),
+[OpenAI image costs](https://developers.openai.com/api/docs/guides/image-generation#calculating-costs).
+
 
 Meshy text-to-3D currently submits the `preview` stage only. Its GLB is geometry
 without the paid `refine` texture stage. Image-to-3D requests textures/PBR directly.
@@ -121,3 +162,23 @@ physical Android import/rendering. Those require configured-provider/device QA.
 - [Tripo task query](https://developers.tripo3d.ai/en/docs/task-query)
 - [Tripo account](https://developers.tripo3d.ai/en/docs/account)
 - [OpenAI image generation](https://developers.openai.com/api/docs/guides/image-generation)
+
+## Catalog verification, 26 October 2026
+
+- Real Godot runtime/HTTP fixture suite: **465 assertions**, including priced
+  catalogs, shared keys, invalid draft keys, PNG/GLB import and the Meshy image API.
+- Dedicated rendered UI: tablet and narrow layout checks cover paste-to-discover,
+  per-row pricing, selected-model persistence, provider/type changes, legacy
+  credentials and the absence of paid requests. Screenshot and report paths:
+  `.ai-qa/generation-catalog-final-*`.
+- Real read-only Runware requests through the Godot transport returned **106 image
+  models and 6 supported mesh models**, plus two real price schemas. No API key
+  or paid generation was used: `.ai-qa/generation-public-verification.json`.
+- Start-screen shared-panel regression passed **52 checks**. A broad tablet
+  editor pass exceeded its 180-second local limit; it is not counted as passed.
+  The broad narrow editor pass passed **466 checks**. Dedicated passes passed
+  **52 checks each on tablet and narrow**, followed by **53 tablet checks** with
+  an authentication error that echoes the draft key; the echoed key is masked.
+- Script loader includes the new `generation_catalog.gd` in the native embedded
+  module and test loaders. The workflow includes dedicated catalog screenshots
+  for both upstream and compiled native editors on the next build.

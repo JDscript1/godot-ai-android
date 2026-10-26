@@ -118,6 +118,10 @@ var integration_settings: Dictionary = {}
 var github_repos_loading = false
 var github_has_token = false
 var provider_testing = false
+var generation_epoch = 0
+var generation_cancel: Dictionary = {}
+var generation_loading = false
+var generation_form_loading = false
 var exporting_asset = false
 var current_placement = 0
 var expanded_dock = 0
@@ -456,28 +460,44 @@ func _build_settings() -> void:
 	_select_account_service()
 	var gen_tab = _tab("Generare", "generation")
 	var g = _form(gen_tab, "generation")
-	_choice(g, "kind", "Serviciu", Assets.LABELS)
-	g["kind"].set_item_icon(0, chat._icon("Cloud"))
-	g["kind"].set_item_icon(1, chat._icon("Provider_comfyui"))
-	g["kind"].set_item_icon(2, chat._icon("Provider_meshy"))
-	g["kind"].set_item_icon(3, chat._icon("Provider_tripo"))
-	g["kind"].set_item_icon(4, chat._icon("Provider_openai"))
-	_choice(g, "asset_kind", "Rezultat", ["Imagine PNG", "Model 3D"])
+	var generation_header = _row(gen_tab)
+	var result_column = VBoxContainer.new()
+	result_column.custom_minimum_size.x = 170 * EditorInterface.get_editor_scale()
+	result_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	generation_header.add_child(result_column)
+	g["container"] = result_column
+	_choice(g, "asset_kind", "Rezultat", ["Imagini", "Mesh-uri 3D"])
 	g["asset_kind"].set_item_icon(0, chat._icon("Generation"))
 	g["asset_kind"].set_item_icon(1, chat._icon("Models"))
-	_field(g, "name", "Nume profil")
+	var provider_column = VBoxContainer.new()
+	provider_column.custom_minimum_size.x = 200 * EditorInterface.get_editor_scale()
+	provider_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	generation_header.add_child(provider_column)
+	g["container"] = provider_column
+	_choice(g, "kind", "Furnizor", Assets.LABELS)
+	g["kind"].fit_to_longest_item = false
+	g["kind"].clip_text = true
+	g["kind"].text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	g["container"] = gen_tab
+	for index in range(5): g["kind"].set_item_icon(index, chat._icon(["Cloud", "Provider_comfyui", "Provider_meshy", "Provider_tripo", "Provider_openai"][index]))
 	_field(g, "url", "Adresă ComfyUI")
 	g["url"].text = "http://127.0.0.1:8188"
-	_field(g, "key", "Cheie / token (dacă este necesar)", true)
-	g["key"].placeholder_text = "O cheie per furnizor · Runware o folosește pentru imagini și 3D"
+	_field(g, "key", "Cheie API", true)
+	g["key"].placeholder_text = "Lipește cheia pentru a încărca modelele"
 	_check(g, "allow_http", "Permite HTTP pentru serverul local")
-	_field(g, "model", "Model")
-	g["model"].placeholder_text = "Identificator model · implicit la Meshy / Tripo / OpenAI"
+	_build_generation_selector(g, gen_tab)
+	# Retain the legacy model ID for saved profiles and an explicit advanced override.
+	var gen_advanced = _disclosure(gen_tab, "Opțiuni profil")
+	g["container"] = gen_advanced
+	_field(g, "name", "Nume profil (opțional)")
+	_field(g, "model", "Identificator model (avansat)")
+	g["model"].placeholder_text = "Alege un model din lista de mai sus"
+	g["container"] = gen_tab
 	_field(g, "destination", "Folder principal pentru rezultate (res://)")
 	g["destination"].text = "res://ai_assets"
 	_choice(g, "preferred_format", "Format preferat pentru export 3D", [])
 	g["preferred_label"] = g["container"].get_child(g["container"].get_child_count() - 2)
-	g["asset_kind"].item_selected.connect(func(_index: int) -> void: _generation_format_options())
+	g["asset_kind"].item_selected.connect(func(_index: int) -> void: _generation_result_changed())
 	g["provider_note"] = _label(gen_tab, "")
 	g["provider_note"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var workflow_bindings = _disclosure(gen_tab, "Configurare workflow ComfyUI")
@@ -495,9 +515,9 @@ func _build_settings() -> void:
 	var gen_row = _row(gen_tab)
 	g["workflow_import"] = _button(gen_row, "Importă workflow API", _pick_workflow)
 	g["workflow_import"].visible = g["kind"].selected == 1
-	_button(gen_row, "Salvează profil", _save_generation)
-	_button(gen_row, "Profil nou", func() -> void: _clear_form("generation"); g["destination"].text = "res://ai_assets")
-	_action_button(gen_row, "Testează cheia / modele", "generation_test", _test_generation)
+	g["save"] = _primary_button(gen_row, "Salvează profil", _save_generation)
+	_button(gen_row, "Profil nou", _new_generation)
+	_action_button(gen_row, "Actualizează modele", "generation_test", _test_generation)
 	_action_button(gen_row, "Șterge profil", "generation_delete", func() -> void: _remove_profile("generation", "generation"))
 	lists["generation"].item_selected.connect(_edit_generation)
 	gen_tab.move_child(list_headers["generation"], gen_row.get_index() + 1)
@@ -1100,22 +1120,229 @@ func _disclosure(parent: Node, title: String) -> VBoxContainer:
 	body.hide()
 	return body
 
+func _build_generation_selector(form: Dictionary, parent: Control) -> void:
+	var box = VBoxContainer.new()
+	parent.add_child(box)
+	form["catalog_box"] = box
+	form["catalog_status"] = _label(box, "Adaugă cheia API pentru modelele disponibile.")
+	form["catalog_status"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var search = LineEdit.new()
+	search.placeholder_text = "Caută un model…"
+	box.add_child(search)
+	form["model_search"] = search
+	var tree = Tree.new()
+	tree.columns = 2
+	tree.hide_root = true
+	tree.select_mode = Tree.SELECT_ROW
+	tree.set_column_title(0, "Model")
+	tree.set_column_title(1, "Cost / generare")
+	tree.column_titles_visible = true
+	tree.set_column_title_alignment(0, HORIZONTAL_ALIGNMENT_LEFT)
+	tree.set_column_title_alignment(1, HORIZONTAL_ALIGNMENT_RIGHT)
+	tree.add_theme_stylebox_override("panel", chat._compact_style(Color("0d1220")))
+	tree.add_theme_stylebox_override("selected", chat._compact_style(Color("34304f")))
+	tree.add_theme_stylebox_override("title_button_normal", chat._compact_style(Color("222637")))
+	tree.add_theme_color_override("font_color", Color("e3e2ec"))
+	tree.add_theme_color_override("font_selected_color", Color("f3f0ff"))
+	tree.add_theme_constant_override("v_separation", int(8 * EditorInterface.get_editor_scale()))
+	tree.set_column_expand(0, true)
+	tree.set_column_expand(1, false)
+	tree.set_column_custom_minimum_width(1, int(135 * EditorInterface.get_editor_scale()))
+	tree.custom_minimum_size.y = 170 * EditorInterface.get_editor_scale()
+	tree.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_child(tree)
+	form["model_list"] = tree
+	form["model_records"] = []
+	form["model_rows"] = {}
+	form["catalog_verified"] = false
+	form["price_detail"] = _label(box, "")
+	form["price_detail"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	form["price_source"] = _label(box, "")
+	form["price_source"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	form["price_source"].add_theme_color_override("font_color", Color("a5a0b7"))
+	search.text_changed.connect(func(_text: String) -> void: _render_generation_models())
+	tree.item_selected.connect(_generation_model_selected)
+	form["key"].text_changed.connect(_queue_generation_catalog)
+	search.hide()
+	tree.hide()
+
+func _cancel_generation_catalog() -> void:
+	generation_epoch += 1
+	generation_cancel["cancelled"] = true
+	generation_loading = false
+
+func _queue_generation_catalog(text: String) -> void:
+	if generation_form_loading: return
+	_cancel_generation_catalog()
+	var form: Dictionary = forms["generation"]
+	if form["kind"].selected == 1: return
+	form["catalog_verified"] = false
+	form["model"].clear()
+	form["model_records"] = []
+	_render_generation_models()
+	if text.strip_edges().length() < 8:
+		form["catalog_status"].text = "Adaugă cheia API pentru modelele disponibile."
+		return
+	var epoch = generation_epoch
+	form["catalog_status"].text = "Cheie introdusă…"
+	await get_tree().create_timer(0.8).timeout
+	if epoch == generation_epoch: await _load_generation_catalog()
+
+func _generation_result_changed() -> void:
+	var form: Dictionary = forms["generation"]
+	if form["asset_kind"].selected == 1 and form["kind"].selected == 4: form["kind"].select(0)
+	_generation_fields(form["kind"].selected, form["workflow_fields"], true)
+
 func _generation_fields(index: int, workflow: Control, changed: bool = false) -> void:
 	var form: Dictionary = forms["generation"]
+	var provider = Assets.KINDS[index]
+	var provider_changed = form.get("catalog_provider", "") != provider
+	form["catalog_provider"] = provider
 	form["groups"]["url"].visible = index == 1
-	form["groups"]["model"].visible = index != 1
 	form["allow_http"].visible = index == 1
-	form["asset_kind"].disabled = index in [2, 4]
-	if index == 2: form["asset_kind"].select(1)
-	elif index == 4: form["asset_kind"].select(0)
-	if changed: form["model"].clear()
+	form["catalog_box"].visible = index != 1
+	form["groups"]["model"].visible = index != 1
+	form["asset_kind"].disabled = false
+	if index == 4: form["asset_kind"].select(0)
+	form["kind"].set_item_disabled(4, form["asset_kind"].selected == 1)
+	if changed:
+		_cancel_generation_catalog()
+		form["editing"] = ""
+		form["model"].clear()
+		form["name"].clear()
+		if provider_changed:
+			generation_form_loading = true
+			form["key"].clear()
+			generation_form_loading = false
+		form["catalog_verified"] = false
+		form["model_records"] = []
+		form["model_search"].clear()
+		_render_generation_models()
+	form["key"].placeholder_text = "Cheie salvată · se reutilizează pentru imagini și 3D" if not vault.read("generation_" + provider).is_empty() else "Lipește cheia pentru a încărca modelele"
+	form["catalog_status"].text = "Adaugă cheia API pentru modelele disponibile."
 	if form.has("workflow_import"): form["workflow_import"].visible = index == 1
 	workflow.get_meta("toggle").visible = index == 1
 	if index != 1: workflow.hide()
-	var notes = ["", "", "Text → GLB fără texturi. Imagine → GLB texturat.", "API v3 · imagini și modele 3D.", "GPT Image · PNG din text."]
-	form["provider_note"].text = notes[index]
-	form["provider_note"].visible = not notes[index].is_empty()
+	form["provider_note"].text = ""
+	form["provider_note"].hide()
 	_generation_format_options()
+	if changed and index != 1 and (not form["key"].text.strip_edges().is_empty() or not vault.read("generation_" + provider).is_empty()): _load_generation_catalog.call_deferred()
+
+func _generation_draft() -> Dictionary:
+	var form: Dictionary = forms["generation"]
+	var provider = str(Assets.KINDS[form["kind"].selected])
+	var id = str(form.get("editing", ""))
+	if id.is_empty(): id = "draft"
+	return {"id": id, "credential_id": id if provider == "comfy" else "generation_" + provider, "kind": provider, "asset_kind": "mesh" if form["asset_kind"].selected == 1 else "image", "url": form["url"].text, "allow_http": form["allow_http"].button_pressed}
+
+func _load_generation_catalog() -> void:
+	if busy: return
+	_cancel_generation_catalog()
+	var epoch = generation_epoch
+	var form: Dictionary = forms["generation"]
+	var profile = _generation_draft()
+	var key = str(form["key"].text).strip_edges()
+	if key.is_empty() and vault.read(str(profile["credential_id"])).is_empty():
+		var saved = _generation_profile()
+		if not saved.is_empty() and saved.get("kind") == profile["kind"]: key = vault.read(str(saved.get("credential_id", saved["id"])))
+	if key.is_empty() and vault.read(str(profile["credential_id"])).is_empty():
+		form["catalog_status"].text = "Adaugă cheia API pentru modelele disponibile."
+		return
+	generation_loading = true
+	generation_cancel = {"cancelled": false}
+	form["catalog_status"].text = "Verific cheia și încarc modelele…"
+	form["catalog_verified"] = false
+	form["model_records"] = []
+	_render_generation_models()
+	var update = func(event: Dictionary) -> void:
+		if epoch != generation_epoch: return
+		if event.has("result"):
+			if not key.is_empty() and event.get("credential_verified", false):
+				if not vault.store(str(profile["credential_id"]), key):
+					generation_cancel["cancelled"] = true
+					form["catalog_status"].text = "Cheia nu a putut fi păstrată."
+					return
+			_refresh_secrets()
+			form["catalog_verified"] = event.get("credential_verified", false)
+			if form["catalog_verified"]: form["key"].placeholder_text = "Cheie salvată pentru acest furnizor"
+			form["model_records"] = event["result"]
+			form["catalog_status"].text = "%s modele · cheie verificată" % event["result"].size()
+			form["catalog_status"].tooltip_text = "Catalog documentat al furnizorului; accesul la fiecare model se confirmă la generare." if event.get("source") == "documented_presets" else "Catalogul furnizorului; opțiunile și soldul pot limita accesul la generare."
+			_render_generation_models()
+			_reveal_generation_models(epoch)
+		elif event.has("model"):
+			var model: Dictionary = event["model"]
+			var row: TreeItem = form["model_rows"].get(model["id"])
+			if row != null:
+				row.set_text(1, assets.GenerationCatalog.price_label(model.get("price", {})))
+				row.set_tooltip_text(1, assets.GenerationCatalog.price_detail(model, str(profile["asset_kind"])))
+				if row.is_selected(0): _generation_model_selected()
+	var result = await assets.catalog(profile, generation_cancel, key, update)
+	if epoch != generation_epoch: return
+	generation_loading = false
+	if not result.get("ok", false):
+		form["catalog_status"].text = Common.redact(_redact(str(result.get("error", "Catalog indisponibil."))), [key, vault.read(str(profile["credential_id"]))])
+		if not form["catalog_verified"]: form["model_records"] = []; _render_generation_models()
+	elif form["model_records"].is_empty(): form["catalog_status"].text = "Cheie verificată · niciun model compatibil pentru acest rezultat."
+	_update_settings_controls()
+
+func _reveal_generation_models(epoch: int) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if epoch != generation_epoch or not settings_window.visible or settings_tabs.current_tab != section_tabs["generation"]: return
+	var page: ScrollContainer = settings_tabs.get_tab_control(section_tabs["generation"])
+	page.ensure_control_visible(forms["generation"]["model_list"])
+
+func _render_generation_models() -> void:
+	var form: Dictionary = forms["generation"]
+	var tree: Tree = form["model_list"]
+	tree.clear()
+	form["model_rows"] = {}
+	var root_item = tree.create_item()
+	var query = str(form["model_search"].text).strip_edges().to_lower()
+	for model in form["model_records"]:
+		var id = str(model.get("id", ""))
+		var title = str(model.get("name", id))
+		if not query.is_empty() and not query in (title + " " + id).to_lower(): continue
+		var row = tree.create_item(root_item)
+		row.set_text(0, title)
+		row.set_text_overrun_behavior(0, TextServer.OVERRUN_TRIM_ELLIPSIS)
+		row.set_text(1, assets.GenerationCatalog.price_label(model.get("price", {})))
+		row.set_text_alignment(1, HORIZONTAL_ALIGNMENT_RIGHT)
+		row.set_tooltip_text(0, title + "\n" + id)
+		row.set_tooltip_text(1, assets.GenerationCatalog.price_detail(model, "mesh" if form["asset_kind"].selected == 1 else "image"))
+		row.set_metadata(0, model)
+		form["model_rows"][id] = row
+		if form["model"].text == id: row.select(0)
+	var has_models = not form["model_records"].is_empty()
+	tree.visible = has_models
+	form["model_search"].visible = has_models
+	if not has_models:
+		form["price_detail"].text = ""
+		form["price_source"].text = ""
+	_update_settings_controls()
+
+func _generation_model_selected() -> void:
+	var form: Dictionary = forms["generation"]
+	var selected: TreeItem = form["model_list"].get_selected()
+	if selected == null: return
+	var model: Dictionary = selected.get_metadata(0)
+	form["model"].text = str(model["id"])
+	form["price_detail"].text = assets.GenerationCatalog.price_detail(model, "mesh" if form["asset_kind"].selected == 1 else "image")
+	var value: Dictionary = model.get("price", {})
+	form["price_source"].text = "Tarif furnizor · " + str(value["checked_on"]) if value.has("checked_on") else "Tarif nepublicat; verifică furnizorul înainte de generare."
+	form["price_source"].tooltip_text = str(value.get("source", ""))
+	_update_settings_controls()
+
+func _new_generation() -> void:
+	_cancel_generation_catalog()
+	_clear_form("generation")
+	var form: Dictionary = forms["generation"]
+	form["destination"].text = "res://ai_assets"
+	form["catalog_verified"] = false
+	form["model_records"] = []
+	_render_generation_models()
+	_generation_fields(form["kind"].selected, form["workflow_fields"], true)
 
 func _generation_format_options() -> void:
 	if not forms.has("generation") or not forms["generation"].has("preferred_format"): return
@@ -1326,6 +1553,7 @@ func _refresh_secrets() -> void:
 	github_has_token = not vault.read("integration_github").is_empty()
 	secrets.clear()
 	var profiles = config["providers"] + config["generation"] + config["mcp"] + [config["companion"], {"id": "transcription"}, {"id": "integration_github"}, {"id": "integration_termux_blender"}]
+	for kind in ["runware", "meshy", "tripo", "openai_image"]: profiles.append({"id": "generation_" + kind})
 	for profile in profiles:
 		var secret = vault.read(str(profile.get("credential_id", profile["id"])))
 		if not secret.is_empty(): secrets.append(secret)
@@ -1443,6 +1671,15 @@ func _update_settings_controls() -> void:
 		var exists = config[entry[1]].any(func(item: Dictionary) -> bool: return item["id"] == id)
 		for suffix in ["delete", "test", "run"]: _action_available(entry[0] + "_" + suffix, exists and not (entry[0] == "provider" and provider_testing), "Selectează un profil salvat și așteaptă verificarea.")
 		if entry[0] == "provider" and settings_actions.has("provider_delete"): settings_actions["provider_delete"].visible = exists
+	if forms.has("generation"):
+		var draft = _generation_draft()
+		var can_test = draft["kind"] == "comfy" or not forms["generation"]["key"].text.strip_edges().is_empty() or not vault.read(str(draft["credential_id"])).is_empty()
+		_action_available("generation_test", can_test, "Adaugă cheia API.")
+		if forms["generation"].has("save"):
+			var form: Dictionary = forms["generation"]
+			var waiting_price = form["model_records"].any(func(model: Dictionary) -> bool: return model.get("id") == form["model"].text and model.get("price", {}).get("basis") == "loading")
+			form["save"].disabled = busy or (draft["kind"] != "comfy" and (not form.get("catalog_verified", false) or form["model"].text.is_empty() or waiting_price))
+			form["save"].tooltip_text = "Se încarcă tariful modelului selectat." if waiting_price else ""
 	_action_available("generate", not _generation_profile().is_empty(), "Selectează un profil de generare salvat.")
 	var job = _selected_job() if lists.has("jobs") else {}
 	_action_available("job_refresh", not job.is_empty() and not _generation_profile(str(job.get("profile_id", ""))).is_empty(), "Selectează un rezultat cu profil conectat.")
@@ -1466,12 +1703,16 @@ func _fill(form_id: String, profile: Dictionary) -> void:
 	if profile.has("workflow"): form["workflow"] = profile["workflow"].duplicate(true)
 
 func _clear_form(form_id: String) -> void:
+	if form_id == "generation": _cancel_generation_catalog()
+	if form_id == "generation": generation_form_loading = true
 	var form: Dictionary = forms[form_id]
 	form["editing"] = ""
 	form.erase("workflow")
 	for key in form:
 		if form[key] is LineEdit: form[key].clear()
 		elif form[key] is CheckBox: form[key].button_pressed = false
+
+	if form_id == "generation": generation_form_loading = false
 
 func _upsert(category: String, profile: Dictionary) -> void:
 	for index in range(config[category].size()):
@@ -1822,7 +2063,7 @@ func _context_messages() -> Array:
 		instructions += " The direct-provider harness runs in Godot. Optional Linux commands and CLI agents run only when the supplied runtime is ready. Do not repeatedly search for unavailable Linux tools. Install utilities only when the user requests them. Native scene tools and GLB previews remain in Godot. A CLI binary version check alone does not establish a working harness integration."
 		var snapshot = tools.execute("godot_project", {}, 0, false)
 		instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
-		instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")}))
+		instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "model": profile.get("model", ""), "price": profile.get("model_info", {}).get("price", {}), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")}))
 		instructions += "\nIMAGE ASSET CONTRACT: Always choose asset_generate.purpose for images. reference_3d means an isolated, fully visible single object for reconstruction, without environment/floor/pedestal/shadow; sprite means the requested 2D game art and exact frame layout, not a reconstruction render; texture means a flat tileable surface; background means complete scenery; generic means an ordinary illustration. reference_3d and sprite default to a real transparent background. Respect an explicit user override via background. Never infer transparency from PNG, a white background or a drawn checkerboard. After asset_wait inspect quality.ready_for_use and observe the exact output before feeding it to a 3D generator. If transparency is missing, use asset_remove_background on the existing imported image with a saved Runware profile, then wait and inspect it; do not regenerate the source, invent alpha support or convert an invalid reference. If no background-removal service is configured, report that specific blocker and preserve the original. Background removal consumes provider credits and follows the same permission and planning rules as generation."
 		instructions += "\n3D PREVIEW: Use file_observe to inspect the downloaded GLB with the native Godot renderer and file_preview to open it for the user. Both work without Blender CLI. Always leave the completed asset card in chat. Blender is for modeling/conversion and is never required to view a GLB. Keep the original GLB preview when exporting FBX or other formats."
 		instructions += "\nGenerated PNG/GLB originals are automatically placed in a named project folder. If a 3D profile prefers another format, call asset_export with that format after completion; it stores the conversion beside the original when available. Never claim a provider conversion succeeded until asset_export returns completed."
@@ -2278,6 +2519,16 @@ func _save_generation() -> void:
 	else:
 		profile["url"] = str(assets.api_urls.get(profile["kind"], "https://api.runware.ai/v1"))
 		profile["allow_http"] = false
+	if profile["kind"] != "comfy" and str(profile["model"]).is_empty():
+		_status("Alege un model din catalogul furnizorului.")
+		return
+	for model in form["model_records"]:
+		if model.get("id") == profile["model"]:
+			profile["model_info"] = model.duplicate(true)
+			break
+	if profile["kind"] != "comfy" and not form.get("catalog_verified", false):
+		_status("Verifică cheia și alege modelul înainte de salvare.")
+		return
 	var credential_id = id if profile["kind"] == "comfy" else "generation_" + str(profile["kind"])
 	var key = str(form["key"].text).strip_edges()
 	if key.is_empty() and vault.read(credential_id).is_empty() and not vault.read(id).is_empty(): key = vault.read(id)
@@ -2288,23 +2539,29 @@ func _save_generation() -> void:
 	if profile["kind"] != "comfy":
 		for existing in config["generation"]:
 			if existing.get("kind") == profile["kind"]: existing["credential_id"] = credential_id
+	generation_form_loading = true
 	form["key"].clear()
+	generation_form_loading = false
 	form["editing"] = id
 	_upsert("generation", profile)
-	_status("Profil salvat. Cheia furnizorului poate fi reutilizată pentru imagini și 3D unde API-ul permite.")
+	_status("Profil salvat.")
 
 func _edit_generation(index: int) -> void:
 	var profile: Dictionary = config["generation"][index]
 	_fill("generation", profile)
 	forms["generation"]["kind"].select(maxi(0, Assets.KINDS.find(str(profile["kind"]))))
-	_generation_fields(forms["generation"]["kind"].selected, forms["generation"]["workflow_fields"])
 	forms["generation"]["asset_kind"].select(1 if profile["asset_kind"] == "mesh" else 0)
+	_generation_fields(forms["generation"]["kind"].selected, forms["generation"]["workflow_fields"])
 	_generation_format_options()
 	var preferred: OptionButton = forms["generation"]["preferred_format"]
 	for option_index in range(preferred.item_count):
 		if str(preferred.get_item_metadata(option_index)) == str(profile.get("preferred_format", "glb")): preferred.select(option_index)
 	forms["generation"]["destination"].text = str(profile.get("destination", "res://ai_assets"))
 	forms["generation"]["key"].placeholder_text = "Cheie salvată pentru acest furnizor" if not vault.read(str(profile.get("credential_id", profile["id"]))).is_empty() else "Adaugă cheia API"
+	_cancel_generation_catalog()
+	forms["generation"]["model_records"] = [profile["model_info"].duplicate(true)] if profile.has("model_info") else []
+	_render_generation_models()
+	if profile["kind"] != "comfy": _load_generation_catalog.call_deferred()
 
 func _generation_profile(id: String = "") -> Dictionary:
 	if id.is_empty(): id = str(forms["generation"].get("editing", ""))
@@ -2313,37 +2570,11 @@ func _generation_profile(id: String = "") -> Dictionary:
 	return {}
 
 func _test_generation() -> void:
-	var profile = _generation_profile()
-	if profile.is_empty():
-		_status("Salvează mai întâi profilul.")
+	if forms["generation"]["kind"].selected == 1:
+		var result = await assets.models(_generation_draft(), {})
+		_status("ComfyUI conectat: %s clase de noduri disponibile." % result.get("json", {}).size() if result.get("ok", false) else str(result.get("error", "Conexiune indisponibilă.")))
 		return
-	var verified = await assets.verify_key(profile, {})
-	if not verified.get("ok", false):
-		_status(str(verified.get("error", "Cheia sau conexiunea nu a fost validată.")))
-		return
-	var result = await assets.models(profile, {})
-	if not result.get("ok", false):
-		_status(str(result.get("error", "Catalog indisponibil.")))
-		return
-	if profile["kind"] == "comfy":
-		_status("ComfyUI conectat: %s clase de noduri disponibile." % result.get("json", {}).size())
-	else:
-		var dialog = AcceptDialog.new()
-		dialog.title = "Modele de generare disponibile"
-		var list = ItemList.new()
-		list.custom_minimum_size = Vector2(280, 300)
-		dialog.add_child(list)
-		for model in result.get("result", []):
-			var model_id = str(model.get("air", model.get("model", model.get("id", ""))))
-			if not model_id.is_empty():
-				list.add_item(str(model.get("name", model_id)) + " · " + model_id)
-				list.set_item_metadata(list.item_count - 1, model_id)
-		list.item_selected.connect(func(index: int) -> void: forms["generation"]["model"].text = str(list.get_item_metadata(index)))
-		dialog.confirmed.connect(dialog.queue_free)
-		dialog.canceled.connect(dialog.queue_free)
-		_mount_dialog(dialog)
-		dialog.popup_centered_clamped(Vector2i(650, 450), 0.9)
-		_status("Cheie verificată; accesul la model se confirmă la generare." if verified.get("result", {}).get("credential_verified", false) else "Server conectat; catalogul nu validează cheia pentru toate modelele.")
+	await _load_generation_catalog()
 
 func _generate() -> void:
 	if busy: return

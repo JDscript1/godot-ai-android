@@ -37,7 +37,64 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — DeepSeek și denumire unitară, 26.10.2026
+## Etapa curentă — Generare cu modele și tarife, 26.10.2026
+
+**Implementat în surse, încă neinclus în APK-ul din Download.** Utilizatorul
+cere un flux simplu pentru furnizorii cloud: Imagini / Mesh-uri 3D, cheie API,
+modele ale furnizorului și prețul în dreptul fiecărui model.
+
+Formularul are selectoare compacte pentru rezultat și furnizor. Lipirea cheii
+pornește verificarea după o scurtă pauză și încarcă lista căutabilă fără un
+profil salvat anterior. Coloana de cost păstrează USD sau creditele originale;
+selecția afișează condițiile, sursa și data tarifului. Profilurile pentru imagini
+și 3D rămân distincte și reutilizează cheia furnizorului. Schimbarea serviciului
+nu transportă cheia altui furnizor, iar o cheie invalidă nu înlocuiește cheia
+validată. Salvarea nu golește selecția/catalogul. Profilurile vechi cu cheia
+sub ID-ul propriu pot fi migrate fără reintroducerea ei.
+
+Runware: index public și scheme de preț actualizate, patru cereri simultane,
+încărcare progresivă și cache de 24h. Datele publice nu primesc cheia API.
+Modelele retrase și SAM 3D, care necesită mască, sunt filtrate. Meshy/Tripo:
+cataloage documentate și tarife în credite, verificate la 26.10.2026; verificarea
+cheii prin sold nu dovedește accesul contului la fiecare model. OpenAI:
+catalogul contului, doar modele de imagine neretrase; tarife orientative sau
+variabile unde nu există un preț fix per imagine. Prețurile nepublicate nu sunt
+prezentate ca zero. Estimările și prețurile de pornire sunt marcate distinct.
+
+Adăugat adaptorul Meshy text-to-image, cu aceeași organizare/validare a
+rezultatelor ca celelalte imagini. Modelele Smart Topology Meshy primesc
+parametrul documentat. Profilul salvează metadatele publice ale modelului și
+costului, iar agentul le primește în context. Modulele rămân native Godot,
+fără runtime extern pentru cataloage și furnizori. Noua componentă
+`generation_catalog.gd` intră în lista de scripturi înglobate la compilare.
+
+Probe: **465 aserțiuni runtime** cu HTTP local simulat; fluxul Meshy imagine,
+salvarea, download-ul, validarea/importul PNG și GLB sunt incluse. Probe UI
+dedicate pentru tabletă și ecran îngust, cu schimbare de rezultat/furnizor,
+cheie invalidă, migrarea cheii și preț necunoscut. Fără cereri plătite în aceste
+probe. Catalog Runware real prin transportul Godot: **106 modele de imagini,
+6 de mesh și 2 scheme reale de preț**, fără cheie și fără generări.
+Asistentul din meniul principal: **52 verificări** trecute. Proba generală
+locală pe tabletă a depășit limita de 180s fără raport final; nu este contabilizată
+ca reușită. Proba generală pe ecran îngust a trecut **466 de verificări**.
+Probe dedicate: **52 × 2 dimensiuni**, apoi **53 pe tabletă**, inclusiv
+mascarea unei chei repetate de furnizor în mesajul erorii.
+
+Dovezi: `.ai-qa/generation-catalog-runtime-final.log`,
+`.ai-qa/generation-catalog-final-tablet/`, `.ai-qa/generation-catalog-final-narrow/`,
+`.ai-qa/generation-catalog-final-privacy/`, `.ai-qa/generation-public-verification.json`,
+`.ai-qa/generation-start-regression/`, `.ai-qa/generation-catalog-full-narrow/`
+și `.ai-qa/generation-catalog-regression/`.
+[Detalii și surse tarifare](docs/AI_GENERATION.md).
+APK nou și utilizare fizică Android: nevalidate în această etapă. Generările
+reale cu cheile utilizatorului rămân de verificat separat.
+
+Jurnal: 26.10.2026 — implementat fluxul de selecție Imagini / Mesh-uri 3D cu
+validarea cheii înainte de salvare, cataloage căutabile și tarife per model;
+verificate datele publice Runware și protocoalele simulate. APK-ul livrat
+rămâne e401e8f până la o compilare nouă.
+
+## Etapa precedentă — DeepSeek și denumire unitară, 26.10.2026
 
 Utilizatorul a raportat „Adresa serverului nu este validă” la introducerea
 cheii DeepSeek în interiorul proiectului și diferența Agent / AI Assistant

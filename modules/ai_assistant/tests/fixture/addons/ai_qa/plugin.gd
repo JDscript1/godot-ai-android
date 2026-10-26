@@ -50,6 +50,29 @@ class FixtureVault:
 		return true
 	func erase(name: String) -> bool: return values.erase(name)
 
+class GenerationTransport:
+	extends RefCounted
+	var host: Node
+	var public_headers: Array = []
+	var paid_requests = 0
+	func request(url: String, method: int, headers: PackedStringArray, body: Variant, options: Dictionary) -> Dictionary:
+		await host.get_tree().create_timer(0.03).timeout
+		if options.get("cancel", {}).get("cancelled", false): return {"ok": false, "code": "cancelled", "error": "Oprit"}
+		if url.contains("/docs/"):
+			public_headers.append(headers)
+			if url.ends_with("index.json"):
+				return {"ok": true, "json": [
+					{"air": "fixture:image@1", "name": "Studio Image", "status": "live", "capabilities": ["text-to-image"], "schema": "http://127.0.0.1/docs/image.json"},
+					{"air": "fixture:image@2", "name": "Canvas Pro", "status": "live", "capabilities": ["text-to-image"], "schema": "http://127.0.0.1/docs/unknown.json"},
+					{"air": "fixture:mesh@1", "name": "Sculpt 3D", "status": "live", "capabilities": ["image-to-3d"], "schema": "http://127.0.0.1/docs/mesh.json"}]}
+			return {"ok": true, "json": {"info": {"x-pricing": {} if url.ends_with("unknown.json") else {"currency": "USD", "rates": [{"amount": 0.04, "unit": "output", "label": "Standard"}, {"amount": 0.08, "unit": "output", "label": "HD"}]}}}}
+		if not "Authorization: Bearer sk-fixture-generation-valid" in headers: return {"ok": false, "status": 401, "error": "Cheie respinsă (probă): sk-fixture-generation-invalid"}
+		if method == HTTPClient.METHOD_POST:
+			if body is Array and body[0].get("taskType") == "ping": return {"ok": true, "json": {"data": [{"pong": true}]}}
+			paid_requests += 1
+		if url.ends_with("/balance"): return {"ok": true, "json": {"balance": 100}}
+		return {"ok": false, "error": "Cerere neașteptată în proba catalogului."}
+
 class FixtureProvider:
 	extends RefCounted
 	var requests = 0
@@ -186,8 +209,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -218,6 +241,10 @@ func _run() -> void:
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "panels":
 		await _workspace_panel_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "generation":
+		await _generation_catalog_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "providers":
@@ -256,6 +283,7 @@ func _run() -> void:
 	await _history_button_tests()
 	await _settings_action_tests()
 	await _provider_connection_tests("")
+	await _generation_catalog_tests("")
 	await _provider_discovery_tests("")
 	await _linux_runtime_tests("")
 	await _workspace_panel_tests("")
@@ -996,10 +1024,10 @@ func _control_settings_tests() -> void:
 	var form = panel.forms["generation"]
 	form["kind"].select(2)
 	panel._generation_fields(2, form["workflow_fields"], true)
-	_check(form["asset_kind"].selected == 1 and form["asset_kind"].disabled and not form["allow_http"].visible and not form["groups"]["url"].visible, "Meshy form enforces GLB and fixed secure endpoint")
+	_check(not form["asset_kind"].disabled and not form["allow_http"].visible and not form["groups"]["url"].visible, "Meshy form supports images and meshes with a fixed secure endpoint")
 	form["kind"].select(4)
 	panel._generation_fields(4, form["workflow_fields"], true)
-	_check(form["asset_kind"].selected == 0 and form["asset_kind"].disabled and not form["workflow_import"].visible, "OpenAI Images form exposes PNG without unrelated workflow actions")
+	_check(form["asset_kind"].selected == 0 and not form["workflow_import"].visible, "OpenAI Images form exposes PNG without unrelated workflow actions")
 	form["kind"].select(3)
 	panel._generation_fields(3, form["workflow_fields"], true)
 	_check(not form["asset_kind"].disabled and form["kind"].item_count == 5, "Tripo supports both image and GLB profiles alongside existing generators")
@@ -2346,3 +2374,113 @@ func _workspace_capture(output: String, filename: String) -> void:
 	if output.is_empty(): return
 	RenderingServer.force_draw(false)
 	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(filename + ".png"))
+
+func _generation_catalog_tests(output: String) -> void:
+	var original = panel.config["generation"].duplicate(true)
+	var transport = panel.assets.transport
+	var urls = panel.assets.api_urls.duplicate()
+	var catalog_urls = panel.assets.catalog_urls.duplicate()
+	var prices = panel.assets.catalog_prices.duplicate(true)
+	var test_http = panel.assets.test_http
+	var old_keys = {}
+	for kind in ["runware", "meshy", "tripo", "openai_image"]:
+		old_keys[kind] = panel.vault.read("generation_" + kind)
+		panel.vault.erase("generation_" + kind)
+	var fixture = GenerationTransport.new()
+	fixture.host = self
+	panel.assets.transport = fixture
+	panel.assets.test_http = true
+	panel.assets.catalog_prices = {}
+	panel.assets.catalog_urls["runware"] = "http://127.0.0.1/docs/index.json"
+	panel.config["generation"] = []
+	panel._refresh_lists()
+	var form: Dictionary = panel.forms["generation"]
+	form["kind"].select(0)
+	form["asset_kind"].select(0)
+	panel._new_generation()
+	panel.open_settings("generation")
+	_check(not form["model_list"].visible and form["save"].disabled, "A new image profile asks for a key before model selection or saving")
+	form["key"].text = "sk-fixture-generation-valid"
+	form["key"].text_changed.emit(form["key"].text)
+	await _wait_generation_catalog()
+	_check(form["catalog_verified"] and form["model_records"].size() == 2 and form["model_list"].visible, "Pasting a draft cloud key discovers image models without requiring a saved profile: " + form["catalog_status"].text)
+	_check(form["model_rows"]["fixture:image@1"].get_text(1) == "0,04 USD+" and form["model_rows"]["fixture:image@2"].get_text(1) == "Indisponibil", "Every image model has its own price cell, and unknown tariffs never show zero")
+	form["model_rows"]["fixture:image@1"].select(0)
+	panel._generation_model_selected()
+	_check(form["model"].text == "fixture:image@1" and not form["save"].disabled and form["price_detail"].text.contains("/ imagine"), "Selecting an image model updates the model ID, cost details and save control")
+	panel._save_generation()
+	var image_id = str(form["editing"])
+	_check(form["catalog_verified"] and form["model_list"].visible and form["model"].text == "fixture:image@1", "Saving and clearing the secret field preserves the selected model and its visible catalog")
+	_check(panel._generation_profile(image_id).get("model_info", {}).get("price", {}).get("amount") == 0.04 and not JSON.stringify(panel.config).contains("sk-fixture-generation-valid"), "Saving keeps model price metadata while the API key remains exclusively in the vault")
+	if not output.is_empty():
+		await get_tree().create_timer(0.15).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("generation-images.png"))
+	form["asset_kind"].select(1)
+	form["asset_kind"].item_selected.emit(1)
+	await _wait_generation_catalog()
+	_check(form["model_records"].size() == 1 and form["model_records"][0]["id"] == "fixture:mesh@1" and str(form["editing"]).is_empty(), "Switching to 3D reuses the provider key but creates a distinct profile with only mesh models")
+	form["model_rows"]["fixture:mesh@1"].select(0)
+	panel._generation_model_selected()
+	panel._save_generation()
+	_check(panel.config["generation"].size() == 2 and panel._generation_profile(image_id).get("asset_kind") == "image" and panel._generation_profile().get("credential_id") == "generation_runware", "Image and 3D profiles retain independent models and share the one provider key")
+	if not output.is_empty():
+		await get_tree().create_timer(0.15).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("generation-meshes.png"))
+	form["model_search"].text = "missing-model"
+	form["model_search"].text_changed.emit("missing-model")
+	_check(form["model_rows"].is_empty(), "Model search filters the current provider and result type")
+	form["model_search"].clear()
+	form["model_search"].text_changed.emit("")
+	form["key"].text = "sk-fixture-generation-invalid"
+	form["key"].text_changed.emit(form["key"].text)
+	await _wait_generation_catalog()
+	_check(not form["catalog_verified"] and form["model_records"].is_empty() and form["save"].disabled and panel.vault.read("generation_runware") == "sk-fixture-generation-valid", "A rejected replacement key clears stale choices and preserves the valid shared credential")
+	_check(not form["catalog_status"].text.contains("sk-fixture-generation-invalid"), "A draft API key echoed by an authentication error is masked in the catalog status")
+	if not output.is_empty(): panel.settings_window.get_texture().get_image().save_png(output.path_join("generation-invalid-key.png"))
+	form["kind"].select(2)
+	form["kind"].item_selected.emit(2)
+	_check(form["key"].text.is_empty() and str(form["editing"]).is_empty(), "Changing cloud providers never carries the previous provider key or overwrites its profile")
+	form["asset_kind"].select(0)
+	form["asset_kind"].item_selected.emit(0)
+	form["key"].text = "sk-fixture-generation-valid"
+	form["key"].text_changed.emit(form["key"].text)
+	await _wait_generation_catalog()
+	_check(form["catalog_verified"] and form["model_records"].size() == 7 and form["model_rows"]["nano-banana"].get_text(1) == "3 cr.", "Meshy image catalog offers documented models with their native credit prices")
+	form["model_rows"]["nano-banana"].select(0)
+	panel._generation_model_selected()
+	if not output.is_empty():
+		await get_tree().create_timer(0.15).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("generation-meshy.png"))
+	form["key"].text = "sk-fixture-generation-invalid"
+	form["key"].text_changed.emit(form["key"].text)
+	form["kind"].select(3)
+	form["kind"].item_selected.emit(3)
+	await get_tree().create_timer(0.9).timeout
+	_check(not form["catalog_verified"] and form["model_records"].is_empty(), "A delayed key-paste callback cannot populate a different provider after selection changes")
+	# Legacy profiles may still have their key under the profile UUID.
+	panel.vault.erase("generation_runware")
+	panel.vault.store(image_id, "sk-fixture-generation-valid")
+	panel.config["generation"][0].erase("credential_id")
+	panel._edit_generation(0)
+	await _wait_generation_catalog()
+	_check(form["catalog_verified"] and form["model"].text == "fixture:image@1" and panel.vault.read("generation_runware") == "sk-fixture-generation-valid", "A legacy per-profile key is verified and reused without asking the user to paste it again")
+	panel.vault.erase(image_id)
+	_check(fixture.paid_requests == 0 and fixture.public_headers.all(func(headers: PackedStringArray) -> bool: return not str(headers).contains("Bearer")), "Catalog, pricing, key checks and profile saving submit no paid generation and send no secret to public docs")
+	panel._cancel_generation_catalog()
+	panel.assets.transport = transport
+	panel.assets.api_urls = urls
+	panel.assets.catalog_urls = catalog_urls
+	panel.assets.catalog_prices = prices
+	panel.assets.test_http = test_http
+	for kind in old_keys:
+		if str(old_keys[kind]).is_empty(): panel.vault.erase("generation_" + kind)
+		else: panel.vault.store("generation_" + kind, old_keys[kind])
+	panel.config["generation"] = original
+	panel._new_generation()
+	panel._refresh_lists()
+	panel.settings_window.hide()
+
+func _wait_generation_catalog() -> void:
+	await get_tree().create_timer(1.0).timeout
+	var limit = Time.get_ticks_msec() + 10000
+	while panel.generation_loading and Time.get_ticks_msec() < limit: await get_tree().process_frame

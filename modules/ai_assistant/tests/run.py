@@ -120,6 +120,19 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         if location.path in ["/store/redirect", "/store/loop"]:
             self.reply(b"", 302, headers={"Location": "/artifact/image.png" if location.path.endswith("redirect") else "/store/loop"})
             return
+        if location.path.startswith("/catalog/"):
+            if self.headers.get("Authorization"):
+                self.reply({"error": "credentials sent to public catalog"}, 403)
+                return
+            if location.path.endswith("index.json"):
+                root = f"http://127.0.0.1:{self.server.server_port}/catalog/"
+                self.reply([
+                    {"air": "fixture:image@1", "name": "Fixture Image", "status": "live", "capabilities": ["text-to-image"], "schema": root + "image.json"},
+                    {"air": "fixture:mesh@1", "name": "Fixture Mesh", "status": "live", "capabilities": ["image-to-3d"], "schema": root + "mesh.json"},
+                    {"air": "fixture:retired@1", "status": "retired", "capabilities": ["text-to-image"]}])
+            else:
+                self.reply({"info": {"x-pricing": {"currency": "USD", "rates": [{"amount": 0.04, "unit": "output", "label": "1K"}, {"amount": 0.08, "unit": "output", "label": "2K"}]}}})
+            return
         if location.path.startswith(("/meshy/", "/tripo/", "/openai_image/")):
             if self.headers.get("Authorization") != "Bearer generation-fixture-key":
                 self.reply({"error": "missing fixture authorization"}, 401)
@@ -147,7 +160,7 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
                 if task == "foreign-task": output_url = "https://attacker.example/model.glb"
                 status = "failed" if task == "failed-task" else "success"
                 data = {"status": status, "progress": 100, "output": {"model_url": output_url, "generated_image_url": output_url}, "credits_consumed": 4}
-                self.reply({"code": 0, "data": data} if location.path.startswith("/tripo/") else {"status": "FAILED" if status == "failed" else "SUCCEEDED", "progress": 100, "model_urls": {"glb": output_url}})
+                self.reply({"code": 0, "data": data} if location.path.startswith("/tripo/") else {"status": "FAILED" if status == "failed" else "SUCCEEDED", "progress": 100, "model_urls": {"glb": output_url}, "image_urls": [output_url]})
             return
         if location.path.startswith("/artifact/"):
             if self.headers.get("Authorization"):
@@ -241,6 +254,9 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
                 valid = payload.get("output_format") == "png" and "response_format" not in payload and payload.get("n") == 1
                 image = b"invalid" if payload.get("prompt") == "invalid" else png()
                 self.reply({"data": [{"b64_json": base64.b64encode(image).decode()}]} if valid else {"error": "wrong image schema"}, 200 if valid else 400)
+            elif location.path == "/meshy/openapi/v1/text-to-image":
+                valid = payload.get("ai_model") == "nano-banana-2" and payload.get("aspect_ratio") == "1:1" and bool(payload.get("prompt"))
+                self.reply({"result": "image-task"} if valid else {"error": "wrong image schema"}, 200 if valid else 400)
             elif location.path.startswith("/meshy/"):
                 valid = payload.get("target_formats") == ["glb"] and (payload.get("mode") == "preview" if "text-to-3d" in location.path else payload.get("image_url", "").startswith("data:image/png;base64,"))
                 self.reply({"result": task} if valid else {"error": "wrong mesh schema"}, 200 if valid else 400)
