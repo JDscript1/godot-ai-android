@@ -1,8 +1,8 @@
 # Native generation providers
 
-The catalog flow below is implemented in source on 26 October 2026; the current
-Download APK `e401e8f` predates it. Physical Android and paid-provider generation
-are separate from the checks listed below.
+The catalog flow below is included in the verified Download APK `c418f97`,
+delivered on 26 October 2026 at 10:25 +01:00. Physical Android and paid-provider
+generation are separate from the build and automated checks listed below.
 
 Configure profiles in **Setări → Generare**:
 
@@ -177,8 +177,14 @@ physical Android import/rendering. Those require configured-provider/device QA.
 - Start-screen shared-panel regression passed **52 checks**. A broad tablet
   editor pass exceeded its 180-second local limit; it is not counted as passed.
   The broad narrow editor pass passed **466 checks**. Dedicated passes passed
-  **52 checks each on tablet and narrow**, followed by **53 tablet checks** with
-  an authentication error that echoes the draft key; the echoed key is masked.
+  **53 checks each on tablet and narrow**, including an authentication error
+  that echoes the draft key; the echoed key is masked.
 - Script loader includes the new `generation_catalog.gd` in the native embedded
   module and test loaders. The workflow includes dedicated catalog screenshots
-  for both upstream and compiled native editors on the next build.
+  for both upstream and compiled native editors. The compiled fork passed
+  **480 checks across each of five sizes**, plus **53 dedicated generation checks**.
+- [Build 40298487521](https://github.com/JDscript1/godot-ai-android/actions/runs/40298487521)
+  passed all three jobs. APK signature, package, all **29 embedded scripts** and
+  the complete Linux package were verified before atomic replacement in Download.
+  Evidence: `.ai-qa/c418f97-native/`, `.ai-qa/delivery-c418f97.json` and
+  `.ai-qa/generation-catalog-verification.json`.

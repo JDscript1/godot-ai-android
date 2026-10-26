@@ -12,10 +12,10 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download este **`e401e8f`**
-  (`e401e8f0de89d4d816ed936058faa093ff7f5cc7`), livrat la
-  **26.10.2026, 06:59 +01:00**, cu URL DeepSeek reparat și denumire unitară,
-  panouri minimizabile, chat extins și Linux automat.
+- APK-ul curent din Download este **`c418f97`**
+  (`c418f972958644f7bb78cdf36cca3e77691007d9`), livrat la
+  **26.10.2026, 10:25 +01:00**, cu selecție de modele de generare și tarife,
+  URL DeepSeek reparat, denumire unitară, panouri minimizabile și Linux automat.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -29,7 +29,7 @@ drept funcție validată cu un serviciu real.
 - PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
   Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
-  `afcf2cb` a fost înlocuită atomic după verificare. În Download rămâne un
+  `e401e8f` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -39,7 +39,7 @@ MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
 ## Etapa curentă — Generare cu modele și tarife, 26.10.2026
 
-**Implementat în surse, încă neinclus în APK-ul din Download.** Utilizatorul
+**Compilat, verificat și livrat în APK-ul c418f97.** Utilizatorul
 cere un flux simplu pentru furnizorii cloud: Imagini / Mesh-uri 3D, cheie API,
 modele ale furnizorului și prețul în dreptul fiecărui model.
 
@@ -66,7 +66,7 @@ rezultatelor ca celelalte imagini. Modelele Smart Topology Meshy primesc
 parametrul documentat. Profilul salvează metadatele publice ale modelului și
 costului, iar agentul le primește în context. Modulele rămân native Godot,
 fără runtime extern pentru cataloage și furnizori. Noua componentă
-`generation_catalog.gd` intră în lista de scripturi înglobate la compilare.
+`generation_catalog.gd` este inclusă în cele **29 de scripturi înglobate**.
 
 Probe: **465 aserțiuni runtime** cu HTTP local simulat; fluxul Meshy imagine,
 salvarea, download-ul, validarea/importul PNG și GLB sunt incluse. Probe UI
@@ -77,8 +77,11 @@ probe. Catalog Runware real prin transportul Godot: **106 modele de imagini,
 Asistentul din meniul principal: **52 verificări** trecute. Proba generală
 locală pe tabletă a depășit limita de 180s fără raport final; nu este contabilizată
 ca reușită. Proba generală pe ecran îngust a trecut **466 de verificări**.
-Probe dedicate: **52 × 2 dimensiuni**, apoi **53 pe tabletă**, inclusiv
-mascarea unei chei repetate de furnizor în mesajul erorii.
+Probe dedicate finale: **53 × 2 dimensiuni**, inclusiv mascarea unei chei
+repetate de furnizor în mesajul erorii. Pe fork-ul compilat au trecut ulterior
+**480 verificări × 5 dimensiuni**, **53 pentru generare**, **57 pentru panouri**
+și **54 în lista de proiecte**, fără eșecuri. Capturile compilate de generare
+imagini și mesh-uri au fost inspectate vizual.
 
 Dovezi: `.ai-qa/generation-catalog-runtime-final.log`,
 `.ai-qa/generation-catalog-final-tablet/`, `.ai-qa/generation-catalog-final-narrow/`,
@@ -86,13 +89,25 @@ Dovezi: `.ai-qa/generation-catalog-runtime-final.log`,
 `.ai-qa/generation-start-regression/`, `.ai-qa/generation-catalog-full-narrow/`
 și `.ai-qa/generation-catalog-regression/`.
 [Detalii și surse tarifare](docs/AI_GENERATION.md).
-APK nou și utilizare fizică Android: nevalidate în această etapă. Generările
-reale cu cheile utilizatorului rămân de verificat separat.
+
+**APK livrat:** [workflow 40298487521](https://github.com/JDscript1/godot-ai-android/actions/runs/40298487521),
+toate cele trei joburi reușite. **112.273.374 bytes**, SHA-256
+`6727cd66b602d61da82b4922b1825ec72353e817f87530586de2a7fb547e6ed0`.
+Verificate semnătura persistentă, pachetul aplicației, cele 29 de scripturi
+exacte, pachetul Linux, clasele serviciului, agentul, Asset Store și păstrarea
+minimizării panourilor. Înlocuit atomic APK-ul și checksum-ul la
+**26.10.2026, 10:25 +01:00**; fără duplicate ale fork-ului în Download.
+Dovezi de compilare/livrare: `.ai-qa/c418f97-native/`,
+`.ai-qa/c418f97-ci.log`, `.ai-qa/artifacts/c418f97/panel-verification.json`,
+`.ai-qa/artifacts/c418f97/linux-verification.json`,
+`.ai-qa/delivery-c418f97.json` și `.ai-qa/generation-catalog-verification.json`.
+Utilizarea fizică Android și generările reale cu cheile utilizatorului rămân
+de verificat separat; citirea catalogului public nu este probă de generare plătită.
 
 Jurnal: 26.10.2026 — implementat fluxul de selecție Imagini / Mesh-uri 3D cu
 validarea cheii înainte de salvare, cataloage căutabile și tarife per model;
-verificate datele publice Runware și protocoalele simulate. APK-ul livrat
-rămâne e401e8f până la o compilare nouă.
+verificate datele publice Runware și protocoalele simulate; compilat și livrat
+APK-ul c418f97 cu toate cele trei joburi de verificare reușite.
 
 ## Etapa precedentă — DeepSeek și denumire unitară, 26.10.2026
 

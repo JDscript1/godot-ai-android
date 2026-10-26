@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40276596026/artifacts/12630303505)
-(GitHub Actions artifact, source `e401e8f`, delivered 26 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40298487521/artifacts/12639626146)
+(GitHub Actions artifact, source `c418f97`, delivered 26 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -58,7 +58,7 @@ The direct-provider harness remains in Godot; third-party CLI harness adapters
 and full Blender operation still need separate integration and device validation.
 
 The signed APK's complete Linux package, native service, agent, Asset Store and
-28 embedded scripts were verified before replacing the Download installer.
+29 embedded scripts were verified before replacing the Download installer.
 Python/Node/Git/ripgrep passed real development controls; execution inside the
 installed Godot APK has not yet been physically verified.
 The [older Termux backend](docs/AI_TERMUX_BLENDER.md) remains in source for
@@ -68,6 +68,12 @@ records the earlier experimental stages.
 The APK includes [3D preview controls and image-purpose rules](docs/AI_ASSET_RULES.md):
 touch/mouse orbit with directional buttons, distinct reconstruction/sprite/texture
 prompts, alpha verification and an optional Runware background-removal tool.
+
+In **Generation**, select Images or 3D, then paste the provider key to load a
+searchable model catalog before saving. Every model has a price column showing
+USD/credits, a starting price, an estimate or an explicitly variable/unpublished
+tariff. Runware prices load from live schemas; shared provider keys work across
+image and mesh profiles. The compiled catalog UI and all embedded sources were verified.
 
 The APK also includes [control settings, integrations and project skills](docs/AI_INTEGRATIONS.md),
 plus [native Meshy, Tripo and image generation](docs/AI_GENERATION.md).
