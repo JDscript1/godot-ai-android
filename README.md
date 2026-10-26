@@ -21,6 +21,8 @@ GitHub cu token personal și profilurile de export 3D.
 ale butoanelor din chat și istoric.
 [TODO-ul agentului](TODO_AGENT.md) urmărește problemele demonstrate în probe,
 prioritățile și criteriile de verificare înaintea închiderii fiecărui punct.
+[Suita de 50 de use case-uri](docs/AI_AGENT_USE_CASES.md) oferă cerințe de trimis,
+precondiții, criterii și ordinea probelor manuale, cu rezultate urmărite separat.
 
 The [built-in harness](docs/AI_HARNESS.md) runs direct API agent sessions inside
 Godot without Termux, a console, or an external agent runtime. The linked APK

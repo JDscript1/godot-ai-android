@@ -37,7 +37,26 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — cerința de execuție până la rezultat, 26.10.2026
+## Etapa curentă — suită de 50 de use case-uri, 26.10.2026
+
+Creat [catalogul de teste](docs/AI_AGENT_USE_CASES.md), legat din README și TODO:
+**50 de scenarii**, incluzând cubul parțial și depanarea trecută, plus **48 de
+scenarii noi neexecutate**. Fiecare are cerință de trimis agentului, mod,
+precondiții, cost de generare dacă se aplică și criteriu de verificare. Sunt
+acoperite controlul/permisiunile, codul, scenele și jocul, media, integrările,
+generarea, sarcinile extinse, interfața și conexiunile. Probele se rulează pe
+rând; integrarea lipsă sau o funcție UI încă nelivrată se consemnează separat.
+
+Copie standalone în `Documents/Godot-AI-Agent-Tests/SUITA_AGENT_50.md`. Pentru
+UC-04 au fost create numai două fișiere noi în `vampyr/agent_tests/test_04/`,
+fără suprascrieri. UC-03 Plan este următoarea probă. Salvate hash-urile a opt
+fișiere de control și jurnalul inițial, 227 înregistrări. Dovezi:
+`.ai-qa/agent-suite-20261026T214251Z/`, cu catalog structurat și manifest.
+Verificate numărul unic de scenarii, secțiunile, precondițiile/costurile și
+corespondența copiei de pe dispozitiv. Nu s-au executat cele 48 de scenarii,
+nu s-au trimis cereri de model/generare și nu s-au schimbat runtime-ul sau APK-ul.
+
+## Etapa precedentă — cerința de execuție până la rezultat, 26.10.2026
 
 Întărită în [TODO_AGENT.md](TODO_AGENT.md) cerința utilizatorului: fără plafon
 total de pași/cereri/runde, inclusiv subagenți și reluări; implementarea,
@@ -2060,6 +2079,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** catalog cu 50 de use case-uri, cerințe și criterii, inclusiv
+  48 de probe noi neexecutate. Copie în Documents, UC-03 pregătit și fișierele
+  UC-04 create separat; jurnal și hash-uri inițiale salvate. Fără execuții noi
+  de agent, instalări, generări sau APK nou.
 
 - **26.10.2026:** precizat în TODO că agentul continuă până la livrare și
   verificare, fără plafon total de pași. Eliminarea limitei există în sursă;

@@ -18,6 +18,22 @@ cu altă limită totală de pași.
 **Stare:** eliminarea plafonului este deja în sursă; APK-ul verificat c418f97
 încă are limita veche. Livrarea și confirmarea pe dispozitiv rămân la AG-03.
 
+## Suita extinsă — 50 de use case-uri
+
+[Catalogul de teste](docs/AI_AGENT_USE_CASES.md) conține cerințe gata de trimis,
+precondiții, moduri și criterii de verificare. Include cele două probe existente
+și **48 de scenarii noi**, încă neexecutate: control/permisiuni, cod și fișiere,
+scene, media, integrări, generare, sarcini complete, UI și conexiuni.
+
+Ordinea imediată: **UC-03 Plan → UC-04 Refuz → UC-05 Aprobare**, apoi Stop,
+Resume și steering. UC-03 și fișierele UC-04 sunt pregătite; jurnalul inițial și
+hash-urile a opt fișiere sunt salvate în `.ai-qa/agent-suite-20261026T214251Z/`.
+Nu s-au trimis cereri către agent pentru noile scenarii. Precondițiile și
+costurile de generare se verifică înaintea fiecărui caz, nu pentru tot catalogul.
+
+Copie pentru citire pe dispozitiv:
+`Documents/Godot-AI-Agent-Tests/SUITA_AGENT_50.md`.
+
 ## Test 01 — cub verde, proiect Vampyr
 
 **Scena a reușit; workflow-ul a rămas neterminat.** Există
@@ -160,9 +176,11 @@ aplicate sau validate în APK.
 
 ## Probe următoare
 
-1. Repetă cubul după AG-01/02/03, cu modul și reasoning-ul consemnate.
-2. Refuz de permisiune, Stop și Resume; editarea și validarea au trecut în testul 02.
-3. Terrain3D și recuperarea aceleiași generări Runware, apoi import/preview mesh.
+1. UC-03/04/05 pentru Plan, refuz și aprobare; apoi UC-06–09 pentru continuitate.
+2. Cod/fișiere și scene din catalog; repetă cubul după AG-01/02/03, cu modul și
+   reasoning-ul consemnate. Editarea și validarea au trecut în UC-02.
+3. Integrări și generare numai după precondiții, cu păstrarea aceluiași job la
+   recuperare; apoi sarcinile complete, UI și conexiunile din catalog.
 4. Pilot Pi separat, cu același model și aceleași criterii; comparație înaintea
    înlocuirii motorului. Îmbunătățirea harness-ului nu înlocuiește corectarea
    contractelor instrumentelor.
