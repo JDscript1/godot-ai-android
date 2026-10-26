@@ -19,6 +19,8 @@ documentul de progres actualizat după fiecare etapă importantă.
 GitHub cu token personal și profilurile de export 3D.
 [Auditul interfeței](docs/AI_UI_AUDIT.md) urmărește încadrarea și efectele reale
 ale butoanelor din chat și istoric.
+[TODO-ul agentului](TODO_AGENT.md) urmărește problemele demonstrate în probe,
+prioritățile și criteriile de verificare înaintea închiderii fiecărui punct.
 
 The [built-in harness](docs/AI_HARNESS.md) runs direct API agent sessions inside
 Godot without Termux, a console, or an external agent runtime. The linked APK

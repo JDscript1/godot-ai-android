@@ -37,7 +37,50 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — evaluare Claude Code 2.1.112, 26.10.2026
+## Etapa curentă — audit fizic test 01 și TODO agent, 26.10.2026
+
+Reconectare ADB autorizată; citite direct jurnalele aplicației și salvate probele
+fără copiere în conversație sau extragerea cheilor. Cerința a fost transmisă de
+utilizator agentului instalat, în proiectul **Vampyr**. Citite jurnalul, istoricul,
+checkpoint-ul, diff-ul, captura agentului și fișierul scenei. Build efectiv:
+**c418f97**. Nu a fost transmisă o nouă cerere către model de către evaluator.
+
+**Rezultat: scenă creată corect, workflow neterminat.** Există
+`res://agent_tests/test_01.tscn`, cu Node3D, BoxMesh verde, cameră activă și
+DirectionalLight3D. Agentul a salvat, a cerut deschiderea scenei și a pornit-o;
+jurnalul confirmă `running=true`. Utilizatorul a precizat că a închis manual
+preview-ul cubului înainte de captura editorului. Captura și starea ulterioară
+`running=false` nu sunt atribuite unui eșec al agentului. Copia nemodificată a
+scenei a fost încărcată și randată separat în Godot 4.7.2 Linux ARM64 / GL
+compatibility: cub verde vizibil, 13.672 pixeli verzi la 960×640; imaginea a fost
+inspectată. Aceasta este verificare independentă a artefactului, nu captură a
+jocului Android produsă de agent. Proiectul utilizatorului nu a fost modificat.
+
+Runda instalată: **137,3 s, 30 cereri, 39 operații executate și 4 descoperiri**,
+două rezultate de tool raportate ca erori. Sfârșit `limited / step_limit`, plan
+în `verifying`, fără răspuns final. Una dintre erori este fals pozitiv numeric:
+rotația -50/-35 a fost recitită ca -49.999996/-34.999996. Cealaltă este o captură
+`target=window` cerută fără handle, acceptată de schemă dar respinsă de execuție.
+Două salvări au returnat `ok=true, saved=false` înainte de crearea folderului.
+Agentul a recuperat prin salvare temporară în rădăcină, `mkdir` în Linux,
+salvarea destinației și eliminarea copiei temporare prin `rm`.
+
+Output-ul conține un UID nerecunoscut pentru scena principală. UID-ul exista
+înaintea testului, când proiectul lista doar icon.svg și project.godot.
+Configurația este identică cu citirea inițială a agentului; mesajul nu dovedește
+modificarea scenei principale de către agent. Cauza declanșării după oprire
+necesită o probă separată. Nu s-au instalat pluginuri sau generat asseturi cloud.
+
+Creat [TODO_AGENT.md](TODO_AGENT.md), cu priorități, criterii și diferențierea
+corecțiilor deja în sursă față de cele încă neimplementate. Dovezi locale:
+`.ai-qa/manual-agent-test-result-20261026T200312Z/`, cu raport JSON/Markdown,
+158 înregistrări de jurnal, 149 pentru turn, conversație, checkpoint, captură,
+diff și randare de control. Toate rezultatele turnului colectat sunt JSON valid,
+fără atingerea limitei de trunchiere. Evaluarea consumului este cumulată pe
+cereri, nu dimensiunea unei singure ferestre de context. Niciun fix runtime,
+APK nou sau înlocuire în Download în această etapă.
+
+## Etapa precedentă — evaluare Claude Code 2.1.112, 26.10.2026
 
 La propunerea utilizatorului, evaluată înlocuirea orchestrării agentului cu
 Claude Code în Linuxul integrat. Confirmate local versiunea 2.1.112, pachetul
@@ -1951,6 +1994,12 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** audit direct prin ADB al probei manuale cu cub verde; scena și
+  preview-ul confirmate, limită de 30 de pași reprodusă, salvare fals pozitivă și
+  comparație numerică strictă identificate. Creat TODO cu criterii; randare de
+  control separată, fără modificarea proiectului sau APK nou. Închiderea manuală
+  a preview-ului de utilizator este consemnată și nu este tratată ca eșec al agentului.
 
 - **26.10.2026:** evaluare Claude Code 2.1.112 ca motor alternativ în Linuxul
   aplicației; pornire CLI verificată local și propunere documentată, fără
