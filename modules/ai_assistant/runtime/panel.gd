@@ -6,6 +6,7 @@ signal approval_decided(accepted: bool)
 static var Common: GDScript
 static var ToolRegistry: GDScript
 static var Providers: GDScript
+static var ModelPricing: GDScript
 static var Tools: GDScript
 static var MCP: GDScript
 static var Assets: GDScript
@@ -38,6 +39,7 @@ var project_manager_mode = false
 var generated_files: Array = []
 var vault: RefCounted
 var providers: RefCounted
+var model_pricing: RefCounted
 var tools: RefCounted
 var mcp: RefCounted
 var assets: RefCounted
@@ -118,6 +120,10 @@ var integration_settings: Dictionary = {}
 var github_repos_loading = false
 var github_has_token = false
 var provider_testing = false
+var provider_epoch = 0
+var provider_cancel: Dictionary = {}
+var provider_draft_loading = false
+var provider_form_loading = false
 var generation_epoch = 0
 var generation_cancel: Dictionary = {}
 var generation_loading = false
@@ -165,6 +171,8 @@ func _ready() -> void:
 	speech = Speech.new(self, vault)
 	journal = Common.read_json(project_directory.path_join("journal.json"), [])
 	providers = Providers.new(self, vault)
+	model_pricing = ModelPricing.new(self)
+	model_pricing.configure(data_directory)
 	tools = Tools.new(plugin, self)
 	editor_control = EditorControl.new(self, tools)
 	store = Store.new(self, tools)
@@ -208,6 +216,12 @@ func _ready() -> void:
 	set_process(true)
 	_status("Configurează un furnizor din Setări pentru a începe.")
 	integrations.linux.ensure_ready.call_deferred()
+	var price_timer = Timer.new()
+	price_timer.wait_time = 3600
+	price_timer.timeout.connect(_refresh_all_prices)
+	add_child(price_timer)
+	price_timer.start()
+	_refresh_all_prices.call_deferred()
 
 func _exit_tree() -> void:
 	_restore_workspace_bottom_panel()
@@ -354,8 +368,32 @@ func _build_settings() -> void:
 	p["groups"]["url"].hide()
 	var row = _row(provider_tab)
 	p["save"] = _primary_button(row, "Salvează", _provider_save_action)
-	_action_button(row, "Testează", "provider_test", _test_provider)
+	_action_button(row, "Testează", "provider_test", _discover_provider_draft)
 	_action_button(row, "Șterge", "provider_delete", func() -> void: _remove_profile("providers", "provider"))
+	p["catalog_status"] = _label(provider_tab, "Lipește cheia pentru a încărca modelele disponibile.")
+	p["model_search"] = LineEdit.new()
+	p["model_search"].placeholder_text = "Caută un model…"
+	provider_tab.add_child(p["model_search"])
+	p["model_list"] = Tree.new()
+	p["model_list"].columns = 3
+	p["model_list"].hide_root = true
+	p["model_list"].column_titles_visible = true
+	p["model_list"].custom_minimum_size.y = 184 * EditorInterface.get_editor_scale()
+	for index in range(3):
+		p["model_list"].set_column_title(index, ["Model", "Intrare / 1M", "Ieșire / 1M"][index])
+		p["model_list"].set_column_expand_ratio(index, 3 if index == 0 else 2)
+	provider_tab.add_child(p["model_list"])
+	p["price_detail"] = _label(provider_tab, "")
+	p["price_detail"].add_theme_color_override("font_color", Color("aab5cb"))
+	p["prices_refresh"] = _button(provider_tab, "Actualizează tarife", func() -> void: _refresh_provider_prices(true))
+	p["prices_refresh"].size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	p["models"] = []
+	p["model_rows"] = {}
+	p["model_search"].text_changed.connect(func(_text: String) -> void: _render_provider_models())
+	p["model_list"].item_selected.connect(_provider_model_selected)
+	p["model_search"].hide()
+	p["model_list"].hide()
+	p["prices_refresh"].hide()
 	provider_advanced = _disclosure(provider_tab, "Opțiuni avansate")
 	p["container"] = provider_advanced
 	_field(p, "name", "Nume conexiune")
@@ -375,6 +413,10 @@ func _build_settings() -> void:
 			p["vision_pending"][id] = index)
 	_refresh_provider_vision({})
 	p["issuer"].item_selected.connect(func(_index: int) -> void:
+		provider_form_loading = true
+		p["key"].clear()
+		provider_form_loading = false
+		_provider_form_changed(false)
 		var entry = _provider_issuer()
 		var previous = _profile_by_id(str(p.get("editing", "")))
 		if not previous.is_empty() and previous.get("issuer") != entry["id"]:
@@ -401,7 +443,9 @@ func _build_settings() -> void:
 			var entry: Dictionary = detection["profile"]
 			_select_issuer(str(entry["id"]))
 			p["url"].text = str(entry["url"])
-			p["name"].text = str(entry["name"]))
+			p["name"].text = str(entry["name"])
+		_provider_form_changed())
+	p["url"].text_changed.connect(func(_text: String) -> void: _provider_form_changed())
 	p["url"].text = str(Providers.CATALOG[0]["url"])
 	p["name"].text = str(Providers.CATALOG[0]["name"])
 	provider_connections = VBoxContainer.new()
@@ -1449,7 +1493,7 @@ func _discover_providers() -> void:
 	dialog.canceled.connect(dialog.queue_free)
 
 func _new_provider() -> void:
-	if busy or provider_testing: return
+	if busy or provider_testing or provider_draft_loading: return
 	_clear_form("provider")
 	var form: Dictionary = forms["provider"]
 	_select_issuer("openai")
@@ -1571,6 +1615,7 @@ func _refresh_profiles() -> void:
 	var selected = str(profile_picker.get_item_metadata(profile_picker.selected)) if profile_picker.selected >= 0 else ""
 	profile_picker.clear()
 	for profile in config["providers"] + account_profiles:
+		model_pricing.apply(Providers.pricing_profile(profile), profile.get("models", []))
 		profile_picker.add_item(str(profile["name"]))
 		profile_picker.set_item_metadata(profile_picker.item_count - 1, str(profile["id"]))
 		if profile["id"] == selected: profile_picker.select(profile_picker.item_count - 1)
@@ -1656,9 +1701,9 @@ func _action_button(parent: Node, title: String, key: String, callback: Callable
 
 func _update_settings_controls() -> void:
 	if forms.has("linux"): _refresh_linux_card()
-	if chat != null and chat.drawer_refresh != null: chat.drawer_refresh.disabled = busy or provider_testing
-	if forms.has("provider") and forms["provider"].has("save"): forms["provider"]["save"].disabled = busy or provider_testing
-	if forms.has("provider") and forms["provider"].has("new_connection"): forms["provider"]["new_connection"].disabled = busy or provider_testing
+	if chat != null and chat.drawer_refresh != null: chat.drawer_refresh.disabled = busy or provider_testing or provider_draft_loading
+	if forms.has("provider") and forms["provider"].has("save"): forms["provider"]["save"].disabled = busy or provider_testing or provider_draft_loading
+	if forms.has("provider") and forms["provider"].has("new_connection"): forms["provider"]["new_connection"].disabled = busy or provider_testing or provider_draft_loading
 	if forms.has("generation") and forms["generation"].has("export_stop"): forms["generation"]["export_stop"].visible = busy and exporting_asset
 	if forms.has("github"):
 		_action_available("github_repositories", not github_repos_loading and github_has_token, "Adaugă tokenul personal GitHub.")
@@ -1669,7 +1714,7 @@ func _update_settings_controls() -> void:
 		if not forms.has(entry[0]): continue
 		var id = str(forms[entry[0]].get("editing", ""))
 		var exists = config[entry[1]].any(func(item: Dictionary) -> bool: return item["id"] == id)
-		for suffix in ["delete", "test", "run"]: _action_available(entry[0] + "_" + suffix, exists and not (entry[0] == "provider" and provider_testing), "Selectează un profil salvat și așteaptă verificarea.")
+		for suffix in ["delete", "test", "run"]: _action_available(entry[0] + "_" + suffix, (exists or entry[0] == "provider" and suffix == "test") and not (entry[0] == "provider" and (provider_testing or provider_draft_loading)), "Selectează un profil salvat și așteaptă verificarea.")
 		if entry[0] == "provider" and settings_actions.has("provider_delete"): settings_actions["provider_delete"].visible = exists
 	if forms.has("generation"):
 		var draft = _generation_draft()
@@ -1703,6 +1748,9 @@ func _fill(form_id: String, profile: Dictionary) -> void:
 	if profile.has("workflow"): form["workflow"] = profile["workflow"].duplicate(true)
 
 func _clear_form(form_id: String) -> void:
+	if form_id == "provider":
+		_provider_form_changed(false)
+		provider_form_loading = true
 	if form_id == "generation": _cancel_generation_catalog()
 	if form_id == "generation": generation_form_loading = true
 	var form: Dictionary = forms[form_id]
@@ -1713,6 +1761,7 @@ func _clear_form(form_id: String) -> void:
 		elif form[key] is CheckBox: form[key].button_pressed = false
 
 	if form_id == "generation": generation_form_loading = false
+	if form_id == "provider": provider_form_loading = false
 
 func _upsert(category: String, profile: Dictionary) -> void:
 	for index in range(config[category].size()):
@@ -1723,8 +1772,177 @@ func _upsert(category: String, profile: Dictionary) -> void:
 	config[category].append(profile)
 	_save_config()
 
+func _provider_form_signature() -> String:
+	var form: Dictionary = forms["provider"]
+	var profile = _provider_form_profile()
+	var secret = str(form["key"].text).strip_edges()
+	if secret.is_empty(): secret = vault.read(str(profile.get("id", "")))
+	return JSON.stringify([profile.get("issuer"), profile.get("url"), profile.get("hosting"), secret]).sha256_text()
+
+func _provider_form_profile() -> Dictionary:
+	var form: Dictionary = forms["provider"]
+	var entry = _provider_issuer()
+	var raw_url = str(form["url"].text).strip_edges()
+	var allow_http = bool(form["allow_http"].button_pressed) or entry.get("local", false) and not "://" in raw_url
+	var endpoint = Providers.endpoint({"issuer": entry["id"], "url": raw_url, "allow_http": allow_http})
+	if not endpoint.get("ok", false): return {}
+	var previous = _profile_by_id(str(form.get("editing", "")))
+	var same_connection = not previous.is_empty() and previous.get("issuer") == entry["id"] and Providers.endpoint(previous).get("result") == endpoint["result"]
+	var profile = {"id": previous["id"] if same_connection else "draft-provider", "issuer": entry["id"], "name": entry["name"], "kind": entry["kind"], "url": endpoint["result"], "allow_http": allow_http}
+	if form["hosting"].selected > 0: profile["hosting"] = "cloud" if form["hosting"].selected == 1 else "local"
+	return profile
+
+func _provider_form_changed(auto_load: bool = true) -> void:
+	if provider_form_loading: return
+	provider_epoch += 1
+	provider_cancel["cancelled"] = true
+	provider_cancel = {}
+	provider_draft_loading = false
+	var form: Dictionary = forms["provider"]
+	form["catalog_verified"] = false
+	form["catalog_signature"] = ""
+	form["selected_model"] = ""
+	form["models"] = []
+	if not form.has("catalog_status"): return
+	form["catalog_status"].text = "Lipește cheia pentru a încărca modelele disponibile."
+	_render_provider_models()
+	_update_settings_controls()
+	if not auto_load or str(form["key"].text).strip_edges().is_empty(): return
+	var epoch = provider_epoch
+	form["catalog_status"].text = "Pregătesc verificarea cheii…"
+	await get_tree().create_timer(0.8).timeout
+	if epoch == provider_epoch: await _discover_provider_draft()
+
+func _discover_provider_draft() -> void:
+	if busy or provider_testing or provider_draft_loading: return
+	var form: Dictionary = forms["provider"]
+	var profile = _provider_form_profile()
+	if profile.is_empty():
+		form["catalog_status"].text = "Introdu o adresă API validă."
+		return
+	var secret = str(form["key"].text).strip_edges()
+	if secret.is_empty() and vault.read(str(profile["id"])).is_empty() and Providers.hosting(profile) != "local":
+		form["catalog_status"].text = "Introdu cheia API pentru acest furnizor."
+		return
+	if not secret.is_empty():
+		var detected = Providers.detect(secret, str(profile["issuer"]))
+		if detected.get("ok", false): secret = str(detected["secret"])
+	var signature = _provider_form_signature()
+	provider_epoch += 1
+	var epoch = provider_epoch
+	provider_cancel["cancelled"] = true
+	provider_cancel = {}
+	provider_draft_loading = true
+	form["catalog_verified"] = false
+	form["catalog_status"].text = "Verific cheia și modelele…"
+	_update_settings_controls()
+	var result = await providers.list_models(profile, provider_cancel, secret)
+	if epoch != provider_epoch: return
+	provider_draft_loading = false
+	_update_settings_controls()
+	if not result.get("ok", false) or not result.get("result") is Array or result["result"].is_empty():
+		var error = Providers.connection_error(profile, result, OS.has_feature("android")) if not result.get("ok", false) else "Furnizorul nu a returnat modele disponibile."
+		form["catalog_status"].text = Common.redact(_redact(error), [secret]) if not secret.is_empty() else _redact(error)
+		form["models"] = []
+		_render_provider_models()
+		return
+	form["models"] = result["result"]
+	form["catalog_verified"] = true
+	form["catalog_signature"] = signature
+	model_pricing.apply(Providers.pricing_profile(profile), form["models"])
+	form["catalog_status"].text = "%s modele disponibile · alege modelul și salvează" % form["models"].size()
+	_render_provider_models()
+	_refresh_provider_prices.call_deferred()
+
+func _render_provider_models() -> void:
+	var form: Dictionary = forms["provider"]
+	if not form.has("model_list"): return
+	var list: Tree = form["model_list"]
+	list.clear()
+	var root = list.create_item()
+	form["model_rows"] = {}
+	var models: Array = form.get("models", [])
+	form["model_search"].visible = not models.is_empty()
+	list.visible = not models.is_empty()
+	form["prices_refresh"].visible = not models.is_empty()
+	form["prices_refresh"].disabled = false
+	var query = str(form["model_search"].text).to_lower()
+	for model in models:
+		var id = str(model["id"])
+		var name = str(model.get("name", id))
+		if not query.is_empty() and not query in (id + " " + name).to_lower(): continue
+		var row = list.create_item(root)
+		row.set_metadata(0, id)
+		row.set_text(0, name)
+		row.set_text_overrun_behavior(0, TextServer.OVERRUN_TRIM_ELLIPSIS)
+		var rate: Dictionary = model.get("pricing", {})
+		for column in [1, 2]:
+			var field = "input" if column == 1 else "output"
+			row.set_text(column, ModelPricing.column_label(rate, field) + (" " + str(rate.get("currency", "USD")) if rate.has(field) else ""))
+			row.set_custom_color(column, Color("c1b2e3") if not rate.get("stale", false) else Color("d6b380"))
+		for column in range(3): row.set_tooltip_text(column, id + "\n" + ModelPricing.detail(rate))
+		form["model_rows"][id] = row
+		if id == str(form.get("selected_model", "")): row.select(0)
+	_provider_model_selected()
+
+func _provider_model_selected() -> void:
+	var form: Dictionary = forms["provider"]
+	var selected: TreeItem = form["model_list"].get_selected()
+	form["price_detail"].text = ""
+	if selected == null: return
+	form["selected_model"] = str(selected.get_metadata(0))
+	for model in form.get("models", []):
+		if model["id"] == form["selected_model"]:
+			form["price_detail"].text = ModelPricing.detail(model.get("pricing", {}))
+			return
+
+func _refresh_provider_prices(force: bool = false) -> void:
+	var form: Dictionary = forms["provider"]
+	if form.get("models", []).is_empty(): return
+	var epoch = provider_epoch
+	var signature = _provider_form_signature()
+	var models: Array = form["models"]
+	form["prices_refresh"].disabled = true
+	var result = await model_pricing.refresh(Providers.pricing_profile(_provider_form_profile()), models, provider_cancel, force)
+	if epoch != provider_epoch or signature != _provider_form_signature(): return
+	form["prices_refresh"].disabled = false
+	_render_provider_models()
+	var verified = models.filter(func(item: Dictionary) -> bool: return item.get("pricing", {}).has("input")).size()
+	form["catalog_status"].text = "%s modele · %s tarife · actualizare automată la 6 ore" % [models.size(), verified]
+	if not result.get("ok", false): form["catalog_status"].text += " · sursă indisponibilă"
+	var profile = _profile_by_id(str(form.get("editing", "")))
+	if not profile.is_empty() and profile.get("url") == _provider_form_profile().get("url") and str(form["key"].text).is_empty():
+		model_pricing.apply(Providers.pricing_profile(profile), profile.get("models", []), not result.get("ok", false))
+		Common.atomic_json(data_directory.path_join("config.json"), config)
+		_price_ui_changed()
+
+func _refresh_saved_prices(id: String, force: bool = false) -> void:
+	var profile = _profile_by_id(id)
+	if profile.is_empty() or profile.get("models", []).is_empty(): return
+	var models: Array = profile["models"]
+	var result = await model_pricing.refresh(Providers.pricing_profile(profile), models, {}, force)
+	if _profile_by_id(id) != profile: return
+	Common.atomic_json(data_directory.path_join("config.json"), config)
+	var form: Dictionary = forms["provider"]
+	if str(form.get("editing", "")) == id and str(form["key"].text).is_empty() and not provider_draft_loading:
+		form["models"] = models.duplicate(true)
+		_render_provider_models()
+		form["catalog_status"].text = "%s modele · tarife actualizate automat la 6 ore" % models.size()
+		if not result.get("ok", false): form["catalog_status"].text += " · sursă indisponibilă"
+	_price_ui_changed()
+
+func _price_ui_changed() -> void:
+	chat.catalog = config["providers"] + account_profiles
+	chat.sync_selection()
+	if chat.picker.visible and chat.drawer_stage == "models": chat._filter_models(); chat._queue_drawer_layout()
+
+func _refresh_all_prices() -> void:
+	for profile in config["providers"].duplicate():
+		if not is_inside_tree(): return
+		await _refresh_saved_prices(str(profile["id"]))
+
 func _save_provider() -> bool:
-	if busy or provider_testing: return false
+	if busy or provider_testing or provider_draft_loading: return false
 	var p: Dictionary = forms["provider"]
 	var issuer: Dictionary = _provider_issuer()
 	var id = str(p.get("editing", ""))
@@ -1757,35 +1975,50 @@ func _save_provider() -> bool:
 		if not vault.store(id, key):
 			_status("Cheia nu a putut fi salvată.")
 			return false
+	var draft_verified = p.get("catalog_verified", false) and p.get("catalog_signature", "") == _provider_form_signature()
+	var models: Array = p.get("models", []).duplicate(true) if draft_verified else (previous.get("models", []).duplicate(true) if same_connection else [])
+	provider_form_loading = true
 	p["key"].clear()
-	var models: Array = previous.get("models", []) if same_connection else []
+	provider_form_loading = false
 	var manual = str(p["manual_model"].text).strip_edges()
 	if not manual.is_empty() and not models.any(func(item: Dictionary) -> bool: return item["id"] == manual): models.append({"id": manual, "name": manual, "source": "manual", "capabilities": {}})
 	var vision_overrides: Dictionary = p.get("vision_pending", {}).duplicate(true)
 	if not previous.is_empty() and not same_connection: vision_overrides = {}
 	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models, "vision_overrides": vision_overrides}
 	if p["hosting"].selected > 0: profile["hosting"] = "cloud" if p["hosting"].selected == 1 else "local"
-	if same_connection and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
+	if draft_verified: profile["verified_at"] = Time.get_unix_time_from_system()
+	elif same_connection and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
 	p["editing"] = id
+	if draft_verified: p["catalog_signature"] = _provider_form_signature()
 	_upsert("providers", profile)
 	_refresh_provider_vision(profile)
 	_status("Conexiune salvată.")
 	return true
 
 func _provider_save_action() -> void:
+	if busy or provider_testing or provider_draft_loading: return
+	var form: Dictionary = forms["provider"]
+	if not str(form["key"].text).strip_edges().is_empty() and (not form.get("catalog_verified", false) or form.get("catalog_signature", "") != _provider_form_signature()):
+		var signature = _provider_form_signature()
+		await _discover_provider_draft()
+		if signature != _provider_form_signature() or not form.get("catalog_verified", false): return
 	if not _save_provider(): return
 	var id = str(forms["provider"].get("editing", ""))
-	if not await _test_provider(id) or str(forms["provider"].get("editing", "")) != id: return
+	if not _profile_by_id(id).has("verified_at") or not forms["provider"].get("catalog_verified", false):
+		if not await _test_provider(id): return
+	if str(forms["provider"].get("editing", "")) != id: return
 	var profile = _profile_by_id(id)
 	var models: Array = profile.get("models", [])
 	if models.is_empty(): return
-	var selected = str(_selection().get("model", "")) if _current_profile().get("id") == id else ""
+	var selected = str(forms["provider"].get("selected_model", ""))
+	if selected.is_empty(): selected = str(_selection().get("model", "")) if _current_profile().get("id") == id else ""
 	if not models.any(func(item: Dictionary) -> bool: return item["id"] == selected):
 		var loaded = models.filter(func(item: Dictionary) -> bool: return item.get("loaded", false))
 		selected = str((loaded[0] if not loaded.is_empty() else models[0])["id"])
 	_choose({"profile": id, "model": selected})
 
 func _edit_provider(index: int) -> void:
+	_provider_form_changed(false)
 	var profile: Dictionary = config["providers"][index]
 	_fill("provider", profile)
 	_refresh_provider_vision(profile)
@@ -1794,11 +2027,15 @@ func _edit_provider(index: int) -> void:
 	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
 	provider_advanced.visible = profile.get("issuer") == "custom"
 	forms["provider"]["groups"]["url"].visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "custom"]
+	forms["provider"]["models"] = profile.get("models", []).duplicate(true)
+	forms["provider"]["selected_model"] = str(_selection().get("model", "")) if _current_profile().get("id") == profile["id"] else ""
+	forms["provider"]["catalog_status"].text = "%s modele · tarife actualizate automat la 6 ore" % profile.get("models", []).size()
+	_render_provider_models()
 	_refresh_provider_connections()
 	settings_status.hide()
 
 func _test_provider(profile_id: String = "") -> bool:
-	if busy or provider_testing: return false
+	if busy or provider_testing or provider_draft_loading: return false
 	var id = profile_id if not profile_id.is_empty() else str(forms["provider"].get("editing", ""))
 	for profile in config["providers"]:
 		if profile["id"] != id: continue
@@ -1821,12 +2058,17 @@ func _test_provider(profile_id: String = "") -> bool:
 		var error = "" if result.get("ok", false) else Providers.connection_error(profile, result, OS.has_feature("android"))
 		if result.get("ok", false):
 			profile["models"] = result["result"]
+			model_pricing.apply(Providers.pricing_profile(profile), profile["models"])
 			profile["verified_at"] = Time.get_unix_time_from_system()
 			profile.erase("model_catalog_error")
-			if str(forms["provider"].get("editing", "")) == id: _refresh_provider_vision(profile, true)
+			if str(forms["provider"].get("editing", "")) == id:
+				_refresh_provider_vision(profile, true)
+				forms["provider"]["models"] = profile["models"].duplicate(true)
+				_render_provider_models()
 		else:
 			profile.erase("verified_at")
 			profile["model_catalog_error"] = _redact(error)
+			if str(forms["provider"].get("editing", "")) == id: forms["provider"]["catalog_verified"] = false
 		var restore_drawer = chat.picker.visible and chat.drawer_stage == "models" and chat.drawer_profile == id
 		var query = chat.picker_search.text
 		var selection = _selection()
@@ -1840,6 +2082,7 @@ func _test_provider(profile_id: String = "") -> bool:
 		if not result.get("ok", false):
 			_status(error)
 			return false
+		_refresh_saved_prices.call_deferred(id, true)
 		var loaded = profile["models"].filter(func(item: Dictionary) -> bool: return item.get("loaded", false)).size()
 		_status("Conectat · %s modele%s · %s ms" % [profile["models"].size(), " · %s încărcate" % loaded if profile["models"].any(func(item: Dictionary) -> bool: return item.has("loaded")) else "", Time.get_ticks_msec() - started])
 		return true
@@ -3028,6 +3271,7 @@ func _chat_action(name: String, args: Dictionary) -> void:
 		"history": _refresh_conversations()
 		"model": _choose(args)
 		"models_refresh": await _test_provider(str(args.get("profile", "")))
+		"prices_refresh": await _refresh_saved_prices(str(args.get("profile", "")))
 		"voice": speech.start(config.get("preferences", {}))
 		"attach": _pick_attachment()
 		"remove_attachment":

@@ -73,6 +73,16 @@ class GenerationTransport:
 		if url.ends_with("/balance"): return {"ok": true, "json": {"balance": 100}}
 		return {"ok": false, "error": "Cerere neașteptată în proba catalogului."}
 
+class AgentPricingTransport:
+	extends RefCounted
+	var requests = 0
+	var input_rate = "0.15"
+	var fail = false
+	func request(_url: String, _method: int, _headers: PackedStringArray, _body: Variant, _options: Dictionary) -> Dictionary:
+		requests += 1
+		if fail: return {"ok": false, "error": "Offline"}
+		return {"ok": true, "text": "<table><tr><td>MODEL</td><td></td><td></td><td>deepseek-flash</td><td>deepseek-v4-pro</td></tr><tr><td>PRICING</td><td>1M INPUT TOKENS (CACHE MISS)</td><td>OFF-PEAK</td><td>$%s</td><td>$0.66</td></tr><tr><td>PRICING</td><td>1M OUTPUT TOKENS</td><td>OFF-PEAK</td><td>$0.60</td><td>$1.98</td></tr></table>" % input_rate}
+
 class FixtureProvider:
 	extends RefCounted
 	var requests = 0
@@ -89,7 +99,7 @@ class FixtureProvider:
 class FixtureLocalCatalog:
 	extends RefCounted
 	var requests = 0
-	func list_models(_profile: Dictionary, _cancel: Dictionary = {}) -> Dictionary:
+	func list_models(_profile: Dictionary, _cancel: Dictionary = {}, _key_override: String = "") -> Dictionary:
 		requests += 1
 		return {"ok": true, "result": [{"id": "unloaded-code", "loaded": false, "capabilities": {}}, {"id": "loaded-code", "loaded": true, "context": 4096, "capabilities": {}}]}
 
@@ -98,7 +108,7 @@ class FixtureCloudCatalog:
 	var owner: Node
 	var requests = 0
 	var response = {"ok": true, "result": [{"id": "deepseek-flash", "name": "DeepSeek-V4.1-Flash", "efforts": ["low", "high", "max"], "capabilities": {"tools": true, "vision": true}}, {"id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro", "efforts": ["low", "high", "max"], "capabilities": {"tools": true}}]}
-	func list_models(_profile: Dictionary, _cancel: Dictionary = {}) -> Dictionary:
+	func list_models(_profile: Dictionary, _cancel: Dictionary = {}, _key_override: String = "") -> Dictionary:
 		requests += 1
 		await owner.get_tree().create_timer(0.05).timeout
 		return response.duplicate(true)
@@ -209,8 +219,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "diff", "transport", "tool_registry", "model_pricing", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -226,6 +236,7 @@ func _run() -> void:
 		panel = embedded["panel"].new()
 		panel.configure(self, FixtureVault.new())
 		EditorInterface.get_editor_main_screen().add_child(panel)
+	panel.model_pricing.transport = AgentPricingTransport.new()
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
@@ -667,26 +678,26 @@ func _chat_workflow_tests() -> void:
 	panel.chat.picker_search.text = "Fixture local"
 	panel.chat.picker_search.text_changed.emit(panel.chat.picker_search.text)
 	_check(panel.chat.picker.visible and panel.chat.drawer_stage == "providers" and panel.chat.picker_list.item_count == 2 and panel.chat.picker_list.get_item_text(0).contains("locale"), "Composer opens searchable provider groups in a bottom drawer")
-	_tap_drawer("profile", "qa-local")
+	await _tap_drawer("profile", "qa-local")
 	_check(panel.chat.drawer_stage == "models" and panel.chat.picker_search.text.is_empty() and panel.chat.picker_list.item_count == 1, "Selecting a provider shows only its own models and clears the provider search")
-	_tap_drawer("model", "qa-local-code")
+	await _tap_drawer("model", "qa-local-code")
 	_check(panel.chat.drawer_stage == "reasoning" and panel.chat.picker_list.item_count == 1 and panel.chat.drawer_hint.text.contains("Nu sunt disponibile"), "Model without declared reasoning levels offers only automatic reasoning")
 	_check(panel._selection() == original_selection, "Provider and model changes remain pending until reasoning is chosen")
 	panel.chat._close_drawer()
 	_check(panel._selection() == original_selection, "Closing the drawer discards a pending model change")
 	panel.chat.model_button.pressed.emit()
-	_tap_drawer("profile", "qa-cloud")
+	await _tap_drawer("profile", "qa-cloud")
 	panel.chat.picker_search.text = "qa-local-code"
 	panel.chat.picker_search.text_changed.emit(panel.chat.picker_search.text)
 	_check(panel.chat.picker_list.get_item_metadata(0) == null, "Model search cannot leak results from a different provider")
 	panel.chat.picker_search.text = "qa-code"
 	panel.chat.picker_search.text_changed.emit(panel.chat.picker_search.text)
-	_tap_drawer("model", "qa-code")
+	await _tap_drawer("model", "qa-code")
 	_check(panel.chat.picker_list.item_count == 2 and panel.chat.picker_list.get_item_metadata(1).get("effort") == "high", "Reasoning drawer uses the selected model's provider-declared levels")
 	panel.chat.drawer_back.pressed.emit()
 	_check(panel.chat.drawer_stage == "models", "Reasoning drawer can return to model selection")
-	_tap_drawer("model", "qa-code")
-	_tap_drawer("effort", "high")
+	await _tap_drawer("model", "qa-code")
+	await _tap_drawer("effort", "high")
 	_check(not panel.chat.picker.visible and panel._selection() == original_selection.merged({"profile": "qa-cloud", "model": "qa-code", "effort": "high"}, true) and panel.chat.reasoning_button.text == "Ridicat", "Reasoning choice applies provider, model and effort together and updates composer chips")
 	panel.chat.reasoning_button.pressed.emit()
 	_check(panel.chat.drawer_stage == "reasoning", "Reasoning chip reopens the current model's reasoning drawer directly")
@@ -1454,7 +1465,15 @@ func _tap_drawer(key: String, value: String) -> void:
 	for index in range(panel.chat.picker_list.item_count):
 		var metadata: Variant = panel.chat.picker_list.get_item_metadata(index)
 		if metadata is Dictionary and metadata.get(key) == value:
-			panel.chat.picker_list.item_selected.emit(index)
+			if panel.chat.drawer_stage == "models":
+				var item = panel.chat.picker_models.get_root().get_first_child()
+				while item != null:
+					if int(item.get_metadata(0)) == index:
+						item.select(0)
+						await get_tree().process_frame
+						return
+					item = item.get_next()
+			else: panel.chat.picker_list.item_selected.emit(index)
 			return
 	_check(false, "Drawer item is available: " + key + "=" + value)
 
@@ -1473,17 +1492,19 @@ func _drawer_screenshots(output: String) -> void:
 	await get_tree().create_timer(0.2).timeout
 	var image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 	image.save_png(output.path_join("drawer-providers.png"))
-	_tap_drawer("profile", "visual-provider")
+	await _tap_drawer("profile", "visual-provider")
 	await get_tree().create_timer(0.2).timeout
 	print("AI model rows: list=", panel.chat.picker_list.size, " scroll max/page=", panel.chat.picker_list.get_v_scroll_bar().max_value, "/", panel.chat.picker_list.get_v_scroll_bar().page)
-	_check(not panel.chat.picker_list.get_v_scroll_bar().visible, "Short model lists include row padding and need no unnecessary scrollbar")
+	var last_model = panel.chat.picker_models.get_root().get_child(1)
+	var last_rect = panel.chat.picker_models.get_item_area_rect(last_model)
+	_check(last_rect.end.y <= panel.chat.picker_models.size.y - panel.chat.picker_models.get_theme_stylebox("panel").get_margin(SIDE_BOTTOM), "Short model lists include title and row padding without clipping the last model")
 	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 	image.save_png(output.path_join("drawer-models.png"))
-	_tap_drawer("model", "fixture-code")
+	await _tap_drawer("model", "fixture-code")
 	await get_tree().create_timer(0.2).timeout
 	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 	image.save_png(output.path_join("drawer-reasoning.png"))
-	_tap_drawer("effort", "high")
+	await _tap_drawer("effort", "high")
 	await get_tree().create_timer(0.2).timeout
 	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 	image.save_png(output.path_join("composer-selector.png"))
@@ -2140,11 +2161,23 @@ func _provider_discovery_tests(output: String) -> void:
 	catalog.owner = self
 	panel.providers = catalog
 	panel.open_settings("providers")
+	form["key"].text_changed.emit(form["key"].text)
+	await get_tree().create_timer(0.85).timeout
+	while panel.provider_draft_loading: await get_tree().process_frame
+	await get_tree().create_timer(0.1).timeout
+	_check(form.get("catalog_verified", false) and form["model_rows"].size() == 2 and form["editing"] == "", "Pasting an unsaved API key discovers models without saving a credential or profile")
+	_check(form["model_rows"]["deepseek-flash"].get_text(1) == "0,15 USD", "Draft model rows show each model's own input tariff")
+	form["model_rows"]["deepseek-v4-pro"].select(0)
+	panel._provider_model_selected()
+	_check(form["price_detail"].text.contains("UTC") and form["price_detail"].text.contains("api-docs.deepseek.com"), "Selected tariffs expose a verification time and first-party source")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("agent-model-prices.png"))
 	await panel._provider_save_action()
 	var id = str(form["editing"])
 	var profile = panel._profile_by_id(id)
 	_check(catalog.requests == 1 and profile.get("models", []).size() == 2 and profile.has("verified_at"), "Saving a cloud API key immediately discovers its models just like a local provider")
-	_check(panel._current_profile().get("id") == id and panel._selection().get("model") == "deepseek-flash", "New DeepSeek connection selects an actual returned model instead of leaving the chat empty")
+	_check(panel._current_profile().get("id") == id and panel._selection().get("model") == "deepseek-v4-pro", "New DeepSeek connection respects the model selected before saving")
 	_check(panel.vault.read(id) == "fixture-deepseek-secret" and form["key"].text.is_empty(), "Automatic model discovery preserves the vault credential and clears the visible key field")
 	panel.settings_window.hide()
 	profile["models"] = []
@@ -2162,8 +2195,11 @@ func _provider_discovery_tests(output: String) -> void:
 	if not output.is_empty():
 		await get_tree().create_timer(0.2).timeout
 		panel.get_viewport().get_texture().get_image().save_png(output.path_join("deepseek-models.png"))
-	panel.chat._pick_model(0)
-	_check(panel.chat.drawer_stage == "reasoning" and panel.chat.picker_list.item_count == 4, "Returned DeepSeek reasoning levels remain selectable after discovery")
+	var first_model = panel.chat.picker_models.get_root().get_first_child()
+	_check(first_model.get_text(1).contains("0,15 / 0,6 USD"), "The visible chat tree separates model names and token prices into distinct columns")
+	first_model.select(0)
+	await get_tree().process_frame
+	_check(panel.chat.drawer_stage == "reasoning" and panel.chat.picker_list.item_count == 4, "Tapping the visible priced model row opens the declared DeepSeek reasoning levels")
 	panel.chat._pick_model(3)
 	panel._choose({"profile": id, "model": "deepseek-v4-pro", "effort": "high"})
 	panel.chat.drawer_profile = id
@@ -2181,7 +2217,28 @@ func _provider_discovery_tests(output: String) -> void:
 	catalog.response = {"ok": true, "result": before}
 	_check(await panel._test_provider(id) and not profile.has("model_catalog_error"), "A successful retry clears the previous model-catalog error")
 	_check(panel.journal.any(func(entry: Dictionary) -> bool: return entry.get("tool") == "provider_models") and not JSON.stringify(panel.journal).contains("fixture-deepseek-secret"), "Model discovery records activity without storing the API key in logs")
+	var selection_before = panel._selection()
+	panel.chat.picker_search.text = "flash"
+	panel.model_pricing.transport.input_rate = "0.20"
+	await panel._refresh_saved_prices(id, true)
+	_check(profile["models"][0]["pricing"]["input"] == 0.2 and panel.chat.picker.visible and panel.chat.picker_search.text == "flash" and panel._selection() == selection_before, "A live tariff refresh updates the open drawer while preserving the query and current model")
+	panel.model_pricing.transport.fail = true
+	await panel._refresh_saved_prices(id, true)
+	_check(profile["models"][0]["pricing"].get("stale", false) and panel.chat.picker_models.get_root().get_first_child().get_text(1).contains("anterior"), "An offline tariff update keeps the previous price visibly marked in the chat drawer")
+	panel.model_pricing.transport.fail = false
+	panel.model_pricing.transport.input_rate = "0.15"
 	panel.chat._close_drawer()
+	catalog.response = {"ok": false, "status": 401, "error": "Invalid draft key: fixture-invalid-new-key"}
+	form["key"].text = "fixture-invalid-new-key"
+	form["key"].text_changed.emit(form["key"].text)
+	await panel._provider_save_action()
+	_check(panel.vault.read(id) == "fixture-deepseek-secret" and profile.has("verified_at") and not form.get("catalog_verified", true), "A rejected replacement API key cannot overwrite a previously verified saved credential")
+	_check(not form["catalog_status"].text.contains("fixture-invalid-new-key") and not JSON.stringify(panel.journal).contains("fixture-invalid-new-key"), "Draft authentication errors and logs redact the newly pasted secret")
+	panel._select_issuer("openai")
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	_check(form["key"].text.is_empty() and form["models"].is_empty(), "Switching providers clears the draft key and model list")
+	await get_tree().create_timer(0.85).timeout
+	_check(form["models"].is_empty(), "An obsolete key-paste debounce cannot repopulate a different provider")
 	panel.vault.erase(id)
 	panel.providers = service
 	panel.config["providers"] = old_profiles

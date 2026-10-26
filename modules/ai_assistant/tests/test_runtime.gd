@@ -55,6 +55,68 @@ class HarnessHost:
 	func redact(value: String) -> String: return value.replace("fixture-secret", "[redacted]")
 	func hooks() -> Dictionary: return {"complete": complete, "execute": execute, "checkpoint": checkpoint, "redact": redact}
 
+class PricingTransport:
+	extends RefCounted
+	var requests = 0
+	var seen_headers: Array = []
+	var text = ""
+	var fail = false
+	func request(_url: String, method: int, headers: PackedStringArray, body: Variant, _options: Dictionary) -> Dictionary:
+		requests += 1
+		seen_headers.append(headers)
+		if fail: return {"ok": false, "error": "Offline"}
+		return {"text": text, "ok": method == HTTPClient.METHOD_GET and body == null, "json": {"data": [{"id": "fixture/model", "pricing": {"prompt": "0.000002", "completion": "0.000008", "input_cache_read": "0.0000002"}}]}}
+
+func _model_pricing_tests(node: Node) -> void:
+	var pricing = scripts["model_pricing"]
+	var api = pricing.from_api({"pricing": {"prompt": "0.000002", "completion": "0.000008", "input_cache_read": "0.0000002"}}, "openrouter", "https://openrouter.ai/api/v1/models")
+	check(api["input"] == 2 and api["output"] == 8 and is_equal_approx(api["cached_input"], 0.2), "OpenRouter per-token prices convert exactly to per-million input, output and cache rates")
+	check(pricing.from_api({"pricing": {"prompt": "-1", "completion": "0"}}, "openrouter", "").is_empty(), "Dynamic routers and negative tariffs are never treated as free models")
+	check(pricing.from_api({"pricing": {"prompt": "0.2", "completion": "0.3"}}, "deepseek", "").is_empty(), "Unknown price units and another provider's schema are never guessed")
+	check(pricing.rate_label({}).contains("nepublicat") and pricing.rate_label({"input": 0, "output": 0}).begins_with("0 / 0"), "Unpublished prices remain distinct from explicitly free API models")
+	var markdown = "| Model | Short context input | Short context output | Short context cached input | Long context input | Long context output |\n| --- | --- | --- | --- | --- | --- |\n| fixture-code | $2 | $8 | $0.2 | $4 | $12 |\n\n### Batch\n| Model | Input | Output |\n| --- | --- | --- |\n| fixture-code | $1 | $4 |\n"
+	var rates = pricing.parse_document("openai", markdown)
+	var rate: Dictionary = rates.get("fixturecode", {})
+	check(rate.get("input") == 2 and rate.get("output") == 8 and pricing.column_label(rate, "input") == "2–4", "Standard tariffs retain long-context variants and are never replaced by discounted batch rates")
+	check(pricing.money("$2 through today; $4 tomorrow") == null and pricing.money("$3 / image") == null, "Ambiguous scheduled changes and non-token units fail closed")
+	var mistral = pricing.parse_document("mistral", "| Model | API name | Price |\n| --- | --- | --- |\n| Sample model | fixture-code | Input $0.2 /M Tokens<br>Cached input $0.02 /M Tokens<br>Output $0.8 /M Tokens |\n")
+	check(mistral.get("fixturecode", {}).get("input") == 0.2 and mistral.get("fixturecode", {}).get("cached_input") == 0.02, "Combined Mistral price cells use the documented API identifier and distinguish cached input")
+	var changed = pricing.parse_document("openai", "A redesigned page, no pricing table")
+	check(changed.is_empty(), "A provider documentation redesign cannot silently fabricate prices")
+	var service = pricing.new(node)
+	var fixture = PricingTransport.new()
+	service.transport = fixture
+	var directory = OS.get_user_data_dir().path_join("pricing-" + scripts["common"].uid())
+	service.configure(directory)
+	var profile = {"issuer": "openrouter", "kind": "chat", "official_pricing": true}
+	var models = [{"id": "fixture/model"}]
+	check((await service.refresh(profile, models)).get("ok", false) and models[0]["pricing"]["output"] == 8, "First use fetches and applies the live public catalog")
+	await service.refresh(profile, models)
+	check(fixture.requests == 1, "A fresh six-hour rate cache avoids repeated background requests")
+	var restored = pricing.new(node)
+	restored.configure(directory)
+	restored.apply(profile, models)
+	check(models[0]["pricing"]["input"] == 2, "Numeric tariffs and their source date survive an offline restart")
+	fixture.fail = true
+	check(not (await service.refresh(profile, models, {}, true)).get("ok", false) and models[0]["pricing"].get("stale", false), "A failed manual update retains the last known rate and marks it stale")
+	# Expire the retained cache so automatic retry backoff can be exercised.
+	service.cache["openrouter"]["checked_at"] = 1
+	await service.refresh(profile, models)
+	check(fixture.requests == 2, "Automatic retries back off after a failed pricing request")
+	service.apply({"issuer": "deepseek", "official_pricing": false}, models)
+	check(not models[0]["pricing"].has("input"), "A custom billing endpoint never inherits official direct-provider prices")
+	service.apply({"issuer": "lmstudio"}, models)
+	check(models[0]["pricing"].get("mode") == "local", "Local models are labeled separately from cloud API costs")
+	service.apply({"issuer": "openai", "kind": "siwc"}, models)
+	check(models[0]["pricing"].get("mode") == "subscription", "Subscription accounts are never assigned API token charges")
+	check(fixture.seen_headers.all(func(headers: PackedStringArray) -> bool: return not str(headers).contains("Bearer") and not str(headers).contains("api-key")), "Pricing reads send no saved credentials to documentation websites")
+	fixture.fail = false
+	fixture.text = "Documentation\n".repeat(6000) + "| Model | Input | Output |\n| --- | --- | --- |\n| fixture-code | $2 | $8 |\n"
+	var threaded_models = [{"id": "fixture-code"}]
+	check((await service.refresh({"issuer": "openai", "official_pricing": true}, threaded_models, {}, true)).get("ok", false) and threaded_models[0]["pricing"]["output"] == 8, "Large price documents parse on a worker and return their verified rates to the UI thread")
+	check(not scripts["providers"].pricing_profile({"issuer": "deepseek", "url": "https://another-billing.example/v1"}).get("official_pricing", true), "Official price matching checks the full billing endpoint")
+	check(scripts["providers"].pricing_profile({"issuer": "deepseek", "url": ""}).get("official_pricing", false), "A restored default DeepSeek endpoint remains eligible for its own official prices")
+
 func _blender_diagnostic_tests(node: Node) -> void:
 	var base = OS.get_user_data_dir().path_join("blender-diagnostic-" + scripts["common"].uid())
 	var backend = scripts["termux_blender"].new(node)
@@ -134,7 +196,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "diff", "transport", "tool_registry", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	for name in ["common", "diff", "transport", "tool_registry", "model_pricing", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -143,7 +205,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -225,6 +287,7 @@ func _run() -> void:
 	check(not scripts["providers"].vision_allowed(vision_profile, "vision"), "An explicit text-only choice takes precedence over catalog vision metadata")
 	var node = Node.new()
 	root.add_child(node)
+	await _model_pricing_tests(node)
 	await _blender_diagnostic_tests(node)
 	var transport = scripts["transport"].new(node)
 	await _file_registry_tests(node)
@@ -629,6 +692,9 @@ func _local_connection_tests(node: Node) -> void:
 	check(discovered.get("ok", false) and discovered["result"].size() == 2 and discovered["result"][0]["id"] == "deepseek-flash", "DeepSeek model discovery uses GET /models with the saved bearer credential")
 	check(discovered["result"][0]["context"] == 1048576 and discovered["result"][0]["efforts"] == ["low", "high", "max"] and discovered["result"][0]["capabilities"].get("vision", false), "DeepSeek catalog preserves returned context, reasoning levels and image support")
 	check(script.connection_error(deepseek.merged({"url": "https://api.deepseek.com"}, true), {"status": 401}).contains("Cheia API") and not script.connection_error({"issuer": "deepseek", "url": "https://api.deepseek.com"}, {"code": "timeout"}).contains("Wi-Fi"), "Cloud model discovery distinguishes key errors and network failures from LAN setup")
+	vault.store("deepseek", "old-invalid-fixture")
+	var draft = await service.list_models(deepseek, {}, "deepseek-fixture-token")
+	check(draft.get("ok", false) and vault.read("deepseek") == "old-invalid-fixture", "Draft API authentication verifies the in-memory replacement without overwriting the saved vault key")
 	var lm = await service.list_models({"id": "lm", "issuer": "lmstudio", "kind": "chat", "url": mock_url + "/local-lm", "allow_http": true})
 	check(lm.get("ok", false) and lm.get("result", []).size() == 1 and lm["result"][0]["loaded"] and lm["result"][0]["context"] == 4096, "LM Studio connection reads the actual loaded context and excludes embedding models")
 	var ollama = await service.list_models({"id": "ollama", "issuer": "ollama", "kind": "chat", "url": mock_url + "/local-ollama/v1", "allow_http": true})

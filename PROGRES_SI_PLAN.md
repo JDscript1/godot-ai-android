@@ -37,7 +37,50 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — Generare cu modele și tarife, 26.10.2026
+## Etapa curentă — tarife automate pentru modelele agenților, 26.10.2026
+
+**Implementat în sursă; APK-ul din Download rămâne c418f97.** Formularul
+Furnizori AI verifică automat cheia lipită, după 800 ms, și afișează modelele
+înainte de salvare. Tabelul căutabil arată separat intrarea/ieșirea per 1M tokeni;
+selecția păstrează costul cache-ului, condițiile, sursa și data UTC. Modelul ales
+se aplică la salvare, fără a repeta catalogul deja verificat. O cheie nouă
+respinsă nu înlocuiește cheia validă. Schimbarea furnizorului anulează cererile
+vechi și golește cheia temporară. Cheile nu intră în configurația JSON/jurnal.
+
+Sertarul din chat afișează modelele și tarifele în coloane distincte; alegerea
+continuă spre reasoning. Corectată și reinițializarea listei în timpul semnalului
+Tree: tranziția este amânată până după încheierea evenimentului, evitând o
+cădere nativă reprodusă în proba de interfață.
+
+Tarifele publice se verifică la pornire, la deschiderea modelelor și periodic,
+cu un cache de **6 ore**, pentru conexiunile configurate. Buton separat de
+actualizare forțată. Sursele publice nu primesc secrete sau prompturi și nu
+lansează inferențe plătite. Paginile mari sunt analizate pe un fir secundar.
+Actualizarea păstrează selecția și căutarea. Eșecul păstrează ultimul tarif,
+marcat «anterior», cu pauză de 5 minute între reluările automate. Un model fără
+tarif verificabil nu apare gratuit. Ratele standard și variantele de context /
+orar rămân distincte de batch/priority; OpenRouter se convertește din USD/token.
+Modelele locale și abonamentele au etichete proprii. Endpointurile intermediare
+nu moștenesc tariful unui furnizor direct.
+
+Proba publică reală, numai citire prin transportul Godot: **12 furnizori** au
+returnat date analizabile (OpenAI, Anthropic, DeepSeek, OpenRouter, Gemini,
+Qwen International/China, Mistral, Groq, xAI, Z.AI, MiniMax). Nu este o probă de
+cheie sau disponibilitate individuală a tuturor modelelor. Kimi/SiliconFlow nu
+au expus tarife utilizabile în această probă; NVIDIA nu are un feed per-token
+configurat. Aliasurile/tarifele ambigue nu sunt ghicite. Generarea 2D/3D rămâne
+catalog separat; presetările Meshy/Tripo/OpenAI imagine nu sunt prezentate ca
+actualizate de noul mecanism de tarife pentru agenți.
+
+Verificări: **487 aserțiuni runtime**, **478 verificări complete în editor** pe
+ecran îngust, **79 verificări furnizori** atât pe ecran îngust cât și pe tabletă și
+**53 verificări** în managerul de proiecte, toate fără erori. Dovezi: [detalii și surse](docs/AI_MODEL_PRICING.md),
+`.ai-qa/agent-pricing-runtime.log`, `.ai-qa/agent-pricing-ui-narrow/`,
+`.ai-qa/agent-pricing-ui-tablet/`, `.ai-qa/agent-pricing-all/`,
+`.ai-qa/agent-pricing-start/`, `.ai-qa/agent-pricing-live.log`.
+Verificările autentificate pe dispozitiv și un APK nou nu sunt încă livrate.
+
+## Etapa precedentă — Generare cu modele și tarife, 26.10.2026
 
 **Compilat, verificat și livrat în APK-ul c418f97.** Utilizatorul
 cere un flux simplu pentru furnizorii cloud: Imagini / Mesh-uri 3D, cheie API,
@@ -1767,6 +1810,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** modele pentru agenți încărcate la lipirea cheii, tarife per 1M
+  tokeni în setări/chat și actualizare publică la 6h; verificări separate pentru
+  sursă, interfață și citiri publice, fără APK nou în această etapă.
 
 - Fundație: modul C++/GDScript, furnizori direcți, secrete Android, MCP și generare.
 - `91fc116`, `683c769`, `83f7c68`: ecran principal nativ, conversații/subagenți,

@@ -2,6 +2,7 @@
 extends HBoxContainer
 static var Common: GDScript
 static var Providers: GDScript
+static var ModelPricing: GDScript
 static var Icons: GDScript
 static var Markdown: GDScript
 var file_registry: RefCounted
@@ -53,6 +54,7 @@ var drawer_return_focus: Control
 var drawer_layout_pending = false
 var picker_search: LineEdit
 var picker_list: ItemList
+var picker_models: Tree
 var reasoning_button: Button
 var selection_row: HBoxContainer
 var composer_controls: HBoxContainer
@@ -776,13 +778,29 @@ func _build_drawer() -> void:
 	body.add_child(picker_list)
 	# One tap advances. No double-click/confirmation is needed on touchscreens.
 	picker_list.item_selected.connect(_pick_model)
+	picker_models = Tree.new()
+	picker_models.columns = 2
+	picker_models.hide_root = true
+	picker_models.column_titles_visible = true
+	picker_models.set_column_title(0, "Model")
+	picker_models.set_column_title(1, "Intrare / ieșire · 1M")
+	picker_models.set_column_expand_ratio(0, 3)
+	picker_models.set_column_expand_ratio(1, 2)
+	picker_models.add_theme_constant_override("v_separation", int(8 * EditorInterface.get_editor_scale()))
+	picker_models.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	picker_models.custom_minimum_size.y = 88 * EditorInterface.get_editor_scale()
+	body.add_child(picker_models)
+	picker_models.item_selected.connect(func() -> void:
+		var item = picker_models.get_selected()
+		if item != null: _pick_priced_model.call_deferred(int(item.get_metadata(0)), drawer_profile))
+	picker_models.hide()
 	var footer = HBoxContainer.new()
 	body.add_child(footer)
 	drawer_back = button(footer, "Înapoi", _drawer_back)
 	drawer_back.icon = _icon("Back")
 	drawer_refresh = button(footer, "Actualizează", func() -> void: action.emit("models_refresh", {"profile": drawer_profile}))
 	drawer_refresh.icon = _icon("Retry")
-	drawer_refresh.tooltip_text = "Caută modelele folosind cheia salvată"
+	drawer_refresh.tooltip_text = "Actualizează modelele și tarifele folosind conexiunea salvată"
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(spacer)
@@ -812,7 +830,8 @@ func _show_drawer(stage: String) -> void:
 	_filter_models()
 	_layout_drawer()
 	_queue_drawer_layout()
-	picker_list.grab_focus()
+	if stage == "models": picker_models.grab_focus()
+	else: picker_list.grab_focus()
 
 func _queue_drawer_layout() -> void:
 	if drawer_layout_pending: return
@@ -829,6 +848,7 @@ func _layout_drawer() -> void:
 	drawer_step.visible = not compact
 	drawer_hint.visible = picker.size.y >= 360 * scale
 	picker_list.custom_minimum_size.y = (44 if compact else 88) * scale
+	picker_models.custom_minimum_size.y = picker_list.custom_minimum_size.y
 	var body: VBoxContainer = drawer.get_child(0)
 	var separation = int((4 if compact else 8) * scale)
 	if body.get_theme_constant("separation") != separation: body.add_theme_constant_override("separation", separation)
@@ -836,6 +856,10 @@ func _layout_drawer() -> void:
 	var list_padding = picker_list.get_theme_stylebox("panel").get_minimum_size().y
 	var font_height = picker_list.get_theme_font("font").get_height(picker_list.get_theme_font_size("font_size"))
 	var row_height = ceilf(maxf(picker_list.fixed_icon_size.y, font_height)) + picker_list.get_theme_constant("v_separation") + 1
+	if drawer_stage == "models":
+		font_height = picker_models.get_theme_font("font").get_height(picker_models.get_theme_font_size("font_size"))
+		row_height = font_height + 2 * picker_models.get_theme_constant("v_separation") + 1
+		list_padding = picker_models.get_theme_stylebox("panel").get_minimum_size().y + font_height + picker_models.get_theme_stylebox("title_button_normal").get_minimum_size().y + 4 * scale
 	var content_height = drawer.get_combined_minimum_size().y + maxf(0, mini(picker_list.item_count, 7) * row_height + list_padding - picker_list.custom_minimum_size.y)
 	var wanted = Vector2(minf(560 * scale, picker.size.x - 16 * scale), minf(minf(510 * scale, content_height), picker.size.y - 16 * scale))
 	drawer.size = wanted
@@ -892,13 +916,17 @@ func sync_selection() -> void:
 	reasoning_button.text = effort_label(str(selection["effort"]))
 	reasoning_button.disabled = model.is_empty()
 	_size_selection_chips()
-	if not model.is_empty(): model_button.tooltip_text += "\nRaționament: " + effort_label(str(selection["effort"]))
+	if not model.is_empty(): model_button.tooltip_text += "\nRaționament: " + effort_label(str(selection["effort"])) + "\n" + ModelPricing.detail(model.get("pricing", {}))
 
 func effort_label(effort: String) -> String:
 	return str({"": "Auto", "none": "Fără", "minimal": "Minim", "low": "Redus", "medium": "Mediu", "high": "Ridicat", "xhigh": "Foarte ridicat", "max": "Maxim"}.get(effort, effort))
 
 func _filter_models() -> void:
 	picker_list.clear()
+	picker_models.clear()
+	var model_root = picker_models.create_item()
+	picker_list.visible = drawer_stage != "models"
+	picker_models.visible = drawer_stage == "models"
 	var query = picker_search.text.to_lower()
 	if drawer_stage == "providers":
 		for group in ["API cloud", "Abonamente", "Modele locale"]:
@@ -918,13 +946,22 @@ func _filter_models() -> void:
 		var profile = _drawer_profile_data()
 		if catalog_loading == drawer_profile: drawer_hint.text = "Se încarcă modelele…"
 		elif not str(profile.get("model_catalog_error", "")).is_empty(): drawer_hint.text = str(profile["model_catalog_error"])
-		else: drawer_hint.text = "Alege modelul, apoi nivelul de reasoning."
+		else: drawer_hint.text = "Intrare / ieșire per 1M tokeni · tarife actualizate automat."
 		for model in profile.get("models", []):
 			var text = str(model.get("name", model["id"]))
 			if not query.is_empty() and not query in (text + " " + str(model["id"])).to_lower(): continue
 			var active = current["profile"] == drawer_profile and current["model"] == model["id"]
+			# Keep the same indexed selection metadata across all drawer stages.
 			picker_list.add_item(text, _icon("Check" if active else "Models"))
-			picker_list.set_item_tooltip(picker_list.item_count - 1, str(model["id"]))
+			var item = picker_models.create_item(model_root)
+			item.set_text(0, text)
+			item.set_text_overrun_behavior(0, TextServer.OVERRUN_TRIM_ELLIPSIS)
+			item.set_text(1, ModelPricing.rate_label(model.get("pricing", {})))
+			item.set_text_overrun_behavior(1, TextServer.OVERRUN_TRIM_ELLIPSIS)
+			item.set_custom_color(1, Color("c1b2e3") if not model.get("pricing", {}).get("stale", false) else Color("d6b380"))
+			item.set_metadata(0, picker_list.item_count - 1)
+			for column in range(2): item.set_tooltip_text(column, str(model["id"]) + "\n" + ModelPricing.detail(model.get("pricing", {})))
+			picker_list.set_item_tooltip(picker_list.item_count - 1, str(model["id"]) + "\n" + ModelPricing.detail(model.get("pricing", {})))
 			picker_list.set_item_metadata(picker_list.item_count - 1, {"profile": drawer_profile, "model": model["id"]})
 	else:
 		var efforts: Array = _model_data(_drawer_profile_data(), str(pending_selection.get("model", ""))).get("efforts", [])
@@ -941,10 +978,19 @@ func _filter_models() -> void:
 		if drawer_stage == "models" and query.is_empty():
 			label_once("Se încarcă modelele…" if catalog_loading == drawer_profile else "Lista este goală. Apasă Actualizează pentru a căuta modelele.")
 		else: label_once("Niciun rezultat pentru căutarea ta.")
+		if drawer_stage == "models":
+			var empty = picker_models.create_item(model_root)
+			empty.set_text(0, picker_list.get_item_text(0))
+			empty.set_selectable(0, false)
+			empty.set_selectable(1, false)
 
 func label_once(text: String) -> void:
 	picker_list.add_item(text)
 	picker_list.set_item_disabled(picker_list.item_count - 1, true)
+
+func _pick_priced_model(index: int, profile: String) -> void:
+	# Rebuild the next stage after Tree finishes dispatching its selection event.
+	if picker.visible and drawer_stage == "models" and drawer_profile == profile: _pick_model(index)
 
 func _pick_model(index: int) -> void:
 	if index < 0 or index >= picker_list.item_count: return
@@ -955,6 +1001,7 @@ func _pick_model(index: int) -> void:
 		_show_drawer("models")
 		var profile = _drawer_profile_data()
 		if profile.get("models", []).is_empty() and profile.get("kind") not in ["siwc", "companion"]: action.emit("models_refresh", {"profile": drawer_profile})
+		else: action.emit("prices_refresh", {"profile": drawer_profile})
 	elif drawer_stage == "models":
 		pending_selection = selected.duplicate()
 		_show_drawer("reasoning")

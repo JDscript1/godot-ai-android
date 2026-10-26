@@ -3,6 +3,7 @@ extends RefCounted
 
 static var Common: GDScript
 static var Transport: GDScript
+static var ModelPricing: GDScript
 
 const CATALOG = [
 	{"id": "openai", "name": "OpenAI", "kind": "responses", "url": "https://api.openai.com/v1", "prefix": "sk-proj-"},
@@ -63,6 +64,14 @@ static func endpoint(profile: Dictionary) -> Dictionary:
 		url = str(normalized["result"])
 	var parsed = Common.parse_url(url, bool(profile.get("allow_http", false)))
 	return Common.success(url) if parsed.get("ok", false) else parsed
+
+static func pricing_profile(profile: Dictionary) -> Dictionary:
+	var result = profile.duplicate(true)
+	var resolved = endpoint(profile)
+	result["official_pricing"] = false
+	for entry in CATALOG:
+		if entry["id"] == profile.get("issuer") and resolved.get("ok", false) and resolved.get("result") == entry["url"]: result["official_pricing"] = true
+	return result
 
 static func local_endpoint(value: String, issuer: String) -> Dictionary:
 	var url = value.strip_edges().trim_suffix("/")
@@ -195,8 +204,8 @@ static func detect(key: String, issuer: String = "") -> Dictionary:
 			return {"ok": true, "profile": entry.duplicate(true), "secret": normalized}
 	return Common.failure("Cheia este ambiguă. Alege furnizorul sau introdu adresa API.", "provider_ambiguous")
 
-func headers(profile: Dictionary) -> PackedStringArray:
-	var secret = vault.read(str(profile["id"])) if vault != null else ""
+func headers(profile: Dictionary, key_override: String = "") -> PackedStringArray:
+	var secret = key_override if not key_override.is_empty() else (vault.read(str(profile["id"])) if vault != null else "")
 	var stored: Variant = Common.parse_json(secret)
 	if profile.get("kind") != "siwc" and stored is Dictionary and stored.has("access_token"): return PackedStringArray()
 	if profile.get("kind") == "siwc":
@@ -213,7 +222,7 @@ func headers(profile: Dictionary) -> PackedStringArray:
 			if not secret.is_empty(): result.append("Authorization: Bearer " + secret)
 	return result
 
-func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
+func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: String = "") -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
 	var resolved = endpoint(profile)
@@ -222,8 +231,8 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 	var issuer = str(profile.get("issuer", ""))
 	var options = {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 10, "connect_timeout": 4}
 	var root = url.trim_suffix("/v1")
-	var result = await transport.request(root + "/api/tags" if issuer == "ollama" else url + "/models", HTTPClient.METHOD_GET, headers(profile), null, options)
-	if issuer == "ollama" and int(result.get("status", 0)) == 404: result = await transport.request(url + "/models", HTTPClient.METHOD_GET, headers(profile), null, options)
+	var result = await transport.request(root + "/api/tags" if issuer == "ollama" else url + "/models", HTTPClient.METHOD_GET, headers(profile, key_override), null, options)
+	if issuer == "ollama" and int(result.get("status", 0)) == 404: result = await transport.request(url + "/models", HTTPClient.METHOD_GET, headers(profile, key_override), null, options)
 	if not result.get("ok", false): return result
 	var payload = result.get("json")
 	if not payload is Dictionary: return Common.failure("Catalogul de modele nu este JSON valid.")
@@ -243,9 +252,9 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 		var supported: Dictionary = item.get("supported_parameters", {}) if item.get("supported_parameters", {}) is Dictionary else {}
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
-		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": item.get("context_window", item.get("inputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live"})
+		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": item.get("context_window", item.get("inputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")})
 	if issuer in ["lmstudio", "ollama"]:
-		var metadata = await transport.request(root + ("/api/v0/models" if issuer == "lmstudio" else "/api/ps"), HTTPClient.METHOD_GET, headers(profile), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 3, "connect_timeout": 2})
+		var metadata = await transport.request(root + ("/api/v0/models" if issuer == "lmstudio" else "/api/ps"), HTTPClient.METHOD_GET, headers(profile, key_override), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 3, "connect_timeout": 2})
 		if cancel.get("cancelled", false): return Common.failure("Verificare oprită.", "cancelled")
 		var details: Variant = metadata.get("json")
 		if metadata.get("ok", false) and details is Dictionary:

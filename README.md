@@ -25,6 +25,11 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+[Automatic agent tariffs](docs/AI_MODEL_PRICING.md) are implemented in source:
+key paste discovers models, with input/output token rates, a six-hour public
+price cache, source dates and offline retention. This update is not yet in the
+APK linked above.
+
 The start screen and project editor use the same **AI Assistant** tab name.
 Missing cloud endpoints recover from the selected provider catalog, including
 DeepSeek; explicitly invalid server addresses are shown for correction.
