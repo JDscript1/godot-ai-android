@@ -71,6 +71,9 @@ var forms: Dictionary = {}
 var settings_actions: Dictionary = {}
 var lists: Dictionary = {}
 var approval_dialog: ConfirmationDialog
+var approval_heading: Label
+var approval_target: Label
+var approval_details: TextEdit
 var generation_preview: Control
 var chat: Control
 var conversations: RefCounted
@@ -256,10 +259,34 @@ func _build_chat() -> void:
 	composer.text_changed.connect(_composer_hints)
 	approval_dialog = ConfirmationDialog.new()
 	approval_dialog.title = "Confirmă operația AI"
-	approval_dialog.dialog_autowrap = true
+	approval_dialog.theme = chat.theme
+	approval_dialog.get_label().hide()
+	approval_dialog.get_ok_button().text = "Permite"
+	approval_dialog.get_cancel_button().text = "Refuză"
+	approval_dialog.add_theme_constant_override("buttons_min_height", int(40 * EditorInterface.get_editor_scale()))
+	approval_dialog.add_theme_constant_override("buttons_min_width", int(96 * EditorInterface.get_editor_scale()))
 	approval_dialog.confirmed.connect(func() -> void: _decide(true))
 	approval_dialog.canceled.connect(func() -> void: _decide(false))
 	add_child(approval_dialog)
+	var approval_body = VBoxContainer.new()
+	approval_body.add_theme_constant_override("separation", int(10 * EditorInterface.get_editor_scale()))
+	approval_dialog.add_child(approval_body)
+	approval_heading = Label.new()
+	approval_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	approval_body.add_child(approval_heading)
+	approval_target = Label.new()
+	approval_target.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	approval_target.add_theme_color_override("font_color", Color("aab6ce"))
+	approval_body.add_child(approval_target)
+	approval_details = TextEdit.new()
+	approval_details.editable = false
+	approval_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	approval_details.scroll_fit_content_height = false
+	approval_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	approval_details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	approval_details.add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
+	approval_body.add_child(approval_details)
+	get_tree().root.size_changed.connect(_layout_approval)
 
 func _mode() -> int:
 	return active_mode if busy else (mode_picker.get_selected_id() if mode_picker != null and mode_picker.selected >= 0 else 4)
@@ -2163,6 +2190,32 @@ func _decide(accepted: bool) -> void:
 	approval_dialog.hide()
 	approval_decided.emit(accepted)
 
+func _layout_approval() -> void:
+	if approval_dialog == null or not approval_pending or not approval_dialog.visible: return
+	approval_dialog.popup_centered_clamped(Vector2i(700, 500) * EditorInterface.get_editor_scale(), 0.84)
+
+func _show_approval(definition: Dictionary, args: Dictionary) -> void:
+	var name = str(definition["name"])
+	var titles = {"godot_write_file": "Scriere fișier", "godot_apply_patch": "Modificare fișier", "godot_delete_file": "Ștergere fișier", "store_install": "Instalare plugin", "plugin_enable": "Activare plugin", "asset_generate": "Generare asset", "asset_remove_background": "Eliminare fundal", "linux_execute": "Comandă Linux"}
+	# Only short labels contribute to the window minimum; code stays in a scrolling viewport.
+	approval_dialog.dialog_text = name
+	approval_heading.text = str(titles.get(name, name))
+	approval_target.text = _redact(str(args.get("path", args.get("script", args.get("id", args.get("profile", "")))))).replace("\n", " ")
+	approval_target.tooltip_text = approval_target.text
+	approval_target.visible = not approval_target.text.is_empty()
+	approval_details.text = _redact(str(args["text"])) if name == "godot_write_file" and args.has("text") else _redact(JSON.stringify(args, "  "))
+	approval_details.scroll_vertical = 0
+	approval_details.scroll_horizontal = 0
+	var parent: Node = settings_window if settings_window != null and settings_window.visible else self
+	if approval_dialog.get_parent() != parent: approval_dialog.reparent(parent)
+	# Native Cancel queues a hide; queue our popup after it without delaying the decision listener.
+	_popup_approval.call_deferred()
+
+func _popup_approval() -> void:
+	if not approval_pending or cancel.get("cancelled", false): return
+	approval_dialog.popup_centered_clamped(Vector2i(700, 500) * EditorInterface.get_editor_scale(), 0.84)
+	approval_dialog.get_cancel_button().grab_focus()
+
 func _authorize(definition: Dictionary, args: Dictionary, operation_cancel: Dictionary = {}) -> bool:
 	if definition.get("risk", "external") == "read": return true
 	while approval_pending and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false): await get_tree().process_frame
@@ -2170,8 +2223,7 @@ func _authorize(definition: Dictionary, args: Dictionary, operation_cancel: Dict
 	if _mode() in [0, 3]: return false
 	if _permission_mode() == 2: return true
 	approval_pending = true
-	approval_dialog.dialog_text = str(definition["name"]) + "\n\n" + _redact(JSON.stringify(args, "  ")).left(5000)
-	approval_dialog.popup_centered_clamped(Vector2i(620, 420), 0.9)
+	_show_approval(definition, args)
 	var accepted: bool = await approval_decided
 	return accepted and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false) and _mode() in [1, 2, 4]
 
@@ -2330,7 +2382,7 @@ func _context_messages() -> Array:
 	elif _mode() == 4: instructions += "\nDEFAULT MODE: work directly on simple tasks; plan when complexity, uncertainty or dependencies warrant it. Complete implementation and verification without stopping at a proposal."
 	instructions += planner.context() + ("" if project_manager_mode else workspace.context())
 	if project_manager_mode: instructions += "\nSTART SCREEN: No project is open. You can chat, plan, inspect user-shared files and open the native project creation/import dialog using project_dialog. Dialog completion belongs to the user: never claim the project was created or imported merely because the dialog opened. Scene editing, project files, generation, Blender and project tools become available only after a project opens. Do not search for unavailable tools. The conversation can continue in the selected project."
-	if not full_control.button_pressed: instructions += "\nYOLO is off: modifying or external operations need individual user confirmation. Do not ask the user to enable YOLO; submit the intended tool operation for review."
+	if not full_control.button_pressed: instructions += "\nYOLO is off: modifying or external operations need individual user confirmation through the native approval dialog. For work the user already requested, do not ask for an additional yes in chat; submit the intended tool operation for review. Ask in chat only for missing information or a changed scope. Do not ask the user to enable YOLO."
 	var history_limit = clampi(int(config.get("preferences", {}).get("history_messages", 24)), 2, 200)
 	var start = maxi(compact_through, history.size() - history_limit)
 	start = clampi(start, 0, history.size())

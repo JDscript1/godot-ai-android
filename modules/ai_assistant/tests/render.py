@@ -13,10 +13,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--godot", required=True)
     parser.add_argument("--proot", action="store_true")
-    parser.add_argument("--scenario", choices=["all", "dock", "files", "terrain", "activity", "preview", "blender", "providers", "startup", "linux", "panels", "generation"], default="all")
+    parser.add_argument("--scenario", choices=["all", "dock", "files", "terrain", "activity", "preview", "blender", "providers", "startup", "linux", "panels", "generation", "approval"], default="all")
     parser.add_argument("--output", default=".ai-qa/rendered")
     parser.add_argument("--only", choices=["desktop", "narrow", "wide", "phone_landscape", "phone_compact"])
+    parser.add_argument("--timeout-seconds", type=float, default=180,
+                        help="Wall-clock budget per isolated editor run, independent of agent execution")
     args = parser.parse_args()
+    if args.timeout_seconds <= 0:
+        parser.error("--timeout-seconds must be positive")
     source = Path(__file__).resolve().parent.parent
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -58,7 +62,7 @@ def main():
                                                stdout=stream, stderr=subprocess.STDOUT,
                                                start_new_session=True)
                     try:
-                        process.wait(timeout=180)
+                        process.wait(timeout=args.timeout_seconds)
                     except subprocess.TimeoutExpired:
                         try:
                             os.killpg(process.pid, signal.SIGTERM)

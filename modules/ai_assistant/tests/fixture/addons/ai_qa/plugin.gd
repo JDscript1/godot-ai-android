@@ -237,6 +237,7 @@ func _enter_tree() -> void:
 
 func _check(condition: bool, label: String) -> void:
 	checks += 1
+	if checks % 25 == 0: print("AI editor verification progress: ", checks)
 	if not condition:
 		failures.append(label)
 		push_error("AI editor verification: " + label)
@@ -271,6 +272,10 @@ func _run() -> void:
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "startup":
 		await _handoff_tests()
 		await _generated_preview_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "approval":
+		await _approval_dialog_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "linux":
@@ -318,6 +323,7 @@ func _run() -> void:
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	await _chat_workflow_tests()
+	await _approval_dialog_tests("")
 	await _history_button_tests()
 	await _settings_action_tests()
 	await _provider_connection_tests("")
@@ -501,6 +507,92 @@ func _native_runtime_tests() -> void:
 
 func _fixture_approval(name: String, results: Dictionary, operation_cancel: Dictionary = {}) -> void:
 	results[name] = await panel._authorize({"name": name, "risk": "write"}, {}, operation_cancel)
+
+func _fixture_file_approval(args: Dictionary, results: Dictionary) -> void:
+	results["accepted"] = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
+
+func _fixture_sequential_approvals(args: Dictionary, results: Dictionary) -> void:
+	results["first"] = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
+	results["second"] = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
+
+func _approval_geometry(label: String) -> void:
+	var dialog: Window = panel.approval_dialog
+	var viewport_rect = Rect2(Vector2.ZERO, Vector2(get_tree().root.size))
+	_check(viewport_rect.encloses(Rect2(Vector2(dialog.position), Vector2(dialog.size))), label + ": approval stays inside the visible editor")
+	var content = Rect2(Vector2.ZERO, Vector2(dialog.size) / dialog.content_scale_factor)
+	for button in [dialog.get_ok_button(), dialog.get_cancel_button()]:
+		_check(button.is_visible_in_tree() and content.encloses(button.get_global_rect()), label + ": " + button.text + " is visible and reachable")
+		_check(not panel.approval_details.get_global_rect().intersects(button.get_global_rect()), label + ": scrolling content cannot cover " + button.text)
+
+func _approval_dialog_tests(output: String) -> void:
+	var root = get_tree().root
+	var was_embedded = root.gui_embed_subwindows
+	root.gui_embed_subwindows = true
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = false
+	panel.cancel = {"cancelled": false}
+	var source = "@tool\nextends Node3D\n" + "# Long terrain implementation with a comment and editable scene data.\n".repeat(220) + "# END_OF_PROPOSED_FILE\n"
+	var args = {"path": "res://scripts/terrain_board.gd", "text": source}
+	var result = {}
+	_fixture_file_approval.call_deferred(args, result)
+	for frame in range(4): await get_tree().process_frame
+	_check(panel.approval_pending and result.is_empty() and not FileAccess.file_exists(args.path), "A large file proposal waits for explicit consent and does not write during review")
+	_check(panel.approval_details.text == source and panel.approval_dialog.dialog_text == "godot_write_file", "Full readable source is scrollable instead of expanding or truncating the modal label")
+	_approval_geometry("Long source")
+	panel.approval_details.scroll_vertical = panel.approval_details.get_line_count()
+	await get_tree().process_frame
+	_check(panel.approval_details.scroll_vertical > 0, "The entire proposed file can be reviewed by scrolling")
+	_approval_geometry("Scrolled source")
+	if not output.is_empty():
+		panel.approval_dialog.get_texture().get_image().save_png(output.path_join("approval-long.png"))
+		root.get_texture().get_image().save_png(output.path_join("approval-editor.png"))
+	panel.approval_dialog.get_ok_button().pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(result.get("accepted", false) and not panel.approval_pending and not panel.approval_dialog.visible, "The visible Permite button authorizes only the current request")
+	result = {}
+	_fixture_file_approval.call_deferred(args, result)
+	for frame in range(4): await get_tree().process_frame
+	panel.approval_dialog.get_cancel_button().pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(result.has("accepted") and not result.accepted and not panel.approval_pending, "The visible Refuză button declines the current request")
+	# Reopening after the native Cancel path must survive its deferred hide.
+	result = {}
+	args.path = "res://" + "very_long_directory_name/".repeat(40) + "terrain_board.gd"
+	_fixture_file_approval.call_deferred(args, result)
+	for frame in range(4): await get_tree().process_frame
+	_check(panel.approval_dialog.visible and panel.approval_target.tooltip_text == args.path, "The next approval remains visible after Cancel and retains the full target in its tooltip")
+	_approval_geometry("Long path after Cancel")
+	root.size_changed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_approval_geometry("Viewport layout change")
+	panel._stop()
+	for frame in range(2): await get_tree().process_frame
+	_check(result.has("accepted") and not result.accepted and not panel.approval_dialog.visible, "Stop releases a pending approval without authorizing the operation")
+	panel.cancel = {}
+	panel.open_settings("general")
+	result = {}
+	args.path = "res://scripts/terrain_board.gd"
+	args.text = "# approval-fixture-secret\n" + source
+	panel.secrets.append("approval-fixture-secret")
+	_fixture_file_approval.call_deferred(args, result)
+	for frame in range(4): await get_tree().process_frame
+	_check(panel.approval_dialog.get_parent() == panel.settings_window and panel.approval_dialog.visible, "Approval belongs to the active settings modal instead of opening behind it")
+	_check(not panel.approval_details.text.contains("approval-fixture-secret"), "Approval source previews continue to redact known credentials")
+	panel.approval_dialog.get_cancel_button().pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(result.has("accepted") and not result.accepted, "Settings-modal approvals retain the same explicit refusal semantics")
+	panel.settings_window.hide()
+	panel.secrets.erase("approval-fixture-secret")
+	result = {}
+	_fixture_sequential_approvals.call_deferred(args, result)
+	for frame in range(4): await get_tree().process_frame
+	panel.approval_dialog.get_cancel_button().pressed.emit()
+	for frame in range(4): await get_tree().process_frame
+	_check(result.has("first") and not result.first and not result.has("second") and panel.approval_dialog.visible and panel.approval_pending, "Native Cancel cannot hide the immediate next approval or resolve it with the previous decision")
+	panel.approval_dialog.get_ok_button().pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(result.get("second", false) and not panel.approval_pending, "The immediate next request requires its own Permite click")
+	root.gui_embed_subwindows = was_embedded
 
 func _reflection_tool_tests(scene: Node) -> void:
 	var toolset = panel.tools

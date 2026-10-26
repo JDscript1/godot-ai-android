@@ -37,7 +37,59 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — execuție fără plafon total de pași, 26.10.2026
+## Etapa curentă — aprobări accesibile pe ecran mobil, 26.10.2026
+
+**Implementat în sursă; fără APK nou.** Verificate capturile utilizatorului
+`Screenshot_20261026_144013.jpg` și `Screenshot_20261026_144350.jpg`, păstrate
+în folderul original. În a doua, confirmarea `godot_write_file` afișa codul în
+label-ul dialogului; înălțimea minimă depășea ecranul și ascundea butoanele.
+
+Dialogul are acum acțiune și cale compacte, sursa completă într-un TextEdit
+readonly cu derulare și butoane fixe «Permite» / «Refuză». Dimensiunea este
+limitată la fereastra disponibilă și se recalculează la schimbarea viewportului.
+Calea lungă are elipsă și tooltip complet. Rămâne mascarea secretelor. Aprobarea
+folosește lanțul ferestrei de setări atunci când aceasta este deschisă.
+Corectată și succesiunea după Cancel: ascunderea amânată a dialogului vechi nu
+mai poate ascunde următoarea solicitare. Stop închide aprobarea fără a o acorda.
+
+Instrucțiunile agentului precizează că acordul pentru operațiile deja cerute se
+solicită prin panoul nativ; nu se mai cere încă un «da» în chat înaintea lui.
+Aceasta este o modificare de instrucțiuni, nu comportament validat cu model live.
+Nu s-a acordat nicio aprobare și nu s-a schimbat YOLO în aplicația utilizatorului.
+
+Jurnalul trimis ulterior arată că la **13:40:16, ora din jurnal**, Runware a
+recuperat și importat imaginea originală. Nu mai era blocată permanent acea
+descărcare, dar `quality.ready_for_use=false`: imaginea nu avea transparență.
+Scrierile scriptului au fost blocate întâi în faza planning, apoi au revenit cu
+`permission_denied`, compatibil cu panoul inaccesibil din captură. Acest cod nu
+dovedește că utilizatorul a putut vedea și refuza operația. Raportul vechi de la
+10:59 rămâne valabil pentru proba anterioară; nu s-a efectuat o generare nouă.
+
+Alte constatări din jurnal, necorectate în această etapă: `godot_set_setting` a
+acceptat un descriptor `$type:PackedStringArray` ca dicționar și a raportat
+succes; activarea addonului trebuie verificată separat. Agentul a făcut apeluri
+de tool înainte de încărcarea schemelor și a repetat confirmări în text. Nu este
+încă o probă de mini hartă finalizată sau de mesh generat.
+
+Primele verificări: **492 aserțiuni runtime** și câte **65 verificări** pentru
+dialog în editor narrow / phone_landscape, zero eșecuri. Runda completă a găsit
+o problemă de sincronizare între două solicitări; corectată prin afișare amânată
+fără amânarea așteptării deciziei. Proba finală separată phone_landscape:
+**70 verificări, zero eșecuri**, inclusiv Cancel urmat imediat de o nouă cerere,
+aprobări peste Setări, Stop și mascarea secretelor. Captura finală a fost
+inspectată vizual. O rundă completă în paralel a expirat și nu este considerată
+trecută. Repetarea secvențială a depășit și ea bugetul vechi după peste 400 de
+verificări, fără eșecuri raportate până atunci. Runnerul de dezvoltare acceptă
+acum `--timeout-seconds`; runda extinsă folosește 480 s, separat de execuția
+agentului din produs. **Runda completă finală: 514 verificări editor narrow,
+zero eșecuri și ieșire normală.** Include aprobări concurente și fluxurile
+existente de chat, planificare, subagenți și unelte. Sunt verificări în editorul
+Linux ARM64 upstream, nu o probă fizică a corecției în APK.
+Dovezi: `.ai-qa/approval-runtime-20261026.log`,
+`.ai-qa/approval-sequential-20261026/`, `.ai-qa/approval-full-extended-20261026/`.
+APK-ul instalat și cel din Download sunt încă **c418f97**, cu panoul vechi.
+
+## Etapa precedentă — execuție fără plafon total de pași, 26.10.2026
 
 **Implementat în sursă; APK-ul instalat și cel din Download rămân c418f97.**
 Eliminat plafonul implicit de 30 de cereri și clamp-ul ascuns de 100 din
@@ -1883,6 +1935,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** corectat dialogul de aprobare care ieșea din ecran la scrierea
+  fișierelor lungi; butoane fixe, cod derulabil, mascarea secretelor și reluare
+  după Cancel. 70 verificări dedicate și 514 verificări editor complete trecute;
+  probe pe surse, fără aprobare automată sau APK nou.
 
 - **26.10.2026:** eliminate plafoanele totale de pași din chat/subagenți și
   continuarea prin companion; 492 verificări runtime, inclusiv 136 de cereri și
