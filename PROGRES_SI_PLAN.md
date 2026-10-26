@@ -37,7 +37,23 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — aprobări accesibile pe ecran mobil, 26.10.2026
+## Etapa curentă — evaluare Claude Code 2.1.112, 26.10.2026
+
+La propunerea utilizatorului, evaluată înlocuirea orchestrării agentului cu
+Claude Code în Linuxul integrat. Confirmate local versiunea 2.1.112, pachetul
+`cli.js` / Node >=18 și pornirea `--version` / `--help`; confirmate și
+metadatele npm. Consultate documentația oficială pentru SDK/MCP, aprobări,
+streaming și configurarea DeepSeek. Fără inferență plătită sau instalare nouă.
+
+Recomandarea este un pilot care păstrează interfața și serviciile Godot, cu
+protocol de sesiune bidirecțional și proces supravegheat. Runnerul de comenzi
+actual are limită de 600 s și nu înlocuiește o asemenea gazdă de agent. CLI-ul
+local Termux nu dovedește funcționarea în APK. Adaptorul companion existent,
+pentru alte versiuni SDK/CLI, trebuie verificat înainte de reutilizare.
+Claude Code nu este open source. Nu s-a înlocuit agentul și nu s-a modificat
+APK-ul. [Evaluare, arhitectură și proba propusă](docs/AI_CLAUDE_HARNESS_EVALUATION.md).
+
+## Etapa precedentă — aprobări accesibile pe ecran mobil, 26.10.2026
 
 **Implementat în sursă; fără APK nou.** Verificate capturile utilizatorului
 `Screenshot_20261026_144013.jpg` și `Screenshot_20261026_144350.jpg`, păstrate
@@ -1935,6 +1951,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** evaluare Claude Code 2.1.112 ca motor alternativ în Linuxul
+  aplicației; pornire CLI verificată local și propunere documentată, fără
+  înlocuirea agentului sau probă de inferență în APK.
 
 - **26.10.2026:** corectat dialogul de aprobare care ieșea din ecran la scrierea
   fișierelor lungi; butoane fixe, cod derulabil, mascarea secretelor și reluare
