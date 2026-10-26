@@ -25,19 +25,27 @@ nemodificate confirmă cubul vizibil. Captura editorului după închiderea manua
   `report.json`, `REPORT.md`, jurnal, conversație, checkpoint, diff, captura
   editorului, copia scenei și `control-render/scene.png`.
 
-## Test 02 — depanare GDScript, pregătit
+## Test 02 — depanare GDScript, trecut
 
-**Așteaptă execuția manuală prin agent.** Fișiere noi, separate, în proiectul
-Vampyr: `res://agent_tests/test_02/{counter.gd,test_02.tscn,KEEP.txt}`. Scriptul
-conține intenționat o eroare de sintaxă și un calcul incorect. Cerința verifică
-repararea funcției de acumulare, păstrarea semnăturii/markerului și a KEEP.txt,
-validarea, rularea scenei explicite, citirea Output-ului și oprirea rulării.
-Exemplul cerut: 10 + [2,3,5] = 20; verificarea ulterioară include alte intrări.
+**Cerința a fost îndeplinită în APK.** Agentul a reparat exact două linii din
+`res://agent_tests/test_02/counter.gd`: colonul lipsă și acumularea prin `+=`.
+Parserul nativ a confirmat eroarea inițială și apoi `valid=true`. Agentul a
+rulat scena test_02, a citit `TEST_02_TOTAL=20`, a oprit rularea și a confirmat
+`running=false`. Raportul final de trei rânduri corespunde rezultatelor.
 
-Eroarea de parser a fost confirmată pe o copie izolată în Godot Linux; nu este
-rezultat al agentului instalat. Snapshot-uri, hash-uri, cazuri independente și
-jurnal inițial: `.ai-qa/manual-agent-test-02-20261026T205531Z/`. Înaintea probei,
-configurația proiectului, icon.svg și scena test_01 sunt păstrate identic.
+- **48,8 secunde**, **17 cereri**, **13 operații executate**, **3 descoperiri**
+  și **un apel blocat înainte de execuție**: `godot_apply_patch / tool_not_loaded`.
+  Agentul a încărcat schema și a continuat corect; constatarea actualizează AG-12.
+- KEEP_MARKER, semnătura, KEEP.txt, scena test_02, configurația, icon.svg și
+  scena test_01 sunt identice cu snapshot-urile inițiale.
+- **6/6 cazuri independente** au trecut pe copia exactă a scriptului reparat,
+  inclusiv array gol și valori negative. Sunt verificări ulterioare ale
+  evaluatorului în Godot Linux, distincte de proba agentului Android.
+- Proba a avut loc în aceeași conversație ca testul 01, cu istoric existent;
+  nu este un benchmark cu context proaspăt. Citite cele 69 de evenimente ale
+  turnului, fără trunchieri. Nu s-au instalat utilitare sau generat asseturi cloud.
+- Pregătire: `.ai-qa/manual-agent-test-02-20261026T205531Z/`; rezultat și dovezi:
+  `.ai-qa/manual-agent-test-02-result-20261026T212532Z/`.
 
 ## P0 — corectitudinea operațiilor și livrare
 
@@ -91,6 +99,11 @@ configurația proiectului, icon.svg și scena test_01 sunt păstrate identic.
   seiful sau datele binare ca dump. Înregistrează build, model, reasoning și modul
   efectiv al turnului. **Acceptare:** citire din Termux fără copiere în chat,
   sesiuni peste 1.000 de evenimente și rezultate peste 12.000 de caractere.
+- [ ] **AG-12 · Descoperire la mesaje noi și Resume.** Reîncarcă schemele
+  necesare din catalogul permis, păstrând regulile Plan/permisiuni. În testul
+  02, un mesaj nou în aceeași conversație a produs `godot_apply_patch /
+  tool_not_loaded`, apoi încărcare și recuperare. **Acceptare:** continuare și
+  Resume fără apeluri către scheme indisponibile sau expunerea tool-urilor excluse.
 
 ## Din probele anterioare — de reverificat separat
 
@@ -101,13 +114,11 @@ configurația proiectului, icon.svg și scena test_01 sunt păstrate identic.
   500 cu rezultat de succes numai după validarea jobului și payload-ului.
   Recuperează același job, fără generări plătite duplicate. Imaginea probei
   anterioare a fost ulterior importată; întregul flux până la mesh rămâne de probat.
-- [ ] **AG-12 · Descoperire după Resume.** Păstrează sau reîncarcă explicit
-  schemele necesare după reluare, evitând apelurile istorice `tool_not_loaded`.
 
 ## Probe următoare
 
 1. Repetă cubul după AG-01/02/03, cu modul și reasoning-ul consemnate.
-2. Editare mică, validare, refuz de permisiune, Stop și Resume.
+2. Refuz de permisiune, Stop și Resume; editarea și validarea au trecut în testul 02.
 3. Terrain3D și recuperarea aceleiași generări Runware, apoi import/preview mesh.
 4. Pilot Pi separat, cu același model și aceleași criterii; comparație înaintea
    înlocuirii motorului. Îmbunătățirea harness-ului nu înlocuiește corectarea

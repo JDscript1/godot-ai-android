@@ -37,7 +37,37 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — test 02 pregătit pentru depanare, 26.10.2026
+## Etapa curentă — test 02 trecut pe Android, 26.10.2026
+
+Utilizatorul a transmis cerința agentului instalat, în proiectul Vampyr, folosind
+aceeași conversație ca la cub. Jurnalul, checkpoint-ul și istoricul au fost
+colectate direct prin ADB. **Cerința de depanare a trecut în APK-ul c418f97**:
+agentul a corectat exact două linii din counter.gd (colonul lipsă și acumularea
+prin +=), a validat scriptul prin parserul nativ, a rulat numai scena test_02,
+a citit `TEST_02_TOTAL=20`, a oprit rularea și a verificat `running=false`.
+Răspunsul final are trei rânduri și este susținut de rezultate.
+
+Runda: **48,8 s, 17 cereri, 13 operații executate, 3 descoperiri** și un apel
+respins înainte de execuție (`godot_apply_patch / tool_not_loaded`). După
+`tool_describe`, agentul a reluat corect. Diagnosticul inițial `valid=false`
+arată detectarea reală a erorii introduse, nu un eșec al instrumentului.
+La final, starea harness-ului este `completed`. Fișierul de control, markerul,
+semnătura funcției, scena test_02, project.godot, icon.svg și scena test_01 sunt
+păstrate identic. Diferența scriptului constă numai în cele două linii cerute.
+
+Verificare independentă a rezultatului, în afara proiectului: **6 cazuri trecute**
+în Godot 4.7.2 Linux ARM64, cu alte valori, array gol și numere negative. Copia
+verificată are exact hash-ul scriptului reparat de agent. Evaluatorul nu a
+modificat proiectul, nu a reparat scriptul și nu a trimis cereri noi de model.
+Proba nu este izolată de istoricul testului 01 și nu dovedește o accelerare
+comparativă. Cele 69 de evenimente noi sunt lizibile integral, fără trunchieri,
+și continuă exact jurnalul inițial salvat. Dovezi:
+`.ai-qa/manual-agent-test-02-result-20261026T212532Z/`, inclusiv raport,
+conversație, checkpoint, snapshot și `independent-check/result.json`.
+Actualizat [TODO_AGENT.md](TODO_AGENT.md), inclusiv AG-12 pentru descoperirea la
+mesaje noi și Resume. Fără corecții runtime sau APK nou în această etapă.
+
+## Etapa precedentă — test 02 pregătit pentru depanare, 26.10.2026
 
 La cererea utilizatorului, pregătite trei fișiere noi în
 `Documents/vampyr/agent_tests/test_02/`: script cu eroare de sintaxă și calcul,
@@ -2010,6 +2040,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** testul 02 trecut cu agentul real pe Android: reparate două
+  linii, parser valid, Output=20, oprire confirmată și fișiere păstrate; 17
+  cereri în 48,8 s. Șase intrări independente trecute ulterior. Notat apelul
+  către un tool neîncărcat și recuperarea lui; fără schimbarea APK-ului.
 
 - **26.10.2026:** pregătit testul manual 02 pentru depanare GDScript, acumulare,
   păstrarea fișierelor și verificarea Output-ului. Eroarea intenționată este
