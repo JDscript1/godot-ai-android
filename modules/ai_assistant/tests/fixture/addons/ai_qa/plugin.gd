@@ -1286,6 +1286,24 @@ func _provider_connection_tests(output: String) -> void:
 	_check(form["editing"] == local_id and form["url"].text.contains("192.168.1.20"), "The saved local connection loads by its own stable list row")
 	panel._remove_profile("providers", "provider")
 	_check(panel.config["providers"].size() == 1 and panel.config["providers"][0]["id"] == cloud_id and panel.vault.read(local_id).is_empty(), "Deleting the selected local connection preserves the other saved provider")
+	panel._edit_provider(0)
+	panel._remove_profile("providers", "provider")
+	form["key"].text = "sk-fixture-deepseek-readded"
+	form["key"].text_changed.emit(form["key"].text)
+	_check(panel._save_provider(), "Re-adding a DeepSeek key after deleting a saved connection restores the hidden provider endpoint")
+	var readded_id = str(form.get("editing", ""))
+	if not readded_id.is_empty():
+		var restored = panel._profile_by_id(readded_id)
+		_check(restored.get("url") == "https://api.deepseek.com" and panel.vault.read(readded_id) == "sk-fixture-deepseek-readded", "The recovered endpoint and new key belong to the selected DeepSeek connection")
+		restored["url"] = ""
+		restored["models"] = [{"id": "retained-model"}]
+		panel._edit_provider(0)
+		_check(panel._save_provider() and panel._profile_by_id(readded_id).get("models", []).size() == 1 and panel.vault.read(readded_id) == "sk-fixture-deepseek-readded", "Repairing a legacy blank endpoint preserves its stored key and cached models")
+		form["url"].text = "https:/invalid-endpoint"
+		_check(not panel._save_provider() and form["groups"]["url"].visible, "An invalid explicit endpoint becomes visible for correction instead of remaining hidden")
+		form["url"].text = "https://different.example.test/v1"
+		_check(not panel._save_provider() and panel._profile_by_id(readded_id).get("url") == "https://api.deepseek.com", "Changing the actual server still requires an explicit replacement credential")
+	if not readded_id.is_empty(): panel.vault.erase(readded_id)
 	panel.vault.erase(cloud_id)
 	panel.config["providers"] = original
 	panel._refresh_lists()

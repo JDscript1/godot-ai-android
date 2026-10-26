@@ -147,6 +147,7 @@ func _run() -> void:
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
+	var providers = scripts["providers"]
 	check(common.project_path("res://../outside.txt").is_empty(), "Reject project traversal")
 	check(common.project_path("res://.godot/cache").is_empty(), "Reject editor-private project paths")
 	check(common.project_path("res://scripts/player.gd") == "res://scripts/player.gd", "Accept project file")
@@ -155,6 +156,13 @@ func _run() -> void:
 	check(not common.parse_url("http://127.0.0.1:1234/v1").get("ok", false), "HTTP requires explicit local opt-in")
 	check(common.parse_url("http://192.168.1.8:1234/v1", true).get("ok", false), "Allow configured LAN endpoint")
 	check(common.parse_url("http://[::1]:1234/v1", true).get("ok", false), "Allow configured IPv6 endpoint")
+	for entry in providers.CATALOG:
+		if entry.get("local", false) or entry["id"] == "custom": continue
+		var default_endpoint = providers.endpoint({"issuer": entry["id"]})
+		check(default_endpoint.get("ok", false) and default_endpoint.get("result") == entry["url"], "Known cloud provider restores its catalog endpoint: " + str(entry["id"]))
+	check(providers.endpoint({"issuer": "deepseek", "url": ""}).get("result") == "https://api.deepseek.com", "An empty saved DeepSeek endpoint recovers its official catalog URL")
+	check(providers.endpoint({"issuer": "deepseek", "url": "https://gateway.example.test/v1/"}).get("result") == "https://gateway.example.test/v1", "A configured compatible gateway is preserved instead of silently changing destination")
+	check(not providers.endpoint({"issuer": "custom"}).get("ok", false) and not providers.endpoint({"issuer": "lmstudio"}).get("ok", false), "Unknown and local endpoints still require an explicit server address")
 	check(common.uid().length() == 36 and common.uid().get_slice("-", 2).begins_with("4"), "Task identifiers use UUIDv4")
 	var assets_script = scripts["assets"]
 	var rodin = assets_script.build_runware_task({"asset_kind": "mesh", "model": "hyper3d:rodin@gen-2"}, "bird", "data:image/png;base64,fixture", common.uid())
@@ -173,7 +181,6 @@ func _run() -> void:
 	for byte in data: decoder.feed(PackedByteArray([byte]), func(event: Dictionary) -> void: events.append(event))
 	check(events.size() == 1 and events[0]["value"] == "română 🐦", "SSE preserves UTF-8 across arbitrary byte boundaries")
 	check(decoder.ended, "SSE recognizes terminal sentinel")
-	var providers = scripts["providers"]
 	check(providers.hosting({"issuer": "custom", "url": "http://192.168.2.5:1234/v1"}) == "local" and providers.hosting({"issuer": "custom", "url": "https://api.example.com"}) == "cloud", "LAN compatible profiles and cloud endpoints are grouped by hosting")
 	check(providers.hosting({"issuer": "custom", "url": "https://private.example.com", "hosting": "local"}) == "local", "Self-hosted public domains can explicitly select local hosting")
 	var targets = providers.lan_targets(["192.168.3.8", "192.168.3.9", "10.0.0.4", "172.16.1.2", "8.8.8.8", "127.0.0.1", "192.168.300.3"])

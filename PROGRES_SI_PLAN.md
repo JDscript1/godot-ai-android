@@ -1,6 +1,6 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **25 octombrie 2026**.
+Ultima actualizare: **26 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
@@ -36,7 +36,44 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — panouri minimizabile și chat extins, 25.10.2026
+## Etapa curentă — DeepSeek și denumire unitară, 26.10.2026
+
+Utilizatorul a raportat „Adresa serverului nu este validă” la introducerea
+cheii DeepSeek în interiorul proiectului și diferența Agent / AI Assistant
+între lista de proiecte și editor. Reprodus în formularul real: ștergerea
+conexiunii golește adresa ascunsă, dar păstrează selecția DeepSeek; o nouă
+cheie fără schimbarea selectorului produce exact eroarea de URL.
+
+Implementat în surse: adresa lipsă a unui furnizor cloud cunoscut se reface
+din catalog la salvare, descoperirea modelelor și conversație. Pentru DeepSeek
+este `https://api.deepseek.com`, conform documentației oficiale.
+Adresele explicite și gateway-urile se păstrează; o adresă explicită invalidă
+este afișată pentru corectare. Repararea unui profil vechi cu URL gol păstrează
+cheia și modelele memorate. Schimbarea serverului real cere în continuare
+introducerea cheii corespunzătoare. Serverele locale și furnizorii personalizați
+cer adresă explicită. Numele filei principale devine **AI Assistant** și în
+lista de proiecte, folosind același mesaj de traducere ca în editor.
+
+Probe locale: **447 aserțiuni runtime**, **67 verificări UI furnizori** pe formatul
+tabletei și **51 verificări în lista reală de proiecte** pe ecran îngust, fără
+eșecuri. Proba de regresie înaintea corecției eșuează exact la readăugarea
+cheii DeepSeek; aceeași probă trece după corecție, inclusiv păstrarea cheii și
+modelelor, afișarea URL-ului invalid și protecția schimbării destinației.
+Capturile au fost inspectate vizual. Testul global folosește panoul încorporat
+atunci când rulează cu editorul fork compilat; cu binarul upstream montează
+panoul partajat într-un ProjectManager real. CI rulează acum ambele variante.
+Corectată ordinea argumentelor proot-distro 5 în lansatorul testului global.
+
+Dovezi: `.ai-qa/deepseek-endpoint-before/`,
+`.ai-qa/deepseek-endpoint-runtime.log`, `.ai-qa/deepseek-endpoint-fixed-tablet/`,
+`.ai-qa/deepseek-endpoint-start/`. Cheile probelor sunt fictive; nu reprezintă
+autentificare verificată cu cheia utilizatorului. APK-ul afcf2cb rămâne livrarea
+curentă până la finalizarea compilării și verificării noii versiuni.
+
+Jurnal: 26.10.2026 — reprodus și corectat URL-ul cloud gol după ștergerea unei
+conexiuni DeepSeek; aliniată denumirea asistentului în cele două contexte.
+
+## Etapa precedentă — panouri minimizabile și chat extins, 25.10.2026
 
 Inspectată captura fizică `Screenshot_20261025_203433.jpg`: Output ocupă o
 parte mare din înălțime, iar Scene/Inspector limitează lățimea chatului.

@@ -54,20 +54,33 @@ func _run() -> void:
 	var host = Host.new()
 	manager.add_child(host)
 	var vault = Vault.new()
-	panel = scripts["panel"].new()
-	panel.configure(host, vault, true)
 	var asset_tab = manager.find_child("AssetLibraryTab", true, false)
 	check(asset_tab != null, "Keep the native Asset Store view")
-	var container = asset_tab.get_parent()
-	for child in container.get_children(): child.hide()
-	container.add_child(panel)
-	var toggle = Button.new()
-	toggle.text = "Agent"
-	toggle.theme_type_variation = "MainScreenButton"
-	for button in manager.find_children("*", "Button", true, false):
-		if button.text == "Asset Store": button.get_parent().add_child(toggle); break
-	toggle.toggle_mode = true
-	toggle.button_pressed = true
+	var native_host = manager.find_child("AIAssistantStart", true, false)
+	if native_host != null:
+		panel = native_host.find_child("AIAssistantStartPanel", true, false)
+		check(panel != null, "Use the fork's real shared start-screen panel")
+		if panel == null: _finish(); return
+		panel.plugin = host
+		panel.vault = vault
+		var matching_buttons = []
+		for button in manager.find_children("*", "Button", true, false):
+			if button.text == "AI Assistant": matching_buttons.append(button)
+		check(matching_buttons.size() == 1, "The native start tab uses the same AI Assistant name as the project editor")
+		if matching_buttons.size() == 1: matching_buttons[0].pressed.emit()
+	else:
+		panel = scripts["panel"].new()
+		panel.configure(host, vault, true)
+		var container = asset_tab.get_parent()
+		for child in container.get_children(): child.hide()
+		container.add_child(panel)
+		var toggle = Button.new()
+		toggle.text = "AI Assistant"
+		toggle.theme_type_variation = "MainScreenButton"
+		for button in manager.find_children("*", "Button", true, false):
+			if button.text == "Asset Store": button.get_parent().add_child(toggle); break
+		toggle.toggle_mode = true
+		toggle.button_pressed = true
 	await process_frame
 	check(panel.chat != null and panel.composer != null, "Build the shared chat before project selection")
 	check(panel.project_directory.ends_with("/start"), "Use independent start-screen conversation storage")
@@ -83,6 +96,15 @@ func _run() -> void:
 	await process_frame
 	check(actions.size.y < 100 * EditorInterface.get_editor_scale(), "Project action row remains compact")
 	check(host.actions == ["create", "import", "projects"], "Project shortcuts route to their native host")
+	var form: Dictionary = panel.forms["provider"]
+	panel._select_issuer("deepseek")
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	form["url"].text = ""
+	form["key"].text = "sk-fixture-start-deepseek"
+	check(panel._save_provider(), "The global provider form restores DeepSeek's hidden empty endpoint")
+	var saved_id = str(form.get("editing", ""))
+	check(panel._profile_by_id(saved_id).get("url") == "https://api.deepseek.com" and vault.read(saved_id) == "sk-fixture-start-deepseek", "Start-screen DeepSeek connection saves the official endpoint and fixture key")
+	vault.erase(saved_id)
 	panel.config["providers"] = [{"id": "fixture", "name": "Fixture", "issuer": "openai", "kind": "openai", "url": "https://example.test/v1", "models": [{"id": "fixture-code", "capabilities": {"tools": true}}]}]
 	panel._refresh_profiles()
 	var provider = Provider.new()

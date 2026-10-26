@@ -49,6 +49,21 @@ static func hosting(profile: Dictionary) -> String:
 	var host = str(parsed.get("host", "")).to_lower()
 	return "local" if host in ["localhost", "127.0.0.1", "::1"] or host.ends_with(".local") or private_ipv4(host) else "cloud"
 
+static func endpoint(profile: Dictionary) -> Dictionary:
+	var url = str(profile.get("url", "") if profile.get("url") != null else "").strip_edges().trim_suffix("/")
+	var issuer = str(profile.get("issuer", ""))
+	if url.is_empty():
+		for entry in CATALOG:
+			if entry["id"] == issuer and not entry.get("local", false):
+				url = str(entry["url"])
+				break
+	if issuer in ["lmstudio", "ollama", "llamacpp"]:
+		var normalized = local_endpoint(url, issuer)
+		if not normalized.get("ok", false): return normalized
+		url = str(normalized["result"])
+	var parsed = Common.parse_url(url, bool(profile.get("allow_http", false)))
+	return Common.success(url) if parsed.get("ok", false) else parsed
+
 static func local_endpoint(value: String, issuer: String) -> Dictionary:
 	var url = value.strip_edges().trim_suffix("/")
 	if url.is_empty() or "?" in url or "#" in url: return Common.failure("Introdu IP-ul sau adresa serverului, fără parametri suplimentari.", "invalid_url")
@@ -201,12 +216,10 @@ func headers(profile: Dictionary) -> PackedStringArray:
 func list_models(profile: Dictionary, cancel: Dictionary = {}) -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
-	var url = str(profile.get("url", "")).trim_suffix("/")
+	var resolved = endpoint(profile)
+	if not resolved.get("ok", false): return resolved
+	var url = str(resolved["result"])
 	var issuer = str(profile.get("issuer", ""))
-	if issuer in ["lmstudio", "ollama", "llamacpp"]:
-		var normalized = local_endpoint(url, issuer)
-		if not normalized.get("ok", false): return normalized
-		url = str(normalized["result"])
 	var options = {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 10, "connect_timeout": 4}
 	var root = url.trim_suffix("/v1")
 	var result = await transport.request(root + "/api/tags" if issuer == "ollama" else url + "/models", HTTPClient.METHOD_GET, headers(profile), null, options)
@@ -255,6 +268,8 @@ func ollama_capabilities(profile: Dictionary, model: String, cancel: Dictionary 
 func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable()) -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
+	var resolved = endpoint(profile)
+	if not resolved.get("ok", false): return resolved
 	messages = normalize_context(profile, model, messages)
 	var kind = str(profile.get("kind", "chat"))
 	var wire = build_request(kind, messages, tools, model, effort)
@@ -267,7 +282,7 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 		if not delta.is_empty() and on_delta.is_valid(): on_delta.call(delta)
 	var options = inference_options(profile, cancel)
 	options["on_event"] = receive
-	var result = await transport.request(str(profile["url"]).trim_suffix("/") + path, HTTPClient.METHOD_POST, headers(profile), wire["body"], options)
+	var result = await transport.request(str(resolved["result"]) + path, HTTPClient.METHOD_POST, headers(profile), wire["body"], options)
 	if not result.get("ok", false):
 		if result.get("code") == "timeout" and result.get("stage") in ["response", "body"]: return Common.failure("Modelul nu a mai trimis date în intervalul de așteptare. Verifică încărcarea și resursele serverului înainte de reluare.", "inference_timeout")
 		return result

@@ -38,7 +38,7 @@ def main():
                        '--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy',
                        '--resolution', resolution, '--path', str(fixture)]
             if args.proot:
-                command = ['proot-distro', 'login', 'debian', '--shared-home', '--', 'env',
+                command = ['proot-distro', 'login', '--shared-home', 'debian', '--', 'env',
                            *(f'{key}={value}' for key, value in environment.items()), *command]
             with (output / 'start.log').open('w') as stream:
                 result = subprocess.run(command, env={**os.environ, **environment},

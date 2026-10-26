@@ -1488,26 +1488,26 @@ func _save_provider() -> bool:
 	var issuer: Dictionary = _provider_issuer()
 	var id = str(p.get("editing", ""))
 	if id.is_empty(): id = Common.uid()
-	var url = str(p["url"].text).strip_edges().trim_suffix("/")
-	if issuer.get("local", false):
-		var normalized_url = Providers.local_endpoint(url, str(issuer["id"]))
-		if not normalized_url.get("ok", false):
-			_status(str(normalized_url["error"]))
-			return false
-		if not "://" in url: p["allow_http"].button_pressed = true
-		url = str(normalized_url["result"])
-		p["url"].text = url
-	var checked = Common.parse_url(url, p["allow_http"].button_pressed)
+	var raw_url = str(p["url"].text).strip_edges()
+	if issuer.get("local", false) and not "://" in raw_url and not raw_url.is_empty(): p["allow_http"].button_pressed = true
+	var checked = Providers.endpoint({"issuer": issuer["id"], "url": raw_url, "allow_http": p["allow_http"].button_pressed})
 	if not checked.get("ok", false):
+		p["groups"]["url"].show()
+		provider_advanced.show()
 		_status(str(checked["error"]))
 		return false
+	var url = str(checked["result"])
+	p["url"].text = url
 	var key = str(p["key"].text).strip_edges()
-	for previous in config["providers"]:
-		if previous["id"] != id: continue
+	var previous = _profile_by_id(id)
+	var same_connection = false
+	if not previous.is_empty():
+		var previous_url = Providers.endpoint(previous)
+		same_connection = previous.get("issuer") == issuer["id"] and previous_url.get("ok", false) and previous_url.get("result") == url
 		if previous.get("kind") == "siwc":
 			_status("Conturile ChatGPT se gestionează din Abonamente. Poți actualiza catalogul folosind Testează / modele.")
 			return false
-		if key.is_empty() and not vault.read(id).is_empty() and (str(previous.get("url", "")) != url or previous.get("issuer") != issuer["id"]):
+		if key.is_empty() and not vault.read(id).is_empty() and not same_connection:
 			_status("Pentru schimbarea serviciului sau adresei introdu explicit cheia corespunzătoare.")
 			return false
 	if not key.is_empty():
@@ -1517,18 +1517,14 @@ func _save_provider() -> bool:
 			_status("Cheia nu a putut fi salvată.")
 			return false
 	p["key"].clear()
-	var models = []
-	for previous in config["providers"]:
-		if previous["id"] == id and previous.get("url") == url and previous.get("issuer") == issuer["id"]: models = previous.get("models", [])
+	var models: Array = previous.get("models", []) if same_connection else []
 	var manual = str(p["manual_model"].text).strip_edges()
 	if not manual.is_empty() and not models.any(func(item: Dictionary) -> bool: return item["id"] == manual): models.append({"id": manual, "name": manual, "source": "manual", "capabilities": {}})
 	var vision_overrides: Dictionary = p.get("vision_pending", {}).duplicate(true)
-	for previous in config["providers"]:
-		if previous["id"] == id and (previous.get("url") != url or previous.get("issuer") != issuer["id"]): vision_overrides = {}
+	if not previous.is_empty() and not same_connection: vision_overrides = {}
 	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models, "vision_overrides": vision_overrides}
 	if p["hosting"].selected > 0: profile["hosting"] = "cloud" if p["hosting"].selected == 1 else "local"
-	for previous in config["providers"]:
-		if previous["id"] == id and previous.get("url") == url and previous.get("issuer") == issuer["id"] and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
+	if same_connection and key.is_empty() and previous.has("verified_at"): profile["verified_at"] = previous["verified_at"]
 	p["editing"] = id
 	_upsert("providers", profile)
 	_refresh_provider_vision(profile)

@@ -1773,7 +1773,7 @@ ProjectManager::ProjectManager() {
 
 #ifdef MODULE_AI_ASSISTANT_ENABLED
 	ai_assistant = memnew(AIAssistantProjectManager);
-	_add_main_view(MAIN_VIEW_AI, TTRC("Agent"), Ref<Texture2D>(), ai_assistant);
+	_add_main_view(MAIN_VIEW_AI, TTRC("AI Assistant"), Ref<Texture2D>(), ai_assistant);
 	ai_assistant->connect("project_action_requested", callable_mp(this, &ProjectManager::_ai_project_action));
 #endif
 
