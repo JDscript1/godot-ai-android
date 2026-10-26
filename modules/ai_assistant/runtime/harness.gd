@@ -44,7 +44,8 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	var definitions: Array = options.get("tools", [])
 	var registry = ToolRegistry.new(definitions, bool(options.get("deferred_tools", false)))
 	if not registry.error.is_empty(): return _finish("failed", registry.error, "invalid_tools")
-	var maximum = clampi(int(options.get("max_steps", 30)), 1, 100)
+	# Normal editor runs have no step ceiling. Only isolated evaluations opt in.
+	var maximum = maxi(0, int(options.get("max_steps", 0)))
 	var retries = clampi(int(options.get("max_retries", 2)), 0, 3)
 	var metadata: Dictionary = options.get("metadata", {})
 	var last_text = ""
@@ -52,10 +53,16 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	var repeated_result = ""
 	var repeated_count = 0
 	_transition("running")
-	for step in range(maximum):
+	var step = 0
+	while maximum == 0 or step < maximum:
 		if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
 		if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
-		stats["steps"] = step + 1
+		# Cached/local callbacks can finish synchronously; keep Stop and the UI responsive.
+		if step > 0 and is_instance_valid(owner):
+			await owner.get_tree().process_frame
+			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
+		step += 1
+		stats["steps"] = step
 		definitions = registry.active_definitions()
 		var declared = {}
 		for definition in definitions: declared[definition["name"]] = true
@@ -66,7 +73,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			_transition("running")
 			if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
-			event.emit({"kind": "request_started", "step": step + 1, "maximum": maximum, "attempt": attempt + 1})
+			event.emit({"kind": "request_started", "step": step, "maximum": maximum, "attempt": attempt + 1})
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			stats["requests"] += 1
 			var streamed = {"text": false}
@@ -105,7 +112,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			if _hooks.get("needs_continuation", Callable()).is_valid() and _hooks["needs_continuation"].call():
 				empty_rounds += 1
 				if empty_rounds >= 3: return _finish("limited", "Agentul nu a făcut progrese în ultimele trei încercări. Verifică pașii rămași înainte de reluare.", "no_progress", last_text)
-				event.emit({"kind": "plan_continuation", "step": step + 1})
+				event.emit({"kind": "plan_continuation", "step": step})
 				continue
 			if _hooks.get("blocked_reason", Callable()).is_valid():
 				var reason = str(_hooks["blocked_reason"].call())
@@ -174,7 +181,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
 		if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 		if stalled: return _finish("limited", "Aceeași operație se repetă fără progres. Rezultatele au fost păstrate; verifică eroarea înainte de reluare.", "no_progress", last_text)
-	return _finish("limited", "Limita de pași a fost atinsă. Verifică rezultatele înainte de continuare.", "step_limit", last_text)
+	return _finish("limited", "Limita explicită a probei a fost atinsă.", "step_limit", last_text)
 
 func _validate_response(response: Dictionary) -> String:
 	if not response.get("message") is Dictionary or response["message"].get("role") != "assistant": return "Răspuns de model invalid."

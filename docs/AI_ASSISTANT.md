@@ -114,7 +114,8 @@ switches to Auto and retains the permission preference. Preferences save immedia
 
 For complex work the model publishes structured task steps through `task_update`.
 Planning is read-only; the model must publish the executing phase before writes.
-Auto and Default continue unfinished execution plans within its step budget. A plan-only
+Auto and Default continue unfinished execution plans without a total step ceiling. Stop,
+actual blockers and repeated attempts without progress still stop execution. A plan-only
 request remains a proposal. This is model-directed task planning, not a local
 complexity classifier or a guarantee of a provider's coding quality.
 

@@ -103,6 +103,33 @@ class FixtureLocalCatalog:
 		requests += 1
 		return {"ok": true, "result": [{"id": "unloaded-code", "loaded": false, "capabilities": {}}, {"id": "loaded-code", "loaded": true, "context": 4096, "capabilities": {}}]}
 
+class FixtureLongProvider:
+	extends RefCounted
+	var requests = 0
+	var work_items = 35
+	func _init(node: Node = null, _vault: RefCounted = null) -> void:
+		if node != null: work_items = 105
+	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, _delta: Callable) -> Dictionary:
+		requests += 1
+		var calls = []
+		if requests <= work_items: calls = [{"id": "long-inspect-" + str(requests), "name": "godot_project", "arguments": {}}]
+		return {"ok": true, "message": {"role": "assistant", "content": "Long inspection complete" if calls.is_empty() else "", "tool_calls": calls}, "calls": calls, "finish": "stop"}
+
+class FixtureCompanionAccounts:
+	extends RefCounted
+	var turns = 0
+	var stalled = false
+	func companion_request(_connection: Dictionary, path: String, _method: int = HTTPClient.METHOD_GET, _body: Variant = null, _cancel: Dictionary = {}) -> Dictionary:
+		if path == "/v1/turns":
+			turns += 1
+			return {"ok": true, "json": {"result": {"id": "companion-" + str(turns)}}}
+		if path.contains("?after="):
+			var tasks = []
+			var completed = 0 if stalled else turns
+			for index in range(8): tasks.append({"step": "Inspect part " + str(index), "status": "completed" if index < completed else "pending"})
+			return {"ok": true, "json": {"result": {"status": "completed", "text": "Verified current inspection", "events": [{"sequence": 1, "kind": "tool", "id": "plan-" + str(turns), "name": "task_update", "arguments": {"tasks": tasks, "phase": "completed" if completed == 8 else "executing"}}]}}}
+		return {"ok": true, "json": {}}
+
 class FixtureCloudCatalog:
 	extends RefCounted
 	var owner: Node
@@ -526,6 +553,43 @@ func _harness_editor_tests(scene: Node) -> void:
 	_check(journal_results.size() == 2 and journal_results[-1].get("arguments", {}).get("call_id") == service.call_id and journal_results[-1].get("arguments", {}).get("executed", false) and journal_results[-1].get("arguments", {}).get("duration_ms", -1) >= 0, "Activity journal correlates discovery and execution by call ID and records timing")
 	panel.tools.execute("godot_undo", {}, 2, true)
 	_check(scene.get_node_or_null("HarnessProbe") == null, "Harness scene mutation remains compatible with native Undo")
+	panel._new_conversation()
+	var long_service = FixtureLongProvider.new()
+	panel.providers = long_service
+	panel.config.preferences.agent_step_limit = 1
+	await panel._start_chat("Inspect the project throughout the long fixture workflow")
+	_check(long_service.requests == 36 and panel.harness.state == "completed", "Production chat ignores legacy step preferences and completes beyond 30 requests")
+	panel.config.preferences.erase("agent_step_limit")
+	var child_provider = embedded.agent_jobs.Providers
+	embedded.agent_jobs.Providers = FixtureLongProvider
+	panel.config.preferences.play_steps = 1
+	panel.config.preferences.play_seconds = 1
+	var child = {"id": "long-child", "parent": panel.current_turn, "kind": "Explore", "task": "Inspect the fixture project", "context": "", "profile": {"kind": "chat"}, "model": "fixture", "status": "running", "cancel": {"cancelled": false}, "steps": 0, "text": ""}
+	await panel.agent_jobs._run(child)
+	_check(child.status == "completed" and child.steps == 106 and not child.cancel.cancelled, "Production child completes beyond old 12/30/100 ceilings and legacy time preferences")
+	embedded.agent_jobs.Providers = child_provider
+	panel.config.preferences.erase("play_steps")
+	panel.config.preferences.erase("play_seconds")
+	var original_accounts = panel.accounts
+	panel.config.providers.append({"id": "companion-fixture", "name": "Companion fixture", "kind": "companion", "account": "fixture", "models": [{"id": "fixture"}]})
+	panel._refresh_profiles()
+	panel._choose({"profile": "companion-fixture", "model": "fixture"})
+	panel._new_conversation()
+	var companion = FixtureCompanionAccounts.new()
+	panel.accounts = companion
+	await panel._start_chat("Continue all eight companion work items")
+	_check(companion.turns == 8 and panel.planner.phase == "completed" and panel.history[-1].run_status == "completed", "Optional companion continues progressing beyond five SDK turns")
+	panel._new_conversation()
+	companion = FixtureCompanionAccounts.new()
+	companion.stalled = true
+	panel.accounts = companion
+	await panel._start_chat("Detect repeated companion plans without progress")
+	_check(companion.turns == 4 and panel.history[-1].run_status == "limited" and panel.planner.phase == "paused", "Companion stops for unchanged plans rather than a total turn ceiling")
+	panel.accounts = original_accounts
+	panel.config.providers.pop_back()
+	panel._refresh_profiles()
+	panel._choose({"profile": "native-harness", "model": "fixture"})
+	panel.providers = service
 	panel._new_conversation()
 	service.requests = 0
 	service.call_id = "fixture-analysis-write"

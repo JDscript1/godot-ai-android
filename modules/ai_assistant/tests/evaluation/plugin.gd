@@ -71,7 +71,6 @@ func run() -> void:
 	panel.config.providers = [request.profile]
 	panel.config.generation = []
 	panel.config.mcp = []
-	panel.config.preferences.agent_step_limit = 30
 	panel._refresh_lists()
 	panel._refresh_profiles()
 	panel._choose({"profile": request.profile.id, "model": request.model, "effort": request.effort})

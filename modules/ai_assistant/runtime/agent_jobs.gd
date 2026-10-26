@@ -26,13 +26,7 @@ func spawn(task: String, kind: String, profile: Dictionary, model: String, refer
 	changed.emit(parent)
 	if kind == "Playtest": playtest_busy = true
 	_run.call_deferred(job)
-	_watch.call_deferred(job)
 	return Common.success({"id": id, "status": "running", "kind": kind})
-
-func _watch(job: Dictionary) -> void:
-	var seconds = int(owner.config.get("preferences", {}).get("play_seconds", 180)) if job["kind"] == "Playtest" else 120
-	await owner.get_tree().create_timer(clampi(seconds, 10, 600)).timeout
-	if job["status"] == "running": job["cancel"]["cancelled"] = true
 
 func wait_for(id: String, cancel: Dictionary) -> Dictionary:
 	if not jobs.has(id): return Common.failure("Subagent inexistent.")
@@ -70,7 +64,6 @@ func _run(job: Dictionary) -> void:
 		await _companion(job, definitions, instruction)
 	else:
 		var service = Providers.new(owner, owner.vault)
-		var maximum = clampi(int(owner.config.get("preferences", {}).get("play_steps", 30)), 1, 100) if job["kind"] == "Playtest" else 12
 		var core = Harness.new(owner)
 		core.event.connect(func(value: Dictionary) -> void:
 			if value.get("kind") != "request_started": return
@@ -79,12 +72,12 @@ func _run(job: Dictionary) -> void:
 		var complete = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
 			return await service.complete(job["profile"], context, catalog, str(job["model"]), "", stopping, delta)
 		var dispatch = func(name: String, args: Dictionary) -> Dictionary: return await execute(job, name, args)
-		var result = await core.run({"id": job["id"], "messages": messages, "tools": definitions, "cancel": job["cancel"], "max_steps": maximum, "deferred_tools": true}, {"complete": complete, "execute": dispatch, "redact": owner._redact})
+		var result = await core.run({"id": job["id"], "messages": messages, "tools": definitions, "cancel": job["cancel"], "deferred_tools": true}, {"complete": complete, "execute": dispatch, "redact": owner._redact})
 		_finish(job, "completed" if result.get("ok", false) else ("blocked" if result.get("status") == "limited" else str(result.get("status", "failed"))), str(result.get("text", "")) if result.get("ok", false) else str(result.get("message", result.get("error", "Cererea a eșuat."))))
 	if job["kind"] == "Playtest":
 		await runtime("release", {}, {})
 		if started_game and job["cancel"].get("cancelled", false): EditorInterface.stop_playing_scene()
-	if job["status"] == "running": _finish(job, "cancelled" if job["cancel"].get("cancelled", false) else "blocked", "Oprit sau limita de pași a fost atinsă. Rezultatul necesită verificare.")
+	if job["status"] == "running": _finish(job, "cancelled" if job["cancel"].get("cancelled", false) else "blocked", "Execuția s-a întrerupt. Rezultatul necesită verificare.")
 
 func _finish(job: Dictionary, status: String, text: String) -> void:
 	job["status"] = status
@@ -107,9 +100,6 @@ func _companion(job: Dictionary, definitions: Array, instruction: String) -> voi
 	var id = str(created["json"]["result"]["id"])
 	var cursor = 0
 	while not job["cancel"].get("cancelled", false):
-		if job["steps"] >= clampi(int(owner.config.get("preferences", {}).get("play_steps", 30)), 1, 100):
-			job["cancel"]["cancelled"] = true
-			break
 		var result = await service.companion_request(owner.config["companion"], "/v1/turns/" + id + "?after=" + str(cursor))
 		if not result.get("ok", false):
 			_finish(job, "failed", str(result.get("error")))

@@ -7,7 +7,7 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 The original harness shipped in APK `12794c4`. The latest delivered APK is
-`36457dd`. The behavioral fixes described below are a subsequent source iteration,
+`c418f97`. The unlimited-step changes below are a subsequent source iteration,
 not yet delivered in an APK. Delivery evidence is tracked in
 [the project progress record](../PROGRES_SI_PLAN.md).
 
@@ -72,7 +72,7 @@ finalized assistant and tool messages. Hooks are:
 | `context()` | Optionally rebuild project context before each model step |
 | `redact(text)` | Remove known credentials from stored/output data |
 | `checkpoint(snapshot)` | Persist the transcript and run state; `false` stops further execution |
-| `needs_continuation()` | Continue after a tool-free answer while the host has unfinished execution steps, within the same request/step/cancellation limits |
+| `needs_continuation()` | Continue after a tool-free answer while the host has unfinished execution steps, retaining cancellation and no-progress checks |
 | `blocked_reason()` | Return the host's unresolved blocker so a tool-free answer settles as blocked rather than completed |
 
 The `event` signal reports state changes, request attempts, streamed text,
@@ -119,15 +119,46 @@ at the host dispatcher. Plan mode also filters the tool catalog and enforces
 read-only permissions independently. A model cannot grant itself write permission
 through `task_update`. Auto and Default continue after an intermediate tool-free answer when
 an execution plan is unfinished; blocked plans and proposals do not force another
-request. Step limits still stop the turn and unfinished work remains paused.
-The optional companion path allows at most five such SDK turns and reports
-interruption distinctly. Live subscription continuation has not been tested.
+request. Normal editor runs have no step ceiling. The optional companion path
+also continues progressing plans without the previous five-turn ceiling and
+stops after three continuations with no successful tool or meaningful plan
+change. Live subscription continuation has not been tested; an external SDK or
+service may impose its own limits.
 
 Snapshots are stored in run checkpoints and conversation history. The chat
 restores one collapsible card per turn, rather than repeating task-update logs.
 Displayed steps are concise task progress, not internal reasoning. Completion
 states are model-reported and must be checked against real tool results; the
 harness cannot independently prove arbitrary project correctness.
+
+## Unlimited normal execution (source, 2026-10-26)
+
+Direct-provider chat and child runs continue until a final answer, an actual
+blocker, cancellation, provider failure or a no-progress outcome. There is no
+default 30-step ceiling, no hidden 100-step clamp, and no replacement large
+number. Explore/General children no longer stop after 12 requests; Playtest no
+longer has a task-wide step/time cutoff. Old `agent_step_limit`, `play_steps`
+and `play_seconds` preferences are removed on load and never passed to a run.
+Child concurrency limits and operation-specific timeouts remain independent.
+
+`max_steps` is retained solely as an explicitly supplied evaluation option:
+omitted, zero or negative means unlimited, and a positive value bounds that
+isolated evaluation without a 100-step clamp. Production callers omit it.
+`request_started.maximum = 0` therefore means unlimited. The standalone API
+evaluator enforces its separate request/time budget through cancellation.
+
+Stop, owner removal, interrupted streams, checkpoint failures, declined
+permissions and paid-operation deduplication still apply. Three identical
+failed/replayed operations, or three tool-free continuations of an unfinished
+plan, stop as `no_progress`; productive work does not consume a total step
+budget. Each iteration yields to the editor even when callbacks are synchronous.
+Provider context/output quotas and individual request timeouts remain real
+constraints; unlimited steps do not imply an unlimited context window or prove
+task completion.
+
+Automated regression evidence is recorded in `PROGRES_SI_PLAN.md`. This change
+does not by itself fix the separate Runware HTTP 500/success recovery failure
+observed in the installed APK's forest-scene workflow.
 
 ## Tools, retries, and recovery
 

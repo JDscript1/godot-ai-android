@@ -37,7 +37,40 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — test automat în aplicația Android instalată, 26.10.2026
+## Etapa curentă — execuție fără plafon total de pași, 26.10.2026
+
+**Implementat în sursă; APK-ul instalat și cel din Download rămân c418f97.**
+Eliminat plafonul implicit de 30 de cereri și clamp-ul ascuns de 100 din
+harness-ul propriu Godot. Chatul nu mai transmite o limită din preferințe.
+Subagenții Explore/General/Playtest nu mai sunt opriți după 12/30 de pași sau
+după un timp total fix. Preferințele vechi sunt eliminate la încărcare.
+Continuarea planurilor prin companionul opțional nu mai are plafon de cinci
+runde; SDK-ul/serviciul extern poate avea propriile limite.
+
+Agentul poate continua până la răspunsul final, Stop, blocaj real sau eroare.
+Rămân verificările pentru repetiții fără progres, anulare între operații,
+salvarea progresului, permisiuni, deduplicarea generărilor plătite și timeouturile
+unei operații. Bucla cedează execuția editorului și pentru callbackuri sincrone.
+O limită pozitivă explicită `max_steps` există numai pentru probe izolate;
+producția o omite, iar zero înseamnă nelimitat. Fereastra de context și limitele
+furnizorului rămân finite. Defectul Runware observat în proba anterioară este
+separat și nu a fost reparat în această etapă.
+
+Verificări runtime: **492 aserțiuni, zero eșecuri**, inclusiv finalizare după
+136 de cereri / 135 operații, checkpoint complet și Stop înaintea cererii 112.
+Probă separată cu buget explicit de 140 confirmă dispariția clamp-ului de 100.
+Testele existente pentru bucle fără progres și deduplicare rămân active.
+Editor upstream Godot 4.7.2 ARM64, configurație narrow: **482 verificări, zero
+eșecuri**. Chatul finalizează 36 de cereri chiar cu preferința veche setată la
+1; un subagent finalizează 106 cereri, ignorând și vechile limite de timp.
+Companionul simulat continuă opt runde cu progres și raportează `limited` după
+trei continuări cu plan neschimbat. Acestea sunt probe deterministe, fără API
+plătit, nu o nouă validare fizică sau de abonament real.
+Dovezi: `.ai-qa/unlimited-harness-runtime-20261026.log`,
+`.ai-qa/unlimited-harness-editor-final-20261026/` și [contractul harness-ului](docs/AI_HARNESS.md).
+Nu s-au făcut alte generări plătite sau modificări în proiectele utilizatorului.
+
+## Etapa precedentă — test automat în aplicația Android instalată, 26.10.2026
 
 **Proba fizică a APK-ului c418f97; fără recompilare.** La cererea utilizatorului,
 am înlocuit operarea manuală a interfeței cu un plugin temporar într-un proiect
@@ -56,8 +89,8 @@ Terrain3D v1.0.2 s-a instalat (163 fișiere); o probă rulată efectiv pe Androi
 confirmat clasa nativă și instanțierea. Agentul nu a interogat separat starea
 pluginului editor. Runware a raportat imaginea generată și 0,02 USD, dar răspunsul
 recepționat avea HTTP 500 cu payload de succes: adaptorul a respins și recuperarea
-aceluiași job. `asset_import` a eșuat, iar harness-ul s-a oprit corect cu
-`limited / step_limit`. **Mesh-ul și mini harta nu au fost finalizate autonom.**
+aceluiași job. `asset_import` a eșuat, iar harness-ul a atins plafonul fix existent,
+cu `limited / step_limit`. **Mesh-ul și mini harta nu au fost finalizate autonom.**
 Nu am repetat generarea și nu am construit manual scena pentru a trece proba.
 
 Originalul PNG a fost recuperat separat din URL-ul furnizorului, fără altă
@@ -1850,6 +1883,11 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** eliminate plafoanele totale de pași din chat/subagenți și
+  continuarea prin companion; 492 verificări runtime, inclusiv 136 de cereri și
+  Stop după depășirea vechilor limite; 482 verificări editor. Sursă verificată
+  separat de APK-ul vechi.
 
 - **26.10.2026:** conector de test în APK-ul instalat; Terrain3D verificat pe
   Android, recuperare Runware eșuată la HTTP 500 cu rezultat de succes; probă

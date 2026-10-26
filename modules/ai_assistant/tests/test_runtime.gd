@@ -547,7 +547,31 @@ func _harness_tests(node: Node) -> void:
 	host = HarnessHost.new()
 	host.replies = [_agent_response("", [call])]
 	outcome = await core.run({"tools": definitions, "max_steps": 1}, host.hooks())
-	check(outcome.get("status") == "limited" and outcome.get("code") == "step_limit" and not outcome.get("ok", true), "Step exhaustion is distinct from completion")
+	check(outcome.get("status") == "limited" and outcome.get("code") == "step_limit" and not outcome.get("ok", true), "An explicitly bounded evaluation stops distinctly from completion")
+
+	var advance = scripts["common"].tool("advance_fixture", "Advance a distinct fixture work item", {"index": {"type": "integer"}}, ["index"], "write")
+	for evaluation_limit in [0, 140]:
+		host = HarnessHost.new()
+		for index in range(135):
+			host.replies.append(_agent_response("", [{"id": "long-" + str(index), "name": "advance_fixture", "arguments": {"index": index}}]))
+		host.replies.append(_agent_response("All 135 work items verified"))
+		var long_options = {"tools": [advance]}
+		if evaluation_limit > 0: long_options["max_steps"] = evaluation_limit
+		outcome = await core.run(long_options, host.hooks())
+		check(outcome.get("ok", false) and outcome.get("steps") == 136 and host.executed.size() == 135, "Progressing tasks pass both old 30/100 ceilings; optional evaluation limit=" + str(evaluation_limit))
+		check(host.checkpoints[-1].get("status") == "completed" and host.checkpoints[-1].get("steps") == 136, "Long runs retain the complete settled checkpoint; evaluation limit=" + str(evaluation_limit))
+
+	host = HarnessHost.new()
+	host.token = {"cancelled": false}
+	for index in range(120):
+		host.replies.append(_agent_response("", [{"id": "stop-long-" + str(index), "name": "advance_fixture", "arguments": {"index": index}}]))
+	var long_stop_token = host.token
+	var stop_long = func(value: Dictionary) -> void:
+		if value.get("kind") == "request_started" and value.get("step") == 112: long_stop_token["cancelled"] = true
+	core.event.connect(stop_long)
+	outcome = await core.run({"tools": [advance], "cancel": long_stop_token, "max_steps": 0}, host.hooks())
+	core.event.disconnect(stop_long)
+	check(outcome.get("status") == "cancelled" and host.contexts.size() == 111 and host.executed.size() == 111, "An explicitly unlimited run still stops before another request beyond both old ceilings")
 	host = HarnessHost.new()
 	host.replies = [_agent_response("Partial answer", [], "length")]
 	outcome = await core.run({}, host.hooks())
@@ -593,7 +617,7 @@ func _harness_tests(node: Node) -> void:
 	hooks = host.hooks()
 	hooks["needs_continuation"] = func() -> bool: return true
 	outcome = await core.run({"max_steps": 2}, hooks)
-	check(outcome.get("code") == "step_limit" and host.contexts.size() == 2, "Plan continuation respects the harness step budget")
+	check(outcome.get("code") == "step_limit" and host.contexts.size() == 2, "Plan continuation respects an explicit evaluation-only step budget")
 
 func _behavior_tests(node: Node) -> void:
 	var core = scripts["harness"].new(node)

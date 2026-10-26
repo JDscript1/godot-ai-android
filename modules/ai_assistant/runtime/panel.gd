@@ -163,6 +163,7 @@ func _ready() -> void:
 	_close_unanswered_calls()
 	config["version"] = 2
 	if not config.has("preferences"): config["preferences"] = {}
+	for obsolete in ["agent_step_limit", "play_steps", "play_seconds"]: config["preferences"].erase(obsolete)
 	planner = Planner.new()
 	harness = Harness.new(self)
 	harness.event.connect(_harness_event)
@@ -2238,16 +2239,25 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	var effort = str(selection.get("effort", effort_picker.get_item_metadata(effort_picker.selected)))
 	if profile.get("kind") == "companion":
 		var companion_done = false
-		for attempt in range(5):
-			companion_done = await _companion_chat(profile, model, visible, effort, attempt > 0)
+		var continuation = false
+		var empty_rounds = 0
+		var companion_result = {}
+		while not cancel.get("cancelled", false):
+			var progress = {"made_progress": false}
+			companion_done = await _companion_chat(profile, model, visible, effort, continuation, progress)
 			if not companion_done or cancel.get("cancelled", false) or _mode() == 3 or not planner.needs_continuation(): break
-		_finish_chat("Oprit." if cancel.get("cancelled", false) else ("Sarcină încheiată." if companion_done else "Execuția companionului s-a întrerupt."))
+			empty_rounds = 0 if progress["made_progress"] else empty_rounds + 1
+			if empty_rounds >= 3:
+				companion_done = false
+				companion_result = {"status": "limited", "code": "no_progress", "message": "Agentul nu a făcut progrese în ultimele trei încercări."}
+				break
+			continuation = true
+		_finish_chat(str(companion_result.get("message", "Oprit." if cancel.get("cancelled", false) else ("Sarcină încheiată." if companion_done else "Execuția companionului s-a întrerupt."))), companion_result)
 		return
-	var maximum = clampi(int(config.get("preferences", {}).get("agent_step_limit", 30)), 1, 100)
 	var complete = func(context: Array, definitions: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
 		return await providers.complete(profile, context, definitions, model, effort, stopping, delta)
 	var metadata = current_origin.merged({"wire_source": str(profile["id"]) + ":" + model})
-	var result = await harness.run({"id": current_turn, "messages": history, "tools": visible, "cancel": cancel, "max_steps": maximum, "metadata": metadata, "deferred_tools": true, "deduplicate_tools": ["asset_generate", "asset_remove_background", "github_create_issue"]}, {"complete": complete, "context": _context_messages, "execute": _execute_call, "redact": _redact, "checkpoint": _harness_checkpoint, "needs_continuation": func() -> bool: return _mode() != 3 and planner.needs_continuation(), "blocked_reason": func() -> String: return planner.explanation if planner.phase == "blocked" and not planner.explanation.is_empty() else ("Planul necesită clarificare înainte de continuare." if planner.phase == "blocked" else "")})
+	var result = await harness.run({"id": current_turn, "messages": history, "tools": visible, "cancel": cancel, "metadata": metadata, "deferred_tools": true, "deduplicate_tools": ["asset_generate", "asset_remove_background", "github_create_issue"]}, {"complete": complete, "context": _context_messages, "execute": _execute_call, "redact": _redact, "checkpoint": _harness_checkpoint, "needs_continuation": func() -> bool: return _mode() != 3 and planner.needs_continuation(), "blocked_reason": func() -> String: return planner.explanation if planner.phase == "blocked" and not planner.explanation.is_empty() else ("Planul necesită clarificare înainte de continuare." if planner.phase == "blocked" else "")})
 	_finish_chat(str(result.get("message", result.get("error", "Cererea a eșuat."))), result)
 
 func _harness_event(value: Dictionary) -> void:
@@ -2665,7 +2675,7 @@ func _logout_account() -> void:
 		await accounts.companion_request(config["companion"], "/v1/accounts/" + id + "/logout", HTTPClient.METHOD_POST, {})
 	await _refresh_accounts()
 
-func _companion_chat(profile: Dictionary, model: String, definitions: Array, effort: String, continuation: bool = false) -> bool:
+func _companion_chat(profile: Dictionary, model: String, definitions: Array, effort: String, continuation: bool = false, progress: Dictionary = {}) -> bool:
 	var context = _context_messages()
 	var images = active_attachments.duplicate(true)
 	for message in context.slice(1, -1):
@@ -2704,7 +2714,12 @@ func _companion_chat(profile: Dictionary, model: String, definitions: Array, eff
 				live_text += piece
 				chat.stream_text(transcript, piece)
 			elif event.get("kind") == "tool":
+				var before = planner.snapshot()
+				before.erase("revision")
 				var executed = await _execute_call(str(event["name"]), event.get("arguments", {}))
+				var after = planner.snapshot()
+				after.erase("revision")
+				if executed.get("ok", false) and (event["name"] != "task_update" or before != after): progress["made_progress"] = true
 				await accounts.companion_request(config["companion"], "/v1/turns/" + id + "/tools/" + str(event["id"]), HTTPClient.METHOD_POST, {"result": executed})
 		if state.get("status") in ["completed", "failed", "cancelled"]:
 			if state.get("status") == "completed":
