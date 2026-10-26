@@ -37,7 +37,17 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — cerințe UI adăugate în TODO, 26.10.2026
+## Etapa curentă — cerința de execuție până la rezultat, 26.10.2026
+
+Întărită în [TODO_AGENT.md](TODO_AGENT.md) cerința utilizatorului: fără plafon
+total de pași/cereri/runde, inclusiv subagenți și reluări; implementarea,
+verificarea și corectarea continuă până la rezultatul cerut. Răspunsurile
+intermediare nu încheie un plan nefinalizat. Stop, permisiunile și blocajele reale
+rămân distincte de un plafon artificial. AG-03 urmărește livrarea corecției deja
+în sursă și confirmarea rezultatului pe dispozitiv. APK-ul c418f97 păstrează încă
+limita veche. Etapă de documentare, fără schimbări runtime sau APK nou.
+
+## Etapa precedentă — cerințe UI adăugate în TODO, 26.10.2026
 
 Adăugate în [TODO_AGENT.md](TODO_AGENT.md) punctele AG-13/14/15: eticheta exactă
 Running Tools cu unealta activă actualizată dinamic, fără dropdown; imagini și
@@ -2050,6 +2060,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **26.10.2026:** precizat în TODO că agentul continuă până la livrare și
+  verificare, fără plafon total de pași. Eliminarea limitei există în sursă;
+  AG-03 rămâne deschis pentru livrare și validare în APK.
 
 - **26.10.2026:** adăugate în TODO cerințele Running Tools fără dropdown,
   generări compacte cu preview la cerere și card de plan mai îngust. Etapă de

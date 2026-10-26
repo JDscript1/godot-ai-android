@@ -4,6 +4,20 @@ Actualizat: **26.10.2026**. APK verificat: **c418f97**. Bifele se închid după
 verificarea rezultatului; implementarea în sursă și livrarea în APK sunt stări
 separate. Această etapă adaugă auditul și prioritățile, fără corecții runtime.
 
+## Cerință principală — continuă până la rezultatul cerut
+
+Agentul nu are plafon total de pași, cereri sau runde, inclusiv la subagenți și
+reluări. Continuă implementarea, verificarea și corectarea până livrează
+rezultatul cerut; un răspuns intermediar nu încheie un plan încă nefinalizat.
+Finalizarea se bazează pe criteriile cerinței și pe verificări efective.
+Stop, permisiunile și blocajele reale rămân respectate. Un blocaj se explică și
+se păstrează pentru reluare, fără a declara sarcina terminată. Timeoutul unei
+operații și detectarea unei bucle fără progres nu înlocuiesc plafonul eliminat
+cu altă limită totală de pași.
+
+**Stare:** eliminarea plafonului este deja în sursă; APK-ul verificat c418f97
+încă are limita veche. Livrarea și confirmarea pe dispozitiv rămân la AG-03.
+
 ## Test 01 — cub verde, proiect Vampyr
 
 **Scena a reușit; workflow-ul a rămas neterminat.** Există
@@ -60,11 +74,14 @@ rulat scena test_02, a citit `TEST_02_TOTAL=20`, a oprit rularea și a confirmat
   neaplicată. Toleranță potrivită tipului pentru numere/vectori/transformări;
   referințele și valorile discrete trebuie verificate în continuare exact.
   **Acceptare:** rotația din probă trece; o valoare realmente diferită e respinsă.
-- [ ] **AG-03 · Livrează corecțiile deja în sursă.** Eliminarea plafonului de
-  pași (`309c4f6`) și aprobările accesibile (`226c519`) sunt implementate și
-  testate separat, dar lipsesc din APK-ul c418f97. **Acceptare:** APK nou verificat,
-  aprobare/refuz accesibile pe dispozitiv și task care continuă peste pasul 30.
-  Compilarea/livrarea se face într-o etapă cerută explicit.
+- [ ] **AG-03 · Fără plafon de pași, până la livrarea rezultatului.** Livrează
+  eliminarea plafonului (`309c4f6`) și aprobările accesibile (`226c519`), deja
+  implementate și testate în sursă, dar absente din APK-ul c418f97. Continuarea
+  trebuie să urmărească rezultatul verificat, inclusiv când rămân pași după un
+  răspuns intermediar. **Acceptare:** APK nou verificat, depășirea limitelor vechi
+  fără alt plafon ascuns, finalizarea cerinței și verificărilor, Stop și
+  aprobare/refuz funcționale pe dispozitiv. Compilarea/livrarea se face într-o
+  etapă cerută explicit.
 
 ## P1 — verificare, continuitate și eficiență
 
