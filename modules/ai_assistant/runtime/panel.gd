@@ -2710,7 +2710,7 @@ func _finish_chat(message: String, outcome: Dictionary = {}) -> void:
 		var partial: Dictionary = transcript.get_meta("message")
 		if partial.get("streaming", false) and not str(partial["text"]).is_empty():
 			var saved = current_origin.duplicate(true)
-			saved.merge({"id": Common.uid(), "role": "assistant", "content": partial["text"]}, true)
+			saved.merge({"id": Common.uid(), "role": "assistant", "content": partial["text"], "application_message": "partial"}, true)
 			history.append(saved)
 			chat.finish_stream(transcript, saved)
 	var run_status = str(outcome.get("status", "cancelled" if cancel.get("cancelled", false) else ("completed" if completed else "failed")))
@@ -2724,7 +2724,7 @@ func _finish_chat(message: String, outcome: Dictionary = {}) -> void:
 		var summary = message + "\nFișiere schimbate: " + (", ".join(paths.slice(0, 4)) if not paths.is_empty() else "niciun fișier confirmat")
 		summary += "\nVerificări executate: " + (", ".join(verification_tools) if not verification_tools.is_empty() else "niciuna confirmată după ultima modificare")
 		summary += "\nPași rămași: %s. Rezultatele sunt păstrate; poți relua sarcina." % remaining if not planner.steps.is_empty() else "\nRezultatul cerut rămâne neconfirmat; poți relua sarcina."
-		var saved = current_origin.merged({"id": Common.uid(), "role": "assistant", "content": summary, "run_status": run_status})
+		var saved = current_origin.merged({"id": Common.uid(), "role": "assistant", "content": summary, "run_status": run_status, "application_message": "interruption"})
 		history.append(saved)
 		chat.append_message("assistant", summary, saved)
 	for entry in history:
@@ -4355,7 +4355,7 @@ func _publish_generated_files() -> void:
 	var missing = generated_files.filter(func(id: String) -> bool: return id not in attached)
 	if not missing.is_empty():
 		var id = Common.uid()
-		history.append({"id": id, "role": "assistant", "content": "", "files": missing, "origin_label": "Fișiere generate", "turn_id": current_turn})
+		history.append({"id": id, "role": "assistant", "content": "", "files": missing, "origin_label": "Fișiere generate", "turn_id": current_turn, "application_message": "files"})
 		_show_files(missing, "generated-" + id)
 	generated_files.clear()
 

@@ -112,7 +112,7 @@ func fork_at(message_id: String) -> String:
 		if message.get("id") == message_id: break
 	# A fork ends at a visible message, never at an unresolved tool call.
 	if not messages.is_empty():
-		for key in ["tool_calls", "provider_items", "provider_blocks", "reasoning_content"]: messages[-1].erase(key)
+		for key in ["tool_calls", "provider_items", "provider_blocks"]: messages[-1].erase(key)
 	var selection = item(str(index["active"])).get("selection", {}).duplicate(true)
 	var id = create("Ramură · " + str(item(str(index["active"])).get("title", "Chat")).left(80), messages)
 	if id.is_empty(): return ""

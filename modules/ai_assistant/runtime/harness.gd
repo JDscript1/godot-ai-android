@@ -7,6 +7,8 @@ signal event(value: Dictionary)
 static var Common: GDScript
 static var ToolRegistry: GDScript
 
+const TOOL_RESULT_LIMIT = 24000
+
 var owner: Node
 var state = "idle"
 var stats = {}
@@ -204,8 +206,37 @@ func _tool_message(call: Dictionary, result: Dictionary, metadata: Dictionary) -
 	var body = result.duplicate()
 	body.erase("images")
 	var serialized = _redact(JSON.stringify(Common.json_safe(body)))
-	if serialized.length() > 24000: serialized = JSON.stringify({"truncated": true, "preview": serialized.left(22000), "next": "Request a narrower inspection or file range."})
+	if serialized.length() > TOOL_RESULT_LIMIT: serialized = _bounded_result(serialized)
 	return {"id": Common.uid(), "role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": serialized, "attachments": _safe(result.get("images", [])), "turn_id": metadata.get("turn_id", stats["id"])}
+
+static func _bounded_result(serialized: String) -> String:
+	# Keep the executor contract when only the model's text view needs shortening.
+	# The panel's detailed journal retains the complete, separately sanitized result.
+	var body: Dictionary = Common.parse_json(serialized)
+	var summary = {"truncated": true, "original_characters": serialized.length(), "next": "Only a summary is shown. Request a narrower inspection, a reflection page or a file range; omitted fields do not prove absence."}
+	for key in ["ok", "code", "error", "files"]:
+		if not body.has(key): continue
+		var value: Variant = body[key]
+		if value is String: value = value.left(1200)
+		elif value is Array: value = value.filter(func(item: Variant) -> bool: return item is String and item.length() <= 256).slice(0, 6)
+		var candidate = summary.merged({key: value})
+		if JSON.stringify(candidate).length() <= 8000: summary = candidate
+	if body.get("result") is Dictionary:
+		var details = {}
+		for key in ["id", "job", "task_id", "external_id", "status", "exit_code", "file", "imported_path", "path", "name", "class", "handle", "reference", "quality", "progress", "cost_usd", "format", "directory", "scene", "saved", "offset", "next_offset", "total"]:
+			if not body["result"].has(key): continue
+			var value: Variant = body["result"][key]
+			if JSON.stringify(value).length() > 2048: continue
+			var candidate = details.merged({key: value})
+			if JSON.stringify(summary.merged({"result": candidate})).length() <= 8000: details = candidate
+		if not details.is_empty(): summary["result"] = details
+	var preview_length = mini(serialized.length(), 12000)
+	while true:
+		summary["preview"] = serialized.left(preview_length)
+		var encoded = JSON.stringify(summary)
+		if encoded.length() <= TOOL_RESULT_LIMIT: return encoded
+		preview_length /= 2
+	return ""
 
 func _restore_ledger(messages: Array) -> Dictionary:
 	var pending = {}

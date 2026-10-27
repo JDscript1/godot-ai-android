@@ -1,9 +1,25 @@
 # TODO — agent și harness
 
-Actualizat: **27.10.2026**. APK livrat în Download: **7576033**.
+Actualizat: **27.10.2026**. APK livrat și instalat verificat: **74887a1**.
 Implementările AG-01–AG-20 sunt incluse. Bifele de acceptare nu se închid numai
 din compilare: gesturile fizice, aprobările și probele reale de workflow se
-confirmă după instalare. APK-ul instalat la ultima inspecție ADB era c418f97.
+confirmă separat. În noua rundă au trecut două scene și un mini-joc cu input
+real prin unelte, inclusiv **46 cereri**. Stop este confirmat, dar Continue a
+expus o eroare DeepSeek. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
+
+## Stabilizare după probele reale — surse, încă nelivrate
+
+| ID | Constatare și schimbare | Acceptare |
+| --- | --- | --- |
+| AG-21 | Rezultatele mari pierdeau `ok` și ID-urile la trunchiere; rezumatul păstrează contractul și identitatea artefactelor, cu limita măsurată după serializarea JSON. | Regresie reprodusă, fixture verde; de confirmat în APK nou. |
+| AG-22 | Inspectarea claselor încărca prea mult context și filtrul `shader\|color` nu avea alternative; paginare stabilă și filtru OR literal. | Acoperirea tuturor paginilor verificată; Node 48.786→7.342 caractere în pagina implicită. Cost live înainte/după încă nemăsurat. |
+| AG-23 | Continue după Stop produce HTTP 400 DeepSeek; notificarea locală era trimisă ca răspuns al modelului. Proveniență explicită, context de aplicație separat, metadata confirmată păstrată inclusiv la ramificare. | Eșec live reprodus; fixture HTTP roșu→verde. Reluarea la furnizor real după fix rămâne deschisă. |
+| AG-24 | Driverul seta YOLO și nu actualiza starea finală pentru Continue din UI. Păstrează permisiunea, actualizează snapshot-ul și colectează JSONL complet. | Primele două probe cu driverul care respectă YOLO; parser verde. Noua actualizare la Continue mai necesită proba pe telefon. |
+
+Sursele trec **518 aserțiuni runtime** și **514 verificări editor**, fără
+eșecuri; cardurile media și starea întreruptă inspectate în randări. Nu există
+un APK nou pentru AG-21–AG-24. Pragurile ST-01–ST-12 din raport păstrează
+distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
 
 ## Aplicare în APK 7576033 — 27.10.2026
 
@@ -57,8 +73,9 @@ se păstrează pentru reluare, fără a declara sarcina terminată. Timeoutul un
 operații și detectarea unei bucle fără progres nu înlocuiesc plafonul eliminat
 cu altă limită totală de pași.
 
-**Stare:** eliminarea plafonului este livrată în APK-ul **7576033**. Confirmarea
-pe dispozitiv după instalare rămâne la AG-03; APK-ul vechi c418f97 păstrează limita.
+**Stare:** eliminarea plafonului este inclusă și în APK-ul **74887a1**.
+Confirmare live: mini-joc terminat după **46 cereri** în noua rundă. Reluarea
+după Stop are un blocaj separat, AG-23; nu este o nouă limită de pași.
 
 ## Suita extinsă — 50 de use case-uri
 

@@ -46,7 +46,7 @@ func definitions() -> Array:
 		Common.tool("godot_connect_signal", "Connect a signal between scene nodes, persistently and with Undo.", {"source": string, "signal": string, "target": string, "method": string}, ["source", "signal", "target", "method"], "write"),
 		Common.tool("godot_save_scene", "Save the current scene to the exact project path, creating missing parent directories. Reuse the returned path for opening and running; an unsuccessful save returns an error.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_open_scene", "Open an existing project scene using its exact path from godot_files or a successful save. Does not create or relocate files.", {"path": string}, ["path"], "write"),
-		Common.tool("godot_describe", "Discover methods, properties and signals of a class or object handle. Script-defined methods are included for objects.", {"class": string, "handle": string, "filter": string}, []),
+		Common.tool("godot_describe", "Discover a bounded page of methods, properties and signals of a class or object handle, including script methods. filter matches name substrings, with | for alternatives (shader|color). offset and limit apply to each list; follow next_offset until -1 when more results are needed. Without class/handle, pages class names.", {"class": string, "handle": string, "filter": string, "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, []),
 		Common.tool("godot_get", "Read an object's property by handle.", {"handle": string, "property": string}, ["handle", "property"]),
 		Common.tool("godot_set", "Set an object property with Undo and verify its resulting value. Object/resource values use {\"$handle\":\"obj_...\"}, available as reference in object results. Typed values use {$type:Vector3,value:[x,y,z]} and analogous Vector2, Color, Quaternion forms. Do not pass the handle string or a plain descriptor as the value.", {"handle": string, "property": string, "value": {}}, ["handle", "property", "value"], "write"),
 		Common.tool("godot_call", "Call a discovered Godot method. All generic calls require modification permission. Pass object/resource arguments as {\"$handle\":\"obj_...\"} using the reference from object results; never raw instance IDs. Reflected argument types are checked before calling. Inspect the result and editor output for effects or errors inside the method.", {"handle": string, "method": string, "arguments": array}, ["handle", "method", "arguments"], "write"),
@@ -364,11 +364,14 @@ func _describe(args: Dictionary) -> Dictionary:
 	var object = _resolve(str(args.get("handle", "")))
 	var type = str(args.get("class", ""))
 	var filter = str(args.get("filter", "")).to_lower()
+	var offset = maxi(0, int(args.get("offset", 0)))
+	var limit = clampi(int(args.get("limit", 16)), 1, 50)
 	if object == null and type.is_empty():
 		var classes = []
 		for class_name_value in ClassDB.get_class_list():
-			if filter.is_empty() or filter in str(class_name_value).to_lower(): classes.append(str(class_name_value))
-		return Common.success({"classes": classes.slice(0, 1000), "total": classes.size()})
+			if _description_matches(str(class_name_value), filter): classes.append(str(class_name_value))
+		classes.sort()
+		return Common.success({"classes": classes.slice(offset, offset + limit), "total": classes.size(), "offset": offset, "next_offset": offset + limit if offset + limit < classes.size() else -1})
 	var methods: Array = []
 	var properties: Array = []
 	var signals: Array = []
@@ -383,11 +386,25 @@ func _describe(args: Dictionary) -> Dictionary:
 	else:
 		return Common.failure("Clasă sau handle inexistent.")
 	var output = {"methods": [], "properties": [], "signals": []}
+	var totals = {}
+	var largest = 0
 	for category in ["methods", "properties", "signals"]:
 		var source: Array = methods if category == "methods" else (properties if category == "properties" else signals)
+		var matches = []
 		for item in source:
-			if filter.is_empty() or filter in str(item.get("name", "")).to_lower(): output[category].append(Common.json_safe(item))
+			if _description_matches(str(item.get("name", "")), filter): matches.append(item)
+		matches.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.get("name", "")) < str(b.get("name", "")))
+		totals[category] = matches.size()
+		largest = maxi(largest, matches.size())
+		for item in matches.slice(offset, offset + limit): output[category].append(Common.json_safe(item))
+	output.merge({"total": totals, "offset": offset, "next_offset": offset + limit if offset + limit < largest else -1})
 	return Common.success(output)
+
+static func _description_matches(name: String, filter: String) -> bool:
+	if filter.strip_edges().is_empty(): return true
+	for term in filter.split("|", false):
+		if not term.strip_edges().is_empty() and term.strip_edges() in name.to_lower(): return true
+	return false
 
 func _object_operation(name: String, args: Dictionary) -> Dictionary:
 	var object = _resolve(str(args["handle"]))

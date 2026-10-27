@@ -32,13 +32,56 @@ drept funcție validată cu un serviciu real.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
   `7576033` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
-- Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
-  generarea cu chei plătite rămân de validat separat.
+- Compilarea și testele automate au trecut. În runda de stabilitate, două scene
+  și mecanicile unui mini-joc au trecut în APK cu DeepSeek real. Atingerea fizică,
+  generarea completă și noul fix de reluare necesită acceptare separată.
 
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — recompilare după curățenie și APK livrat, 27.10.2026
+## Etapa curentă — stabilitate și probe reale, 27.10.2026
+
+APK-ul instalat a fost verificat prin ADB: **74887a1**, același SHA-256 ca
+instalatorul din Download. Probele au folosit panoul și harness-ul nativ cu
+DeepSeek `deepseek-flash`, într-un proiect nou separat; cheia a rămas în aplicație.
+YOLO era deja activ și nu a fost activat de driver.
+
+- Două scene în același director, salvate/redeschise corect: **21 cereri, 63,4 s**.
+- Mini-joc cu 3 monede, victorie și restart prin input injectat în jocul Android:
+  **46 cereri, 397,8 s**, plan încheiat, Output verificat. Peste plafonul vechi,
+  fără scene sau foldere duplicate. Fișierele originale urmărite sunt identice.
+- Capturile reale arată mecanicile, dar și margini gri; adaptarea la viewport
+  este o sarcină separată. Stop după prima scriere reală a păstrat modificarea.
+  Continue a reluat același turn, apoi DeepSeek a respins protocolul cu HTTP 400.
+
+Corecții acum în surse: notificările locale separate de răspunsurile modelului
+la reluare, păstrarea metadata confirmate la ramificare, rezultate mari cu `ok`
+și ID-uri păstrate, limită JSON reală și inspectare Godot paginată. Node:
+**48.786→7.342 caractere** pentru prima pagină; nu este o măsurare a facturii API.
+Driverul respectă permisiunile existente, colectează jurnalul JSONL complet și
+actualizează starea după Continue din UI.
+
+Validări: **518 aserțiuni runtime / 0 eșecuri**, **514 verificări editor / 0
+eșecuri** în configurația narrow. Regresia la reluare a fost întâi reprodusă
+(516 / 6 eșecuri), apoi cererea HTTP corectă a fost acceptată de fixture.
+Parser Godot pentru driver și proba temporară de adaptor, plus compilare Python,
+trecute. Randările cardurilor și ale sarcinii întrerupte au fost inspectate.
+
+Fixurile noi nu sunt încă într-un APK. Acceptarea live după corecția DeepSeek
+rămâne deschisă: telefonul s-a blocat automat înaintea încărcării adaptorului
+temporar de dezvoltare. Nu s-au executat generări Runware sau instalări în
+această rundă. Nu este încă dovadă de pregătire pentru producție AAA.
+
+[Raportul complet și pragurile ST-01–ST-12](docs/AI_AGENT_STABILITY_20261027.md),
+cu priorități pentru continuitate, salvări, tranziții, regenerări evitate,
+regresii, performanță și export. AG-21–AG-24 sunt în [TODO_AGENT.md](TODO_AGENT.md).
+Dovezi: `.ai-qa/harness-stability-20261027/`, inclusiv loguri integrale,
+checkpointuri, hash-uri înainte/după și capturi reale.
+
+Jurnal: 27.10.2026 — confirmat mini-joc peste 30 de cereri; defectul Continue
+reprodus, corecții de protocol/context în surse, acceptarea live rămâne deschisă.
+
+## Etapa precedentă — recompilare după curățenie și APK livrat, 27.10.2026
 
 Recompilare autorizată pentru sursa
 `74887a1fc49bc2a969ef33c9a9ac1d6f293f6d8e`. Au trecut toate cele trei joburi

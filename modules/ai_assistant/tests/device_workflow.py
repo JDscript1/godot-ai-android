@@ -17,6 +17,8 @@ def main():
     parser.add_argument('--server-port', type=int, default=5037)
     parser.add_argument('--prompt-file', type=Path)
     parser.add_argument('--effort', default='medium')
+    parser.add_argument('--work-mode', choices=['auto', 'default', 'plan'], default='auto')
+    parser.add_argument('--continue-conversation', action='store_true')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     root = args.root.resolve()
@@ -52,14 +54,15 @@ def main():
             if not args.prompt_file: parser.error('Pass --prompt-file; prompts are not shell commands')
             status = json.loads((control / 'status.json').read_text())
             if status.get('busy'): parser.error('The native agent is already busy')
-            command.update(prompt=args.prompt_file.read_text(), effort=args.effort, work_mode='auto')
+            command.update(prompt=args.prompt_file.read_text(), effort=args.effort,
+                           work_mode=args.work_mode, fresh=not args.continue_conversation)
         temporary = control / 'command.json.tmp'
         temporary.write_text(json.dumps(command, ensure_ascii=True))
         temporary.replace(control / 'command.json')
         print(json.dumps({'queued': command['id']}))
     elif args.operation == 'status':
         status = json.loads((control / 'status.json').read_text())
-        print(json.dumps({k: status.get(k) for k in ['request', 'busy', 'requests', 'duration_ms', 'status', 'outcome', 'generation_jobs']}, ensure_ascii=False))
+        print(json.dumps({k: status.get(k) for k in ['request', 'busy', 'requests', 'duration_ms', 'status', 'outcome', 'permission_yolo', 'approval_pending', 'generation_jobs']}, ensure_ascii=False))
     elif args.operation == 'collect':
         if not args.serial or not args.output: parser.error('Pass --serial and a fresh --output directory')
         if args.output.exists(): parser.error('Previous evidence is preserved; choose a new output directory')
@@ -73,7 +76,29 @@ def main():
         result = subprocess.run(adb + ['exec-out', shlex.join(['run-as', package, 'cat', journal])], capture_output=True, check=True)
         json.loads(result.stdout)
         (args.output / 'journal.json').write_bytes(result.stdout)
-        print(json.dumps({'evidence': str(args.output), 'journal_collected': True}))
+        base = journal.rsplit('/', 1)[0]
+        logs = subprocess.run(adb + ['exec-out', shlex.join(['run-as', package, 'ls', '-1', base + '/logs'])], capture_output=True, timeout=20)
+        log_names = []
+        if logs.returncode == 0:
+            for name in logs.stdout.decode().splitlines():
+                if not re.fullmatch(r'activity-[a-f0-9-]{36}-[0-9]{4,}\.jsonl', name):
+                    continue
+                content = subprocess.run(adb + ['exec-out', shlex.join(['run-as', package, 'cat', base + '/logs/' + name])], capture_output=True, check=True, timeout=30).stdout
+                for line in content.splitlines():
+                    if line.strip(): json.loads(line)
+                (args.output / name).write_bytes(content)
+                log_names.append(name)
+        for field, directory in [('turn_id', 'runs'), ('conversation_id', 'conversations')]:
+            identifier = status.get(field, '')
+            if not re.fullmatch(r'[a-f0-9-]{36}', identifier):
+                continue
+            content = subprocess.run(adb + ['exec-out', shlex.join(['run-as', package, 'cat', base + '/' + directory + '/' + identifier + '.json'])], capture_output=True, timeout=20)
+            if content.returncode == 0:
+                json.loads(content.stdout)
+                (args.output / (directory + '.json')).write_bytes(content.stdout)
+        for item in args.output.iterdir():
+            if item.is_file(): item.chmod(0o600)
+        print(json.dumps({'evidence': str(args.output), 'journal_collected': True, 'complete_activity_logs': log_names}))
 
 
 if __name__ == '__main__':

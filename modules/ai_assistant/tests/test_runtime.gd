@@ -407,6 +407,29 @@ func _planning_tests(node: Node) -> void:
 func _tool_registry_tests() -> void:
 	var registry_script = scripts["tool_registry"]
 	var tools = scripts["editor_tools"].new()
+	var first_page: Dictionary = tools._describe({"class": "Node", "limit": 3, "offset": 0}).get("result", {})
+	var second_page: Dictionary = tools._describe({"class": "Node", "limit": 3, "offset": 3}).get("result", {})
+	check(first_page.get("methods", []).size() == 3 and first_page.get("next_offset", -1) == 3 and first_page.get("total", {}).get("methods", 0) > 3, "Reflection exposes a bounded page with its actual total and continuation")
+	check(second_page.get("methods", []).size() == 3 and first_page["methods"][0]["name"] != second_page["methods"][0]["name"], "Reflection pagination advances rather than repeating the same methods")
+	var alternatives: Dictionary = tools._describe({"class": "Node", "filter": "set_process|is_processing", "limit": 50}).get("result", {})
+	check(alternatives.get("methods", []).any(func(item: Dictionary) -> bool: return item["name"] == "set_process") and alternatives.get("methods", []).any(func(item: Dictionary) -> bool: return item["name"] == "is_processing"), "Reflection accepts documented alternative name filters")
+	var classes: Dictionary = tools._describe({"filter": "Mesh", "limit": 4}).get("result", {})
+	check(classes.get("classes", []).size() == 4 and classes.get("next_offset", -1) == 4, "Class discovery is paged instead of filling context with the full catalog")
+	var reflection = tools._describe({"class": "Node"})
+	var unpaged = scripts["common"].success({"methods": ClassDB.class_get_method_list("Node"), "properties": ClassDB.class_get_property_list("Node"), "signals": ClassDB.class_get_signal_list("Node")})
+	var paged_size = JSON.stringify(scripts["common"].json_safe(reflection)).length()
+	var unpaged_size = JSON.stringify(scripts["common"].json_safe(unpaged)).length()
+	check(paged_size < 24000 and paged_size < unpaged_size, "Default reflection pages expose real signatures within the model result budget")
+	var method_names = []
+	var next_offset = 0
+	while next_offset >= 0:
+		var page: Dictionary = tools._describe({"class": "Node", "offset": next_offset, "limit": 50}).get("result", {})
+		for method in page.get("methods", []): method_names.append(method["name"])
+		next_offset = int(page.get("next_offset", -1))
+	check(method_names.size() == reflection["result"]["total"]["methods"] and method_names.count("get_node") == 1, "Following reflection pages covers the full catalog without repeating an inherited method")
+	var exhausted: Dictionary = tools._describe({"class": "Node", "offset": 100000}).get("result", {})
+	check(exhausted.get("methods", []).is_empty() and exhausted.get("next_offset", 0) == -1 and exhausted.get("total") == reflection["result"]["total"], "An exhausted reflection page reports its real total without restarting pagination")
+	print("AI_REFLECTION_METRICS ", JSON.stringify({"class": "Node", "unpaged_characters": unpaged_size, "default_page_characters": paged_size, "total": reflection["result"]["total"]}))
 	var registry = registry_script.new(tools.definitions(), true)
 	var names = registry.active_definitions().map(func(item: Dictionary) -> String: return item["name"])
 	check("tool_search" in names and "godot_read_range" in names and not "godot_apply_patch" in names, "Deferred registry starts with discovery and a small inspection set")
@@ -589,6 +612,26 @@ func _harness_tests(node: Node) -> void:
 	outcome = await core.run({"tools": definitions, "messages": messages}, host.hooks())
 	var bounded: Variant = JSON.parse_string(str(messages[1]["content"]))
 	check(outcome.get("ok", false) and bounded is Dictionary and bounded.get("truncated", false) and str(messages[1]["content"]).length() <= 24000, "Large tool results remain bounded valid JSON")
+	check(bounded.get("ok", false), "Truncating a successful tool result preserves its success contract")
+	check(events.filter(func(item: Dictionary) -> bool: return item.get("kind") == "tool_result")[-1]["result"].get("ok", false), "Large successful results remain successful in activity events")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": true, "files": ["large-artifact"], "result": {"id": "existing-large-job", "status": "completed", "file": "/generated/tree.glb", "imported_path": "res://game/tree.glb", "text": "\"\\\n".repeat(20000)}}
+	host.replies = [_agent_response("", [call]), _agent_response("", [call]), _agent_response("Existing job recovered")]
+	messages = []
+	outcome = await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	bounded = JSON.parse_string(str(messages[1]["content"]))
+	check(str(messages[1]["content"]).length() <= 24000 and bounded is Dictionary, "Escaped quotes, slashes and newlines cannot exceed the serialized result limit")
+	check(bounded.get("ok", false) and bounded.get("files", []) == ["large-artifact"] and bounded.get("result", {}).get("id") == "existing-large-job" and bounded.get("result", {}).get("status") == "completed", "A bounded artifact result retains file references and its existing job identity")
+	check(bounded.get("result", {}).get("file") == "/generated/tree.glb" and bounded.get("result", {}).get("imported_path") == "res://game/tree.glb", "Bounded artifact results preserve the actual generated and imported paths")
+	var replayed_large: Variant = JSON.parse_string(str(messages[3]["content"]))
+	check(outcome.get("ok", false) and host.executed.size() == 1 and replayed_large.get("result", {}).get("id") == "existing-large-job", "Large result replay reuses the confirmed artifact without another execution")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": false, "code": "invalid_method", "error": "Method unavailable fixture-secret", "result": "\"".repeat(30000)}
+	host.replies = [_agent_response("", [call]), _agent_response("Reported real failure")]
+	messages = []
+	await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	bounded = JSON.parse_string(str(messages[1]["content"]))
+	check(bounded.has("ok") and bounded["ok"] == false and bounded.get("code") == "invalid_method" and bounded.get("error") == "Method unavailable [redacted]", "Truncated failures keep their real code and redacted reason")
 	host = HarnessHost.new()
 	var encoded = Marshalls.raw_to_base64(Image.create_empty(2, 2, false, Image.FORMAT_RGBA8).save_png_to_buffer())
 	host.tool_result = {"ok": true, "result": {"text": "Frame"}, "images": [{"name": "frame.png", "mimeType": "image/png", "data": encoded}]}
@@ -747,6 +790,15 @@ func _network_tests(node: Node) -> void:
 	var wrong_host = await adapter.list_models({"id": "oauth-record", "kind": "siwc", "url": mock_url + "/v1", "allow_http": true})
 	check(wrong_host.get("code") == "credential_type_mismatch", "ChatGPT credentials are bound to the official OpenAI endpoint")
 	var profile = {"id": "fixture", "kind": "chat", "url": mock_url + "/v1", "allow_http": true}
+	var resume_profile = profile.merged({"url": mock_url + "/thinking/v1"}, true)
+	var interrupted = [{"role": "user", "content": "Finish"}, {"role": "assistant", "content": "", "wire_source": "fixture:m", "reasoning_content": "fixture reasoning", "tool_calls": [{"id": "thinking-call", "name": "godot_project", "arguments": {}}]}, {"role": "tool", "tool_call_id": "thinking-call", "content": "{\"ok\":true}"}, {"role": "assistant", "content": "Stopped; changes preserved", "run_status": "cancelled"}]
+	var resume_tools = [scripts["common"].tool("godot_project", "Inspect", {}, [])]
+	var invalid_body: Dictionary = scripts["providers"].build_request("chat", interrupted.slice(0, 3), resume_tools, "m", "high")["body"]
+	invalid_body["messages"].append({"role": "assistant", "content": "Stopped; changes preserved"})
+	var rejected = await adapter.transport.request(resume_profile["url"] + "/chat/completions", HTTPClient.METHOD_POST, [], invalid_body, {"allow_http": true})
+	check(rejected.get("status") == 400, "Strict thinking protocol reproduces the native Stop/Resume rejection for synthetic assistant notices")
+	var resumed = await adapter.complete(resume_profile, interrupted, resume_tools, "m", "high", {})
+	check(resumed.get("ok", false) and resumed.get("message", {}).get("content") == "Resume verified" and resumed.get("message", {}).get("reasoning_content") == "fixture continuation", "Real HTTP Stop/Resume preserves provider reasoning and sends application notices separately")
 	var core = scripts["harness"].new(node)
 	var direct_messages = [{"role": "user", "content": "Inspect through the native harness"}]
 	var direct_complete = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
@@ -863,6 +915,20 @@ func _new_feature_tests() -> void:
 	var normalized = provider.normalize_context({"id": "b"}, "m", internals)
 	check(not normalized[0].has("reasoning_content") and not normalized[0].has("provider_blocks") and not normalized[0].has("provider_items"), "Provider switching strips foreign reasoning and signed blocks")
 	check(provider.normalize_context({"id": "a"}, "m", internals)[0].has("reasoning_content"), "Same-model tool loops retain required reasoning")
+	var resumed_history = [{"role": "user", "content": "Finish the scene"}, {"role": "assistant", "content": "", "wire_source": "a:m", "reasoning_content": "fixture reasoning", "tool_calls": [{"id": "resume-call", "name": "godot_project", "arguments": {}}]}, {"role": "tool", "tool_call_id": "resume-call", "content": "{\"ok\":true}"}, {"role": "assistant", "content": "Stopped; changes preserved", "run_status": "cancelled", "turn_id": "resume-turn"}, {"role": "assistant", "content": "Interrupted draft", "application_message": "partial"}, {"role": "assistant", "content": "Referenced files: tree.glb", "origin_label": "Fișiere generate", "files": ["file-one"]}]
+	var resume_wire = provider.build_request("chat", provider.normalize_context({"id": "a"}, "m", resumed_history), [], "m")["body"]["messages"]
+	check(resume_wire.filter(func(m: Dictionary) -> bool: return m.get("role") == "assistant").size() == 1 and resume_wire[1].get("reasoning_content") == "fixture reasoning", "Resume excludes synthetic assistant notices while preserving exact model reasoning and tool calls")
+	check(resume_wire.any(func(m: Dictionary) -> bool: return m.get("role") == "system" and str(m.get("content", "")).contains("Stopped; changes preserved")) and resume_wire.any(func(m: Dictionary) -> bool: return m.get("role") == "system" and str(m.get("content", "")).contains("tree.glb")), "Interruption and file-card context remain available as application state")
+	check(resume_wire[2].get("tool_call_id") == "resume-call" and not resumed_history[3].has("reasoning_content") and resumed_history[3]["role"] == "assistant", "Protocol repair neither invents reasoning nor changes saved UI history or tool result identity")
+	for kind in ["responses", "anthropic", "gemini"]:
+		var body: Dictionary = provider.build_request(kind, resumed_history, [], "m")["body"]
+		var system_text = str(body.get("instructions", body.get("system", body.get("systemInstruction", {}))))
+		check(system_text.contains("Stopped; changes preserved") and system_text.contains("tree.glb"), "Synthetic local state uses system context across protocols: " + kind)
+	var reasoning_store = scripts["conversations"].new()
+	reasoning_store.configure(directory + "-reasoning")
+	reasoning_store.save([{"id": "confirmed-answer", "role": "assistant", "content": "Verified answer", "wire_source": "a:m", "reasoning_content": "fixture reasoning"}])
+	var reasoning_fork = reasoning_store.fork_at("confirmed-answer")
+	check(not reasoning_fork.is_empty() and reasoning_store.load_active()[0].get("reasoning_content") == "fixture reasoning", "Forking a confirmed answer preserves reasoning needed by the originating provider")
 	var multimodal = [{"role": "user", "content": "Describe", "attachments": [{"mimeType": "image/png", "data": data}]}]
 	check(provider.build_request("chat", multimodal, [], "v")["body"]["messages"][0]["content"][1]["type"] == "image_url", "Chat image request uses image_url")
 	check(provider.build_request("responses", multimodal, [], "v")["body"]["input"][0]["content"][1]["type"] == "input_image", "Responses image request uses input_image")

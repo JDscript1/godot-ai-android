@@ -316,7 +316,7 @@ func _credential_error(profile: Dictionary) -> String:
 	return ""
 
 static func build_request(kind: String, messages: Array, tools: Array, model: String, effort: String = "") -> Dictionary:
-	messages = expand_tool_images(messages)
+	messages = expand_tool_images(application_context(messages))
 	var system = []
 	for message in messages:
 		if message.get("role") == "system": system.append(str(message.get("content", "")))
@@ -479,6 +479,25 @@ static func normalize_context(profile: Dictionary, model: String, messages: Arra
 	for message in result:
 		if message.get("wire_source", "") != source:
 			for key in ["provider_items", "provider_blocks", "reasoning_content"]: message.erase(key)
+	return result
+
+static func application_context(messages: Array) -> Array:
+	var result = []
+	for message in messages:
+		# UI notices are not provider responses. In particular, do not fabricate
+		# reasoning_content to make a locally generated assistant turn replayable.
+		var local = message.get("role") == "assistant" and message.has("application_message")
+		# Compatibility with interruptions and file cards saved before provenance
+		# was recorded. Actual provider messages always carry wire_source.
+		if message.get("role") == "assistant" and not message.has("wire_source") and message.get("tool_calls", []).is_empty() and not message.has("reasoning_content") and not message.has("provider_items") and not message.has("provider_blocks"):
+			local = local or message.has("run_status") or message.get("origin_label") == "Fișiere generate"
+		if local:
+			var text = str(message.get("content", ""))
+			if message.get("application_message") == "partial": text = "Unconfirmed interrupted response; not proof of completed work: " + text
+			if not message.get("files", []).is_empty(): text += "\nFile IDs: " + JSON.stringify(message["files"])
+			if not text.is_empty(): result.append({"role": "system", "content": "Application state (not a model response): " + text})
+		else:
+			result.append(message)
 	return result
 
 static func expand_tool_images(messages: Array) -> Array:

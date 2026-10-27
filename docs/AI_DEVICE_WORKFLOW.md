@@ -8,14 +8,20 @@ Nu este necesara recompilarea APK-ului pentru fiecare proba.
 
 Conexiunea ADB este asociata explicit prin Android. Pluginul identifica
 `AIAssistantPanel`, foloseste selectia furnizorului si apeleaza intrarea normala
-`_start_chat`. Modurile Auto si YOLO sunt folosite numai in sesiunea de proba,
-fara salvarea permisiunii globale; selectia si permisiunea sunt restaurate la
-incheiere. Limita implicita de 30 de pasi a aplicatiei ramane neschimbata.
+`_start_chat`. Modul se alege explicit prin `--work-mode auto/default/plan`,
+implicit Auto, iar selectia initiala se restaureaza la incheiere. Driverul
+respecta permisiunea YOLO existenta; nu o activeaza. Pentru o continuare in
+aceeasi conversatie se foloseste `--continue-conversation`. APK-ul 74887a1
+nu mai are plafonul de 30 de pasi; driverul nu adauga unul.
 
 Controlul foloseste fisiere locale in `control/`, fara server HTTP expus.
 Comenzile au ID-uri persistate pentru a evita retrimiterea la repornirea
 editorului. Jurnalul salvat exclude rationamentul intern si foloseste redactarea
-normala a panoului. Controlerul colecteaza numai jurnalul proiectului de proba.
+normala a panoului. `collect` preia jurnalul complet JSONL, consola, checkpointul
+si conversatia exacta a proiectului de proba, cu fisiere locale private (0600).
+Conversatia contine metadata de protocol necesara furnizorului, care nu se
+afiseaza in rapoarte. Nu se citesc vault-ul, cheile sau configuratia globala.
+Identificatorii si caile sunt validate inainte de citirea prin `run-as`.
 O generatie neconfirmata nu trebuie retrimisa: se recupereaza acelasi job.
 
 ## Folosire
@@ -35,6 +41,10 @@ Pentru un server ADB separat, adauga `--server-port PORT` operatiilor ADB.
 directoare existente; `collect` cere un director de dovezi nou. Directorul
 proiectului, `project/`, ramane disponibil pentru inspectie. Pluginul de proba
 poate fi dezactivat din Project Settings / Plugins dupa incheiere.
+
+Runda curenta si diferentele dintre APK-ul instalat, sursele noi si eventualele
+probe cu adaptor de dezvoltare sunt in
+[raportul de stabilitate din 27.10.2026](AI_AGENT_STABILITY_20261027.md).
 
 ## Proba fizica din 26.10.2026
 

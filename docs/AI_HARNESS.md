@@ -6,10 +6,35 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-The original harness shipped in APK `12794c4`. The latest delivered APK is
-`c418f97`. The unlimited-step changes below are a subsequent source iteration,
-not yet delivered in an APK. Delivery evidence is tracked in
+The original harness shipped in APK `12794c4`. The latest delivered and installed
+APK verified on 2026-10-27 is `74887a1`, including unlimited normal execution.
+The result-compaction, reflection-pagination and interrupted-context fixes
+described below are a subsequent source iteration. Delivery evidence is tracked in
 [the project progress record](../PROGRES_SI_PLAN.md).
+
+## Stability iteration, 2026-10-27 (source)
+
+Large tool responses retain their root success/error contract and compact artifact
+identity when the model-facing JSON is shortened. The complete sanitized journal
+is separate. The serialized summary, including escaped text, stays within 24,000
+characters; omitted fields are not evidence that a class or artifact is absent.
+`godot_describe` returns stable alphabetical pages, 16 entries per category by
+default (maximum 50), with totals and `next_offset`. Literal case-insensitive
+filters support alternatives separated by `|`.
+
+Local interruption notices, incomplete streamed drafts and generated-file cards
+carry application provenance. Provider requests send their useful context as
+application state in system messages, preserving the chat UI and confirmed model
+messages. Older interruption records and file cards are recognized as well. This
+avoids presenting a local notice as a DeepSeek thinking response with missing
+`reasoning_content`; no reasoning is invented. Confirmed reasoning survives
+conversation save/load and forking, while switching provider/model still strips
+foreign protocol internals. The current DeepSeek contract is documented in its
+[official thinking-mode guide](https://api-docs.deepseek.com/guides/thinking_mode/).
+
+See the [device stability report and next acceptance gates](AI_AGENT_STABILITY_20261027.md)
+for actual Android results and remaining work. Fixture success does not establish
+live provider acceptance or readiness for large game production.
 
 ## Execution boundaries
 
