@@ -23,6 +23,8 @@ ale butoanelor din chat și istoric.
 prioritățile și criteriile de verificare înaintea închiderii fiecărui punct.
 [Suita de 50 de use case-uri](docs/AI_AGENT_USE_CASES.md) oferă cerințe de trimis,
 precondiții, criterii și ordinea probelor manuale, cu rezultate urmărite separat.
+[Cele 47 de teste rămase](docs/AI_AGENT_REMAINING_TESTS.md) sunt pregătite pentru
+copiere în chat, cu mesajele ulterioare și intervențiile utilizatorului separate.
 
 The [built-in harness](docs/AI_HARNESS.md) runs direct API agent sessions inside
 Godot without Termux, a console, or an external agent runtime. The linked APK

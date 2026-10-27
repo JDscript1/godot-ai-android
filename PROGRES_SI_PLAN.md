@@ -1,6 +1,6 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **26 octombrie 2026**.
+Ultima actualizare: **27 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
@@ -37,7 +37,25 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — UC-03 verificat și derulare tactilă în TODO, 26.10.2026
+## Etapa curentă — toate cele 47 de probe rămase, 27.10.2026
+
+Pregătit [pachetul complet UC-04–UC-50](docs/AI_AGENT_REMAINING_TESTS.md),
+cu toate cerințele de copiat, moduri, pregătire și criterii de trecere. Mesajele
+ulterioare pentru steering, restaurare și preview sunt separate de prima cerere.
+Intervențiile pentru aprobări, Stop/Resume, background și rețea sunt explicite;
+integrările lipsă și generările cu cost rămân condiționate de precondițiile probei.
+Inclusă subproba fizică de scroll AG-16 în verificarea conversației UC-48.
+
+Copie completă `Documents/Godot-AI-Agent-Tests/TESTE_RAMASE_47.md`, instrucțiuni
+`INAINTE_DE_TESTE.txt` și șase părți TXT de maximum 7.013 caractere, pentru a evita
+trunchierea atașamentelor text lungi în aplicație. Verificate cele 47 de ID-uri,
+prezența cerințelor, criteriile și corespondența copiilor. Dovezi:
+`.ai-qa/remaining-tests-handoff-20261027/validation.json`.
+Nu s-au executat teste ale agentului, trimis cereri API sau schimbat fișiere ale
+proiectului Vampyr. Runtime-ul și APK-ul sunt neschimbate; rămân 47 de probe de
+executat și evaluat, fără închiderea punctelor din TODO.
+
+## Etapa precedentă — UC-03 verificat și derulare tactilă în TODO, 26.10.2026
 
 Adăugat AG-16 pentru problema raportată de utilizator: glisarea verticală peste
 mesaje selectează text în loc să deruleze. Cerința este derulare normală peste
@@ -2108,6 +2126,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **27.10.2026:** predate toate cele 47 de teste rămase UC-04–UC-50, document
+  complet și șase părți TXT în Documents, cu mesaje/intervenții distincte și
+  subproba de scroll. Verificare a pachetului, fără execuții noi sau APK nou.
 
 - **26.10.2026:** UC-03 plan-only trecut, apoi implementare autorizată separat
   de utilizator; colectarea 0→3 verificată ulterior pe copie, nu de agentul

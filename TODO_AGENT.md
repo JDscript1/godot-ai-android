@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **26.10.2026**. APK verificat: **c418f97**. Bifele se închid după
+Actualizat: **27.10.2026**. APK verificat: **c418f97**. Bifele se închid după
 verificarea rezultatului; implementarea în sursă și livrarea în APK sunt stări
 separate. Această etapă adaugă auditul și prioritățile, fără corecții runtime.
 
@@ -34,6 +34,11 @@ costurile de generare se verifică înaintea fiecărui caz, nu pentru tot catalo
 
 Copie pentru citire pe dispozitiv:
 `Documents/Godot-AI-Agent-Tests/SUITA_AGENT_50.md`.
+
+Predare completă la 27.10.2026: [toate cele 47 de probe rămase](docs/AI_AGENT_REMAINING_TESTS.md),
+cu mesaje de copiat, intervenții separate și criterii. Copia `TESTE_RAMASE_47.md`
+și șase fișiere TXT mici sunt în același folder Documents; includ și subproba
+fizică de scroll AG-16. Pregătire/documentare, fără execuții noi sau bife închise.
 
 ## Test 01 — cub verde, proiect Vampyr
 
