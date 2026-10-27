@@ -268,6 +268,10 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "scene_paths":
+		await _scene_path_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	await _blender_mesh_verification_tests()
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "startup":
 		await _handoff_tests()
@@ -450,6 +454,64 @@ func _run() -> void:
 		await _plan_and_markdown_screenshots(output)
 		await _configuration_screenshots(output)
 	_finish_report(output)
+
+func _scene_path_tests() -> void:
+	var scene = EditorInterface.get_edited_scene_root()
+	if scene == null:
+		scene = Node3D.new()
+		scene.name = "ScenePathProbe"
+		EditorInterface.add_root_node(scene)
+	await get_tree().process_frame
+	var child = Node3D.new()
+	child.name = "ProbeChild"
+	scene.add_child(child)
+	child.owner = scene
+	var target = "res://qa_scene_paths/Area One/scenes/forest.tscn"
+	_check(not DirAccess.dir_exists_absolute(target.get_base_dir()), "Scene destination starts with missing parent directories")
+	var saved = panel.tools.execute("godot_save_scene", {"path": target}, 2, true)
+	_check(saved.get("ok", false) and saved.get("result", {}).get("saved", false), "Save scene creates nested parents and confirms success")
+	_check(saved.get("result", {}).get("path") == target and FileAccess.file_exists(target), "Scene result retains the exact destination with spaces")
+	var project = panel.tools.execute("godot_project", {}, 0, false).get("result", {})
+	_check(project.get("scene_path") == target, "Current project reports the actual saved scene path")
+	_check(project.get("recent_paths", []).has(target), "Saved scene path remains discoverable through the recovery-backed project history")
+	var reloaded_tools = embedded["editor_tools"].new()
+	reloaded_tools.file_changes = embedded["common"].read_json(panel.tools.backup_directory.path_join("journal.json"), [])
+	_check(reloaded_tools.execute("godot_project", {}, 0, false).get("result", {}).get("recent_paths", []).has(target), "A fresh toolset recovers saved paths from the persisted project journal")
+	panel._new_conversation()
+	var fresh_context = panel._context_messages()
+	_check(not fresh_context.is_empty() and str(fresh_context[0].get("content", "")).contains(target), "A new conversation receives the actual saved scene path in its project context")
+	var packed = ResourceLoader.load(target, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) if FileAccess.file_exists(target) else null
+	_check(packed is PackedScene and packed.can_instantiate(), "Saved scene is a loadable PackedScene")
+	if packed is PackedScene:
+		var instance = packed.instantiate()
+		_check(instance.has_node("ProbeChild"), "Saved scene contains its owned child after a fresh load")
+		instance.free()
+	var repeated = panel.tools.execute("godot_save_scene", {"path": target}, 2, true)
+	_check(repeated.get("ok", false) and repeated.get("result", {}).get("path") == target, "Repeated save reuses the same destination")
+	var files = DirAccess.get_files_at(target.get_base_dir())
+	_check(Array(files).filter(func(name: String) -> bool: return name.ends_with(".tscn")).size() == 1, "Repeated save creates no alternative scene copy")
+	var blocked_path = "res://qa_scene_blocked_parent"
+	var blocker = FileAccess.open(blocked_path, FileAccess.WRITE)
+	blocker.store_string("KEEP_BLOCKED_PARENT")
+	blocker.close()
+	var previous_path = scene.scene_file_path
+	var rejected = panel.tools.execute("godot_save_scene", {"path": blocked_path + "/other.tscn"}, 2, true)
+	_check(not rejected.get("ok", true) and rejected.get("code") == "directory_create_failed", "A parent that is a file returns an explicit save failure")
+	_check(not rejected.get("result", {}).get("saved", true), "A failed save never reports success with saved=false")
+	_check(FileAccess.get_file_as_string(blocked_path) == "KEEP_BLOCKED_PARENT" and scene.scene_file_path == previous_path, "Failed destination preserves existing bytes and the current scene path")
+	DirAccess.make_dir_recursive_absolute("res://qa_scene_target.tscn")
+	var directory_target = panel.tools.execute("godot_save_scene", {"path": "res://qa_scene_target.tscn"}, 2, true)
+	_check(not directory_target.get("ok", true) and directory_target.get("code") == "invalid_path", "A directory named like a scene is rejected without saving")
+	var invalid = panel.tools.execute("godot_save_scene", {"path": "res://../escape.tscn"}, 2, true)
+	_check(not invalid.get("ok", true), "Scene parent creation still rejects traversal paths")
+	if FileAccess.file_exists(target):
+		var opened = panel.tools.execute("godot_open_scene", {"path": target}, 2, true)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_check(opened.get("ok", false) and EditorInterface.get_edited_scene_root().scene_file_path == target, "Reopen uses the exact path returned by save")
+	var missing = panel.tools.execute("godot_open_scene", {"path": "res://qa_scene_paths/wrong/forest.tscn"}, 2, true)
+	_check(not missing.get("ok", true) and missing.get("code") == "scene_not_found", "Missing scene reports its location failure instead of selecting another folder")
+	_check(not DirAccess.dir_exists_absolute("res://qa_scene_paths/wrong"), "Opening a missing scene creates no replacement directory")
 
 func _finish_report(output: String) -> void:
 	print("Godot AI editor: %s checks, %s failures" % [checks, failures.size()])

@@ -41,8 +41,8 @@ func definitions() -> Array:
 		Common.tool("godot_remove_node", "Remove a scene node with Undo.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_attach_script", "Attach a project GDScript to a scene node, with Undo.", {"path": string, "script": string}, ["path", "script"], "write"),
 		Common.tool("godot_connect_signal", "Connect a signal between scene nodes, persistently and with Undo.", {"source": string, "signal": string, "target": string, "method": string}, ["source", "signal", "target", "method"], "write"),
-		Common.tool("godot_save_scene", "Save the current scene to a project path.", {"path": string}, ["path"], "write"),
-		Common.tool("godot_open_scene", "Open a project scene.", {"path": string}, ["path"], "write"),
+		Common.tool("godot_save_scene", "Save the current scene to the exact project path, creating missing parent directories. Reuse the returned path for opening and running; an unsuccessful save returns an error.", {"path": string}, ["path"], "write"),
+		Common.tool("godot_open_scene", "Open an existing project scene using its exact path from godot_files or a successful save. Does not create or relocate files.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_describe", "Discover methods, properties and signals of a class or object handle. Script-defined methods are included for objects.", {"class": string, "handle": string, "filter": string}, []),
 		Common.tool("godot_get", "Read an object's property by handle.", {"handle": string, "property": string}, ["handle", "property"]),
 		Common.tool("godot_set", "Set an object property with Undo and verify its resulting value. Object/resource values use {\"$handle\":\"obj_...\"}, available as reference in object results. Typed values use {$type:Vector3,value:[x,y,z]} and analogous Vector2, Color, Quaternion forms. Do not pass the handle string or a plain descriptor as the value.", {"handle": string, "property": string, "value": {}}, ["handle", "property", "value"], "write"),
@@ -81,7 +81,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 		"godot_project":
 			var selected = []
 			for node in EditorInterface.get_selection().get_selected_nodes(): selected.append(_encode(node))
-			return Common.success({"name": ProjectSettings.get_setting("application/config/name", ""), "version": Engine.get_version_info(), "root": _encode(root), "editor": _encode(EditorInterface), "filesystem": _encode(EditorInterface.get_resource_filesystem()), "selection": selected, "running": EditorInterface.is_playing_scene()})
+			return Common.success({"name": ProjectSettings.get_setting("application/config/name", ""), "version": Engine.get_version_info(), "project_path": ProjectSettings.globalize_path("res://"), "scene_path": root.scene_file_path if root != null else "", "recent_paths": _recent_project_paths(), "root": _encode(root), "editor": _encode(EditorInterface), "filesystem": _encode(EditorInterface.get_resource_filesystem()), "selection": selected, "running": EditorInterface.is_playing_scene()})
 		"godot_files": return _files(args)
 		"godot_read_range": return _read_range(args)
 		"godot_search_code": return _search_code(args)
@@ -171,16 +171,32 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			return Common.success(true)
 		"godot_save_scene":
 			var path = Common.project_path(str(args["path"]))
-			if path.is_empty() or path.get_extension() not in ["tscn", "scn"]: return Common.failure("Destinație de scenă invalidă.")
+			if path.is_empty() or path.get_extension() not in ["tscn", "scn"] or DirAccess.dir_exists_absolute(path): return Common.failure("Destinație de scenă invalidă.", "invalid_path")
 			if root == null: return Common.failure("Nu există scenă activă.")
+			var directory_error = DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+			if directory_error != OK or not DirAccess.dir_exists_absolute(path.get_base_dir()):
+				if directory_error == OK: directory_error = ERR_CANT_CREATE
+				var failed = Common.failure("Nu pot crea folderul scenei %s: %s" % [path, error_string(directory_error)], "directory_create_failed")
+				failed["result"] = {"path": path, "saved": false}
+				return failed
 			var recovery = _snapshot(path)
 			if recovery < 0: return Common.failure("Copia de recuperare nu a putut fi creată.")
 			EditorInterface.save_scene_as(path)
 			_finalize_snapshot(recovery)
-			return Common.success({"path": path, "saved": FileAccess.file_exists(path) and root.scene_file_path == path})
+			var saved_file = FileAccess.open(path, FileAccess.READ) if FileAccess.file_exists(path) else null
+			var saved = saved_file != null and saved_file.get_length() > 0 and root.scene_file_path == path
+			if saved_file != null: saved_file.close()
+			var result = {"path": path, "saved": saved, "recovery_index": recovery}
+			if not saved:
+				var failed = Common.failure("Scena nu a fost salvată la " + path + ". Verifică destinația și Output; păstrează aceeași cale la reluare.", "scene_save_failed")
+				failed["result"] = result
+				return failed
+			_request_scan()
+			return Common.success(result)
 		"godot_open_scene":
 			var path = Common.project_path(str(args["path"]))
-			if path.is_empty() or not FileAccess.file_exists(path) or path.get_extension() not in ["tscn", "scn"]: return Common.failure("Scenă inexistentă.")
+			if path.is_empty() or path.get_extension() not in ["tscn", "scn"]: return Common.failure("Cale de scenă invalidă.", "invalid_path")
+			if not FileAccess.file_exists(path): return Common.failure("Scena nu există la " + path + ". Caută fișierul prin godot_files și reutilizează calea existentă.", "scene_not_found")
 			EditorInterface.open_scene_from_path(path)
 			return Common.success(path)
 		"godot_describe": return _describe(args)
@@ -592,6 +608,15 @@ func _script_diagnostics(args: Dictionary) -> Dictionary:
 		result["result"]["sha256"] = text.sha256_text()
 		result["result"]["source"] = "draft" if args.has("text") else "disk"
 	return result
+
+func _recent_project_paths() -> Array:
+	var paths = []
+	for index in range(file_changes.size() - 1, -1, -1):
+		var path = Common.project_path(str(file_changes[index].get("path", "")))
+		if path.is_empty() or not FileAccess.file_exists(path) or path in paths: continue
+		paths.append(path)
+		if paths.size() >= 12: break
+	return paths
 
 func _snapshot(path: String) -> int:
 	var entry = {"turn_id": turn_id, "path": path, "existed": FileAccess.file_exists(path), "backup": "", "time": Time.get_datetime_string_from_system(true)}

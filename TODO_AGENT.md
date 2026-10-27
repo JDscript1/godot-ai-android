@@ -2,7 +2,8 @@
 
 Actualizat: **27.10.2026**. APK verificat: **c418f97**. Bifele se închid după
 verificarea rezultatului; implementarea în sursă și livrarea în APK sunt stări
-separate. Această etapă adaugă auditul și prioritățile, fără corecții runtime.
+separate. Corecția salvării/căilor este implementată și testată în surse;
+APK-ul instalat păstrează comportamentul vechi.
 
 ## Cerință principală — continuă până la rezultatul cerut
 
@@ -24,12 +25,15 @@ cu altă limită totală de pași.
 precondiții, moduri și criterii de verificare. Include cele două probe existente
 și **48 de scenarii suplimentare**: control/permisiuni, cod și fișiere, scene,
 media, integrări, generare, sarcini complete, UI și conexiuni. UC-03 a trecut
-între timp; **47 de scenarii rămân neexecutate**.
+între timp. Probele următoare sunt trimise acum direct agentului nativ, într-un
+proiect izolat; [raportul rundei](docs/AI_AGENT_DEVICE_BATCH_20261027.md) separă
+funcționalitatea verificată, opririle la limită și variantele asistate.
 
-Ordinea imediată: **UC-04 Refuz → UC-05 Aprobare**, apoi Stop, Resume și steering.
-Fișierele UC-04 sunt pregătite; jurnalul inițial și
+Pentru permisiuni, ordinea rămâne **UC-04 Refuz → UC-05 Aprobare**; sunt probe
+distincte de runda automată cu YOLO deja activ.
+UC-04 necesită refacerea separată a stării inițiale înaintea repetării; jurnalul și
 hash-urile a opt fișiere sunt salvate în `.ai-qa/agent-suite-20261026T214251Z/`.
-Nu s-au trimis cereri către agent pentru noile scenarii. Precondițiile și
+Utilizatorul a trimis primul fișier și agentul a executat cerința UC-04. Precondițiile și
 costurile de generare se verifică înaintea fiecărui caz, nu pentru tot catalogul.
 
 Copie pentru citire pe dispozitiv:
@@ -38,7 +42,8 @@ Copie pentru citire pe dispozitiv:
 Predare completă la 27.10.2026: [toate cele 47 de probe rămase](docs/AI_AGENT_REMAINING_TESTS.md),
 cu mesaje de copiat, intervenții separate și criterii. Copia `TESTE_RAMASE_47.md`
 și șase fișiere TXT mici sunt în același folder Documents; includ și subproba
-fizică de scroll AG-16. Pregătire/documentare, fără execuții noi sau bife închise.
+fizică de scroll AG-16. Predarea inițială a fost numai pregătire/documentare;
+execuțiile ulterioare sunt în raportul separat, fără închiderea prematură a TODO-urilor.
 
 ## Test 01 — cub verde, proiect Vampyr
 
@@ -103,6 +108,37 @@ rămase. Nu este o verificare efectuată de agentul Android. Dovezi:
 `.ai-qa/manual-agent-uc03-result-20261026T215150Z/`. Constatările actualizează
 AG-17/18; derularea tactilă raportată separat de utilizator este AG-16.
 
+## UC-04 — încercat, refuzul nu este demonstrat
+
+Reconectare ADB reușită la 27.10.2026. Primul fișier UC-04–UC-09 a fost trimis
+integral; agentul a executat numai UC-04: **7 cereri, 26,37 s**, șase tool-uri
+executate, o descoperire și un apel `godot_write_file / tool_not_loaded`, recuperat.
+A citit originalul, a scris `APPROVED_TEST_04`, apoi a recitit ținta și KEEP.txt.
+Numai fișierul de probă diferă dintre cele opt urmărite; KEEP este intact.
+
+Nu există refuz în jurnal, iar YOLO și decizia efectivă de autorizare nu sunt
+confirmate de dovezile colectate. Agentul a declarat explicit că testul nu poate
+trece în aceste condiții. Nu se consemnează o ocolire de permisiune sau un UC-05
+trecut. UC-04 se repetă după pregătirea originalului, cu Default, YOLO oprit și
+Refuză exercitat efectiv. UC-05–UC-09 rămân neexecutate. Actualizate AG-09/12.
+Dovezi: `.ai-qa/manual-agent-part01-result-20261027T043339Z/`.
+Evaluatorul a citit datele, fără resetarea probei sau cereri noi către agent.
+
+## Corecție în surse — salvare și organizare, 27.10.2026
+
+Raportul utilizatorului despre foldere și scene pierdute a dus la reproducerea
+unui defect concret: `godot_save_scene` raporta succes cu `saved=false` dacă
+directorul părinte nu exista. Corecția creează părinții necesari și întoarce eroare
+la eșecul verificării salvării. `godot_project` expune scena activă și ultimele
+căi existente din istoricul persistent, inclusiv într-o conversație nouă.
+Instrucțiunile cer reutilizarea structurii și a căilor confirmate; o scenă
+negăsită nu justifică un alt folder sau o copie de înlocuire.
+
+**50 verificări în editor / 0 eșecuri**, după reproducere cu **8 eșecuri / 45
+verificări**, plus **277 aserțiuni runtime / 0 eșecuri**. Dovezi:
+`.ai-qa/scene-path-fix-20261027/green3/` și `runtime/`. Aceste probe locale nu
+demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizatorului.
+
 ## P0 — corectitudinea operațiilor și livrare
 
 - [ ] **AG-01 · Salvează scena în directoare noi.** Creează părinții prin
@@ -111,6 +147,9 @@ AG-17/18; derularea tactilă raportată separat de utilizator este AG-16.
   succes fără fișier, apoi agentul a folosit o copie provizorie și Linux.
   **Acceptare:** destinație nouă și existentă, eroare de scriere raportată corect,
   conținut recitit; fără necesitatea unui workaround în shell.
+  **În surse:** corecție testată la 27.10.2026; directoare imbricate, spații,
+  salvare repetată, reîncărcare, părinte care este fișier și cale invalidă.
+  Livrarea în APK și repetarea fizică rămân deschise.
 - [ ] **AG-02 · Compară numeric proprietățile cu toleranță.** Rotația cerută
   `(-50,-35,0)` a devenit `(-49.999996,-34.999996,0)` și a fost declarată greșit
   neaplicată. Toleranță potrivită tipului pentru numere/vectori/transformări;
@@ -127,6 +166,24 @@ AG-17/18; derularea tactilă raportată separat de utilizator este AG-16.
 
 ## P1 — verificare, continuitate și eficiență
 
+- [ ] **AG-19 · O singură structură de proiect, căi reutilizate.** Inspectează
+  structura existentă, păstrează directorul convenit și calea exactă confirmată
+  la salvare. La continuare sau eroare de deschidere, caută scena existentă;
+  nu crea alt folder la rădăcină, copii ori mutări ca substitut. Subfolderele
+  numite ale generărilor rămân în destinația configurată. **În surse:** regula
+  și contextul cu `scene_path`/`recent_paths` sunt implementate; testul confirmă
+  persistența și contextul unei conversații noi. **Acceptare rămasă:** APK nou,
+  continuare fizică fără directoare alternative și deschidere/rulare la aceeași
+  cale. În suita curentă, `test_XX` sunt directoare cerute explicit de probe,
+  toate sub `agent_tests`; nu sunt dovada unor foldere arbitrare create la rădăcină.
+- [ ] **AG-20 · Creare de scenă cu confirmarea rădăcinii active.** În UC-19,
+  `godot_create_scene(Control)` a întors succes și un handle nou, dar scena activă
+  a rămas `VerifyScores`. Nodurile următoare au fost adăugate acolo; agentul a
+  observat și le-a eliminat înaintea salvării. `EditorInterface.add_root_node`
+  refuză o scenă care are deja rădăcină, iar unealta nu verifică efectul.
+  **Acceptare:** scenă nouă într-un tab separat, păstrarea scenei anterioare,
+  rădăcină activă egală cu handle-ul returnat; eșec explicit dacă nu poate crea.
+  Confirmat în APK și în implementarea actuală; corecția nu este inclusă în AG-19.
 - [ ] **AG-04 · Încheiere clară la întrerupere.** La Stop, limită sau blocaj,
   afișează un raport scurt derivat din operații: rezultat salvat, verificări
   efectuate, pași rămași și posibilitatea de reluare. În test nu există răspuns
@@ -156,12 +213,16 @@ AG-17/18; derularea tactilă raportată separat de utilizator este AG-16.
   compactă, cu fișiere succesive și export automat într-un director ales pentru
   diagnostic. Păstrează rezultatele text complete și maschează cheile; nu exporta
   seiful sau datele binare ca dump. Înregistrează build, model, reasoning și modul
-  efectiv al turnului. **Acceptare:** citire din Termux fără copiere în chat,
+  efectiv al turnului, YOLO și decizia de autorizare pentru fiecare operație
+  protejată (aprobare, refuz sau permisiune deja acordată). În UC-04 lipsa acestor
+  date împiedică verdictul privind configurația permisiunilor. **Acceptare:**
+  citire din Termux fără copiere în chat, decizii de autorizare verificabile,
   sesiuni peste 1.000 de evenimente și rezultate peste 12.000 de caractere.
 - [ ] **AG-12 · Descoperire la mesaje noi și Resume.** Reîncarcă schemele
   necesare din catalogul permis, păstrând regulile Plan/permisiuni. În testul
   02, un mesaj nou în aceeași conversație a produs `godot_apply_patch /
-  tool_not_loaded`, apoi încărcare și recuperare. **Acceptare:** continuare și
+  tool_not_loaded`, apoi încărcare și recuperare. UC-04 a repetat problema cu
+  `godot_write_file` și a recuperat după `tool_describe`. **Acceptare:** continuare și
   Resume fără apeluri către scheme indisponibile sau expunerea tool-urilor excluse.
 - [ ] **AG-17 · Verifică mecanica înainte de finalizarea planului.** Conectarea
   a trei monede nu dovedește colectarea și actualizarea contorului. În continuarea
