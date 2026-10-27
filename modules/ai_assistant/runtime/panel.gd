@@ -117,6 +117,16 @@ var integrations: RefCounted
 var journal_console: CodeEdit
 var journal_filter: LineEdit
 var journal_follow: CheckBox
+var journal_session = ""
+var journal_part = 0
+var journal_revision = 0
+var journal_rendered_revision = -1
+var journal_rendered_query = ""
+var journal_last_render = 0
+var journal_refresh_pending = false
+var preview_requested = false
+var turn_has_mutations = false
+var verification_tools: Array = []
 var completion_audio: AudioStreamPlayer
 var memory_hash = ""
 var integration_settings: Dictionary = {}
@@ -183,6 +193,7 @@ func _ready() -> void:
 	store.configure(project_directory)
 	tools.backup_directory = project_directory.path_join("recovery")
 	tools.file_changes = Common.read_json(tools.backup_directory.path_join("journal.json"), [])
+	tools.external_changes = Common.read_json(tools.backup_directory.path_join("external.json"), [])
 	mcp = MCP.new(self, vault)
 	assets = Assets.new(self, vault)
 	assets.configure(project_directory.path_join("generated"))
@@ -654,13 +665,14 @@ func _build_settings() -> void:
 	journal_filter.placeholder_text = "Filtrează activitatea…"
 	journal_filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	log_toolbar.add_child(journal_filter)
-	journal_filter.text_changed.connect(func(_text: String) -> void: _refresh_journal())
+	journal_filter.text_changed.connect(func(_text: String) -> void: _refresh_journal(true))
 	journal_follow = CheckBox.new()
 	journal_follow.text = "Live"
 	journal_follow.button_pressed = true
 	log_toolbar.add_child(journal_follow)
 	var copy_log = chat.icon_button(log_toolbar, "Copy", "Copiază jurnalul afișat", func() -> void: DisplayServer.clipboard_set(journal_console.text))
 	chat._compact_button(copy_log)
+	_button(_row(journal_tab), "Export automat…", _choose_journal_directory)
 	journal_console = CodeEdit.new()
 	journal_console.editable = false
 	journal_console.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
@@ -2219,13 +2231,26 @@ func _popup_approval() -> void:
 func _authorize(definition: Dictionary, args: Dictionary, operation_cancel: Dictionary = {}) -> bool:
 	if definition.get("risk", "external") == "read": return true
 	while approval_pending and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false): await get_tree().process_frame
-	if cancel.get("cancelled", false) or operation_cancel.get("cancelled", false): return false
-	if _mode() in [0, 3]: return false
-	if _permission_mode() == 2: return true
+	if cancel.get("cancelled", false) or operation_cancel.get("cancelled", false): return _permission_result(definition, args, "cancelled", false)
+	if _mode() in [0, 3]: return _permission_result(definition, args, "read_only", false)
+	if _permission_mode() == 2: return _permission_result(definition, args, "yolo", true)
 	approval_pending = true
 	_show_approval(definition, args)
 	var accepted: bool = await approval_decided
-	return accepted and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false) and _mode() in [1, 2, 4]
+	var allowed = accepted and not cancel.get("cancelled", false) and not operation_cancel.get("cancelled", false) and _mode() in [1, 2, 4]
+	return _permission_result(definition, args, "approved" if allowed else ("refused" if not accepted else "cancelled"), allowed)
+
+func _permission_result(definition: Dictionary, args: Dictionary, decision: String, allowed: bool) -> bool:
+	_record_event("authorization", {"tool": definition.get("name", ""), "risk": definition.get("risk", "external"), "arguments": args}, {"ok": allowed, "decision": decision})
+	return allowed
+
+func _requests_preview(text: String) -> bool:
+	var lower = text.to_lower()
+	for phrase in ["nu deschide", "fără preview", "fara preview", "don't open", "do not open", "no preview"]:
+		if phrase in lower: return false
+	for phrase in ["deschide", "previzualizează", "previzualizeaza", "open the", "open preview", "open it", "full screen", "fullscreen"]:
+		if phrase in lower: return true
+	return false
 
 func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	if busy or text.strip_edges().is_empty(): return
@@ -2235,8 +2260,16 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		return
 	if selection.has("ui_mode") or selection.has("work_mode"): mode_picker.select(Common.work_mode_index(selection))
 	active_mode = mode_picker.get_selected_id()
+	preview_requested = _requests_preview(text)
+	turn_has_mutations = false
+	verification_tools.clear()
 	var resuming = not str(selection.get("resume_turn", "")).is_empty()
 	current_turn = str(selection["resume_turn"]) if resuming else Common.uid()
+	if resuming:
+		for previous in history:
+			if previous.get("turn_id") == current_turn and previous.get("role") == "tool":
+				var prior: Variant = Common.parse_json(str(previous.get("content", "")))
+				if prior is Dictionary and prior.get("ok", false): _track_verification(str(previous.get("tool_name", "")))
 	if resuming and not selection.get("resume_plan", {}).is_empty():
 		var restored = planner.restore(selection["resume_plan"], true)
 		if not restored.get("ok", false):
@@ -2248,6 +2281,9 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	cancel = {"cancelled": false}
 	tools.turn_id = current_turn
 	current_origin = {"origin_label": str(profile["name"]) + " · " + str(selection.get("model", model_picker.get_item_metadata(model_picker.selected))), "profile_id": profile["id"], "model_id": selection.get("model", model_picker.get_item_metadata(model_picker.selected)), "turn_id": current_turn, "plan": _mode() == 3, "resumed": resuming}
+	current_origin["work_mode"] = Common.MODES[mode_picker.selected]
+	current_origin["effort"] = str(selection.get("effort", effort_picker.get_item_metadata(effort_picker.selected)))
+	_record_event("agent_run", {}, {"ok": true, "resumed": resuming, "version": Engine.get_version_info()})
 	active_files = selection.get("files", pending_files).duplicate()
 	active_attachments = selection.get("attachments", pending_attachments).duplicate(true)
 	active_references = selection.get("references", pending_references).duplicate(true)
@@ -2273,7 +2309,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 	if not project_manager_mode:
 		integrations.linux.refresh()
 		if not integrations.linux.state.get("packaged", false) and integrations.termux != null and integration_settings.get("blender_enabled", false): await integrations.termux.ensure_ready(cancel)
-	active_definitions = _start_definitions() if project_manager_mode else (integrations.linux.definitions(bool(integration_settings.get("linux_enabled", false)) and integrations.linux.available()) + tools.definitions() + assets.definitions() + FileRegistry.definitions() + [_preview_definition()] + EditorControl.definitions() + Store.definitions() + _agent_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)) and github_has_token and Integrations.valid_repository(str(integration_settings.get("github_repository", ""))), bool(integration_settings.get("blender_enabled", false)), integrations.termux != null and integrations.termux.available()))
+	active_definitions = _start_definitions() if project_manager_mode else (integrations.linux.definitions(bool(integration_settings.get("linux_enabled", false)) and integrations.linux.available()) + tools.definitions() + assets.definitions() + FileRegistry.definitions() + [_preview_definition()] + EditorControl.definitions() + Store.definitions() + _agent_definitions() + agent_jobs.play_definitions() + Workspace.definitions() + integrations.definitions(bool(integration_settings.get("github_enabled", false)) and github_has_token and Integrations.valid_repository(str(integration_settings.get("github_repository", ""))), bool(integration_settings.get("blender_enabled", false)), integrations.termux != null and integrations.termux.available()))
 	mcp.tool_index.clear()
 	for server in ([] if project_manager_mode else config["mcp"]):
 		if cancel.get("cancelled", false): break
@@ -2324,6 +2360,7 @@ func _harness_event(value: Dictionary) -> void:
 			_record_event("agent_settled", {}, outcome)
 		"plan_continuation": _status(Common.MODES[mode_picker.selected] + " · continuă pașii rămași")
 		"tool_started":
+			chat.show_running_tool(str(value.get("name", "")))
 			if str(value.get("name", "")) not in ["task_update", "tool_search", "tool_describe"]: chat.start_operation(str(value["id"]), _tool_status(str(value["name"])), _operation_detail(value.get("arguments", {})))
 		"retry":
 			_record_event("agent_retry", {"attempt": value.get("attempt", 0)}, Common.success("Reîncercare a cererii către model"))
@@ -2341,6 +2378,8 @@ func _harness_event(value: Dictionary) -> void:
 			if not harness_streaming and not str(message.get("content", "")).is_empty(): _display("assistant", str(message["content"]))
 			if is_instance_valid(transcript) and (harness_streaming or not str(message.get("content", "")).is_empty()): chat.finish_stream(transcript, message)
 		"tool_result":
+			chat.show_running_tool()
+			if value.get("executed", false) and value.get("result", {}).get("ok", false): _track_verification(str(value.get("name", "")))
 			if str(value.get("name", "")) not in ["task_update", "tool_search", "tool_describe"]: chat.finish_operation(str(value["id"]), _tool_status(str(value["name"])), _operation_detail(value.get("arguments", {})), value.get("result", {}), bool(value.get("replayed", false)))
 			_record_event("agent_tool_result", {"call_id": value.get("id", ""), "tool": value.get("name", ""), "arguments": value.get("arguments", {}), "duration_ms": value.get("duration_ms", 0), "executed": value.get("executed", false), "replayed": value.get("replayed", false)}, {"ok": value.get("result", {}).get("ok", false), "code": value.get("result", {}).get("code", ""), "error": value.get("result", {}).get("error", "")})
 			_show_change_preview(value.get("result", {}), str(value["id"]))
@@ -2371,14 +2410,14 @@ func _context_messages() -> Array:
 		instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
 		instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "model": profile.get("model", ""), "price": profile.get("model_info", {}).get("price", {}), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")}))
 		instructions += "\nIMAGE ASSET CONTRACT: Always choose asset_generate.purpose for images. reference_3d means an isolated, fully visible single object for reconstruction, without environment/floor/pedestal/shadow; sprite means the requested 2D game art and exact frame layout, not a reconstruction render; texture means a flat tileable surface; background means complete scenery; generic means an ordinary illustration. reference_3d and sprite default to a real transparent background. Respect an explicit user override via background. Never infer transparency from PNG, a white background or a drawn checkerboard. After asset_wait inspect quality.ready_for_use and observe the exact output before feeding it to a 3D generator. If transparency is missing, use asset_remove_background on the existing imported image with a saved Runware profile, then wait and inspect it; do not regenerate the source, invent alpha support or convert an invalid reference. If no background-removal service is configured, report that specific blocker and preserve the original. Background removal consumes provider credits and follows the same permission and planning rules as generation."
-		instructions += "\n3D PREVIEW: Use file_observe to inspect the downloaded GLB with the native Godot renderer and file_preview to open it for the user. Both work without Blender CLI. Always leave the completed asset card in chat. Blender is for modeling/conversion and is never required to view a GLB. Keep the original GLB preview when exporting FBX or other formats."
+		instructions += "\n3D PREVIEW: Never open generated images or meshes automatically. Show compact cards; call file_preview ONLY when the latest user explicitly requests opening the viewer. Use file_observe to inspect the downloaded GLB with the native Godot renderer and file_preview to open it for the user. Both work without Blender CLI. Always leave the completed asset card in chat. Blender is for modeling/conversion and is never required to view a GLB. Keep the original GLB preview when exporting FBX or other formats."
 		instructions += "\nGenerated PNG/GLB originals are automatically placed in a named project folder. If a 3D profile prefers another format, call asset_export with that format after completion; it stores the conversion beside the original when available. Never claim a provider conversion succeeded until asset_export returns completed."
 		instructions += "\nThe latest user request controls the task. Previous plans are history, not authorization to continue superseded work. For cleanup/deletion, inspect and remove only the requested existing resources; do not generate replacements or regenerate assets just to delete them. For generation, reuse an existing matching job with asset_status/asset_wait before submitting again. Repeat or vary a paid generation only when the user explicitly requested another result. Report an uncertain submission instead of retrying it blindly."
 	if current_origin.get("resumed", false): instructions += "\nThis is a resume of the SAME user task, not a new request or permission for additional generation. Inspect saved results and the current project; continue only unfinished steps and do not repeat confirmed side effects."
 	instructions += "\nProject guidance and explicit references:\n" + _reference_context()
 	if not compact_summary.is_empty(): instructions += "\nEarlier conversation summary:\n" + compact_summary
 	if _mode() == 3: instructions += "\nPLAN MODE: inspect only, return a concrete implementation plan. Never modify the project. Use task_update with intent=propose and phase=completed to publish the finished proposal; its implementation steps remain pending."
-	else: instructions += "\nEXECUTION MODE: carry out the user's task through implementation and verification. Decide whether a plan is needed based on complexity, uncertainty and dependencies. In Default mode, simple questions or small edits do not need a plan. For multi-step or cross-file work, use task_update before the first mutation: planning -> executing -> verifying -> completed. Keep at most one step in progress, revise the plan when findings change and only mark verified work complete. planning is an inspection-only phase; publish executing before changing files. Do not stop after merely proposing an execution plan. If the user asks only for a proposal, use intent=propose and do not execute it. If blocked, publish phase=blocked with the reason. Never present internal reasoning; show concise task steps and results."
+	else: instructions += "\nEXECUTION MODE: carry out the user's task through implementation and verification. Decide whether a plan is needed based on complexity, uncertainty and dependencies. In Default mode, simple questions or small edits do not need a plan. For multi-step or cross-file work, use task_update before the first mutation: planning -> executing -> verifying -> completed. Keep at most one step in progress, revise the plan when findings change and only mark verified work complete. For task_update completed, provide verification and verification_kind: interaction for buttons, controls, collection, victory or restart; runtime for behavior; inspection for static edits. The app checks that real verification tools ran after the last modification. planning is an inspection-only phase; publish executing before changing files. Do not stop after merely proposing an execution plan. If the user asks only for a proposal, use intent=propose and do not execute it. For gameplay criteria, use playtest_state and playtest_input directly, then inspect runtime state and actual game frames with playtest_observe. Counted nodes, connected signals, parser success or launching the game alone do not verify interaction, collection, collision, victory or restart. Use godot_output for console checks; Playtest children do not evaluate functions or read console logs. If the user closed the preview, recheck running state; do not claim a capture of the editor shows the game. For filesystem, scene and preview operations already covered by native tools, use those instead of shell workarounds. If blocked, publish phase=blocked with the concrete unverified criterion and reason. Never present internal reasoning; show concise task steps and results."
 	if _mode() == 2: instructions += "\nAUTO MODE: plan proactively for implementation, generation, uncertain or dependent tasks. An executing task_update plan must exist before the first modifying or external tool call. Inspect first when needed. Keep the plan current at milestones and when requirements change; verify results before completing it. Small edits may use a single concise step. Simple conversation and identity questions still need no plan or tools."
 	elif _mode() == 4: instructions += "\nDEFAULT MODE: work directly on simple tasks; plan when complexity, uncertainty or dependencies warrant it. Complete implementation and verification without stopping at a proposal."
 	instructions += planner.context() + ("" if project_manager_mode else workspace.context())
@@ -2460,6 +2499,10 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		plugin.call_deferred("project_action", str(args["action"]))
 		result = Common.success({"dialog_requested": true, "completed": false, "next": "User completes the native project dialog."})
 	elif name == "file_preview":
+		if not preview_requested:
+			var denied = Common.failure("Viewer-ul se deschide numai la cererea explicită a utilizatorului. Afișează cardul prin file_show și inspectează în background prin file_observe.", "preview_not_requested")
+			_audit(name, args, denied)
+			return denied
 		var item = file_registry.describe(str(args["id"]), str(conversations.index["active"]))
 		if item.is_empty() or not item.get("available", false): result = Common.failure("Fișier indisponibil în conversația curentă.", "file_unavailable")
 		else:
@@ -2493,7 +2536,13 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	elif name in ["github_read", "github_create_issue"]:
 		result = await integrations.github_request(str(integration_settings.get("github_repository", "")), Common.parse_json(_redact(JSON.stringify(args))), cancel, name == "github_create_issue")
 	elif name == "linux_status": result = integrations.linux.refresh()
-	elif name == "linux_execute": result = await integrations.linux.execute(args, cancel)
+	elif name == "linux_execute":
+		var before = tools.external_snapshot()
+		result = await integrations.linux.execute(args, cancel)
+		var observed = tools.record_external(before, tools.external_snapshot())
+		result["project_changes"] = observed
+		_record_event("linux_project_changes", {}, observed)
+		_update_changes()
 	elif name == "linux_install_tool": result = await integrations.linux.setup("tool_install", str(args["tool"]))
 	elif name == "blender_run":
 		if not integration_settings.get("blender_enabled", false): result = Common.failure("Blender este dezactivat în acest proiect.", "permission_denied")
@@ -2557,14 +2606,92 @@ func _audit(name: String, args: Dictionary, result: Dictionary) -> void:
 	_record_event(name, args, result)
 
 func _record_event(name: String, args: Dictionary, result: Dictionary) -> void:
-	journal.append({"turn_id": current_turn, "time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": Common.parse_json(_redact(JSON.stringify(args))), "result": _redact(JSON.stringify(Common.json_safe(result))).left(12000)})
+	journal_revision += 1
+	var entry = {"turn_id": current_turn, "time": Time.get_datetime_string_from_system(true), "tool": name, "arguments": _journal_value(args), "result": _journal_value(result), "run": {"build": Engine.get_version_info(), "provider": current_origin.get("profile_id", ""), "model": current_origin.get("model_id", ""), "effort": current_origin.get("effort", ""), "work_mode": current_origin.get("work_mode", ""), "yolo": full_control.button_pressed if full_control != null else false}}
+	_append_detailed_log(entry)
+	var compact = entry.duplicate(true)
+	compact["result"] = JSON.stringify(entry["result"]).left(12000)
+	journal.append(compact)
 	if journal.size() > 1000: journal = journal.slice(-1000)
 	Common.atomic_json(project_directory.path_join("journal.json"), journal)
 	_refresh_journal()
 
-func _refresh_journal() -> void:
+func _journal_value(value: Variant, depth: int = 0) -> Variant:
+	if depth > 64: return "[nested metadata exceeds 64 levels]"
+	if value is PackedByteArray: return {"bytes": value.size(), "binary_omitted": true}
+	if value is Dictionary:
+		var clean = {}
+		for key in value:
+			var normalized = str(key).to_lower().replace("_", "").replace("-", "")
+			if normalized in ["apikey", "accesstoken", "refreshtoken", "password", "authorization", "clientsecret"]: clean[str(key)] = "[redacted]"
+			elif str(key) in ["images", "attachments"] and value[key] is Array:
+				clean[str(key)] = value[key].map(func(item: Variant) -> Variant: return {"name": item.get("name", ""), "mimeType": item.get("mimeType", ""), "binary_omitted": true} if item is Dictionary else "[attachment omitted]")
+			else: clean[str(key)] = _journal_value(value[key], depth + 1)
+		return clean
+	if value is Array:
+		var clean = []
+		for item in value: clean.append(_journal_value(item, depth + 1))
+		return clean
+	return _redact(value) if value is String else Common.json_safe(value)
+
+func _append_detailed_log(entry: Dictionary) -> void:
+	if project_directory.is_empty(): return
+	if journal_session.is_empty(): journal_session = Common.uid()
+	var directory = project_directory.path_join("logs")
+	if DirAccess.make_dir_recursive_absolute(directory) != OK: return
+	var name = "activity-%s-%04d.jsonl" % [journal_session, journal_part]
+	var path = directory.path_join(name)
+	var existing = FileAccess.open(path, FileAccess.READ) if FileAccess.file_exists(path) else null
+	if existing != null and existing.get_length() >= 8 * 1024 * 1024:
+		journal_part += 1
+		name = "activity-%s-%04d.jsonl" % [journal_session, journal_part]
+		path = directory.path_join(name)
+	var line = JSON.stringify(entry) + "\n"
+	_append_log_line(path, line)
+	var exported = str(config.get("preferences", {}).get("journal_export_directory", ""))
+	if not exported.is_empty():
+		exported = exported.path_join("godot-ai-" + project_directory.get_file())
+		if DirAccess.make_dir_recursive_absolute(exported) == OK: _append_log_line(exported.path_join(name), line)
+
+func _append_log_line(path: String, line: String) -> void:
+	var file = FileAccess.open(path, FileAccess.READ_WRITE if FileAccess.file_exists(path) else FileAccess.WRITE)
+	if file != null:
+		file.seek_end()
+		file.store_string(line)
+		file.flush()
+
+func _choose_journal_directory() -> void:
+	var picker = FileDialog.new()
+	picker.title = "Director pentru jurnalul complet"
+	picker.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	picker.access = FileDialog.ACCESS_FILESYSTEM
+	settings_window.add_child(picker)
+	picker.dir_selected.connect(func(directory: String) -> void:
+		if not directory.is_absolute_path(): return
+		config["preferences"]["journal_export_directory"] = directory
+		_save_config()
+		var target = directory.path_join("godot-ai-" + project_directory.get_file())
+		if DirAccess.make_dir_recursive_absolute(target) == OK:
+			for name in DirAccess.get_files_at(project_directory.path_join("logs")):
+				if name.begins_with("activity-") and name.ends_with(".jsonl"): DirAccess.copy_absolute(project_directory.path_join("logs").path_join(name), target.path_join(name))
+		_status("Jurnal complet · " + target)
+		picker.queue_free())
+	picker.canceled.connect(picker.queue_free)
+	picker.popup_centered_clamped(Vector2i(800, 600), 0.85)
+
+func _refresh_journal(force: bool = false) -> void:
 	if journal_console == null: return
+	if not force and not journal_console.is_visible_in_tree(): return
 	var query = journal_filter.text.strip_edges().to_lower() if journal_filter != null else ""
+	if not force and journal_rendered_revision == journal_revision and query == journal_rendered_query: return
+	if not force and Time.get_ticks_msec() - journal_last_render < 200:
+		if not journal_refresh_pending:
+			journal_refresh_pending = true
+			get_tree().create_timer(0.2).timeout.connect(func() -> void: journal_refresh_pending = false; _refresh_journal())
+		return
+	journal_rendered_revision = journal_revision
+	journal_rendered_query = query
+	journal_last_render = Time.get_ticks_msec()
 	var lines = []
 	var length = 0
 	var entries = journal.slice(-1000)
@@ -2607,6 +2734,19 @@ func _finish_chat(message: String, outcome: Dictionary = {}) -> void:
 			history.append(saved)
 			chat.finish_stream(transcript, saved)
 	var run_status = str(outcome.get("status", "cancelled" if cancel.get("cancelled", false) else ("completed" if completed else "failed")))
+	chat.show_running_tool()
+	if run_status != "completed":
+		var changed = tools.change_summary(current_turn) if not project_manager_mode else []
+		var paths = []
+		for item in changed:
+			if item.get("kind", "file") == "file" and item.get("state") != "Restaurat": paths.append(str(item.get("path", "")))
+		var remaining = planner.steps.filter(func(item: Dictionary) -> bool: return item.get("status") != "completed").size()
+		var summary = message + "\nFișiere schimbate: " + (", ".join(paths.slice(0, 4)) if not paths.is_empty() else "niciun fișier confirmat")
+		summary += "\nVerificări executate: " + (", ".join(verification_tools) if not verification_tools.is_empty() else "niciuna confirmată după ultima modificare")
+		summary += "\nPași rămași: %s. Rezultatele sunt păstrate; poți relua sarcina." % remaining if not planner.steps.is_empty() else "\nRezultatul cerut rămâne neconfirmat; poți relua sarcina."
+		var saved = current_origin.merged({"id": Common.uid(), "role": "assistant", "content": summary, "run_status": run_status})
+		history.append(saved)
+		chat.append_message("assistant", summary, saved)
 	for entry in history:
 		if entry.get("turn_id") == current_turn: entry["run_status"] = run_status
 	chat.set_turn_outcome(current_turn, run_status)
@@ -3517,6 +3657,7 @@ func _search_settings(query: String) -> void:
 func _select_settings(tab: int) -> void:
 	if project_manager_mode and not tab in [section_tabs["general"], section_tabs["providers"], section_tabs["accounts"], section_tabs["journal"], section_tabs["voice"]]: tab = section_tabs["general"]
 	settings_tabs.current_tab = tab
+	if tab == section_tabs.get("journal", -1): _refresh_journal(true)
 	for index in range(settings_navigation.item_count):
 		if int(settings_navigation.get_item_metadata(index)) == tab:
 			settings_navigation.select(index)
@@ -3807,6 +3948,8 @@ func _agent_definitions() -> Array:
 	return [Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Planner.definition(), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
 
 func _agent_call(name: String, args: Dictionary) -> Dictionary:
+	if name.begins_with("playtest_"):
+		return await agent_jobs.execute({"id": current_turn, "parent": current_turn, "kind": "Playtest", "cancel": cancel, "authorized": true}, name, args)
 	match name:
 		"agent_spawn":
 			var kind = str(args.get("kind", "Explore"))
@@ -3825,6 +3968,9 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 		"agent_wait": return await agent_jobs.wait_for(str(args.get("id", "")), cancel)
 		"agent_cancel": agent_jobs.stop(str(args.get("id", ""))); return Common.success("Oprire solicitată.")
 		"task_update":
+			if args.get("phase") == "completed" and args.get("intent", planner.intent) == "execute" and turn_has_mutations:
+				var problem = _verification_problem(args)
+				if not problem.is_empty(): return Common.failure(problem, "verification_required")
 			var result = planner.update(Common.parse_json(_redact(JSON.stringify(args))), _mode() == 3)
 			if result.get("ok", false):
 				tasks = planner.steps.duplicate(true)
@@ -3834,6 +3980,19 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 			memory_editor.text = _redact(str(args.get("text", ""))).left(32000)
 			return _save_memories()
 	return Common.failure("Instrument necunoscut.")
+
+func _track_verification(name: String) -> void:
+	if name in ["godot_write_file", "godot_apply_patch", "godot_delete_file", "godot_set", "godot_create_scene", "godot_create_node", "godot_remove_node", "godot_attach_script", "godot_connect_signal", "godot_save_scene", "godot_save_resource", "godot_set_setting", "godot_run", "linux_execute"]:
+		turn_has_mutations = true
+		verification_tools.clear()
+	elif name in ["godot_read_file", "godot_read_range", "godot_get", "godot_script_diagnostics", "godot_output", "godot_run_state", "godot_scene_tree", "playtest_observe", "playtest_state", "playtest_input", "file_observe", "asset_wait", "asset_status"] and name not in verification_tools: verification_tools.append(name)
+
+func _verification_problem(args: Dictionary) -> String:
+	if str(args.get("verification", "")).strip_edges().is_empty() or verification_tools.is_empty(): return "Pentru completed, descrie verificările efective în verification și execută verificări după ultima modificare. Dacă un criteriu rămâne neprobat, păstrează-l pending sau marchează blocked cu motiv."
+	var kind = str(args.get("verification_kind", "inspection"))
+	if kind in ["runtime", "interaction"] and not (["godot_output", "playtest_state", "playtest_observe"].any(func(name: String) -> bool: return name in verification_tools)): return "Verificarea runtime necesită Output sau starea/cadrul jocului după modificări."
+	if kind == "interaction" and "playtest_input" not in verification_tools: return "Verificarea interacțiunii necesită playtest_input și observarea rezultatului. Existența nodurilor și semnalelor nu probează mecanica; folosește blocked dacă ruta este indisponibilă."
+	return ""
 
 func _show_changes(turn: String, path: String = "") -> void:
 	var dialog = AcceptDialog.new()

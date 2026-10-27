@@ -66,6 +66,7 @@ func _run(job: Dictionary) -> void:
 		var service = Providers.new(owner, owner.vault)
 		var core = Harness.new(owner)
 		core.event.connect(func(value: Dictionary) -> void:
+			if value.get("kind") in ["tool_result", "request_started", "settled"]: owner._record_event("child_" + str(value["kind"]), {"job": job["id"], "parent": job["parent"], "model": job["model"]}, value)
 			if value.get("kind") != "request_started": return
 			job["steps"] = value["step"]
 			changed.emit(str(job["parent"])))
@@ -137,7 +138,7 @@ func execute(job: Dictionary, name: String, args: Dictionary) -> Dictionary:
 			return frame
 		if name == "playtest_state": return await runtime("inspect", args, job["cancel"])
 		if name == "playtest_input":
-			if not await owner._authorize({"name": name, "risk": "write"}, args, job["cancel"]): return Common.failure("Input neautorizat.")
+			if not job.get("authorized", false) and not await owner._authorize({"name": name, "risk": "write"}, args, job["cancel"]): return Common.failure("Input neautorizat.")
 			var result = await runtime("input", args, job["cancel"])
 			var deadline = Time.get_ticks_msec() + clampi(int(args.get("duration_ms", 100)), 1, 2000)
 			while Time.get_ticks_msec() < deadline and not job["cancel"].get("cancelled", false): await owner.get_tree().process_frame

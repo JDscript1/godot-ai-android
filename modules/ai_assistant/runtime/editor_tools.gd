@@ -13,6 +13,9 @@ var backup_directory = ""
 var turn_id = ""
 var scene_changes = {}
 var scan_pending = false
+var last_run: Dictionary = {}
+var run_output_before = ""
+var external_changes: Array = []
 
 func _init(editor_plugin: Node = null, owner_panel: Node = null) -> void:
 	plugin = editor_plugin
@@ -51,6 +54,7 @@ func definitions() -> Array:
 		Common.tool("godot_create_resource", "Create an instantiable Resource class and return its handle.", {"class": string}, ["class"], "write"),
 		Common.tool("godot_save_resource", "Save a Resource handle to the project, with a recovery copy of any previous file.", {"handle": string, "path": string}, ["handle", "path"], "write"),
 		Common.tool("godot_run", "Run the project or a chosen scene.", {"scene": string}, [], "write"),
+		Common.tool("godot_run_state", "Inspect the last requested scene, actual playing scene, unresolved main-scene UID and Output since the request. A run request alone does not prove startup or gameplay.", {}, []),
 		Common.tool("godot_stop", "Stop the running project.", {}, [], "write"),
 		Common.tool("godot_undo", "Undo the latest scene operation.", {}, [], "write"),
 		Common.tool("godot_redo", "Redo the latest scene operation.", {}, [], "write"),
@@ -100,7 +104,12 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var node = _instantiate_node(str(args["type"]))
 			if node == null: return Common.failure("Clasa nu este un Node instanțiabil.")
 			node.name = str(args["name"])
-			EditorInterface.add_root_node(node)
+			if plugin != null and plugin.has_method("create_scene_root"):
+				plugin.create_scene_root(node)
+			elif root == null: EditorInterface.add_root_node(node)
+			if EditorInterface.get_edited_scene_root() != node:
+				node.free()
+				return Common.failure("Scena nouă nu a putut deveni activă. Scena existentă este păstrată; este necesar editorul nativ actualizat.", "scene_create_failed")
 			return Common.success(_encode(node))
 		"godot_create_node":
 			if root == null: return Common.failure("Deschide sau creează mai întâi o scenă.")
@@ -216,10 +225,21 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			return Common.success(_encode(resource))
 		"godot_run":
 			var scene = str(args.get("scene", ""))
+			var output = []
+			_collect_output(EditorInterface.get_base_control(), output)
+			run_output_before = "\n".join(output)
+			last_run = {"requested_scene": scene, "requested_at": Time.get_datetime_string_from_system(true), "baseline_available": not output.is_empty()}
 			if scene.is_empty(): EditorInterface.play_main_scene()
-			elif not Common.project_path(scene).is_empty() and FileAccess.file_exists(scene): EditorInterface.play_custom_scene(scene)
+			elif not Common.project_path(scene).is_empty() and scene.get_extension() in ["tscn", "scn"] and FileAccess.file_exists(scene): EditorInterface.play_custom_scene(scene)
 			else: return Common.failure("Scenă invalidă.")
-			return Common.success("Cerere de rulare transmisă; verifică starea și Output.")
+			return Common.success(last_run.merged({"requested": true, "verified": false, "next": "Use godot_run_state, godot_output and playtest tools to verify the result."}))
+		"godot_run_state":
+			var output = []
+			_collect_output(EditorInterface.get_base_control(), output)
+			var current_output = "\n".join(output)
+			var main = str(ProjectSettings.get_setting("application/run/main_scene", ""))
+			var unresolved = main.begins_with("uid://") and not ResourceUID.has_id(ResourceUID.text_to_id(main))
+			return Common.success(last_run.merged({"running": EditorInterface.is_playing_scene(), "playing_scene": EditorInterface.get_playing_scene(), "main_scene": main, "unresolved_main_uid": unresolved, "output_after_request": current_output.substr(run_output_before.length()) if current_output.begins_with(run_output_before) else current_output, "output_baseline_reset": not current_output.begins_with(run_output_before), "note": "An unresolved main UID is independent of an explicitly requested scene. Do not rewrite the main scene to hide it."}))
 		"godot_stop":
 			EditorInterface.stop_playing_scene()
 			return Common.success("Oprire transmisă.")
@@ -423,8 +443,14 @@ func _object_operation(name: String, args: Dictionary) -> Dictionary:
 	undo.commit_action()
 	_end_scene_change()
 	var actual: Variant = object.get(property)
-	if actual != value: return Common.failure("Proprietatea nu are valoarea cerută după modificare. Verifică rezultatul înainte de continuare.", "property_not_applied").merged({"result": _encode(actual)})
+	if not _values_equal(actual, value): return Common.failure("Proprietatea nu are valoarea cerută după modificare. Verifică rezultatul înainte de continuare.", "property_not_applied").merged({"result": _encode(actual)})
 	return Common.success(_encode(actual))
+
+func _values_equal(actual: Variant, expected: Variant) -> bool:
+	if typeof(actual) in [TYPE_FLOAT, TYPE_VECTOR2, TYPE_VECTOR3, TYPE_VECTOR4, TYPE_COLOR, TYPE_QUATERNION, TYPE_BASIS, TYPE_TRANSFORM2D, TYPE_TRANSFORM3D, TYPE_PLANE]:
+		if actual is float and expected is float: return is_finite(actual) and is_finite(expected) and absf(actual - expected) <= 0.00001 + 0.000001 * maxf(absf(actual), absf(expected))
+		return typeof(actual) == typeof(expected) and actual.is_equal_approx(expected)
+	return actual == expected
 
 func _scene_tree(node: Node, root: Node, depth: int) -> Variant:
 	if node == null: return null
@@ -684,13 +710,27 @@ func _scan_when_ready() -> void:
 	scan_pending = false
 
 func _settings(name: String, args: Dictionary) -> Dictionary:
+	if args.get("scope", "project") not in ["project", "editor"]: return Common.failure("Scope trebuie să fie project sau editor.", "invalid_arguments")
 	var settings: Object = EditorInterface.get_editor_settings() if args.get("scope", "project") == "editor" else ProjectSettings
 	if name == "godot_set_setting":
 		var key = str(args["key"])
 		if key.is_empty() or key.begins_with("ai_assistant/") or _sensitive(key): return Common.failure("Setare rezervată sau secretă.")
-		settings.set_setting(key, Common.decode_variant(args["value"]))
-		if args.get("scope", "project") == "editor": return Common.success({"key": key, "persistence": "editor-managed"})
+		if key == "editor_plugins/enabled": return Common.failure("Pentru activarea/dezactivarea pluginurilor folosește plugin_enable; simpla schimbare a listei nu încarcă pluginul.", "dedicated_tool_required")
+		var value: Variant = Common.decode_variant(args["value"])
+		if value is Dictionary and value.has("$type"): return Common.failure("Descriptor de tip invalid sau nesuportat.", "invalid_arguments")
+		if settings.has_setting(key):
+			var specification = {"type": typeof(settings.get_setting(key))}
+			var problem = _type_error(value, specification)
+			if not problem.is_empty(): return Common.failure(problem, "invalid_arguments")
+			value = _convert_argument(value, specification)
+		var previous: Variant = settings.get_setting(key) if settings.has_setting(key) else null
+		settings.set_setting(key, value)
+		if not _values_equal(settings.get_setting(key), value):
+			settings.set_setting(key, previous)
+			return Common.failure("Setarea nu are valoarea cerută.", "setting_not_applied")
+		if args.get("scope", "project") == "editor": return Common.success({"key": key, "value": _encode(settings.get_setting(key)), "persistence": "editor-managed"})
 		var error = settings.save()
+		if error != OK: settings.set_setting(key, previous)
 		return Common.success(key) if error == OK else Common.failure(error_string(error))
 	var output = {}
 	var filter = str(args.get("filter", "")).to_lower()
@@ -819,7 +859,42 @@ func change_summary(id: String) -> Array:
 		elif history.get_version() != change["after"]: state = "Conflict"
 		summary.append({"kind": "scene", "path": "Scenă · Undo", "state": state, "exact": false, "operations": change["count"], "diff": "Scenă · " + state + "\n" + "\n".join(change.get("operations", []))})
 
+	for item in external_changes:
+		if item.get("turn_id") == id: summary.append(item.duplicate(true))
 	return summary
+
+func external_snapshot() -> Dictionary:
+	var listed: Array = _files({"path": "res://"}).get("result", [])
+	var files = {}
+	var skipped = []
+	var budget = 16 * 1024 * 1024
+	for path in listed:
+		var file = FileAccess.open(path, FileAccess.READ)
+		if file == null: skipped.append(path); continue
+		var length = file.get_length()
+		if length > 1024 * 1024 or length > budget: skipped.append(path); continue
+		budget -= length
+		files[path] = FileAccess.get_sha256(path)
+	return {"files": files, "complete": listed.size() < 400 and skipped.is_empty(), "skipped": skipped}
+
+func record_external(before: Dictionary, after: Dictionary) -> Dictionary:
+	var changed = []
+	var all_paths = before.get("files", {}).keys()
+	for path in after.get("files", {}):
+		if path not in all_paths: all_paths.append(path)
+	for path in all_paths:
+		if not before.get("files", {}).has(path) and not before.get("complete", false): continue
+		if not after.get("files", {}).has(path) and FileAccess.file_exists(path): continue
+		if path in before.get("skipped", []) or path in after.get("skipped", []): continue
+		var old = str(before.get("files", {}).get(path, "missing"))
+		var current = str(after.get("files", {}).get(path, "missing"))
+		if old == current: continue
+		var item = {"turn_id": turn_id, "path": path, "kind": "external", "state": "Extern · fără recuperare", "exact": false, "before_sha256": old, "after_sha256": current, "diff": "Schimbare observată după comanda Linux; nu există copie de recuperare nativă."}
+		external_changes.append(item)
+		changed.append(item)
+	Common.atomic_json(backup_directory.path_join("external.json"), external_changes)
+	_request_scan()
+	return {"changes": changed, "complete": before.get("complete", false) and after.get("complete", false), "note": "Bounded observation: at most 400 visible files, 1 MiB/file and 16 MiB total. Concurrent manual edits are not attributed exclusively to the command. No automatic recovery is claimed."}
 
 func diff_turn(id: String) -> String:
 	var output = ""
@@ -827,6 +902,7 @@ func diff_turn(id: String) -> String:
 	return output + "\nRestaurarea verifică editările manuale și istoricul Undo al scenei."
 
 func restore_turn(id: String) -> Dictionary:
+	if external_changes.any(func(item: Dictionary) -> bool: return item.get("turn_id") == id): return Common.failure("Turnul include schimbări externe fără copie nativă. Verifică-le separat; restaurarea completă nu poate fi garantată.", "external_changes_untracked")
 	var latest = {}
 	for change in file_changes:
 		if change.get("turn_id") == id and not change.get("restored", false): latest[change["path"]] = change

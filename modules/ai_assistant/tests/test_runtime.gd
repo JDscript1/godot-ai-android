@@ -1056,6 +1056,15 @@ func _cloud_generation_tests(node: Node) -> void:
 	runware_submission["model"] = "runware:fixture@1"
 	var runware_lost = await assets.submit(runware_submission, "lost-runware-submit", "", {})
 	check(runware_lost.get("code") == "submission_unknown" and not str(runware_lost.get("result", {}).get("external_id", "")).is_empty(), "Runware preserves its locally assigned task UUID when the submission response is lost")
+	var recovery_profile = runware_submission.duplicate(true)
+	recovery_profile["destination"] = "res://ai_test_assets"
+	var uncertain = await assets.submit(recovery_profile, "http500-result", "", {})
+	check(uncertain.get("code") == "submission_unknown", "Runware HTTP 500 acknowledgement does not falsely confirm a submission")
+	var recovered_result = await assets.refresh(str(uncertain["result"]["id"]), recovery_profile, {})
+	check(recovered_result.get("ok", false) and recovered_result.get("result", {}).get("status") == "completed" and recovered_result["result"].get("cost_usd") == 0.02 and FileAccess.file_exists(recovered_result["result"].get("file", "")), "Contradictory HTTP 500 success recovers and downloads the exact existing job")
+	await assets.wait_for_job(str(uncertain["result"]["id"]), recovery_profile, {})
+	var recovery_counts = await transport.request(mock_url + "/fixture-submissions", HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+	check(recovery_counts.get("json", {}).get("http500-result") == 1, "Runware recovery and waiting submit no duplicate paid generation")
 	var invalid = await assets.submit({"id": "fixture-openai_image", "kind": "openai_image", "asset_kind": "image"}, "invalid", "", {})
 	check(not invalid.get("ok", true) and assets.jobs[-1].get("status") == "failed", "Invalid base64 image output is recorded as failure without import")
 	vault.erase("fixture-tripo")

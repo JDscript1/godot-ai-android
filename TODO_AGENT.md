@@ -2,8 +2,47 @@
 
 Actualizat: **27.10.2026**. APK verificat: **c418f97**. Bifele se închid după
 verificarea rezultatului; implementarea în sursă și livrarea în APK sunt stări
-separate. Corecția salvării/căilor este implementată și testată în surse;
-APK-ul instalat păstrează comportamentul vechi.
+separate. Implementarea punctelor AG-01–AG-20 este pregătită pentru noul APK;
+confirmările fizice rămân distincte de testele locale și compilare.
+
+## Aplicare în această livrare — 27.10.2026
+
+Utilizatorul a cerut implementarea TODO-ului și un APK nou. Lista de mai jos
+descrie codul rezultat; criteriile fizice încă neexercitate nu sunt bifate automat.
+
+| ID | Implementare |
+| --- | --- |
+| AG-01/19 | Salvare în directoare noi, erori reale, calea scenei și căi persistente în context; aceeași structură la continuare. |
+| AG-02 | Toleranță numerică la verificarea proprietăților, cu egalitate exactă pentru valori discrete și referințe. |
+| AG-03 | Livrare a eliminării plafonului de cereri, inclusiv copii/companion, și a dialogului de aprobare încadrat. |
+| AG-04 | La întrerupere, raport persistent derivat din schimbări, verificări și pași rămași; fără finalizare falsă. |
+| AG-05 | Contract explicit pentru handle-ul Window; captură/input/stare de joc disponibile și părintelui. |
+| AG-06 | `godot_run_state`: scenă cerută, scenă rulată, Output după cerere, UID principal nerezolvat; fără rescrierea configurației. |
+| AG-07/12 | Grupuri utile de scheme și restaurarea lor din conversație/Resume, numai din catalogul permis. |
+| AG-08 | Schimbările observate după Linux sunt separate de recuperarea nativă; raport cu limitele observației și fără restaurare garantată. |
+| AG-09 | JSONL complet, fișiere succesive de 8 MiB, export automat opțional într-un director ales; build/model/effort/mod/YOLO și decizii de autorizare. Imaginile, binarele și cheile sunt excluse. Consola ascunsă nu se reconstruiește la fiecare eveniment. |
+| AG-10 | Decodează/validează setările tipizate, verifică valoarea aplicată; pluginurile se activează prin unealta dedicată. |
+| AG-11 | HTTP 500 contradictoriu se recuperează numai pentru același job finalizat, cu artefact valid; fără altă trimitere plătită. |
+| AG-13 | Running Tools: etichetă fără dropdown, numele real al uneltei și resetare la final/Stop. Istoricul operațiilor rămâne în Jurnal. |
+| AG-14 | Carduri media compacte și persistente; deschiderea de către agent este blocată fără cerere explicită. Observarea în background rămâne separată. |
+| AG-15 | Card de plan cu lățime adaptată și plafon vizual de 440 unități editor, verificat și în dockuri. |
+| AG-16 | Gesturile tactile peste text/cod derulează chatul; apăsarea lungă selectează intenționat și oferă copiere. Mouse-ul și gesturile cardurilor sunt păstrate. |
+| AG-17 | Finalizarea unui plan executat cere verificări după ultima modificare și un raport al lor. Tipul `interaction` cere input și observație/stare runtime. Alegerea corectă a tipului de probă rămâne responsabilitatea agentului și trebuie evaluată cu modele reale. |
+| AG-18 | Schema declară limita reală de text pentru fiecare pas, iar erorile indică câmpul, lungimea și limita. Nu se adaugă un plafon de execuție. |
+| AG-20 | Punte nativă pentru scenă nouă într-un tab separat; rădăcina activă este verificată înainte de a raporta succes. |
+
+Probe locale inițiale: **495 aserțiuni runtime**, inclusiv recuperare Runware
+prin HTTP real către fixture și descărcarea artefactului fără trimitere duplicată;
+**84 verificări editor dedicate** în configurație phone landscape. Randările
+chatului și dockurilor au fost inspectate. Regresia completă locală are
+**514 verificări / 0 eșecuri**. Aceste probe nu sunt utilizare
+fizică Android sau generare plătită live. Regresiile complete și compilarea
+nativă sunt consemnate în documentul de progres și în raportul de livrare.
+
+Rămân de confirmat pe noul APK: gesturi fizice și aprobări/refuz, sarcini reale
+peste plafonul vechi, aceeași probă înainte/după pentru costul descoperirii și
+workflow-ul Runware real până la mesh. Pilotul Pi nu face parte din această
+livrare; motorul rămâne harness-ul nativ Godot.
 
 ## Cerință principală — continuă până la rezultatul cerut
 
@@ -183,7 +222,7 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   refuză o scenă care are deja rădăcină, iar unealta nu verifică efectul.
   **Acceptare:** scenă nouă într-un tab separat, păstrarea scenei anterioare,
   rădăcină activă egală cu handle-ul returnat; eșec explicit dacă nu poate crea.
-  Confirmat în APK și în implementarea actuală; corecția nu este inclusă în AG-19.
+  Defect confirmat în APK-ul vechi; corecția pentru noul tab este implementată separat de AG-19 și intră în verificarea nativă a livrării.
 - [ ] **AG-04 · Încheiere clară la întrerupere.** La Stop, limită sau blocaj,
   afișează un raport scurt derivat din operații: rezultat salvat, verificări
   efectuate, pași rămași și posibilitatea de reluare. În test nu există răspuns
@@ -246,8 +285,7 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   selecția/copierea să pornească intenționat prin apăsare lungă. Păstrează
   selecția cu mouse-ul și gestul de menționare a fișierelor. **Acceptare:**
   derulare în ambele sensuri pe Android, fără selecții accidentale; apăsare lungă
-  pentru selecție funcțională. Raportat de utilizator, încă nereprodus și necorectat
-  în această etapă.
+  pentru selecție funcțională. Gesturi simulate și selecție prin apăsare lungă probate în editor; confirmarea fizică pe Android rămâne separată.
 - [ ] **AG-13 · Running Tools fără dropdown.** Înlocuiește zona „Operațiuni”
   cu eticheta exactă **Running Tools**. În dreptul ei se afișează unealta
   folosită în acel moment, actualizată automat la fiecare operație următoare.
@@ -269,8 +307,8 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   central/stânga/dreapta; fără depășire, scroll orizontal sau lățime minimă care
   forțează extinderea panoului; pașii și stările rămân lizibile.
 
-Aceste puncte sunt cerințe pentru implementare, nu modificări deja
-aplicate sau validate în APK.
+Implementările acestei livrări sunt descrise la începutul documentului.
+Criteriile fizice nu sunt declarate validate numai din cod sau compilare.
 
 ## Din probele anterioare — de reverificat separat
 

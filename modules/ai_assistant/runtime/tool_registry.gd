@@ -8,6 +8,33 @@ const SUPPORTED = ["$schema", "$id", "$defs", "definitions", "$ref", "title", "d
 var catalog = {}
 var loaded = {}
 var error = ""
+const FAMILIES = [
+	["godot_create_scene", "godot_create_node", "godot_set", "godot_get", "godot_save_scene", "godot_open_scene", "godot_create_resource", "godot_attach_script", "godot_connect_signal"],
+	["godot_write_file", "godot_apply_patch", "godot_script_diagnostics", "godot_run", "godot_stop", "godot_output", "godot_run_state"],
+	["store_search", "store_describe", "store_install", "plugin_enable", "godot_output"]]
+
+func _load(name: String) -> void:
+	if not catalog.has(name): return
+	loaded[name] = true
+	for family in FAMILIES:
+		if name in family:
+			for member in family:
+				if catalog.has(member): loaded[member] = true
+
+func restore(messages: Array) -> void:
+	# Restore schemas only from this conversation and only within the current allowed catalog.
+	for message in messages:
+		for call in message.get("tool_calls", []):
+			var name = str(call.get("name", ""))
+			if name == "tool_describe": _load(str(call.get("arguments", {}).get("name", "")))
+			elif catalog.has(name): _load(name)
+		if message.get("role") == "tool" and message.get("tool_name") in ["tool_search", "tool_describe"]:
+			var response: Variant = Common.parse_json(str(message.get("content", "")))
+			if not response is Dictionary or not response.get("ok", false): continue
+			var found: Dictionary = response.get("result", {})
+			if found.get("tool") is Dictionary: _load(str(found["tool"].get("name", "")))
+			for tool in found.get("tools", []):
+				if tool is Dictionary: _load(str(tool.get("name", "")))
 
 func _init(definitions: Array = [], deferred: bool = false) -> void:
 	for definition in definitions:
@@ -38,7 +65,7 @@ func discover(name: String, args: Dictionary) -> Dictionary:
 	if name == "tool_describe":
 		var target = str(args.get("name", ""))
 		if not catalog.has(target): return Common.failure("Instrument indisponibil în această sesiune.", "tool_unavailable")
-		loaded[target] = true
+		_load(target)
 		return Common.success({"tool": catalog[target], "loaded": true})
 	var query = str(args.get("query", "")).strip_edges().to_lower()
 	var ranked = []
@@ -56,7 +83,7 @@ func discover(name: String, args: Dictionary) -> Dictionary:
 	var limit = clampi(int(args.get("limit", 5)), 1, 10)
 	var found = []
 	for entry in ranked.slice(offset, offset + limit):
-		loaded[entry["name"]] = true
+		_load(entry["name"])
 		found.append(catalog[entry["name"]])
 	return Common.success({"tools": found, "total": ranked.size(), "next_offset": offset + found.size() if offset + found.size() < ranked.size() else -1, "loaded": true})
 
@@ -137,9 +164,12 @@ static func _validate(value: Variant, schema: Variant, root: Dictionary, path: S
 		if not schema.has(combinator): continue
 		if not schema[combinator] is Array: return path + ": schemă compusă invalidă."
 		var matches = 0
+		var details = []
 		for branch in schema[combinator]:
-			if _validate(value, branch, root, path, depth + 1).is_empty(): matches += 1
-		if (combinator == "allOf" and matches != schema[combinator].size()) or (combinator == "anyOf" and matches == 0) or (combinator == "oneOf" and matches != 1): return path + ": valoarea nu corespunde " + combinator
+			var issue = _validate(value, branch, root, path, depth + 1)
+			if issue.is_empty(): matches += 1
+			else: details.append(issue)
+		if (combinator == "allOf" and matches != schema[combinator].size()) or (combinator == "anyOf" and matches == 0) or (combinator == "oneOf" and matches != 1): return path + ": valoarea nu corespunde " + combinator + " (" + "; ".join(details) + ")"
 	if schema.has("not") and _validate(value, schema["not"], root, path, depth + 1).is_empty(): return path + ": valoare exclusă de schemă."
 	if schema.has("type"):
 		var types: Array = schema["type"] if schema["type"] is Array else [schema["type"]]
@@ -179,7 +209,7 @@ static func _validate(value: Variant, schema: Variant, root: Dictionary, path: S
 			var problem = _validate(value[index], schema.get("items", {}), root, path + "[%s]" % index, depth + 1)
 			if not problem.is_empty(): return problem
 	if value is String:
-		if value.length() < int(schema.get("minLength", 0)) or value.length() > int(schema.get("maxLength", 100000000)): return path + ": lungime invalidă."
+		if value.length() < int(schema.get("minLength", 0)) or value.length() > int(schema.get("maxLength", 100000000)): return path + ": %s caractere; lungimea permisă este %s–%s." % [value.length(), schema.get("minLength", 0), schema.get("maxLength", 100000000)]
 		if schema.has("pattern"):
 			var expression = RegEx.new()
 			if expression.compile(str(schema["pattern"])) != OK or expression.search(value) == null: return path + ": textul nu corespunde pattern."

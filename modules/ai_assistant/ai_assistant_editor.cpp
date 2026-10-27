@@ -12,6 +12,7 @@
 #include "core/object/class_db.h"
 #include "editor/asset_library/editor_asset_installer.h"
 #include "editor/docks/editor_dock.h"
+#include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_paths.h"
@@ -167,10 +168,19 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantEditorPlugin::linux_runtime_request);
 	ClassDB::bind_method(D_METHOD("termux_blender_request", "action", "arguments"), &AIAssistantEditorPlugin::termux_blender_request);
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
+	ClassDB::bind_method(D_METHOD("create_scene_root", "node"), &AIAssistantEditorPlugin::create_scene_root);
 	ClassDB::bind_method(D_METHOD("prepare_script_removal", "paths"), &AIAssistantEditorPlugin::prepare_script_removal);
 	ClassDB::bind_method(D_METHOD("push_editor_input", "viewport", "event"), &AIAssistantEditorPlugin::push_editor_input);
 	ClassDB::bind_method(D_METHOD("install_asset_archive", "path", "title"), &AIAssistantEditorPlugin::install_asset_archive);
 	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantEditorPlugin::open_settings, DEFVAL(String()));
+}
+
+bool AIAssistantEditorPlugin::create_scene_root(Node *p_node) {
+	ERR_FAIL_NULL_V(p_node, false);
+	ERR_FAIL_COND_V(p_node->get_parent() || p_node->is_inside_tree(), false);
+	EditorNode::get_singleton()->new_scene();
+	EditorInterface::get_singleton()->add_root_node(p_node);
+	return EditorInterface::get_singleton()->get_edited_scene_root() == p_node;
 }
 
 Dictionary AIAssistantEditorPlugin::script_diagnostics(const String &p_source, const String &p_path) {

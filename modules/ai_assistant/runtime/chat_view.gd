@@ -102,6 +102,10 @@ var work_message = ""
 var work_notice_running = false
 var activity_clock = 0.0
 var activity_dirty = true
+var running_tools: Label
+var touch_text_controls: Array = []
+var touch_scroll: Dictionary = {}
+var touch_suppress_until = 0
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -184,6 +188,11 @@ func _ready() -> void:
 	reference_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	reference_label.hide()
 	_build_activity_panel()
+	running_tools = label(root_column, "Running Tools · —")
+	root_column.move_child(running_tools, activity_panel.get_index())
+	running_tools.name = "RunningTools"
+	running_tools.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	running_tools.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
 	compose_panel = PanelContainer.new()
 	var compose_style = style(Color("1d2130"), 18)
 	compose_style.set_content_margin_all(8 * EditorInterface.get_editor_scale())
@@ -424,6 +433,7 @@ func _toggle_activity() -> void:
 	_refresh_activity()
 
 func reset_work() -> void:
+	show_running_tool()
 	status_revision += 1
 	work_turn = ""
 	work_plan = {}
@@ -495,7 +505,7 @@ func _work_running() -> bool:
 func _refresh_activity(rebuild: bool = false) -> void:
 	if activity_panel == null: return
 	var steps: Array = work_plan.get("steps", [])
-	var details = not steps.is_empty() or not work_operations.is_empty() or not work_jobs.is_empty() or work_message.length() > 100
+	var details = not steps.is_empty() or not work_jobs.is_empty() or work_message.length() > 100
 	activity_panel.visible = details or _work_running() or not work_message.is_empty()
 	status.visible = activity_panel.visible
 	var heading = work_message
@@ -510,7 +520,7 @@ func _refresh_activity(rebuild: bool = false) -> void:
 	status.text = heading
 	status.tooltip_text = heading
 	var done = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "completed").size()
-	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s operații" % work_operations.size() if not work_operations.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else ""))
+	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else "")
 	activity_counter.visible = not activity_counter.text.is_empty()
 	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else "Operațiile și sarcinile acestei cereri"
 	activity_chevron.visible = details
@@ -590,9 +600,6 @@ func _rebuild_activity() -> void:
 	if not work_jobs.is_empty():
 		_activity_heading("Sarcini secundare")
 		for job in work_jobs: _activity_row(str(job.get("task", "Sarcină")), "in_progress" if job.get("status") == "running" else str(job.get("status", "pending")), str(job.get("kind", "")))
-	if not work_operations.is_empty():
-		_activity_heading("Operații" + (" · ultimele 24 din %s" % work_operations.size() if work_operations.size() > 24 else ""))
-		for item in work_operations.values().slice(-24): _activity_row(str(item.title), str(item.state), str(item.get("detail", "")) + ("\n" + str(item.error) if not str(item.get("error", "")).is_empty() else ""), bool(item.get("replayed", false)))
 	if work_message.length() > 100:
 		var notice = label(activity_rows, work_message)
 		notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -653,6 +660,10 @@ func _size_messages() -> void:
 	thread.custom_minimum_size.x = minf(760 * scale, maxf(180, scroll.size.x - 24 * scale))
 	for record in message_records:
 		if is_instance_valid(record["card"]) and record["role"] == "user": _size_user(record)
+	for card in plan_cards.values():
+		var width = minf(440 * scale, maxf(0, scroll.size.x - 36 * scale))
+		card["node"].custom_minimum_size.x = 0
+		card["node"].custom_maximum_size.x = width
 
 func style(color: Color, radius: int = 12) -> StyleBoxFlat:
 	var box = StyleBoxFlat.new()
@@ -872,6 +883,9 @@ func _close_drawer() -> void:
 	if is_instance_valid(drawer_return_focus) and drawer_return_focus.is_visible_in_tree(): drawer_return_focus.grab_focus()
 
 func _input(event: InputEvent) -> void:
+	if _chat_touch(event):
+		get_viewport().set_input_as_handled()
+		return
 	if picker != null and picker.visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		_close_drawer()
 		get_viewport().set_input_as_handled()
@@ -1034,6 +1048,8 @@ func clear_messages() -> void:
 	plan_cards.clear()
 	message_records.clear()
 	streaming_dirty.clear()
+	touch_text_controls.clear()
+	touch_scroll.clear()
 	activity_group = null
 	for child in thread.get_children():
 		thread.remove_child(child)
@@ -1048,6 +1064,7 @@ func show_plan(snapshot: Dictionary) -> void:
 	if not restoring: show_work_plan(snapshot)
 	if not plan_cards.has(id) or not is_instance_valid(plan_cards[id]["node"]):
 		var panel = PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		var surface = style(Color("1c2030"), 12)
 		surface.border_color = Color("49415d")
 		surface.set_border_width_all(1)
@@ -1113,6 +1130,7 @@ func show_plan(snapshot: Dictionary) -> void:
 	card["summary"].tooltip_text = active_step
 	card["summary"].visible = not card["rows"].visible and phase != "completed" and not active_step.is_empty()
 	_follow.call_deferred()
+	_size_messages.call_deferred()
 
 func append_message(role: String, text: String, metadata: Dictionary = {}, rich: bool = true) -> RichTextLabel:
 	var row = HBoxContainer.new()
@@ -1232,6 +1250,7 @@ func _render_content(record: Dictionary) -> void:
 				var copy = icon_button(header, "Copy", "Copiază codul", func() -> void: DisplayServer.clipboard_set(editor.text))
 				_compact_button(copy)
 				box.add_child(editor)
+				touch_text_controls.append(weakref(editor))
 				blocks.append({"node": panel, "editor": editor, "language": language, "copy": copy})
 			else:
 				var text = RichTextLabel.new()
@@ -1245,6 +1264,7 @@ func _render_content(record: Dictionary) -> void:
 				text.meta_clicked.connect(func(value: Variant) -> void:
 					if Common.parse_url(str(value), true).get("ok", false): OS.shell_open(str(value)))
 				record["body"].add_child(text)
+				touch_text_controls.append(weakref(text))
 				blocks.append({"node": text})
 		var block: Dictionary = blocks[index]
 		if code_block:
@@ -1337,30 +1357,57 @@ func _message_action(record: Dictionary, name: String) -> void:
 	if metadata.has("id"): action.emit(name, {"message": metadata["id"], "turn": metadata.get("turn_id", "")})
 
 func activity(text: String, details: String = "") -> void:
-	if not is_instance_valid(activity_group):
-		activity_group = VBoxContainer.new()
-		thread.add_child(activity_group)
-		var entries = VBoxContainer.new()
-		var toggle = button(activity_group, "Activitate", func() -> void: entries.visible = not entries.visible)
-		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		_compact_button(toggle)
-		toggle.custom_minimum_size.y = 28 * EditorInterface.get_editor_scale()
-		toggle.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		activity_group.add_child(entries)
-		entries.hide()
-		activity_group.set_meta("entries", entries)
-		activity_group.set_meta("toggle", toggle)
-	var entries: VBoxContainer = activity_group.get_meta("entries")
-	var column = VBoxContainer.new()
-	entries.add_child(column)
-	var body = label(column, details.left(12000))
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.hide()
-	var toggle = button(column, "› " + text, func() -> void: body.visible = not body.visible)
-	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	column.move_child(toggle, 0)
-	activity_group.get_meta("toggle").text = "Activitate · %s  ▾" % entries.get_child_count()
-	_follow.call_deferred()
+	# Full operation history belongs to Jurnal. This row is deliberately not expandable.
+	if running_tools != null:
+		running_tools.text = "Running Tools · " + (text.get_slice(" · ", 0) if work_live else "—")
+		running_tools.tooltip_text = text if work_live else "Uneltele active apar aici; istoricul complet este în Jurnal."
+
+func show_running_tool(name: String = "") -> void:
+	if running_tools == null: return
+	running_tools.text = "Running Tools · " + (name if not name.is_empty() else "—")
+	running_tools.tooltip_text = name
+
+func _chat_touch(event: InputEvent) -> bool:
+	if event is InputEventMouse and event.device == -1 and Time.get_ticks_msec() < touch_suppress_until: return true
+	if not (event is InputEventScreenTouch or event is InputEventScreenDrag): return false
+	if not is_visible_in_tree() or scroll == null or (picker != null and picker.visible): return false
+	if event is InputEventScreenTouch and event.pressed:
+		if not scroll.get_global_rect().has_point(event.position): return false
+		for ref in touch_text_controls:
+			var control = ref.get_ref()
+			if control != null and control.is_visible_in_tree() and control.get_global_rect().has_point(event.position):
+				touch_scroll = {"index": event.index, "start": event.position, "last": event.position, "scroll": scroll.scroll_vertical, "moved": false, "target": ref, "token": Time.get_ticks_usec()}
+				touch_suppress_until = Time.get_ticks_msec() + 1000
+				_touch_selection_after(int(touch_scroll["token"]))
+				return true
+		return false
+	if touch_scroll.is_empty() or event.index != touch_scroll.get("index"): return false
+	touch_suppress_until = Time.get_ticks_msec() + 300
+	if event is InputEventScreenDrag:
+		touch_scroll["last"] = event.position
+		var delta = event.position - Vector2(touch_scroll["start"])
+		if delta.length() > 8 * EditorInterface.get_editor_scale(): touch_scroll["moved"] = true
+		if touch_scroll["moved"]:
+			follow_bottom = false
+			scroll.scroll_vertical = int(touch_scroll["scroll"]) - int(delta.y)
+	elif not event.pressed: touch_scroll.clear()
+	return true
+
+func _touch_selection_after(token: int) -> void:
+	await get_tree().create_timer(0.55).timeout
+	if touch_scroll.is_empty() or touch_scroll.get("token") != token or touch_scroll.get("moved", true): return
+	var control = touch_scroll["target"].get_ref()
+	if control == null: return
+	control.select_all()
+	var menu = PopupMenu.new()
+	add_child(menu)
+	menu.add_item("Copiază", 0)
+	menu.id_pressed.connect(func(_id: int) -> void:
+		if is_instance_valid(control): DisplayServer.clipboard_set(control.get_selected_text()))
+	menu.popup_hide.connect(menu.queue_free)
+	menu.position = get_window().position + Vector2i(touch_scroll["last"])
+	menu.popup()
+	touch_scroll["moved"] = true
 
 func _follow() -> void:
 	if follow_bottom and is_instance_valid(scroll): scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
@@ -1503,7 +1550,8 @@ func _file_card(parent: Node, id: String) -> Control:
 	if item.is_empty(): return null
 	var card = PanelContainer.new()
 	card.name = "File_" + id
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	card.custom_maximum_size.x = 280 * EditorInterface.get_editor_scale()
 	card.add_theme_stylebox_override("panel", style(Color("202638"), 10))
 	parent.add_child(card)
 	var column = VBoxContainer.new()
@@ -1514,7 +1562,7 @@ func _file_card(parent: Node, id: String) -> Control:
 		picture.texture = texture
 		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		picture.custom_minimum_size.y = 130 * EditorInterface.get_editor_scale()
+		picture.custom_minimum_size.y = 88 * EditorInterface.get_editor_scale()
 		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		column.add_child(picture)
 	var heading = label(column, str(item["name"]))

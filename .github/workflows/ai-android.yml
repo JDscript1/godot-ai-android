@@ -45,6 +45,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb libgl1-mesa-dri
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64
+          python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario todo --only narrow --output .ai-qa/rendered/todo
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario blender --only phone_compact --output .ai-qa/rendered/blender
           python modules/ai_assistant/tests/start.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --only narrow --output .ai-qa/rendered/start
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario generation --only narrow --output .ai-qa/rendered/generation
@@ -213,6 +214,7 @@ jobs:
       - name: Exercise and render the actual native plugin
         run: |
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --output .ai-qa/native-rendered
+          python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario todo --only narrow --output .ai-qa/native-rendered/todo
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario panels --only phone_landscape --output .ai-qa/native-rendered/panels
           python modules/ai_assistant/tests/start.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --only narrow --output .ai-qa/native-rendered/start
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario generation --only phone_landscape --output .ai-qa/native-rendered/generation

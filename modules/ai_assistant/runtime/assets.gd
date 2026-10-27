@@ -365,6 +365,7 @@ func _finish_download(job: Dictionary, temporary: String) -> Dictionary:
 	if DirAccess.rename_absolute(temporary, path) != OK: return Common.failure("Nu pot păstra rezultatul descărcat.")
 	job["file"] = path
 	job["status"] = "completed"
+	job.erase("error")
 	if job["kind"] == "image": job["quality"] = image_quality(path, str(job.get("background", "auto")))
 	var imported = import_job(str(job["id"]), str(job.get("destination", "res://ai_assets")))
 	if not imported.get("ok", false): job["import_error"] = str(imported.get("error", "Import automat eșuat."))
@@ -452,11 +453,38 @@ func _options(profile: Dictionary, cancel: Dictionary) -> Dictionary:
 
 func _runware(profile: Dictionary, tasks: Array, cancel: Dictionary, key: String = "") -> Dictionary:
 	var result = await transport.request(str(api_urls["runware"]), HTTPClient.METHOD_POST, _headers(profile, key), tasks, {"cancel": cancel, "allow_http": test_http})
-	if not result.get("ok", false): return result
+	if not result.get("ok", false) and not _recover_runware_result(result, tasks): return result
 	var json: Variant = result.get("json")
 	if not json is Dictionary: return Common.failure("Răspuns Runware invalid.")
 	if not json.get("errors", []).is_empty(): return Common.failure(JSON.stringify(json["errors"]).left(2000), "generation_failed")
 	return Common.success(json.get("data", []))
+
+func _recover_runware_result(response: Dictionary, tasks: Array) -> bool:
+	# A proxy can report 500 while carrying the completed result of the SAME task.
+	# An acknowledgement or a different task never proves successful completion.
+	if int(response.get("status", 0)) != 500 or not response.get("json") is Dictionary: return false
+	var body: Dictionary = response["json"]
+	if not body.get("errors", []).is_empty() or not body.get("data") is Array or body["data"].is_empty(): return false
+	for task in tasks:
+		var id = str(task.get("taskUUID", ""))
+		if id.is_empty(): return false
+		var matched = false
+		for item in body["data"]:
+			if not item is Dictionary or str(item.get("taskUUID", "")) != id: continue
+			if item.get("status") not in ["success", "completed"]: continue
+			if task.get("taskType") != "getResponse" and item.get("taskType") != task.get("taskType"): continue
+			var url = str(item.get("modelURL", item.get("modelUrl", item.get("imageURL", ""))))
+			if url.is_empty() and item.get("outputs", {}) is Dictionary:
+				var files: Array = item["outputs"].get("files", [])
+				if not files.is_empty() and files[0] is Dictionary: url = str(files[0].get("url", ""))
+			var parsed = Common.parse_url(url, test_http)
+			if not parsed.get("ok", false): continue
+			var host = str(parsed["host"])
+			if host != "runware.ai" and not host.ends_with(".runware.ai") and not (test_http and host == "127.0.0.1"): continue
+			matched = true
+			break
+		if not matched: return false
+	return true
 
 func _reference_data(path: String) -> String:
 	var safe = Common.project_path(path)

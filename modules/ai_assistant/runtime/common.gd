@@ -124,6 +124,13 @@ static func decode_variant(value: Variant) -> Variant:
 	if value is Dictionary and value.has("$type"):
 		var components = value.get("value", [])
 		match str(value["$type"]):
+			"PackedStringArray":
+				if components is Array and components.all(func(item: Variant) -> bool: return item is String): return PackedStringArray(components)
+			"PackedInt32Array", "PackedInt64Array", "PackedFloat32Array", "PackedFloat64Array":
+				if components is Array and components.all(func(item: Variant) -> bool: return item is int or (item is float and is_finite(item))):
+					var packed_type = {"PackedInt32Array": TYPE_PACKED_INT32_ARRAY, "PackedInt64Array": TYPE_PACKED_INT64_ARRAY, "PackedFloat32Array": TYPE_PACKED_FLOAT32_ARRAY, "PackedFloat64Array": TYPE_PACKED_FLOAT64_ARRAY}[value["$type"]]
+					if packed_type in [TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY] and not components.all(func(item: Variant) -> bool: return float(item) == floor(float(item))): return value
+					return type_convert(components, packed_type)
 			"Vector2":
 				if components is Array and components.size() == 2: return Vector2(float(components[0]), float(components[1]))
 			"Vector3":

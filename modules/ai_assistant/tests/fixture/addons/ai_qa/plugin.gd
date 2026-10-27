@@ -218,7 +218,7 @@ class FixturePlanningProvider:
 		var phase = {1: "planning", 5: "executing", 7: "verifying", 9: "completed"}.get(requests, "")
 		if not phase.is_empty():
 			name = "task_update"
-			args = {"phase": phase, "tasks": [{"step": "Pregătește nodul scenei", "status": "completed" if requests >= 7 else ("in_progress" if requests == 5 else "pending")}, {"step": "Verifică structura scenei", "status": "completed" if requests == 9 else ("in_progress" if requests == 7 else "pending")}], "explanation": "Două etape dependente; verific scena înainte de finalizare."}
+			args = {"phase": phase, "tasks": [{"step": "Pregătește nodul scenei", "status": "completed" if requests >= 7 else ("in_progress" if requests == 5 else "pending")}, {"step": "Verifică structura scenei", "status": "completed" if requests == 9 else ("in_progress" if requests == 7 else "pending")}], "explanation": "Două etape dependente; verific scena înainte de finalizare.", "verification": "godot_scene_tree confirms PlannedProbe after creation.", "verification_kind": "inspection"}
 		if requests == 3:
 			name = "tool_describe"
 			args = {"name": "godot_create_node"}
@@ -269,6 +269,12 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "scene_paths":
+		await _scene_path_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "todo":
+		var todo = load(get_script().resource_path.get_base_dir().path_join("todo.gd")).new()
+		await todo.run(self, panel)
 		await _scene_path_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
@@ -1187,7 +1193,7 @@ func _activity_drawer_tests() -> void:
 	chat.activity_toggle.pressed.emit()
 	await get_tree().create_timer(0.2).timeout
 	var rows = chat.activity_rows.get_children().filter(func(item: Node) -> bool: return item.has_meta("state"))
-	_check(chat.activity_details.visible and rows.size() == 8 and rows[0].get_meta("state") == "completed" and rows[2].get_meta("state") == "in_progress" and rows[4].get_meta("state") == "pending", "Expanding activity reveals completed, running and pending plan steps plus actual operations")
+	_check(chat.activity_details.visible and rows.size() == 5 and rows[0].get_meta("state") == "completed" and rows[2].get_meta("state") == "in_progress" and rows[4].get_meta("state") == "pending", "Expanding activity reveals completed, running and pending plan steps; operation history remains in Jurnal")
 	_check(rows.slice(0, 5).all(func(row: Node) -> bool: return row.get_child(2).is_visible_in_tree() and row.get_child(2).size.x >= row.get_child(2).get_minimum_size().x and row.get_child(2).size.x > 20 * EditorInterface.get_editor_scale() and row.get_global_rect().grow(1).encloses(row.get_child(2).get_global_rect())), "Plan state captions reserve readable width inside each activity row")
 	panel.current_turn = "activity-visual"
 	panel.agent_jobs.jobs = {"child-done": {"id": "child-done", "parent": "activity-visual", "task": "Verifică structura proiectului", "kind": "Explore", "status": "completed"}, "child-running": {"id": "child-running", "parent": "activity-visual", "task": "Verifică animațiile și tranzițiile", "kind": "General", "status": "running"}}
@@ -1320,9 +1326,11 @@ func _control_settings_tests() -> void:
 	_check(panel._save_memories().get("code") == "memory_conflict" and FileAccess.get_file_as_string("res://AGENT.md").contains("manuală"), "Memory editor refuses to overwrite an external AGENT.md change")
 	panel._load_memories()
 	panel._record_event("fixture_log", {"step": 1}, {"ok": true, "result": "Verificare încheiată"})
+	panel._refresh_journal(true)
 	_check(panel.journal_console.text.contains("fixture_log") and panel.journal_console.text.contains("Verificare încheiată"), "Live journal shows chronological operation and result data in a console")
 	panel.journal_filter.text = "fixture_log"
 	panel.journal_filter.text_changed.emit(panel.journal_filter.text)
+	panel._refresh_journal(true)
 	_check(panel.journal_console.text.contains("fixture_log") and not panel.journal_console.text.contains("skill_save"), "Journal search filters activity without deleting stored entries")
 	panel.journal_filter.clear()
 	panel.journal_filter.text_changed.emit("")
@@ -1408,6 +1416,7 @@ func _termux_blender_card_tests() -> void:
 	_check(not form.has("logs") and not form.has("enabled") and not form.has("verify") and not form.has("cancel"), "The Blender card has no technical controls, activation checkbox or embedded console")
 	form["primary"].pressed.emit()
 	_check(calls.has("install_termux") and not calls.has("copy_bootstrap"), "Install Termux opens the native store action without running any commands")
+	panel._refresh_journal(true)
 	_check(panel.journal_console.text.contains("blender_connection"), "Blender diagnostics remain accessible in the main journal")
 	device["installed"] = true
 	await backend.refresh()
@@ -1446,6 +1455,7 @@ func _termux_blender_card_tests() -> void:
 	backend.job_log = "Fixture Blender export output"
 	backend._save_log()
 	panel._refresh_blender_card()
+	panel._refresh_journal(true)
 	_check(panel.journal_console.text.contains("Fixture Blender export output"), "Full worker output is shown in Journal instead of the Blender card")
 	await get_tree().create_timer(.2).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-ready.png"))
@@ -1487,6 +1497,7 @@ func _termux_blender_card_tests() -> void:
 	backend.working = false
 	backend._failure({"code": "fixture_failed", "error": "Fixture detailed failure"})
 	panel._refresh_blender_card()
+	panel._refresh_journal(true)
 	_check(form["hint"].text.contains("Jurnal") and panel.journal_console.text.contains("Fixture detailed failure"), "Errors keep the card compact and preserve their diagnostic detail in Journal")
 	await get_tree().create_timer(.2).timeout
 	panel.settings_window.get_texture().get_image().save_png(output.path_join("blender-error.png"))
@@ -1796,12 +1807,10 @@ func _populated_chat_tests() -> void:
 	_check(not assistant["actions"][0].disabled and assistant["metadata"]["id"] == "visual-answer", "Completed message actions bind to the stored conversation message")
 	panel.chat.activity("Inspectează scena · finalizat", "Fixture result")
 	panel.chat.activity("Verifică scriptul · finalizat", "Fixture result")
-	var group = panel.chat.activity_group
-	var entries = group.get_meta("entries")
-	_check(entries.get_child_count() == 2 and not entries.visible, "Operations form one collapsed activity group")
-	group.get_meta("toggle").pressed.emit()
-	_check(entries.visible, "Activity details expand on request")
-	group.get_meta("toggle").pressed.emit()
+	_check(panel.chat.activity_group == null and panel.chat.running_tools is Label, "Operation history is replaced by a non-expandable Running Tools label")
+	panel.chat.show_running_tool("godot_script_diagnostics")
+	_check(panel.chat.running_tools.text == "Running Tools · godot_script_diagnostics", "Running Tools displays the active tool name")
+	panel.chat.show_running_tool()
 	panel.config["providers"] = [{"id": "visual-provider", "name": "DeepSeek", "issuer": "deepseek", "kind": "chat", "url": "https://api.deepseek.com", "models": [{"id": "visual-code", "name": "Model de probă"}]}]
 	panel._refresh_lists()
 	panel._refresh_profiles()
@@ -2328,6 +2337,7 @@ func _generated_preview_tests() -> void:
 	panel._render_history()
 	_check(panel.chat.message_records.any(func(record: Dictionary) -> bool: return file_id in record.get("metadata", {}).get("files", [])), "Generated 3D card remains clickable after conversation reload")
 	panel.active_definitions = [panel._preview_definition()]
+	panel.preview_requested = panel._requests_preview("Deschide modelul generat în preview")
 	var opened = await panel._execute_call("file_preview", {"id": file_id})
 	_check(opened.get("ok", false) and panel.media_view.visible and panel.media_view.model_views.size() == 1, "Agent opens the GLB in the native viewer without Blender")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")

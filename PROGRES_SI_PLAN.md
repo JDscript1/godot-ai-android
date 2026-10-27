@@ -37,7 +37,44 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — salvare/căi și probe native automate, 27.10.2026
+## Etapa curentă — aplicarea TODO-ului și pregătirea APK-ului, 27.10.2026
+
+Utilizatorul a autorizat implementarea AG-01–AG-20 și o nouă compilare/livrare.
+Detaliile implementărilor sunt în [TODO_AGENT.md](TODO_AGENT.md), în tabelul
+livrării. Sunt incluse și sursele încă nelivrate pentru execuție fără plafon și
+aprobări încadrate. Agentul rămâne în Godot, fără un harness extern obligatoriu.
+
+Cod nou pentru scene în tab separat cu rădăcină confirmată, toleranță numerică,
+setări tipizate, diagnostic de rulare/UID, scheme reutilizate la continuare,
+captură/input/stare de joc pentru părinte, raport de întrerupere și verificări
+necesare înainte de finalizarea planului. Schimbările shell sunt consemnate
+separat, fără a pretinde recuperare nativă. Running Tools nu mai are dropdown;
+planul și cardurile sunt compacte, viewer-ul agentului cere intenție explicită,
+iar gesturile peste text/cod au rută de scroll și selecție prin apăsare lungă.
+
+Jurnal complet JSONL cu rotație la 8 MiB și export automat într-un director ales.
+Include model/effort/mod/build/YOLO și autorizările, exclude cheile și datele
+binare/imaginile. Consola se reconstruiește când este afișată, cu actualizări
+grupate. Recuperarea Runware validează același task și un artefact complet chiar
+dacă transportul întoarce HTTP 500; o simplă confirmare incertă rămâne incertă.
+
+Probe locale: **495 aserțiuni runtime / 0 eșecuri**, inclusiv HTTP fixture →
+recuperare → descărcare fără generare duplicată; **84 verificări editor dedicate /
+0 eșecuri** în phone landscape. Inspectate capturile centrale și dock stânga/dreapta.
+Prima probă de captură folosea un helper de test greșit; corectat fără efect asupra
+aplicației. Testul de apăsare lungă a fost corectat să atingă textul real la scara
+telefonului. Regresia completă locală a depășit inițial bugetul de 180 s; după optimizarea
+consolei și reluarea cu timp suficient a trecut: **514 verificări / 0 eșecuri**. Acest timeout aparține evaluatorului,
+nu introduce o limită a agentului. Dovezi: `.ai-qa/todo-20261027/` și logurile
+`todo-20261027-runtime-final.log`, `todo-20261027-full3.log`.
+
+Au trecut și testele de livrare (3), conector (28), surse runtime (2) și rootfs (4).
+Puntea C++ pentru tab nou trebuie verificată prin compilarea editorului nativ;
+editorul upstream confirmă eroarea explicită când acea punte nu este disponibilă.
+Nu se declară încă APK nou livrat. Confirmarea gesturilor și aprobărilor pe
+Android și probele cu furnizor real rămân distincte de aceste teste locale.
+
+## Etapa precedentă — salvare/căi și probe native automate, 27.10.2026
 
 Reprodus defectul din APK: salvarea scenei într-un director nou poate întoarce
 `ok=true, saved=false`. Corectat în surse: creează părinții, respinge destinațiile
@@ -2187,6 +2224,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **27.10.2026:** implementate punctele TODO pentru noua livrare; 495 aserțiuni
+  runtime și 84 verificări editor dedicate trecute. Compilarea nativă și APK-ul
+  se verifică separat; nicio generare plătită în probele locale.
 
 - **27.10.2026:** AG-01/19 implementate în surse, 50 verificări editor și 277
   runtime trecute. Runda nativă UC-10–17 are rezultate și limite documentate;

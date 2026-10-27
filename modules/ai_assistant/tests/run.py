@@ -36,6 +36,7 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
     conversion_posts = {}
     conversion_polls = {}
     background_jobs = set()
+    recovered_jobs = set()
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *args):
@@ -212,6 +213,9 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         if location.path == "/runware":
             authorized = self.headers.get("Authorization") == "Bearer generation-fixture-key"
             task = payload[0] if isinstance(payload, list) and len(payload) == 1 else {}
+            if authorized and task.get("taskType") == "getResponse" and task.get("taskUUID") in self.recovered_jobs:
+                self.reply({"data": [{"taskUUID": task["taskUUID"], "taskType": "imageInference", "status": "success", "imageURL": f"http://127.0.0.1:{self.server.server_port}/artifact/image.png", "cost": 0.02}]}, 500)
+                return
             if authorized and task.get("taskType") == "removeBackground":
                 self.generation_submissions["remove_background"] = self.generation_submissions.get("remove_background", 0) + 1
                 valid = task.get("model") == "runware:109@1" and task.get("outputFormat") == "PNG" and task.get("inputs", {}).get("image", "").startswith("data:image/png;base64,") and task.get("settings", {}).get("rgba") == [255, 255, 255, 0]
@@ -225,6 +229,10 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             if isinstance(payload, list) and payload and payload[0].get("taskType") in ["imageInference", "3dInference"]:
                 prompt = payload[0].get("positivePrompt", "")
                 self.generation_submissions[prompt] = self.generation_submissions.get(prompt, 0) + 1
+                if authorized and prompt == "http500-result":
+                    self.recovered_jobs.add(task["taskUUID"])
+                    self.reply({"data": [{"taskUUID": task["taskUUID"], "taskType": "imageInference"}]}, 500)
+                    return
                 if prompt == "lost-runware-submit":
                     self.close_connection = True
                     return

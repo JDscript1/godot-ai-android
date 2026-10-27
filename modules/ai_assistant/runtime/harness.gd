@@ -44,6 +44,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	var definitions: Array = options.get("tools", [])
 	var registry = ToolRegistry.new(definitions, bool(options.get("deferred_tools", false)))
 	if not registry.error.is_empty(): return _finish("failed", registry.error, "invalid_tools")
+	registry.restore(_messages)
 	# Normal editor runs have no step ceiling. Only isolated evaluations opt in.
 	var maximum = maxi(0, int(options.get("max_steps", 0)))
 	var retries = clampi(int(options.get("max_retries", 2)), 0, 3)
@@ -148,6 +149,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				result = _effects[_signature(call)].duplicate(true)
 				replayed = true
 			elif name in ["tool_search", "tool_describe"]:
+				event.emit({"kind": "tool_started", "id": id, "name": name, "arguments": _safe(call["arguments"])})
 				result = registry.discover(name, call["arguments"])
 			elif not _hooks.get("execute", Callable()).is_valid():
 				result = Common.failure("Execuția instrumentelor nu este disponibilă.", "tool_unavailable")
