@@ -12,9 +12,10 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download este **`7576033`**
-  (`7576033582d9fac083376b478f9b70c531f356f4`), livrat la
-  **27.10.2026, 10:23:42 +01:00**, cu implementările AG-01–AG-20.
+- APK-ul curent din Download este **`74887a1`**
+  (`74887a1fc49bc2a969ef33c9a9ac1d6f293f6d8e`), livrat la
+  **27.10.2026, 15:52:51 +01:00**, cu implementările AG-01–AG-20 și curățenia
+  codului nefolosit.
   Include și eliminarea plafonului și aprobările încadrate, anterior numai în surse.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
@@ -29,7 +30,7 @@ drept funcție validată cu un serviciu real.
 - PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
   Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
-  `c418f97` a fost înlocuită atomic după verificare. În Download rămâne un
+  `7576033` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -37,7 +38,40 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — curățenie cod nefolosit, numai în surse, 27.10.2026
+## Etapa curentă — recompilare după curățenie și APK livrat, 27.10.2026
+
+Recompilare autorizată pentru sursa
+`74887a1fc49bc2a969ef33c9a9ac1d6f293f6d8e`. Au trecut toate cele trei joburi
+din [build-ul 40521411236](https://github.com/JDscript1/godot-ai-android/actions/runs/40521411236):
+runtime, Android și editor nativ.
+
+Rezultate CI: **495 aserțiuni runtime**, **514 verificări × 5 configurații**
+în editorul upstream și **527 × 5** în editorul nativ compilat. Scenariul TODO
+a trecut cu **84**, respectiv **86** verificări; au trecut și probele dedicate
+Blender, panouri, pornire și generare, testele Python și cele **9 teste companion**.
+Compilarea Android a verificat semnătura persistentă, ABI-ul ARM64, cele 30 de
+scripturi embedded și componentele PRoot/Linux incluse. Toate fără eșecuri.
+
+Dovezi CI: `.ai-qa/74887a1-ci.log`, `.ai-qa/74887a1-ci-verification.json`.
+APK **112,300,230 bytes**, SHA-256
+`389b43bd9370d41ac23bb0ede3139fbc221b5a2f0ddaf215a57ec8da457f0890`.
+Semnătura persistentă și pachetul `com.jdscript.godotai.debug` verificate local;
+toate cele **30 de scripturi** comparate byte cu byte cu sursa exactă.
+Verificate și manifestul runtime, cele trei componente ELF ARM64, serviciile
+Android și baza Linux inclusă (**32,789,398 bytes**), cu hash-uri conforme.
+Arhiva descărcată corespunde digestului publicat de GitHub; transferul lent a
+fost reluat de la partea primită, fără a descărca din nou întregul fișier.
+
+La **15:52:51 +01:00**, instalatorul stabil din
+`/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk` și fișierul
+SHA-256 au fost înlocuite atomic, după verificări. În Download rămâne un
+singur instalator al fork-ului. Dovezi locale:
+`.ai-qa/delivery-74887a1.json`, `.ai-qa/74887a1-apk-verification.json`,
+`.ai-qa/74887a1-transfer.json`.
+Nu s-a instalat automat aplicația și nu s-au făcut probe noi pe dispozitiv
+sau la furnizori reali în această etapă.
+
+## Etapa precedentă — curățenie cod nefolosit, numai în surse, 27.10.2026
 
 Eliminate **6 funcții, 8 câmpuri și 2 constante** din componentele proprii ale
 agentului, după verificarea referințelor GDScript, native și de test:
@@ -73,9 +107,9 @@ Dovezi în `.ai-qa/dead-code-cleanup-20261027/`:
 `audit.json`, `runtime-final.log`, `render-final/narrow/editor-report.json`,
 `todo-final/phone_landscape/editor-report.json`, `fixture-isolation-final.json`.
 
-Schimbări numai în surse și teste locale. Nu s-a compilat sau înlocuit APK-ul,
-nu s-a pornit CI și nu s-au făcut probe noi pe Android ori la furnizori reali.
-APK-ul din Download rămâne `7576033`.
+La încheierea curățeniei, schimbările erau numai în surse și teste locale,
+fără recompilare sau CI. APK-ul din Download era încă `7576033`.
+Recompilarea solicitată ulterior este consemnată în etapa curentă de mai sus.
 
 ## Etapa precedentă — TODO aplicat și APK livrat, 27.10.2026
 
@@ -2290,6 +2324,10 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
+- **27.10.2026:** recompilat și livrat **74887a1**, cu curățenia codului inclusă;
+  toate joburile CI trecute, 30 de scripturi și runtime-ul Linux verificate.
+  APK-ul **112,300,230 bytes** înlocuiește `7576033` în Download, cu aceeași
+  semnătură. Instalarea pe dispozitiv rămâne la utilizator.
 - **27.10.2026:** curățenie în sursele agentului: eliminate 6 funcții, 8 câmpuri,
   2 constante și prelucrarea UI redundantă; teste runtime izolate în proiect
   temporar. 495 aserțiuni runtime, 514 + 84 verificări editor și 28 teste Python
