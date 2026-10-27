@@ -71,7 +71,11 @@ nu introduce o limită a agentului. Dovezi: `.ai-qa/todo-20261027/` și logurile
 Au trecut și testele de livrare (3), conector (28), surse runtime (2) și rootfs (4).
 Puntea C++ pentru tab nou trebuie verificată prin compilarea editorului nativ;
 editorul upstream confirmă eroarea explicită când acea punte nu este disponibilă.
-Nu se declară încă APK nou livrat. Confirmarea gesturilor și aprobărilor pe
+Prima compilare nativă a reușit, dar proba copilului cu 106 cereri a descoperit
+o injecție greșită a fixture-ului: schimba scriptul recompilat de test, nu cel
+folosit de instanța nativă. Corectat testul să injecteze furnizorul în scriptul
+instanței reale. Rularea nativă trebuie repetată; nu este consemnat un succes
+pe baza acelui job eșuat. Nu se declară încă APK nou livrat. Confirmarea gesturilor și aprobărilor pe
 Android și probele cu furnizor real rămân distincte de aceste teste locale.
 
 ## Etapa precedentă — salvare/căi și probe native automate, 27.10.2026

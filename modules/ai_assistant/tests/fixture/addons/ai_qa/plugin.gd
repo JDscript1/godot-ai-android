@@ -720,14 +720,15 @@ func _harness_editor_tests(scene: Node) -> void:
 	await panel._start_chat("Inspect the project throughout the long fixture workflow")
 	_check(long_service.requests == 36 and panel.harness.state == "completed", "Production chat ignores legacy step preferences and completes beyond 30 requests")
 	panel.config.preferences.erase("agent_step_limit")
-	var child_provider = embedded.agent_jobs.Providers
-	embedded.agent_jobs.Providers = FixtureLongProvider
+	var child_script = panel.agent_jobs.get_script()
+	var child_provider = child_script.get("Providers")
+	child_script.set("Providers", FixtureLongProvider)
 	panel.config.preferences.play_steps = 1
 	panel.config.preferences.play_seconds = 1
 	var child = {"id": "long-child", "parent": panel.current_turn, "kind": "Explore", "task": "Inspect the fixture project", "context": "", "profile": {"kind": "chat"}, "model": "fixture", "status": "running", "cancel": {"cancelled": false}, "steps": 0, "text": ""}
 	await panel.agent_jobs._run(child)
 	_check(child.status == "completed" and child.steps == 106 and not child.cancel.cancelled, "Production child completes beyond old 12/30/100 ceilings and legacy time preferences")
-	embedded.agent_jobs.Providers = child_provider
+	child_script.set("Providers", child_provider)
 	panel.config.preferences.erase("play_steps")
 	panel.config.preferences.erase("play_seconds")
 	var original_accounts = panel.accounts
