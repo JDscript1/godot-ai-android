@@ -36,6 +36,14 @@ See the [device stability report and next acceptance gates](AI_AGENT_STABILITY_2
 for actual Android results and remaining work. Fixture success does not establish
 live provider acceptance or readiness for large game production.
 
+The follow-up source guidance asks the model to update task milestones before
+moving on, use three concise result points by default, batch independent known
+actions, and summarize test failures instead of flooding Output with successful
+assertions. These are model instructions, not enforced proof of progress or
+latency improvements. Live Resume with the corrected temporary provider adapter
+passed; permanent APK acceptance and the default behavior under the new guidance
+remain separate checks.
+
 ## Execution boundaries
 
 ```text

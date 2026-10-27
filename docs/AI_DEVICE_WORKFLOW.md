@@ -10,6 +10,9 @@ Conexiunea ADB este asociata explicit prin Android. Pluginul identifica
 `AIAssistantPanel`, foloseste selectia furnizorului si apeleaza intrarea normala
 `_start_chat`. Modul se alege explicit prin `--work-mode auto/default/plan`,
 implicit Auto, iar selectia initiala se restaureaza la incheiere. Driverul
+salveaza selectia restaurata in istoricul de proba si scrie rezultatul in
+`control/selection-restoration.json`; aceasta ajustare finala are verificare de
+parser, fara o noua runda API dupa modificare. Driverul
 respecta permisiunea YOLO existenta; nu o activeaza. Pentru o continuare in
 aceeasi conversatie se foloseste `--continue-conversation`. APK-ul 74887a1
 nu mai are plafonul de 30 de pasi; driverul nu adauga unul.

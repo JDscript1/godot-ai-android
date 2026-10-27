@@ -62,6 +62,7 @@ func _send(command: Dictionary) -> void:
 	await panel._start_chat(str(command.get("prompt", "")), selection)
 	finished_at = Time.get_ticks_msec()
 	panel._choose(original)
+	_write("selection-restoration.json", {"ok": panel._persist_history(), "request": request_id})
 	_snapshot()
 	_capture.call_deferred()
 	command_busy = false

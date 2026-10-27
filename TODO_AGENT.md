@@ -4,8 +4,10 @@ Actualizat: **27.10.2026**. APK livrat și instalat verificat: **74887a1**.
 Implementările AG-01–AG-20 sunt incluse. Bifele de acceptare nu se închid numai
 din compilare: gesturile fizice, aprobările și probele reale de workflow se
 confirmă separat. În noua rundă au trecut două scene și un mini-joc cu input
-real prin unelte, inclusiv **46 cereri**. Stop este confirmat, dar Continue a
-expus o eroare DeepSeek. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
+real prin unelte, inclusiv **46 cereri**. Continue a expus o eroare DeepSeek,
+apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
+repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
+**59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
 ## Stabilizare după probele reale — surse, încă nelivrate
 
@@ -13,12 +15,15 @@ expus o eroare DeepSeek. [Raport și următoarele 12 probe](docs/AI_AGENT_STABIL
 | --- | --- | --- |
 | AG-21 | Rezultatele mari pierdeau `ok` și ID-urile la trunchiere; rezumatul păstrează contractul și identitatea artefactelor, cu limita măsurată după serializarea JSON. | Regresie reprodusă, fixture verde; de confirmat în APK nou. |
 | AG-22 | Inspectarea claselor încărca prea mult context și filtrul `shader\|color` nu avea alternative; paginare stabilă și filtru OR literal. | Acoperirea tuturor paginilor verificată; Node 48.786→7.342 caractere în pagina implicită. Cost live înainte/după încă nemăsurat. |
-| AG-23 | Continue după Stop produce HTTP 400 DeepSeek; notificarea locală era trimisă ca răspuns al modelului. Proveniență explicită, context de aplicație separat, metadata confirmată păstrată inclusiv la ramificare. | Eșec live reprodus; fixture HTTP roșu→verde. Reluarea la furnizor real după fix rămâne deschisă. |
-| AG-24 | Driverul seta YOLO și nu actualiza starea finală pentru Continue din UI. Păstrează permisiunea, actualizează snapshot-ul și colectează JSONL complet. | Primele două probe cu driverul care respectă YOLO; parser verde. Noua actualizare la Continue mai necesită proba pe telefon. |
+| AG-23 | Continue după Stop produce HTTP 400 DeepSeek; notificarea locală era trimisă ca răspuns al modelului. Proveniență explicită, context de aplicație separat, metadata confirmată păstrată inclusiv la ramificare. | Eșec live reprodus; fixture HTTP roșu→verde; reluare DeepSeek real trecută cu adaptor temporar. Livrarea și acceptarea într-un APK nou rămân deschise. |
+| AG-24 | Driverul seta YOLO și nu actualiza starea finală pentru Continue din UI. Păstrează permisiunea, actualizează snapshot-ul și colectează JSONL complet. Persistă selecția restaurată la finalul probelor viitoare. | Confirmat pe telefon: permisiune păstrată, starea finală actualizată după Resume și JSONL complet colectat. Ultima persistență a selectorului are verificare de parser; revenirea după restart mai cere o probă. Nu extrage vault-ul sau cheile. |
+| AG-25 | Planul vizibil rămâne pe construcție în timpul verificării, timp de mai multe minute. Instrucțiuni explicite pentru schimbarea pasului și a fazei la încheierea etapei. | Ghidaj în surse; comportamentul implicit pe APK nou încă de evaluat. Nu este o sincronizare automată garantată. |
+| AG-26 | Răspunsuri finale prea lungi, cu proprietăți și coordonate inutile. Implicit trei puncte concise, aproximativ 120 cuvinte, cu limitele materiale păstrate. | Instrucțiuni în surse; respectarea lor în noul APK rămâne de confirmat. |
+| AG-27 | Tap-uri cunoscute și inspecții independente consumă multe runde; sute de mesaje PASS pot ascunde eșecurile în coada Output. Ghidaj pentru gruparea apelurilor și rapoarte compacte cu număr de verificări/eșecuri. | Fără plafon nou de pași; eficiența înainte/după nu este încă măsurată în condiții identice. |
 
 Sursele trec **518 aserțiuni runtime** și **514 verificări editor**, fără
 eșecuri; cardurile media și starea întreruptă inspectate în randări. Nu există
-un APK nou pentru AG-21–AG-24. Pragurile ST-01–ST-12 din raport păstrează
+un APK nou pentru AG-21–AG-27. Pragurile ST-01–ST-12 din raport păstrează
 distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
 
 ## Aplicare în APK 7576033 — 27.10.2026

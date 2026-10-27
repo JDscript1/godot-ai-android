@@ -53,13 +53,27 @@ YOLO era deja activ și nu a fost activat de driver.
 - Capturile reale arată mecanicile, dar și margini gri; adaptarea la viewport
   este o sarcină separată. Stop după prima scriere reală a păstrat modificarea.
   Continue a reluat același turn, apoi DeepSeek a respins protocolul cu HTTP 400.
+- După reconectare și încărcarea temporară a adaptorului corectat, Continue a
+  trecut cu **58 cereri, 466,0 s**, pe același turn după repornirea editorului.
+  Panoul/harness-ul/uneltele au rămas cele din APK; cheia nu a fost exportată.
+- Agentul a reparat layoutul îngust după cinci eșecuri găsite independent:
+  **59 cereri, 633,1 s**, probă nativă **492 / 0**, apoi verificare independentă
+  **84 / 0** și randări inspectate la trei dimensiuni.
+- Salvarea/încărcarea 1/3 și 3/3 după oprirea și pornirea procesului jocului:
+  **62 cereri, 574,5 s**, probă nativă extinsă **938 / 0**. Testele independente
+  au găsit apoi acceptarea greșită a unor metadate fracționare. Agentul a reparat
+  validarea în **14 cereri, 85,2 s**: proba nativă **946 / 0**, independent
+  **34 / 0** pentru persistență și **156 / 0** pentru geometria finală.
 
 Corecții acum în surse: notificările locale separate de răspunsurile modelului
 la reluare, păstrarea metadata confirmate la ramificare, rezultate mari cu `ok`
 și ID-uri păstrate, limită JSON reală și inspectare Godot paginată. Node:
 **48.786→7.342 caractere** pentru prima pagină; nu este o măsurare a facturii API.
 Driverul respectă permisiunile existente, colectează jurnalul JSONL complet și
-actualizează starea după Continue din UI.
+actualizează starea după Continue din UI. Sursele cer și plan actualizat la
+schimbarea etapei, răspuns final scurt, apeluri grupate când sunt independente
+și rezumate de teste care nu ascund eșecurile în sute de mesaje PASS. Aceste
+instrucțiuni noi nu au acceptare comportamentală implicită într-un APK nou.
 
 Validări: **518 aserțiuni runtime / 0 eșecuri**, **514 verificări editor / 0
 eșecuri** în configurația narrow. Regresia la reluare a fost întâi reprodusă
@@ -67,19 +81,25 @@ eșecuri** în configurația narrow. Regresia la reluare a fost întâi reprodus
 Parser Godot pentru driver și proba temporară de adaptor, plus compilare Python,
 trecute. Randările cardurilor și ale sarcinii întrerupte au fost inspectate.
 
-Fixurile noi nu sunt încă într-un APK. Acceptarea live după corecția DeepSeek
-rămâne deschisă: telefonul s-a blocat automat înaintea încărcării adaptorului
-temporar de dezvoltare. Nu s-au executat generări Runware sau instalări în
-această rundă. Nu este încă dovadă de pregătire pentru producție AAA.
+Fixurile noi nu sunt încă într-un APK. Corecția DeepSeek are acum acceptare API
+reală cu adaptor temporar; livrarea în APK rămâne separată. Modificările jocului
+și probele lui sunt salvate în proiectul izolat, nu în codul editorului.
+Adaptorul original a fost restaurat și editorul repornit cu driverul normal;
+scena mini_game este deschisă, jocul oprit și modul UI Default. Hash-ul APK-ului
+instalat este același. Au trecut din nou **518 aserțiuni runtime** și parserul
+driverului; ultima persistență a selecției restaurate din driver are numai
+verificare de parser. Nu s-au făcut generări Runware, instalări sau o compilare
+nouă. Nu este încă dovadă de pregătire pentru producție AAA.
 
 [Raportul complet și pragurile ST-01–ST-12](docs/AI_AGENT_STABILITY_20261027.md),
 cu priorități pentru continuitate, salvări, tranziții, regenerări evitate,
-regresii, performanță și export. AG-21–AG-24 sunt în [TODO_AGENT.md](TODO_AGENT.md).
+regresii, performanță și export. AG-21–AG-27 sunt în [TODO_AGENT.md](TODO_AGENT.md).
 Dovezi: `.ai-qa/harness-stability-20261027/`, inclusiv loguri integrale,
 checkpointuri, hash-uri înainte/după și capturi reale.
 
-Jurnal: 27.10.2026 — confirmat mini-joc peste 30 de cereri; defectul Continue
-reprodus, corecții de protocol/context în surse, acceptarea live rămâne deschisă.
+Jurnal: 27.10.2026 — Continue confirmat cu DeepSeek real/adaptor temporar;
+agentul a reparat layoutul și persistența după eșecuri independente. Probele
+finale trec, fixture-urile și logurile sunt păstrate, APK-ul rămâne nemodificat.
 
 ## Etapa precedentă — recompilare după curățenie și APK livrat, 27.10.2026
 

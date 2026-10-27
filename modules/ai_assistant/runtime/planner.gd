@@ -74,4 +74,4 @@ func pause() -> void:
 	if needs_continuation(): phase = "paused"
 
 func context() -> String:
-	return "" if phase == "idle" else "\nVisible task plan: " + JSON.stringify(snapshot()) + "\nContinue unfinished execution plans. Use task_update to change phase before project writes. Never describe unfinished work as completed."
+	return "" if phase == "idle" else "\nVisible task plan: " + JSON.stringify(snapshot()) + "\nContinue unfinished execution plans. Use task_update to change phase before project writes. Update the visible plan when a milestone finishes, before moving to the next step; keep only the current step in_progress. Move to verifying before behavioral checks. Do not leave a completed construction step active while testing. Never describe unfinished work as completed."
