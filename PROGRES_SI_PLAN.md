@@ -12,10 +12,10 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download este **`c418f97`**
-  (`c418f972958644f7bb78cdf36cca3e77691007d9`), livrat la
-  **26.10.2026, 10:25 +01:00**, cu selecție de modele de generare și tarife,
-  URL DeepSeek reparat, denumire unitară, panouri minimizabile și Linux automat.
+- APK-ul curent din Download este **`7576033`**
+  (`7576033582d9fac083376b478f9b70c531f356f4`), livrat la
+  **27.10.2026, 10:23:42 +01:00**, cu implementările AG-01–AG-20.
+  Include și eliminarea plafonului și aprobările încadrate, anterior numai în surse.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
   fișiere în chat, preview imagini/GLB/glTF, control editor, Store și diff real.
@@ -29,7 +29,7 @@ drept funcție validată cu un serviciu real.
 - PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
   Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
-  `e401e8f` a fost înlocuită atomic după verificare. În Download rămâne un
+  `c418f97` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. Utilizarea fizică pe Android și
   generarea cu chei plătite rămân de validat separat.
@@ -37,7 +37,7 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — aplicarea TODO-ului și pregătirea APK-ului, 27.10.2026
+## Etapa curentă — TODO aplicat și APK livrat, 27.10.2026
 
 Utilizatorul a autorizat implementarea AG-01–AG-20 și o nouă compilare/livrare.
 Detaliile implementărilor sunt în [TODO_AGENT.md](TODO_AGENT.md), în tabelul
@@ -69,14 +69,35 @@ nu introduce o limită a agentului. Dovezi: `.ai-qa/todo-20261027/` și logurile
 `todo-20261027-runtime-final.log`, `todo-20261027-full3.log`.
 
 Au trecut și testele de livrare (3), conector (28), surse runtime (2) și rootfs (4).
-Puntea C++ pentru tab nou trebuie verificată prin compilarea editorului nativ;
-editorul upstream confirmă eroarea explicită când acea punte nu este disponibilă.
-Prima compilare nativă a reușit, dar proba copilului cu 106 cereri a descoperit
-o injecție greșită a fixture-ului: schimba scriptul recompilat de test, nu cel
-folosit de instanța nativă. Corectat testul să injecteze furnizorul în scriptul
-instanței reale. Rularea nativă trebuie repetată; nu este consemnat un succes
-pe baza acelui job eșuat. Nu se declară încă APK nou livrat. Confirmarea gesturilor și aprobărilor pe
-Android și probele cu furnizor real rămân distincte de aceste teste locale.
+Puntea C++ și întregul editor nativ au trecut verificările CI:
+**527 verificări × 5 configurații**, plus **86** în scenariul TODO. Include
+crearea scenei într-un tab separat și păstrarea scenei anterioare. Inspectate
+și capturile editorului nativ pentru chat și dockuri. În editorul
+upstream: **514 × 5**, plus **84** dedicate; runtime **495 / 0**, companion
+și verificările Linux/Android trecute. Prima rundă nativă a identificat o
+injecție greșită a fixture-ului pentru copilul cu 106 cereri; testul a fost
+corectat să injecteze furnizorul în scriptul instanței native. Runda finală
+nu folosește rezultatul jobului precedent eșuat/anulat ca dovadă de succes.
+
+Build final: [40479134520](https://github.com/JDscript1/godot-ai-android/actions/runs/40479134520), sursă
+`7576033582d9fac083376b478f9b70c531f356f4`. APK **112,304,546 bytes**,
+`com.jdscript.godotai.debug`, ARM64; certificatul persistent verificat, toate
+cele **30 de scripturi runtime** comparate byte cu byte cu sursa. Verificate
+PRoot/loader/probă ARM64 și hash-ul bazei Linux încorporate.
+
+Înlocuit atomic installerul și checksum-ul la **10:23:42 CET** în
+`/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`. Un singur
+installer al fork-ului în Download; celelalte descărcări sunt păstrate.
+SHA-256: `b8ecf4134f362b9a190f90ce7ecda23fdcc6bc568af6c820d91446de72649cc6`.
+
+Dovezi: `.ai-qa/delivery-7576033.json`, `7576033-apk-verification.json`,
+`7576033-ci.log`, `7576033-native-ci/`, `todo-20261027/`.
+APK-ul nu a fost instalat automat. Gesturile fizice, aprobarea/refuzul,
+sarcinile reale peste plafonul vechi, comparația consumului cu același model
+și workflow-ul Runware real până la mesh rămân confirmări separate.
+
+Jurnal: 27.10.2026 — livrat **7576033**, TODO implementat, verificări runtime,
+editor nativ și Android trecute; installerul c418f97 înlocuit în Download.
 
 ## Etapa precedentă — salvare/căi și probe native automate, 27.10.2026
 
@@ -2229,9 +2250,9 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
-- **27.10.2026:** implementate punctele TODO pentru noua livrare; 495 aserțiuni
-  runtime și 84 verificări editor dedicate trecute. Compilarea nativă și APK-ul
-  se verifică separat; nicio generare plătită în probele locale.
+- **27.10.2026:** livrat **7576033** cu TODO-ul implementat; 495 aserțiuni
+  runtime, 527 × 5 în editorul nativ și 86 dedicate trecute. APK semnat și
+  installer/checksum înlocuite în Download; testarea fizică rămâne separată.
 
 - **27.10.2026:** AG-01/19 implementate în surse, 50 verificări editor și 277
   runtime trecute. Runda nativă UC-10–17 are rezultate și limite documentate;

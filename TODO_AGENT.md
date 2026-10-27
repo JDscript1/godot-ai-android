@@ -1,11 +1,11 @@
 # TODO — agent și harness
 
-Actualizat: **27.10.2026**. APK verificat: **c418f97**. Bifele se închid după
-verificarea rezultatului; implementarea în sursă și livrarea în APK sunt stări
-separate. Implementarea punctelor AG-01–AG-20 este pregătită pentru noul APK;
-confirmările fizice rămân distincte de testele locale și compilare.
+Actualizat: **27.10.2026**. APK livrat în Download: **7576033**.
+Implementările AG-01–AG-20 sunt incluse. Bifele de acceptare nu se închid numai
+din compilare: gesturile fizice, aprobările și probele reale de workflow se
+confirmă după instalare. APK-ul instalat la ultima inspecție ADB era c418f97.
 
-## Aplicare în această livrare — 27.10.2026
+## Aplicare în APK 7576033 — 27.10.2026
 
 Utilizatorul a cerut implementarea TODO-ului și un APK nou. Lista de mai jos
 descrie codul rezultat; criteriile fizice încă neexercitate nu sunt bifate automat.
@@ -36,8 +36,10 @@ prin HTTP real către fixture și descărcarea artefactului fără trimitere dup
 **84 verificări editor dedicate** în configurație phone landscape. Randările
 chatului și dockurilor au fost inspectate. Regresia completă locală are
 **514 verificări / 0 eșecuri**. Aceste probe nu sunt utilizare
-fizică Android sau generare plătită live. Regresiile complete și compilarea
-nativă sunt consemnate în documentul de progres și în raportul de livrare.
+fizică Android sau generare plătită live. CI: **527 verificări × 5** în editorul nativ, **86** dedicate în nativ și
+**495** aserțiuni runtime, toate fără eșecuri. Installer verificat, aceeași
+semnătură persistentă, toate cele **30** surse runtime și Linux încorporat.
+Dovadă de livrare: `.ai-qa/delivery-7576033.json`.
 
 Rămân de confirmat pe noul APK: gesturi fizice și aprobări/refuz, sarcini reale
 peste plafonul vechi, aceeași probă înainte/după pentru costul descoperirii și
@@ -55,8 +57,8 @@ se păstrează pentru reluare, fără a declara sarcina terminată. Timeoutul un
 operații și detectarea unei bucle fără progres nu înlocuiesc plafonul eliminat
 cu altă limită totală de pași.
 
-**Stare:** eliminarea plafonului este deja în sursă; APK-ul verificat c418f97
-încă are limita veche. Livrarea și confirmarea pe dispozitiv rămân la AG-03.
+**Stare:** eliminarea plafonului este livrată în APK-ul **7576033**. Confirmarea
+pe dispozitiv după instalare rămâne la AG-03; APK-ul vechi c418f97 păstrează limita.
 
 ## Suita extinsă — 50 de use case-uri
 
@@ -188,7 +190,7 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   conținut recitit; fără necesitatea unui workaround în shell.
   **În surse:** corecție testată la 27.10.2026; directoare imbricate, spații,
   salvare repetată, reîncărcare, părinte care este fișier și cale invalidă.
-  Livrarea în APK și repetarea fizică rămân deschise.
+  Livrat în APK-ul 7576033; repetarea fizică rămâne deschisă.
 - [ ] **AG-02 · Compară numeric proprietățile cu toleranță.** Rotația cerută
   `(-50,-35,0)` a devenit `(-49.999996,-34.999996,0)` și a fost declarată greșit
   neaplicată. Toleranță potrivită tipului pentru numere/vectori/transformări;
@@ -196,12 +198,12 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   **Acceptare:** rotația din probă trece; o valoare realmente diferită e respinsă.
 - [ ] **AG-03 · Fără plafon de pași, până la livrarea rezultatului.** Livrează
   eliminarea plafonului (`309c4f6`) și aprobările accesibile (`226c519`), deja
-  implementate și testate în sursă, dar absente din APK-ul c418f97. Continuarea
+  incluse în APK-ul 7576033, înlocuind installerul c418f97 din Download. Continuarea
   trebuie să urmărească rezultatul verificat, inclusiv când rămân pași după un
   răspuns intermediar. **Acceptare:** APK nou verificat, depășirea limitelor vechi
   fără alt plafon ascuns, finalizarea cerinței și verificărilor, Stop și
-  aprobare/refuz funcționale pe dispozitiv. Compilarea/livrarea se face într-o
-  etapă cerută explicit.
+  aprobare/refuz funcționale pe dispozitiv. Compilarea/livrarea a fost autorizată și încheiată la 27.10.2026;
+  proba fizică rămâne distinctă.
 
 ## P1 — verificare, continuitate și eficiență
 
@@ -211,7 +213,7 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   nu crea alt folder la rădăcină, copii ori mutări ca substitut. Subfolderele
   numite ale generărilor rămân în destinația configurată. **În surse:** regula
   și contextul cu `scene_path`/`recent_paths` sunt implementate; testul confirmă
-  persistența și contextul unei conversații noi. **Acceptare rămasă:** APK nou,
+  persistența și contextul unei conversații noi. **Acceptare rămasă:**
   continuare fizică fără directoare alternative și deschidere/rulare la aceeași
   cale. În suita curentă, `test_XX` sunt directoare cerute explicit de probe,
   toate sub `agent_tests`; nu sunt dovada unor foldere arbitrare create la rădăcină.
@@ -222,7 +224,7 @@ demonstrează livrarea în Android. Nu s-au mutat sau șters proiectele utilizat
   refuză o scenă care are deja rădăcină, iar unealta nu verifică efectul.
   **Acceptare:** scenă nouă într-un tab separat, păstrarea scenei anterioare,
   rădăcină activă egală cu handle-ul returnat; eșec explicit dacă nu poate crea.
-  Defect confirmat în APK-ul vechi; corecția pentru noul tab este implementată separat de AG-19 și intră în verificarea nativă a livrării.
+  Defect confirmat în APK-ul vechi; corecția pentru noul tab este implementată separat de AG-19 și a trecut verificarea editorului nativ compilat.
 - [ ] **AG-04 · Încheiere clară la întrerupere.** La Stop, limită sau blocaj,
   afișează un raport scurt derivat din operații: rezultat salvat, verificări
   efectuate, pași rămași și posibilitatea de reluare. În test nu există răspuns
