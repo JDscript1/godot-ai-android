@@ -7,6 +7,7 @@ import zipfile
 import json
 from pathlib import Path
 import os
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -327,18 +328,19 @@ def main():
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fixtures)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    command = [args.godot, "--headless", "--path", str(source / "tests/fixture"), "--script", str(source / "tests/test_runtime.gd"), "--", "--source=" + str(source), f"--mock-url=http://127.0.0.1:{server.server_port}"]
-    if args.proot:
-        prefix = ["proot-distro", "login", "--shared-home", "debian", "--"]
-        if os.environ.get("GODOT_AI_TERRAIN3D_ZIP"):
-            prefix += ["env", "GODOT_AI_TERRAIN3D_ZIP=" + os.environ["GODOT_AI_TERRAIN3D_ZIP"]]
-        command = prefix + command
     try:
         with tempfile.TemporaryDirectory(prefix="godot-ai-qa-") as scratch:
+            fixture = Path(scratch) / "project"
+            shutil.copytree(source / "tests/fixture", fixture,
+                            ignore=shutil.ignore_patterns(".godot", "ai_test_*"))
+            command = [args.godot, "--headless", "--path", str(fixture), "--script", str(source / "tests/test_runtime.gd"), "--", "--source=" + str(source), f"--mock-url=http://127.0.0.1:{server.server_port}"]
             env = dict(os.environ, XDG_CONFIG_HOME=scratch, XDG_DATA_HOME=scratch, XDG_CACHE_HOME=scratch)
             if args.proot:
-                entry = command.index(args.godot)
-                command[entry:entry] = ["env", "XDG_CONFIG_HOME=" + scratch, "XDG_DATA_HOME=" + scratch, "XDG_CACHE_HOME=" + scratch]
+                prefix = ["proot-distro", "login", "--shared-home", "debian", "--", "env",
+                          "XDG_CONFIG_HOME=" + scratch, "XDG_DATA_HOME=" + scratch, "XDG_CACHE_HOME=" + scratch]
+                if os.environ.get("GODOT_AI_TERRAIN3D_ZIP"):
+                    prefix += ["GODOT_AI_TERRAIN3D_ZIP=" + os.environ["GODOT_AI_TERRAIN3D_ZIP"]]
+                command = prefix + command
             return subprocess.run(command, env=env, check=False).returncode
     finally:
         server.shutdown()

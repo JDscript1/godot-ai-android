@@ -35,8 +35,6 @@ var context_indicator: HBoxContainer
 var context_gauge: Control
 var context_ratio = -1.0
 var context_key = ""
-var reference_label: Label
-var tasks_label: Label
 var model_button: Button
 var picker: Control
 var drawer: PanelContainer
@@ -65,7 +63,6 @@ var voice_button: Button
 var catalog: Array = []
 var follow_bottom = true
 var loaded = 50
-var selected_message = ""
 var backdrop: GradientTexture2D
 var runtime_options: PopupPanel
 var options_button: Button
@@ -75,7 +72,6 @@ var compose_panel: PanelContainer
 var attachment_chips: HFlowContainer
 var expand_button: Button
 var workspace_expanded = false
-var activity_group: VBoxContainer
 var message_records: Array = []
 var restoring = false
 var motion_enabled = true
@@ -94,7 +90,6 @@ var activity_rows: VBoxContainer
 var activity_expanded = false
 var work_turn = ""
 var work_plan: Dictionary = {}
-var work_operations: Dictionary = {}
 var work_jobs: Array = []
 var work_outcome = ""
 var work_live = false
@@ -181,12 +176,6 @@ func _ready() -> void:
 	thread.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center.add_child(thread)
 	scroll.get_v_scroll_bar().value_changed.connect(func(value: float) -> void: follow_bottom = value >= scroll.get_v_scroll_bar().max_value - scroll.get_v_scroll_bar().page - 60)
-	tasks_label = label(root_column, "")
-	tasks_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tasks_label.hide()
-	reference_label = label(root_column, "")
-	reference_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	reference_label.hide()
 	_build_activity_panel()
 	running_tools = label(root_column, "Running Tools · —")
 	root_column.move_child(running_tools, activity_panel.get_index())
@@ -437,7 +426,6 @@ func reset_work() -> void:
 	status_revision += 1
 	work_turn = ""
 	work_plan = {}
-	work_operations.clear()
 	work_jobs = []
 	work_outcome = ""
 	work_message = ""
@@ -461,8 +449,6 @@ func finish_work(turn: String, outcome: String) -> void:
 	work_notice_running = false
 	work_outcome = outcome
 	work_message = ""
-	for operation in work_operations.values():
-		if operation.state == "in_progress": operation.state = "blocked" if outcome == "blocked" else "cancelled"
 	_refresh_activity(true)
 
 func show_work_plan(snapshot: Dictionary) -> void:
@@ -472,23 +458,12 @@ func show_work_plan(snapshot: Dictionary) -> void:
 	work_plan = snapshot.duplicate(true)
 	_refresh_activity(true)
 
-func start_operation(id: String, title_text: String, detail: String = "") -> void:
-	work_operations[id] = {"id": id, "title": title_text.trim_suffix("…"), "detail": detail, "state": "in_progress"}
-	_refresh_activity(true)
-
-func finish_operation(id: String, title_text: String, detail: String, result: Dictionary, replayed: bool = false) -> void:
-	var state = "completed" if result.get("ok", false) else "failed"
-	if result.get("code") in ["permission_denied", "plan_required", "plan_read_only"]: state = "blocked"
-	elif result.get("code") in ["cancelled", "redirected"]: state = "cancelled"
-	work_operations[id] = {"id": id, "title": title_text.trim_suffix("…"), "detail": detail, "state": state, "replayed": replayed, "error": str(result.get("error", "")).left(600)}
-	_refresh_activity(true)
-
 func show_work_jobs(jobs: Array) -> void:
 	if work_jobs == jobs: return
 	work_jobs = jobs.duplicate(true)
 	_refresh_activity(true)
 
-func restore_work(turn: String, snapshot: Dictionary, operations: Array, outcome: String, running: bool = false) -> void:
+func restore_work(turn: String, snapshot: Dictionary, outcome: String, running: bool = false) -> void:
 	reset_work()
 	work_turn = turn
 	work_plan = snapshot.duplicate(true)
@@ -496,7 +471,6 @@ func restore_work(turn: String, snapshot: Dictionary, operations: Array, outcome
 	work_live = running
 	if not running and work_plan.get("phase") in ["planning", "executing", "verifying"]:
 		work_plan["phase"] = "paused"
-	for item in operations: work_operations[str(item.id)] = item.duplicate(true)
 	_refresh_activity(true)
 
 func _work_running() -> bool:
@@ -522,11 +496,11 @@ func _refresh_activity(rebuild: bool = false) -> void:
 	var done = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "completed").size()
 	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else "")
 	activity_counter.visible = not activity_counter.text.is_empty()
-	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else "Operațiile și sarcinile acestei cereri"
+	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else "Sarcinile acestei cereri"
 	activity_chevron.visible = details
 	activity_chevron.text = "▴" if activity_expanded else "▾"
 	activity_toggle.disabled = not details
-	activity_toggle.tooltip_text = ("Restrânge activitatea" if activity_expanded else "Vezi pașii și operațiile") if details else heading
+	activity_toggle.tooltip_text = ("Restrânge activitatea" if activity_expanded else "Vezi pașii și sarcinile") if details else heading
 	activity_toggle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if details else Control.CURSOR_ARROW
 	activity_details.visible = activity_expanded and details
 	activity_indicator.queue_redraw()
@@ -542,7 +516,7 @@ func _activity_heading(text: String) -> void:
 	heading.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
 	heading.add_theme_color_override("font_color", Color("9ca6bc"))
 
-func _activity_row(title_text: String, state: String, detail: String = "", replayed: bool = false) -> void:
+func _activity_row(title_text: String, state: String, detail: String = "") -> void:
 	var scale = EditorInterface.get_editor_scale()
 	var row = HBoxContainer.new()
 	row.set_meta("state", state)
@@ -561,7 +535,7 @@ func _activity_row(title_text: String, state: String, detail: String = "", repla
 	title_text_label.max_lines_visible = 2
 	title_text_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title_text_label.tooltip_text = title_text + ("\n" + detail if not detail.is_empty() else "")
-	var state_text = "Recuperat" if replayed else str({"completed": "Finalizat", "in_progress": "În lucru", "pending": "De făcut", "blocked": "Blocat", "failed": "Eșuat", "cancelled": "Întrerupt"}.get(state, "De făcut"))
+	var state_text = str({"completed": "Finalizat", "in_progress": "În lucru", "pending": "De făcut", "blocked": "Blocat", "failed": "Eșuat", "cancelled": "Întrerupt"}.get(state, "De făcut"))
 	var caption = label(body, state_text + (" · " + detail.get_slice("\n", 0).left(100) if not detail.is_empty() else ""))
 	caption.add_theme_font_size_override("font_size", int(10 * scale))
 	caption.add_theme_color_override("font_color", Color("96a2b9"))
@@ -1050,7 +1024,6 @@ func clear_messages() -> void:
 	streaming_dirty.clear()
 	touch_text_controls.clear()
 	touch_scroll.clear()
-	activity_group = null
 	for child in thread.get_children():
 		thread.remove_child(child)
 		child.queue_free()
@@ -1188,7 +1161,6 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 				column.add_child(picture)
 	for file_id in metadata.get("files", []): _file_card(column, str(file_id))
 	if role == "assistant": _message_actions(record)
-	activity_group = null
 	if motion_enabled and not restoring and is_visible_in_tree():
 		row.modulate.a = 0.0
 		create_tween().tween_property(row, "modulate:a", 1.0, 0.12)
@@ -1355,12 +1327,6 @@ func set_turn_outcome(turn: String, status: String) -> void:
 func _message_action(record: Dictionary, name: String) -> void:
 	var metadata: Dictionary = record["metadata"]
 	if metadata.has("id"): action.emit(name, {"message": metadata["id"], "turn": metadata.get("turn_id", "")})
-
-func activity(text: String, details: String = "") -> void:
-	# Full operation history belongs to Jurnal. This row is deliberately not expandable.
-	if running_tools != null:
-		running_tools.text = "Running Tools · " + (text.get_slice(" · ", 0) if work_live else "—")
-		running_tools.tooltip_text = text if work_live else "Uneltele active apar aici; istoricul complet este în Jurnal."
 
 func show_running_tool(name: String = "") -> void:
 	if running_tools == null: return

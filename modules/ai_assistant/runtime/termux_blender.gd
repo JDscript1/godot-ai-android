@@ -34,7 +34,6 @@ var workflow: Dictionary = {}
 var requesting = false
 var embedded_reported = ""
 
-const ACTIVATION = "mkdir -p ~/.termux && touch ~/.termux/termux.properties && sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties && printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties && termux-reload-settings"
 const TERMINAL = ["completed", "failed", "cancelled", "interrupted"]
 const LOG_LIMIT = 32000
 

@@ -37,7 +37,47 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — TODO aplicat și APK livrat, 27.10.2026
+## Etapa curentă — curățenie cod nefolosit, numai în surse, 27.10.2026
+
+Eliminate **6 funcții, 8 câmpuri și 2 constante** din componentele proprii ale
+agentului, după verificarea referințelor GDScript, native și de test:
+
+- Vechiul registru de operații al chatului și reconstruirea lui din istoric.
+  Running Tools folosește evenimentele harness-ului; planul și sarcinile
+  secundare au propriile stări, iar rezultatele rămân în Jurnal.
+- Cele două rânduri permanent ascunse pentru sarcini/referințe, copia
+  nefolosită a pașilor planului și stările vechi fără cititori.
+- Helperul Ollama fără apelanți și constantele nefolosite pentru calea
+  scripturilor și vechea comandă de activare Termux.
+- Calea duplicată de audit și serializarea rezultatelor pentru un UI eliminat.
+  Mascarea cheilor și omiterea imaginilor/binarelor rămân centralizate în
+  `_record_event` / `_journal_value`.
+
+Testele runtime folosesc acum o copie temporară a proiectului fixture, fără
+cache-ul `.godot` și fără rezultatele `ai_test_*` anterioare. Verificat că nu
+apar fișiere noi sau modificări ale artefactelor existente în fixture;
+editarea sursei testului UI este consemnată separat. Proiectele și asseturile
+utilizatorului nu au fost atinse.
+
+Păstrate apelurile dinamice native, callback-urile Godot și toate cele 30 de
+scripturi embedded folosite. Runtime Linux, fallback-ul Termux, Blender,
+MCP și companionul opțional nu sunt cod mort.
+
+Validat local cu Godot ARM64 oficial prin Debian/PRoot: **495 aserțiuni runtime**,
+**514 verificări editor în configurația narrow** și **84 verificări dedicate
+în phone landscape**, toate fără eșecuri; **28 teste Python Blender/Termux**
+trecute. Inspectate capturile panoului de progres expandat și cardului compact
+cu Running Tools. Probele dedicate includ jurnal complet, mascarea datelor,
+rotația/exportul logurilor, scroll tactil și selecție prin apăsare lungă.
+Dovezi în `.ai-qa/dead-code-cleanup-20261027/`:
+`audit.json`, `runtime-final.log`, `render-final/narrow/editor-report.json`,
+`todo-final/phone_landscape/editor-report.json`, `fixture-isolation-final.json`.
+
+Schimbări numai în surse și teste locale. Nu s-a compilat sau înlocuit APK-ul,
+nu s-a pornit CI și nu s-au făcut probe noi pe Android ori la furnizori reali.
+APK-ul din Download rămâne `7576033`.
+
+## Etapa precedentă — TODO aplicat și APK livrat, 27.10.2026
 
 Utilizatorul a autorizat implementarea AG-01–AG-20 și o nouă compilare/livrare.
 Detaliile implementărilor sunt în [TODO_AGENT.md](TODO_AGENT.md), în tabelul
@@ -2250,6 +2290,10 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
+- **27.10.2026:** curățenie în sursele agentului: eliminate 6 funcții, 8 câmpuri,
+  2 constante și prelucrarea UI redundantă; teste runtime izolate în proiect
+  temporar. 495 aserțiuni runtime, 514 + 84 verificări editor și 28 teste Python
+  trecute. APK-ul livrat nu a fost schimbat.
 - **27.10.2026:** livrat **7576033** cu TODO-ul implementat; 495 aserțiuni
   runtime, 527 × 5 în editorul nativ și 86 dedicate trecute. APK semnat și
   installer/checksum înlocuite în Download; testarea fizică rămâne separată.

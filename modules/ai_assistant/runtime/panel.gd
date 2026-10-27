@@ -104,8 +104,6 @@ var active_attachments: Array = []
 var pending_references: Array = []
 var active_references: Array = []
 var memory_editor: TextEdit
-var turn_cancel: Dictionary = {}
-var tasks: Array = []
 var compact_summary = ""
 var compact_through = 0
 var provider_badge: Label
@@ -155,7 +153,6 @@ var dock_width_previous = Vector2(-1, -1)
 var dock_center: WeakRef
 var dock_center_previous = Vector2(-1, -1)
 var dock_columns_signature = ""
-var blender_refreshing = false
 
 func configure(editor_plugin: Node, secret_store: RefCounted, start_screen: bool = false) -> void:
 	project_manager_mode = start_screen
@@ -1147,14 +1144,14 @@ func _save_skill() -> void:
 		form["sha256"] = workspace.read(str(args["id"]), true).get("result", {}).get("sha256", "")
 		form["id"].editable = false
 	_refresh_skills()
-	_audit("skill_save", args, result)
+	_record_event("skill_save", args, result)
 	_status("Skill salvat." if result.get("ok", false) else str(result.get("error", "Salvare eșuată.")))
 
 func _delete_skill() -> void:
 	if busy: return
 	var form: Dictionary = forms["skill"]
 	var result = workspace.remove(str(form["id"].text), str(form.get("sha256", "")))
-	_audit("skill_delete", {"id": form["id"].text}, result)
+	_record_event("skill_delete", {"id": form["id"].text}, result)
 	if result.get("ok", false): _new_skill()
 	_refresh_skills()
 	_status("Skill șters · copie păstrată pentru recuperare." if result.get("ok", false) else str(result.get("error", "Ștergere eșuată.")))
@@ -2301,7 +2298,6 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		history.append(user_message)
 		transcript = chat.append_message("user", str(user_message["content"]), user_message)
 		composer.clear()
-	else: chat.activity("Reiau sarcina întreruptă", "Rezultatele confirmate sunt păstrate; continui doar pașii rămași.")
 	if not _persist_history():
 		_finish_chat("Conversația nu a putut fi salvată.")
 		return
@@ -2315,7 +2311,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		if cancel.get("cancelled", false): break
 		var discovery = await mcp.discover(server, cancel)
 		if discovery.get("ok", false): active_definitions.append_array(discovery["result"])
-		else: _audit("mcp_discovery", {"server": server["name"]}, discovery)
+		else: _record_event("mcp_discovery", {"server": server["name"]}, discovery)
 	if profile.get("kind") == "siwc":
 		var access = await accounts.ensure_access(profile, cancel)
 		if not access.get("ok", false):
@@ -2361,7 +2357,6 @@ func _harness_event(value: Dictionary) -> void:
 		"plan_continuation": _status(Common.MODES[mode_picker.selected] + " · continuă pașii rămași")
 		"tool_started":
 			chat.show_running_tool(str(value.get("name", "")))
-			if str(value.get("name", "")) not in ["task_update", "tool_search", "tool_describe"]: chat.start_operation(str(value["id"]), _tool_status(str(value["name"])), _operation_detail(value.get("arguments", {})))
 		"retry":
 			_record_event("agent_retry", {"attempt": value.get("attempt", 0)}, Common.success("Reîncercare a cererii către model"))
 			_status("Conexiune temporar indisponibilă · reîncerc %s/2…" % value["attempt"])
@@ -2380,14 +2375,11 @@ func _harness_event(value: Dictionary) -> void:
 		"tool_result":
 			chat.show_running_tool()
 			if value.get("executed", false) and value.get("result", {}).get("ok", false): _track_verification(str(value.get("name", "")))
-			if str(value.get("name", "")) not in ["task_update", "tool_search", "tool_describe"]: chat.finish_operation(str(value["id"]), _tool_status(str(value["name"])), _operation_detail(value.get("arguments", {})), value.get("result", {}), bool(value.get("replayed", false)))
 			_record_event("agent_tool_result", {"call_id": value.get("id", ""), "tool": value.get("name", ""), "arguments": value.get("arguments", {}), "duration_ms": value.get("duration_ms", 0), "executed": value.get("executed", false), "replayed": value.get("replayed", false)}, {"ok": value.get("result", {}).get("ok", false), "code": value.get("result", {}).get("code", ""), "error": value.get("result", {}).get("error", "")})
 			_show_change_preview(value.get("result", {}), str(value["id"]))
 			if not value.get("result", {}).get("store_items", []).is_empty(): chat.show_store(value["result"]["store_items"])
 			if not value.get("result", {}).get("files", []).is_empty(): _show_files(value["result"]["files"], str(value["id"]))
-			if value.get("replayed", false):
-				chat.activity("Rezultat recuperat · " + str(value["name"]), "Operația nu a fost executată din nou.\n" + JSON.stringify(value["result"]).left(12000))
-			elif not value.get("executed", false): _audit(str(value["name"]), value.get("arguments", {}), value["result"])
+			if not value.get("replayed", false) and not value.get("executed", false): _record_event(str(value["name"]), value.get("arguments", {}), value["result"])
 
 func _harness_checkpoint(snapshot: Dictionary) -> bool:
 	if not _persist_history(): return false
@@ -2466,11 +2458,6 @@ func _tool_status(name: String) -> String:
 	if name == "blender_run": return "Lucrez în Blender…"
 	return str({"asset_generate": "Trimit cererea de generare…", "asset_wait": "Aștept rezultatul generării…", "asset_status": "Verific generarea…", "asset_import": "Import resursa…", "asset_export": "Export resursa…", "task_update": "Actualizez planul…", "godot_project": "Inspectez proiectul…", "godot_files": "Caut fișiere…", "storage_search": "Caut în stocare…", "file_observe": "Examinez fișierul…", "godot_read_file": "Citesc fișierul…", "godot_read_range": "Citesc fragmentul de cod…", "godot_write_file": "Actualizez fișierul…", "godot_apply_patch": "Aplic modificările…", "godot_delete_file": "Șterg resursa…", "godot_scene_tree": "Verific scena…", "godot_create_node": "Creez un nod…", "godot_create_resource": "Pregătesc resursa…", "godot_set": "Actualizez proprietățile…", "godot_get": "Verific proprietățile…", "godot_save_scene": "Salvez scena…", "godot_script_diagnostics": "Verific scriptul…", "store_search": "Caut în Asset Store…", "store_describe": "Verific extensia…", "store_install": "Instalez extensia…", "github_read": "Verific repository-ul…", "github_create_issue": "Public cererea pe GitHub…", "agent_spawn": "Pornesc sarcina secundară…", "agent_wait": "Aștept sarcina secundară…"}.get(name, "Execut operația…"))
 
-func _operation_detail(args: Dictionary) -> String:
-	for key in ["path", "name", "query", "profile", "job", "property"]:
-		if not str(args.get(key, "")).is_empty(): return _redact(str(args[key])).left(180)
-	return ""
-
 func _work_jobs_changed(parent: String) -> void:
 	if chat == null or parent != current_turn: return
 	chat.show_work_jobs(agent_jobs.jobs.values().filter(func(job: Dictionary) -> bool: return job.get("parent") == parent).map(func(job: Dictionary) -> Dictionary: return {"id": job["id"], "task": _redact(str(job["task"])), "kind": job["kind"], "status": job["status"], "steps": job.get("steps", 0)}))
@@ -2482,7 +2469,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	if definition.is_empty(): return Common.failure("Instrument indisponibil.")
 	var validation = ToolRegistry.validate(definition, args)
 	if not validation.get("ok", false):
-		_audit(name, args, validation)
+		_record_event(name, args, validation)
 		return validation
 	if definition.get("risk", "external") != "read" and _mode() == 2 and planner.phase == "idle":
 		return Common.failure("Modul Auto cere un plan scurt înainte de modificări. Publică task_update cu phase=executing, apoi reia operația.", "plan_required")
@@ -2490,7 +2477,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		return Common.failure("Planul este în pregătire sau doar propus. Actualizează task_update la executing înainte de modificări; modul Plan rămâne doar pentru citire.", "plan_read_only")
 	if not await _authorize(definition, args):
 		var denied = Common.failure("Operația nu a fost autorizată.", "permission_denied")
-		_audit(name, args, denied)
+		_record_event(name, args, denied)
 		return denied
 	if cancel.get("cancelled", false): return Common.failure("Oprit.", "cancelled")
 	_status(_tool_status(name))
@@ -2501,7 +2488,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	elif name == "file_preview":
 		if not preview_requested:
 			var denied = Common.failure("Viewer-ul se deschide numai la cererea explicită a utilizatorului. Afișează cardul prin file_show și inspectează în background prin file_observe.", "preview_not_requested")
-			_audit(name, args, denied)
+			_record_event(name, args, denied)
 			return denied
 		var item = file_registry.describe(str(args["id"]), str(conversations.index["active"]))
 		if item.is_empty() or not item.get("available", false): result = Common.failure("Fișier indisponibil în conversația curentă.", "file_unavailable")
@@ -2593,17 +2580,10 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 				await _observe_model(item)
 				rendered += 1
 	if not _vision_enabled(): result.erase("images")
-	_audit(name, args, result)
+	_record_event(name, args, result)
 	if name.begins_with("godot_") and definition.get("risk") == "write" and result.get("ok", false): _update_changes()
 	_refresh_lists()
 	return result
-
-func _audit(name: String, args: Dictionary, result: Dictionary) -> void:
-	result = result.duplicate()
-	if result.has("images"): result["images"] = result["images"].map(func(item: Dictionary) -> Dictionary: return {"name": item.get("name", ""), "mimeType": item.get("mimeType", "")})
-	var titles = {"godot_project": "Inspectează proiectul", "godot_files": "Caută fișiere", "godot_scene": "Inspectează scena", "godot_create_node": "Creează un nod", "godot_set": "Modifică proprietăți", "godot_write_file": "Actualizează fișierul", "godot_attach_script": "Atașează scriptul", "godot_save_scene": "Salvează scena", "asset_generate": "Generează resursa", "task_update": "Actualizează pașii"}
-	if name != "task_update": chat.activity(str(titles.get(name, name)) + (" · finalizat" if result.get("ok", false) else " · eșuat"), name + "\n" + _redact(JSON.stringify(result)).left(12000))
-	_record_event(name, args, result)
 
 func _record_event(name: String, args: Dictionary, result: Dictionary) -> void:
 	journal_revision += 1
@@ -3042,7 +3022,7 @@ func _generate() -> void:
 	var result = await assets.submit(profile, str(form["prompt"].text), str(form["reference"].text), cancel, options)
 	busy = false
 	send_button.disabled = false
-	_audit("asset_generate", {"profile": profile["id"]}, result)
+	_record_event("asset_generate", {"profile": profile["id"]}, result)
 	_status("Generarea a fost acceptată. Folosește Actualizează rezultatul pentru progres." if result.get("ok", false) else str(result.get("error", "Generarea a eșuat.")))
 	_refresh_lists()
 	if result.get("ok", false):
@@ -3129,7 +3109,7 @@ func _perform_export(id: String, format: String, task_id: String = "") -> void:
 	busy = false
 	exporting_asset = false
 	_update_settings_controls()
-	_audit("asset_export", {"job": id, "format": format}, result)
+	_record_event("asset_export", {"job": id, "format": format}, result)
 	if not result.get("ok", false):
 		_status(str(result.get("error", "Export eșuat.")))
 		return
@@ -3164,7 +3144,7 @@ func _import_job() -> void:
 	var job = _selected_job()
 	if job.is_empty(): return
 	var result = assets.import_job(str(job["id"]), str(forms["generation"]["destination"].text))
-	_audit("asset_import", {"job": job["id"]}, result)
+	_record_event("asset_import", {"job": job["id"]}, result)
 	_status("Import solicitat: " + str(result.get("result", {}).get("path", "")) if result.get("ok", false) else str(result.get("error", "Import nereușit.")))
 
 func _preview_job() -> void:
@@ -3351,13 +3331,11 @@ func _render_history() -> void:
 			if restored_result is Dictionary: _show_change_preview(restored_result, str(message.get("tool_call_id", message.get("id", ""))))
 			if restored_result is Dictionary and not restored_result.get("store_items", []).is_empty(): chat.show_store(restored_result["store_items"])
 			elif restored_result is Dictionary and not restored_result.get("files", []).is_empty(): _show_files(restored_result["files"], str(message.get("tool_call_id", message.get("id", ""))))
-			else: chat.activity(str(message.get("tool_name", "Operație")), _redact(str(message.get("content", ""))))
 		if message.get("changes") is Array: chat.show_changes(str(message.get("turn_id", "")), message["changes"])
 		if message.get("plan_snapshot") is Dictionary: chat.show_plan(message["plan_snapshot"])
 		elif message.get("tool_name") == "task_update":
 			var result: Variant = Common.parse_json(str(message.get("content", "")))
 			if result is Dictionary and result.get("result") is Dictionary and result["result"].has("steps"): chat.show_plan(result["result"])
-			else: chat.activity("Pașii anteriori", _redact(str(message.get("content", ""))))
 	chat.restoring = false
 	_restore_work_activity()
 
@@ -3369,22 +3347,17 @@ func _restore_work_activity() -> void:
 	var snapshot = {}
 	var outcome = ""
 	var calls = {}
-	var operations = []
 	for entry in history:
 		if entry.get("turn_id") == turn:
 			if entry.get("plan_snapshot") is Dictionary: snapshot = entry["plan_snapshot"]
 			outcome = str(entry.get("run_status", outcome))
-			for call in entry.get("tool_calls", []): calls[str(call.get("id", ""))] = call
+			for call in entry.get("tool_calls", []):
+				if call.get("name") == "task_update": calls[str(call.get("id", ""))] = call
 		if entry.get("role") != "tool" or not calls.has(str(entry.get("tool_call_id", ""))): continue
-		var call: Dictionary = calls[str(entry["tool_call_id"])]
-		var name = str(call.get("name", ""))
 		var result: Variant = Common.parse_json(str(entry.get("content", "")))
 		if not result is Dictionary: continue
-		if name == "task_update" and result.get("result") is Dictionary and result["result"].has("steps"): snapshot = result["result"]
-		if name in ["task_update", "tool_search", "tool_describe"]: continue
-		var state = "completed" if result.get("ok", false) else ("cancelled" if entry.get("execution_unknown", false) or result.get("code") == "cancelled" else ("blocked" if result.get("code") in ["plan_required", "plan_read_only", "permission_denied"] else "failed"))
-		operations.append({"id": str(call["id"]), "title": _tool_status(name).trim_suffix("…"), "detail": _operation_detail(call.get("arguments", {})), "state": state, "error": str(result.get("error", "")).left(600)})
-	chat.restore_work(turn, snapshot, operations, outcome, busy and current_turn == turn)
+		if result.get("result") is Dictionary and result["result"].has("steps"): snapshot = result["result"]
+	chat.restore_work(turn, snapshot, outcome, busy and current_turn == turn)
 
 func _send_or_queue(text: String = "") -> void:
 	if text.is_empty(): text = composer.text
@@ -3782,7 +3755,6 @@ func _reference_context() -> String:
 	return output if FileAccess.file_exists(Workspace.MEMORY_PATH) else output + "\nLegacy project memories:\n" + _redact(memories)
 
 func _composer_hints() -> void:
-	chat.reference_label.text = " · ".join(pending_references) + (" · %s imagini" % pending_attachments.size() if not pending_attachments.is_empty() else "")
 	chat.show_attachments(pending_attachments, pending_references, pending_files)
 	var text = composer.text
 	if text.ends_with("@") or text.ends_with("$") or text == "/": _reference_picker("files" if text.ends_with("@") else ("nodes" if text.ends_with("$") else "commands"))
@@ -3973,7 +3945,6 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 				if not problem.is_empty(): return Common.failure(problem, "verification_required")
 			var result = planner.update(Common.parse_json(_redact(JSON.stringify(args))), _mode() == 3)
 			if result.get("ok", false):
-				tasks = planner.steps.duplicate(true)
 				chat.show_plan(planner.snapshot())
 			return result
 		"memory_write":
@@ -4054,10 +4025,8 @@ func _end_conversation_jobs() -> void:
 	if speech != null: speech.stop()
 	current_turn = ""
 	queued.clear()
-	tasks.clear()
 	if planner != null: planner.reset()
 	if chat != null:
-		chat.tasks_label.text = ""
 		chat.reset_work()
 		chat.set_context(0, 0)
 

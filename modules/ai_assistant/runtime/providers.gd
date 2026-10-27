@@ -270,10 +270,6 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 				if capacity > 0: item["context"] = capacity
 	return Common.success(models)
 
-func ollama_capabilities(profile: Dictionary, model: String, cancel: Dictionary = {}) -> Dictionary:
-	var root = str(profile["url"]).trim_suffix("/").trim_suffix("/v1")
-	return await transport.request(root + "/api/show", HTTPClient.METHOD_POST, headers(profile), {"model": model}, {"allow_http": profile.get("allow_http", false), "cancel": cancel})
-
 func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable()) -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")

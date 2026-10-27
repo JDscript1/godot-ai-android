@@ -1181,11 +1181,7 @@ func _activity_drawer_tests() -> void:
 	chat.begin_work("activity-visual", snapshot)
 	panel.busy = true
 	chat.show_status("Pregătesc animațiile personajului…", true)
-	chat.start_operation("activity-read", "Citesc fișierul…", "res://player.gd")
-	chat.finish_operation("activity-read", "Citesc fișierul…", "res://player.gd", {"ok": true})
-	chat.start_operation("activity-write", "Aplic modificările…", "res://player.gd")
-	chat.finish_operation("activity-write", "Aplic modificările…", "res://player.gd", {"ok": true})
-	chat.start_operation("activity-animation", "Pregătesc animația…", "Player / AnimationPlayer")
+	panel._harness_event({"kind": "tool_started", "id": "activity-animation", "name": "godot_call", "arguments": {}})
 	chat.set_working(true)
 	await get_tree().create_timer(0.2).timeout
 	_check(chat.activity_panel.get_parent() == chat.compose_panel.get_parent() and chat.activity_panel.get_index() + 1 == chat.compose_panel.get_index() and chat.activity_panel.get_global_rect().end.y <= chat.compose_panel.get_global_rect().position.y + 1, "Activity status stays immediately above the composer, outside the conversation scroll")
@@ -1208,8 +1204,8 @@ func _activity_drawer_tests() -> void:
 	snapshot.steps[3].status = "in_progress"
 	chat.show_work_plan(snapshot)
 	_check(chat.activity_counter.text == "3/5" and chat.activity_details.visible, "Live plan updates preserve the drawer expansion and advance only confirmed completed steps")
-	chat.finish_operation("activity-animation", "Pregătește animația", "Player", {"ok": false, "code": "permission_denied", "error": "Operația nu a fost autorizată."})
-	_check(chat.work_operations["activity-animation"].state == "blocked", "Denied operations remain visibly blocked rather than completed")
+	panel._harness_event({"kind": "tool_result", "id": "activity-animation", "name": "godot_call", "executed": true, "arguments": {}, "result": {"ok": false, "code": "permission_denied", "error": "Operația nu a fost autorizată."}})
+	_check(JSON.parse_string(panel.journal.back()["result"]).get("code") == "permission_denied" and chat.running_tools.text == "Running Tools · —", "Denied tool results stay in Jurnal and clear the active tool without claiming completion")
 	snapshot.phase = "paused"
 	chat.show_work_plan(snapshot)
 	chat.finish_work("activity-visual", "cancelled")
@@ -1230,7 +1226,7 @@ func _activity_drawer_tests() -> void:
 	chat.begin_work("activity-new", {})
 	panel.current_turn = "activity-new"
 	panel.agent_jobs.changed.emit("activity-visual")
-	_check(chat.work_plan.is_empty() and chat.work_operations.is_empty() and chat.work_jobs.is_empty() and not chat.activity_details.visible, "A new request clears previous progress and ignores events from an older task")
+	_check(chat.work_plan.is_empty() and chat.work_jobs.is_empty() and not chat.activity_details.visible, "A new request clears previous progress and ignores events from an older task")
 	panel.agent_jobs.jobs = saved_jobs
 	panel.current_turn = saved_turn
 	panel.busy = saved_busy
@@ -1770,7 +1766,7 @@ func _populated_chat_tests() -> void:
 	var user: Dictionary = panel.chat.message_records[0]
 	_check(user["card"].size.x <= panel.chat.thread.size.x * 0.75 and user["card"].size.y < 90 * scale, "Short user messages have compact bubbles")
 	_check(absf(user["card"].get_global_rect().end.x - user["row"].get_global_rect().end.x) < 2, "User bubbles align to the right")
-	_check(not panel.chat.tasks_label.visible and not panel.chat.reference_label.visible, "Empty task and reference rows reserve no chat space")
+	_check(not panel.chat.attachment_chips.visible and not panel.chat.activity_panel.visible, "Empty attachments and task progress reserve no chat space")
 	_check(panel.chat.scroll.size.y >= panel.chat.size.y * 0.5, "Conversation receives at least half the available workspace")
 	_check(panel.chat.size.x <= panel.size.x + 2, "Message width does not force the chat outside its workspace")
 	var compact_height = panel.composer.size.y
@@ -1806,9 +1802,7 @@ func _populated_chat_tests() -> void:
 	await get_tree().create_timer(0.2).timeout
 	_check(is_instance_valid(anchor) and assistant["body"].get_instance_id() == body_id and absf(assistant["card"].size.y - before) < 2, "Completion keeps the same message widgets and layout")
 	_check(not assistant["actions"][0].disabled and assistant["metadata"]["id"] == "visual-answer", "Completed message actions bind to the stored conversation message")
-	panel.chat.activity("Inspectează scena · finalizat", "Fixture result")
-	panel.chat.activity("Verifică scriptul · finalizat", "Fixture result")
-	_check(panel.chat.activity_group == null and panel.chat.running_tools is Label, "Operation history is replaced by a non-expandable Running Tools label")
+	_check(panel.chat.running_tools is Label and panel.chat.running_tools.get_child_count() == 0, "Operation history is replaced by a non-expandable Running Tools label")
 	panel.chat.show_running_tool("godot_script_diagnostics")
 	_check(panel.chat.running_tools.text == "Running Tools · godot_script_diagnostics", "Running Tools displays the active tool name")
 	panel.chat.show_running_tool()

@@ -2,7 +2,6 @@
 extends RefCounted
 
 const VERSION = "0.1.0"
-const BUILTIN_PREFIX = "res://__godot_ai_builtin__/"
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
 const MODES = ["Auto", "Default", "Plan"]
 const MODE_IDS = [2, 4, 3]

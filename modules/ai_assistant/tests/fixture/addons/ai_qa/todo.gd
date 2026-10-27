@@ -98,7 +98,7 @@ func run(host: Node, panel: Control) -> void:
 	panel._append_detailed_log({"after_rotation": true})
 	host._check(panel.journal_part == previous_part + 1 and FileAccess.file_exists(log_path), "Full logs rotate into successive files while preserving older events")
 	panel.chat.show_running_tool("godot_save_scene")
-	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.text == "Running Tools · godot_save_scene" and panel.chat.activity_group == null, "Running Tools is a live non-dropdown row")
+	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.text == "Running Tools · godot_save_scene" and panel.chat.running_tools.get_child_count() == 0, "Running Tools is a live non-dropdown row")
 	panel.chat.show_running_tool()
 	host._check(panel.chat.running_tools.text == "Running Tools · —", "Running Tools clears when the operation ends")
 	panel.chat.clear_messages()

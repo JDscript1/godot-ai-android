@@ -85,7 +85,6 @@ func _finish(job: Dictionary, status: String, text: String) -> void:
 	job["text"] = owner._redact(text)
 	changed.emit(str(job["parent"]))
 	if job["kind"] == "Playtest": playtest_busy = false
-	if owner.current_turn == job["parent"]: owner.chat.activity(str(job["kind"]) + " · " + status, job["text"])
 	Common.atomic_json(owner.project_directory.path_join("jobs").path_join(str(job["id"]) + ".json"), {"id": job["id"], "parent": job["parent"], "kind": job["kind"], "task": owner._redact(str(job["task"])), "status": status, "report": job["text"], "steps": job["steps"]})
 
 func _companion(job: Dictionary, definitions: Array, instruction: String) -> void:
