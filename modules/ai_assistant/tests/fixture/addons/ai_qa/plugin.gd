@@ -268,6 +268,11 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "planning":
+		var planning = load(get_script().resource_path.get_base_dir().path_join("interactive_plan.gd")).new()
+		await planning.run(self, panel)
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "scene_paths":
 		await _scene_path_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -333,6 +338,8 @@ func _run() -> void:
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	await _chat_workflow_tests()
+	var planning = load(get_script().resource_path.get_base_dir().path_join("interactive_plan.gd")).new()
+	await planning.run(self, panel)
 	await _approval_dialog_tests("")
 	await _history_button_tests()
 	await _settings_action_tests()

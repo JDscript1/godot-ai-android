@@ -20,10 +20,12 @@ repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă
 | AG-25 | Planul vizibil rămâne pe construcție în timpul verificării, timp de mai multe minute. Instrucțiuni explicite pentru schimbarea pasului și a fazei la încheierea etapei. | Ghidaj în surse; comportamentul implicit pe APK nou încă de evaluat. Nu este o sincronizare automată garantată. |
 | AG-26 | Răspunsuri finale prea lungi, cu proprietăți și coordonate inutile. Implicit trei puncte concise, aproximativ 120 cuvinte, cu limitele materiale păstrate. | Instrucțiuni în surse; respectarea lor în noul APK rămâne de confirmat. |
 | AG-27 | Tap-uri cunoscute și inspecții independente consumă multe runde; sute de mesaje PASS pot ascunde eșecurile în coada Output. Ghidaj pentru gruparea apelurilor și rapoarte compacte cu număr de verificări/eșecuri. | Fără plafon nou de pași; eficiența înainte/după nu este încă măsurată în condiții identice. |
+| AG-28 | Plan interactiv: întrebări cu opțiuni simple/multiple și text propriu în chat; trimitere explicită, ciorne salvate, răspunsuri persistente și reluarea aceleiași sarcini după Stop/întrerupere. | Implementat în surse; selecția și gesturile simulate, refuzul scrierilor, persistența și recuperarea probate în editor. [Raport](docs/AI_INTERACTIVE_PLAN.md). APK, gesturi fizice și alegerea întrebărilor cu un model real rămân deschise. |
 
-Sursele trec **518 aserțiuni runtime** și **514 verificări editor**, fără
-eșecuri; cardurile media și starea întreruptă inspectate în randări. Nu există
-un APK nou pentru AG-21–AG-27. Pragurile ST-01–ST-12 din raport păstrează
+Sursele trec **531 aserțiuni runtime**, **548 verificări editor** și
+**67 × 5** verificări dedicate Planului interactiv, fără
+eșecuri; cardurile media, întrebările și starea întreruptă inspectate în randări. Nu există
+un APK nou pentru AG-21–AG-28. Pragurile ST-01–ST-12 din raport păstrează
 distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
 
 ## Aplicare în APK 7576033 — 27.10.2026

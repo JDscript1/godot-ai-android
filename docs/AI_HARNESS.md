@@ -143,6 +143,20 @@ blocked. Stopping unfinished execution preserves a paused snapshot. Invalid
 updates leave the previous state unchanged. A completed execution requires all
 steps completed; a completed proposal retains its implementation steps pending.
 
+Plan also supports interactive requirement gathering through the initial read-only
+`plan_ask` tool. The model can present 1–3 focused questions with 2–4 options each,
+single or multiple selection, and optional custom text. There are no default
+answers and the model receives nothing until explicit submission. The tool waits
+inside Godot without new provider requests or a response deadline. Answers cannot
+grant execution permission. Greetings and fully specified requests skip this step.
+
+Question cards, drafts and confirmed answers live in conversation metadata bound
+to the original provider call, conversation and turn. Stop pauses waiting; submitting
+a restored card repairs the interrupted tool result and resumes the same task.
+Confirmed answers survive the crash window before tool completion and context
+compaction. Completed summaries are read-only; stale actions cannot answer a newer
+task. See [interactive Plan checks and delivery limits](AI_INTERACTIVE_PLAN.md).
+
 In Default, the model decides whether complexity, uncertainty or dependencies
 justify a plan. Auto requires a short plan before each task that changes the
 project or calls an external operation. Both modes continue unfinished execution

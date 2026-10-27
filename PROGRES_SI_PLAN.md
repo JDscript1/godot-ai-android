@@ -39,7 +39,37 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — stabilitate și probe reale, 27.10.2026
+## Etapa curentă — Plan interactiv, 27.10.2026
+
+Implementat în surse **AG-28**: agentul poate cere clarificări în chat prin
+`plan_ask`, cu 1–3 întrebări, opțiuni simple/multiple și răspuns propriu. Nu este
+preselectată nicio variantă. Harness-ul așteaptă „Trimite răspunsurile”, apoi
+primește alegerile confirmate și continuă propunerea. Modul Plan rămâne numai
+pentru citire, inclusiv cu YOLO activ.
+
+Întrebările, ciornele și răspunsurile se salvează în conversație. Stop păstrează
+cardul; trimiterea ulterioară reia aceeași sarcină. Recuperarea tratează și
+întreruperea dintre salvarea răspunsului și încheierea apelului. Cardurile vechi
+nu pot răspunde unei cereri noi sau altei conversații. Reluarea nu schimbă
+implicit furnizorul dacă profilul inițial a dispărut. Cardurile au aceeași
+limită adaptivă de lățime ca planul; glisarea peste opțiuni nu le selectează.
+
+Verificat: **531 aserțiuni runtime / 0 eșecuri**, regresie editor narrow
+**548 verificări / 0 eșecuri** și probe dedicate pentru selecție, răspuns
+propriu, Stop și recuperare: **67 verificări × 5 configurații / 0 eșecuri**.
+Randările au fost inspectate în chat îngust și la scara de telefon.
+Dovezi și comenzi: [Plan interactiv](docs/AI_INTERACTIVE_PLAN.md).
+
+Aceste schimbări **nu sunt încă în APK**. Instalatorul din Download este cel
+livrat anterior. Compilarea, probele fizice Android și cererile către un
+furnizor real pentru această funcție rămân de făcut.
+Instrucțiunile cer clarificări numai când lipsesc decizii relevante;
+comportamentul unui model real rămâne de evaluat după livrare.
+
+Jurnal: 27.10.2026 — adăugat Plan interactiv, cu răspunsuri explicite,
+persistență și continuare; validarea locală este separată de livrarea Android.
+
+## Stabilitate și probe reale, 27.10.2026
 
 APK-ul instalat a fost verificat prin ADB: **74887a1**, același SHA-256 ca
 instalatorul din Download. Probele au folosit panoul și harness-ul nativ cu

@@ -371,6 +371,35 @@ func _integration_tests(node: Node) -> void:
 		DirAccess.remove_absolute(source)
 
 func _planning_tests(node: Node) -> void:
+	var planning = scripts["planner"]
+	var questions = [{"id": "view", "title": "Ce perspectivă dorești?", "options": [{"id": "top", "label": "De sus"}, {"id": "side", "label": "Lateral"}]}, {"id": "features", "title": "Ce includem?", "multiple": true, "options": [{"id": "save", "label": "Salvare"}, {"id": "touch", "label": "Touch"}]}]
+	var definition = planning.question_definition()
+	var registry = scripts["tool_registry"].new([definition], true)
+	check(definition.get("risk") == "read" and registry.loaded.has("plan_ask"), "Interactive clarification is available initially in the read-only catalog")
+	check(scripts["tool_registry"].validate(definition, {"questions": questions}).get("ok", false), "Single and multiple questions validate through the provider tool schema")
+	check(not scripts["tool_registry"].validate(definition, {"questions": []}).get("ok", true), "An empty questionnaire is rejected")
+	var duplicated = questions.duplicate(true)
+	duplicated[1]["id"] = "view"
+	check(not planning.validate_questions({"questions": duplicated}).get("ok", true), "Duplicate question identifiers cannot overwrite an answer")
+	duplicated = questions.duplicate(true)
+	duplicated[0]["options"][1]["id"] = "top"
+	check(not planning.validate_questions({"questions": duplicated}).get("ok", true), "Duplicate option identifiers are rejected before displaying the card")
+	check(not planning.question_answers(questions, {}).get("ok", true) and planning.question_answers(questions, {}, false).get("ok", false), "An empty draft is allowed but cannot be submitted as user consent")
+	var answers = {"view": {"selected": ["side"]}, "features": {"selected": ["touch", "save"], "text": "  Landscape  "}}
+	var accepted = planning.question_answers(questions, answers)
+	check(accepted.get("ok", false) and accepted["result"]["view"]["labels"] == ["Lateral"] and accepted["result"]["features"]["labels"] == ["Salvare", "Touch"] and accepted["result"]["features"]["text"] == "Landscape", "Submitted IDs resolve to actual option labels in stable question order, with trimmed custom text")
+	answers["view"] = {"selected": ["top", "side"]}
+	check(not planning.question_answers(questions, answers).get("ok", true), "Single-choice questions refuse multiple selections")
+	answers["view"] = {"selected": [], "text": "Izometric"}
+	check(planning.question_answers(questions, answers).get("ok", false), "A custom answer can replace every proposed option")
+	answers["features"]["selected"] = ["save", "save"]
+	check(not planning.question_answers(questions, answers).get("ok", true), "Multiple-choice answers refuse duplicated IDs")
+	answers["features"]["selected"] = ["unknown"]
+	check(not planning.question_answers(questions, answers).get("ok", true), "An invented option cannot become a confirmed user requirement")
+	answers["features"]["selected"] = []
+	answers["features"]["text"] = "x".repeat(2001)
+	check(not planning.question_answers(questions, answers).get("ok", true), "Custom answers have a measured storage and context limit")
+	check(not planning.question_answers(questions, {"foreign": {}}).get("ok", true), "Foreign question keys cannot be silently accepted")
 	var plan = scripts["planner"].new()
 	plan.reset("plan-test")
 	check(plan.can_write() and not plan.needs_continuation(), "Planner starts idle; the host enforces the selected mode policy")

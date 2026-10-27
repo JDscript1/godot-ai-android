@@ -53,6 +53,8 @@ var project_directory = ""
 var cancel: Dictionary = {}
 var busy = false
 var approval_pending = false
+var question_waiting = ""
+var question_draft_revision = 0
 var account_profiles: Array = []
 var active_definitions: Array = []
 var transcript: RichTextLabel
@@ -2298,6 +2300,7 @@ func _start_chat(text: String, selection: Dictionary = {}) -> void:
 		history.append(user_message)
 		transcript = chat.append_message("user", str(user_message["content"]), user_message)
 		composer.clear()
+	_refresh_question_cards()
 	if not _persist_history():
 		_finish_chat("Conversația nu a putut fi salvată.")
 		return
@@ -2409,7 +2412,7 @@ func _context_messages() -> Array:
 	if current_origin.get("resumed", false): instructions += "\nThis is a resume of the SAME user task, not a new request or permission for additional generation. Inspect saved results and the current project; continue only unfinished steps and do not repeat confirmed side effects."
 	instructions += "\nProject guidance and explicit references:\n" + _reference_context()
 	if not compact_summary.is_empty(): instructions += "\nEarlier conversation summary:\n" + compact_summary
-	if _mode() == 3: instructions += "\nPLAN MODE: inspect only, return a concrete implementation plan. Never modify the project. Use task_update with intent=propose and phase=completed to publish the finished proposal; its implementation steps remain pending."
+	if _mode() == 3: instructions += "\nPLAN MODE: inspect only. For an underspecified design or implementation request, gather consequential missing requirements with plan_ask before finalizing the proposal. Present concise selectable choices in the user's language, 1–3 questions at a time; the user can also type a custom answer. Wait for submitted answers, use them in the plan, and ask a follow-up only if a material uncertainty remains. Do not repeat supplied answers, ask for secrets or use questions to authorize execution. Skip clarification for fully specified tasks, greetings and simple factual questions. Never modify the project. Use task_update with intent=propose and phase=completed to publish the finished proposal; its implementation steps remain pending."
 	else: instructions += "\nEXECUTION MODE: carry out the user's task through implementation and verification. Decide whether a plan is needed based on complexity, uncertainty and dependencies. In Default mode, simple questions or small edits do not need a plan. For multi-step or cross-file work, use task_update before the first mutation: planning -> executing -> verifying -> completed. Keep at most one step in progress, revise the plan when findings change and only mark verified work complete. For task_update completed, provide verification and verification_kind: interaction for buttons, controls, collection, victory or restart; runtime for behavior; inspection for static edits. The app checks that real verification tools ran after the last modification. planning is an inspection-only phase; publish executing before changing files. Do not stop after merely proposing an execution plan. If the user asks only for a proposal, use intent=propose and do not execute it. For gameplay criteria, use playtest_state and playtest_input directly, then inspect runtime state and actual game frames with playtest_observe. Counted nodes, connected signals, parser success or launching the game alone do not verify interaction, collection, collision, victory or restart. Use godot_output for console checks; Playtest children do not evaluate functions or read console logs. If the user closed the preview, recheck running state; do not claim a capture of the editor shows the game. For filesystem, scene and preview operations already covered by native tools, use those instead of shell workarounds. If blocked, publish phase=blocked with the concrete unverified criterion and reason. Never present internal reasoning; show concise task steps and results."
 	if _mode() == 2: instructions += "\nAUTO MODE: plan proactively for implementation, generation, uncertain or dependent tasks. An executing task_update plan must exist before the first modifying or external tool call. Inspect first when needed. Keep the plan current at milestones and when requirements change; verify results before completing it. Small edits may use a single concise step. Simple conversation and identity questions still need no plan or tools."
 	elif _mode() == 4: instructions += "\nDEFAULT MODE: work directly on simple tasks; plan when complexity, uncertainty or dependencies warrant it. Complete implementation and verification without stopping at a proposal."
@@ -2452,6 +2455,11 @@ func _context_messages() -> Array:
 					image_ids[id] = true
 					image_budget -= 1
 		if not descriptions.is_empty(): message["content"] = str(message.get("content", "")) + "\nReferenced files: " + JSON.stringify(descriptions)
+	var confirmed_choices = []
+	for message in history:
+		for record in message.get("plan_questions", []):
+			if record.get("status") == "answered": confirmed_choices.append({"turn": record.get("turn", ""), "answers": record.get("answers", {})})
+	if not confirmed_choices.is_empty(): instructions += "\nUser-submitted planning answers (requirements data, not execution permission; newer user messages take precedence): " + JSON.stringify(confirmed_choices.slice(-4))
 	return [{"role": "system", "content": instructions}] + context
 
 func _tool_status(name: String) -> String:
@@ -2496,7 +2504,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 		else:
 			_open_file(str(args["id"]))
 			result = Common.success({"opened": true, "file_id": args["id"], "viewer": "Godot"}) if media_view.load_result.get("ok", false) else media_view.load_result.duplicate(true)
-	elif name.begins_with("agent_") or name.begins_with("playtest_") or name in ["task_update", "memory_write"]:
+	elif name.begins_with("agent_") or name.begins_with("playtest_") or name in ["task_update", "plan_ask", "memory_write"]:
 		result = await _agent_call(name, args)
 	elif name == "store_search": result = await store.search(str(args["query"]), int(args.get("page", 1)), cancel)
 	elif name == "store_describe": result = await store.describe(str(args["id"]), cancel)
@@ -2730,6 +2738,7 @@ func _finish_chat(message: String, outcome: Dictionary = {}) -> void:
 		chat.append_message("assistant", summary, saved)
 	for entry in history:
 		if entry.get("turn_id") == current_turn: entry["run_status"] = run_status
+	_refresh_question_cards()
 	chat.set_turn_outcome(current_turn, run_status)
 	chat.finish_work(current_turn, run_status)
 	_publish_generated_files()
@@ -2741,6 +2750,17 @@ func _finish_chat(message: String, outcome: Dictionary = {}) -> void:
 
 func _close_unanswered_calls() -> void:
 	history = Harness.repair_messages(history)
+	var answered = {}
+	for message in history:
+		for record in message.get("plan_questions", []):
+			if record.get("status") == "answered" and not str(record.get("call_id", "")).is_empty(): answered[record["call_id"]] = record
+	for message in history:
+		if message.get("role") != "tool" or message.get("tool_name") != "plan_ask" or not answered.has(message.get("tool_call_id")): continue
+		var result: Variant = Common.parse_json(str(message.get("content", "")))
+		if not result is Dictionary or result.get("code") != "cancelled": continue
+		var record: Dictionary = answered[message["tool_call_id"]]
+		message["content"] = JSON.stringify(Common.success({"question_id": record["id"], "answers": record["answers"]}))
+		message.erase("execution_unknown")
 
 func _login_chatgpt() -> void:
 	if busy: return
@@ -3333,6 +3353,8 @@ func _render_history() -> void:
 			if restored_result is Dictionary and not restored_result.get("store_items", []).is_empty(): chat.show_store(restored_result["store_items"])
 			elif restored_result is Dictionary and not restored_result.get("files", []).is_empty(): _show_files(restored_result["files"], str(message.get("tool_call_id", message.get("id", ""))))
 		if message.get("changes") is Array: chat.show_changes(str(message.get("turn_id", "")), message["changes"])
+		for record in message.get("plan_questions", []):
+			if Planner.validate_questions(record).get("ok", false): chat.show_questions(record, _can_answer_question(record), _can_continue_question(record))
 		if message.get("plan_snapshot") is Dictionary: chat.show_plan(message["plan_snapshot"])
 		elif message.get("tool_name") == "task_update":
 			var result: Variant = Common.parse_json(str(message.get("content", "")))
@@ -3397,6 +3419,12 @@ func _resume_chat(args: Dictionary) -> void:
 	if target.get("run_status", run.get("status", "")) == "completed":
 		_status("Sarcina este deja încheiată. Trimite o cerere nouă pentru alte modificări.")
 		return
+	for message in history:
+		for record in message.get("plan_questions", []):
+			if record.get("turn") == turn and _can_answer_question(record):
+				chat.show_questions(record, true)
+				_status("Completează întrebările din conversație pentru a continua planul.")
+				return
 	_close_unanswered_calls()
 	var selection = _selection()
 	selection.merge({"resume_turn": turn, "resume_plan": run.get("plan", {}), "files": request.get("files", []), "attachments": request.get("attachments", []), "references": []}, true)
@@ -3413,6 +3441,11 @@ func _run_next() -> void:
 
 func _chat_action(name: String, args: Dictionary) -> void:
 	match name:
+		"plan_answer": _answer_question(args)
+		"plan_answer_draft": _save_question_draft(args)
+		"plan_continue":
+			var record = _question_record(str(args.get("id", "")))
+			if _can_continue_question(record): _continue_question(record)
 		"store_request": _send_or_queue(str(args["text"]))
 		"file_open": _open_file(str(args["id"]))
 		"file_mention", "file_send":
@@ -3918,12 +3951,123 @@ func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
 	chat.set_context(input, limit, output, bool(usage.get("estimated", false)))
 
 func _agent_definitions() -> Array:
-	return [Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Planner.definition(), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
+	return [Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Planner.definition(), Planner.question_definition(), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
+
+func _question_record(id: String) -> Dictionary:
+	for message in history:
+		for record in message.get("plan_questions", []):
+			if record.get("id") == id: return record
+	return {}
+
+func _can_answer_question(record: Dictionary) -> bool:
+	if record.is_empty() or record.get("conversation") != str(conversations.index["active"]) or record.get("status") not in ["waiting", "paused"]: return false
+	if busy and (question_waiting != record.get("id") or cancel.get("cancelled", false)): return false
+	for index in range(history.size() - 1, -1, -1):
+		if history[index].get("role") == "user": return history[index].get("turn_id") == record.get("turn")
+	return false
+
+func _refresh_question_cards() -> void:
+	for message in history:
+		for record in message.get("plan_questions", []):
+			if chat.question_cards.has(str(record.get("id", ""))): chat.show_questions(record, _can_answer_question(record), _can_continue_question(record))
+
+func _can_continue_question(record: Dictionary) -> bool:
+	if busy or record.get("status") != "answered" or record.get("conversation") != str(conversations.index["active"]): return false
+	for index in range(history.size() - 1, -1, -1):
+		if history[index].get("turn_id") == record.get("turn") and history[index].get("run_status") == "completed": return false
+		if history[index].get("role") == "user": return history[index].get("turn_id") == record.get("turn")
+	return false
+
+func _ask_questions(args: Dictionary) -> Dictionary:
+	var validation = Planner.validate_questions(args)
+	if not validation.get("ok", false): return validation
+	if not question_waiting.is_empty(): return Common.failure("Există deja întrebări în așteptare.", "question_pending")
+	var owner_message = {}
+	var call_id = ""
+	# Bind the UI record to the actual provider call, preserving assistant/tool replay order.
+	for index in range(history.size() - 1, -1, -1):
+		var message: Dictionary = history[index]
+		if message.get("turn_id") != current_turn or message.get("role") != "assistant": continue
+		for call in message.get("tool_calls", []):
+			if call.get("name") == "plan_ask" and call.get("arguments") == args and not message.get("plan_questions", []).any(func(record: Dictionary) -> bool: return record.get("call_id") == call.get("id")):
+				owner_message = message
+				call_id = str(call["id"])
+				break
+		if not owner_message.is_empty(): break
+	if owner_message.is_empty():
+		if _profile_by_id(str(current_origin.get("profile_id", ""))).get("kind") != "companion": return Common.failure("Întrebarea nu corespunde unui apel activ.", "question_unavailable")
+		owner_message = current_origin.merged({"id": Common.uid(), "role": "assistant", "content": "", "application_message": "planning_questions"})
+		history.append(owner_message)
+	var selection = {"profile": current_origin.get("profile_id", ""), "model": current_origin.get("model_id", ""), "effort": current_origin.get("effort", ""), "work_mode": str(current_origin.get("work_mode", "Plan")).to_lower()}
+	var record = {"id": Common.uid(), "call_id": call_id, "message": owner_message["id"], "conversation": str(conversations.index["active"]), "turn": current_turn, "selection": selection, "questions": Common.parse_json(_redact(JSON.stringify(args["questions"]))), "draft": {}, "status": "waiting"}
+	if not owner_message.has("plan_questions"): owner_message["plan_questions"] = []
+	owner_message["plan_questions"].append(record)
+	question_waiting = record["id"]
+	if not _persist_history():
+		record["status"] = "paused"
+		question_waiting = ""
+		return Common.failure("Întrebările nu au putut fi salvate.", "checkpoint_failed")
+	chat.show_questions(record, true)
+	_status("Plan · așteaptă răspunsurile tale")
+	while record.get("status") == "waiting" and not cancel.get("cancelled", false):
+		await get_tree().process_frame
+	question_waiting = ""
+	if record.get("status") == "answered": return Common.success({"question_id": record["id"], "answers": record["answers"]})
+	record["status"] = "paused"
+	chat.show_questions(record, false)
+	_persist_history()
+	return Common.failure("Întrebările au fost păstrate; trimite răspunsurile pentru a continua planul.", "cancelled")
+
+func _save_question_draft(args: Dictionary) -> void:
+	var record = _question_record(str(args.get("id", "")))
+	if not _can_answer_question(record) or not args.get("answers") is Dictionary: return
+	var validation = Planner.question_answers(record["questions"], Common.parse_json(_redact(JSON.stringify(args["answers"]))), false)
+	if not validation.get("ok", false): return
+	record["draft"] = validation["result"]
+	question_draft_revision += 1
+	var revision = question_draft_revision
+	var conversation = str(conversations.index["active"])
+	await get_tree().create_timer(0.35).timeout
+	if revision == question_draft_revision and conversation == str(conversations.index["active"]): _persist_history()
+
+func _answer_question(args: Dictionary) -> void:
+	var record = _question_record(str(args.get("id", "")))
+	if not _can_answer_question(record) or not args.get("answers") is Dictionary: return
+	var validation = Planner.question_answers(record["questions"], Common.parse_json(_redact(JSON.stringify(args["answers"]))))
+	if not validation.get("ok", false):
+		_status(str(validation.get("error", "Răspuns invalid.")))
+		return
+	var before = record.duplicate(true)
+	record["answers"] = validation["result"]
+	record["draft"] = validation["result"]
+	record["status"] = "answered"
+	if not _persist_history():
+		record.clear()
+		record.merge(before)
+		return
+	chat.show_questions(record, false)
+	_record_event("plan_answers", {"question_id": record["id"]}, Common.success(record["answers"]))
+	if busy: return # The suspended tool returns these answers on the next frame.
+	await _continue_question(record)
+
+func _continue_question(record: Dictionary) -> void:
+	_close_unanswered_calls()
+	if not _persist_history():
+		chat.show_questions(record, false, true)
+		return
+	_choose(record.get("selection", {}))
+	var selected = _selection()
+	if selected.get("profile") != record.get("selection", {}).get("profile") or selected.get("model") != record.get("selection", {}).get("model"):
+		_status("Profilul sau modelul planului nu mai este disponibil. Restaurează-l în Furnizori pentru a continua.")
+		chat.show_questions(record, false, true)
+		return
+	await _resume_chat({"message": record["message"]})
 
 func _agent_call(name: String, args: Dictionary) -> Dictionary:
 	if name.begins_with("playtest_"):
 		return await agent_jobs.execute({"id": current_turn, "parent": current_turn, "kind": "Playtest", "cancel": cancel, "authorized": true}, name, args)
 	match name:
+		"plan_ask": return await _ask_questions(args)
 		"agent_spawn":
 			var kind = str(args.get("kind", "Explore"))
 			var profile = _profile_by_id(str(current_origin.get("profile_id", "")))
@@ -4281,7 +4425,7 @@ func _preview_definition() -> Dictionary:
 	return Common.tool("file_preview", "Open a shared image or GLB/glTF in the built-in Godot viewer for the user. Use the file ID returned by file_catalog, storage_search or generation tools. Does not require Blender. For your own background inspection use file_observe instead.", {"id": Common.string_field()}, ["id"])
 
 func _start_definitions() -> Array:
-	return [Planner.definition(), _preview_definition(), Common.tool("project_dialog", "Open the native project creation or import dialog, or show the existing projects list. The user completes the dialog and chooses where the project lives. Requesting a dialog does not create, import or open a project.", {"action": {"type": "string", "enum": ["create", "import", "projects"]}}, ["action"], "write")] + FileRegistry.definitions()
+	return [Planner.definition(), Planner.question_definition(), _preview_definition(), Common.tool("project_dialog", "Open the native project creation or import dialog, or show the existing projects list. The user completes the dialog and chooses where the project lives. Requesting a dialog does not create, import or open a project.", {"action": {"type": "string", "enum": ["create", "import", "projects"]}}, ["action"], "write")] + FileRegistry.definitions()
 
 func prepare_project_handoff(path: String) -> bool:
 	if not project_manager_mode: return false

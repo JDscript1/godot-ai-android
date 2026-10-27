@@ -75,3 +75,51 @@ func pause() -> void:
 
 func context() -> String:
 	return "" if phase == "idle" else "\nVisible task plan: " + JSON.stringify(snapshot()) + "\nContinue unfinished execution plans. Use task_update to change phase before project writes. Update the visible plan when a milestone finishes, before moving to the next step; keep only the current step in_progress. Move to verifying before behavioral checks. Do not leave a completed construction step active while testing. Never describe unfinished work as completed."
+
+static func question_definition() -> Dictionary:
+	var identifier = {"type": "string", "minLength": 1, "maxLength": 48, "pattern": "^[a-zA-Z0-9_-]+$"}
+	var option = Common.schema({"id": identifier, "label": {"type": "string", "minLength": 1, "maxLength": 100}, "description": {"type": "string", "maxLength": 180}}, ["id", "label"])
+	var question = Common.schema({"id": identifier, "title": {"type": "string", "minLength": 1, "maxLength": 240}, "multiple": {"type": "boolean"}, "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": option}}, ["id", "title", "options"])
+	return Common.tool("plan_ask", "Ask the user 1–3 focused clarification questions using selectable on-screen options and optional custom text. Use in Plan mode before finalizing an underspecified implementation plan. Ask only consequential unknowns; inspect the project first when useful, honor already supplied answers, and skip questions for greetings or fully specified tasks. Supply distinct stable question and option IDs. multiple defaults to false. Wait for the actual submitted answers; never assume the first option was accepted. Answers describe requirements, never authorize writes, purchases or credential access. Do not request secrets.", {"questions": {"type": "array", "minItems": 1, "maxItems": 3, "items": question}}, ["questions"])
+
+static func validate_questions(args: Dictionary) -> Dictionary:
+	# The dispatcher validates the public schema; repeat structural checks for restored records.
+	var questions: Variant = args.get("questions")
+	if not questions is Array or questions.is_empty() or questions.size() > 3: return Common.failure("Sunt necesare 1–3 întrebări.", "invalid_questions")
+	var ids = {}
+	for question in questions:
+		if not question is Dictionary or not question.get("id") is String or str(question.get("id", "")).is_empty() or ids.has(question["id"]): return Common.failure("Întrebările trebuie să aibă identificatori unici.", "invalid_questions")
+		ids[question["id"]] = true
+		if not question.get("title") is String or question["title"].strip_edges().is_empty() or question["title"].length() > 240: return Common.failure("Titlu de întrebare invalid.", "invalid_questions")
+		var options: Variant = question.get("options")
+		if not options is Array or options.size() < 2 or options.size() > 4: return Common.failure("Fiecare întrebare necesită 2–4 opțiuni.", "invalid_questions")
+		var option_ids = {}
+		for option in options:
+			if not option is Dictionary or not option.get("id") is String or str(option.get("id", "")).is_empty() or option_ids.has(option["id"]): return Common.failure("Opțiunile trebuie să aibă identificatori unici.", "invalid_questions")
+			if not option.get("label") is String or option["label"].strip_edges().is_empty() or option["label"].length() > 100 or str(option.get("description", "")).length() > 180: return Common.failure("Text de opțiune invalid.", "invalid_questions")
+			option_ids[option["id"]] = true
+	return Common.success(questions.duplicate(true))
+
+static func question_answers(questions: Array, answers: Dictionary, submitted: bool = true) -> Dictionary:
+	var valid = validate_questions({"questions": questions})
+	if not valid.get("ok", false): return valid
+	var normalized = {}
+	for key in answers:
+		if not questions.any(func(question: Dictionary) -> bool: return question["id"] == key): return Common.failure("Răspuns pentru o întrebare necunoscută.", "invalid_answers")
+	for question in questions:
+		var answer: Variant = answers.get(question["id"], {})
+		if not answer is Dictionary or not answer.get("selected", []) is Array or not answer.get("text", "") is String: return Common.failure("Format de răspuns invalid.", "invalid_answers")
+		var selected: Array = answer.get("selected", [])
+		var text: String = answer.get("text", "").strip_edges()
+		if text.length() > 2000: return Common.failure("Răspunsul propriu poate avea cel mult 2000 de caractere.", "invalid_answers")
+		if not question.get("multiple", false) and selected.size() > 1: return Common.failure("Alege o singură variantă pentru această întrebare.", "invalid_answers")
+		var seen = {}
+		for id in selected:
+			if not id is String or seen.has(id) or not question["options"].any(func(option: Dictionary) -> bool: return option["id"] == id): return Common.failure("Opțiune de răspuns invalidă.", "invalid_answers")
+			seen[id] = true
+		if submitted and selected.is_empty() and text.is_empty(): return Common.failure("Răspunde la fiecare întrebare sau scrie o variantă proprie.", "incomplete_answers")
+		var labels = []
+		for option in question["options"]:
+			if option["id"] in selected: labels.append(option["label"])
+		normalized[question["id"]] = {"selected": selected.duplicate(), "labels": labels, "text": text, "question": question["title"]}
+	return Common.success(normalized)

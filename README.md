@@ -31,6 +31,10 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+[Interactive Plan](docs/AI_INTERACTIVE_PLAN.md) adds selectable clarification
+questions, custom answers and conversation recovery in the current sources.
+It is tested locally and awaits a new APK delivery.
+
 [Installed Android workflow testing](docs/AI_DEVICE_WORKFLOW.md) uses a temporary
 test-project plugin to submit tasks to the actual APK agent and collect its logs,
 without rebuilding or extracting keys. The first physical Runware/Terrain3D probe

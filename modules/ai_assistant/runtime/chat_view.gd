@@ -27,6 +27,8 @@ var mode_picker: OptionButton
 var effort_picker: OptionButton
 var mode_buttons: Array = []
 var plan_cards: Dictionary = {}
+var question_cards: Dictionary = {}
+var question_touch_targets: Array = []
 var change_cards: Dictionary = {}
 var send_button: Button
 var status: Label
@@ -634,7 +636,7 @@ func _size_messages() -> void:
 	thread.custom_minimum_size.x = minf(760 * scale, maxf(180, scroll.size.x - 24 * scale))
 	for record in message_records:
 		if is_instance_valid(record["card"]) and record["role"] == "user": _size_user(record)
-	for card in plan_cards.values():
+	for card in plan_cards.values() + question_cards.values():
 		var width = minf(440 * scale, maxf(0, scroll.size.x - 36 * scale))
 		card["node"].custom_minimum_size.x = 0
 		card["node"].custom_maximum_size.x = width
@@ -1020,6 +1022,8 @@ func clear_messages() -> void:
 	reset_work()
 	change_cards.clear()
 	plan_cards.clear()
+	question_cards.clear()
+	question_touch_targets.clear()
 	message_records.clear()
 	streaming_dirty.clear()
 	touch_text_controls.clear()
@@ -1027,6 +1031,121 @@ func clear_messages() -> void:
 	for child in thread.get_children():
 		thread.remove_child(child)
 		child.queue_free()
+
+func show_questions(record: Dictionary, editable: bool, resumable: bool = false) -> void:
+	var id = str(record.get("id", ""))
+	if id.is_empty(): return
+	var previous = question_cards.get(id, {})
+	var position = -1
+	if is_instance_valid(previous.get("node")):
+		position = previous["node"].get_index()
+		thread.remove_child(previous["node"])
+		previous["node"].queue_free()
+	var panel = PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var surface = style(Color("1c2030"), 12)
+	surface.border_color = Color("756397")
+	surface.set_border_width_all(1)
+	panel.add_theme_stylebox_override("panel", surface)
+	thread.add_child(panel)
+	if position >= 0: thread.move_child(panel, position)
+	var body = VBoxContainer.new()
+	body.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
+	panel.add_child(body)
+	var answered = record.get("status") == "answered"
+	label(body, "Răspunsuri trimise" if answered else "Clarifică planul").add_theme_color_override("font_color", Color("d5c4f5"))
+	var controls = {}
+	var card = {"node": panel, "controls": controls, "editing": editable and not answered, "changing": false, "record": record.duplicate(true)}
+	question_cards[id] = card
+	for question in record.get("questions", []):
+		var heading = label(body, str(question["title"]))
+		heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var qid = str(question["id"])
+		if answered:
+			var answer: Dictionary = record.get("answers", {}).get(qid, {})
+			var parts: Array = answer.get("labels", []).duplicate()
+			if not str(answer.get("text", "")).is_empty(): parts.append(answer["text"])
+			var summary = label(body, " · ".join(parts))
+			summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			summary.add_theme_color_override("font_color", Color("aab5c9"))
+			continue
+		var draft: Dictionary = record.get("draft", {}).get(qid, {})
+		var choices = {}
+		for option in question["options"]:
+			var row = HBoxContainer.new()
+			row.custom_minimum_size.y = 40 * EditorInterface.get_editor_scale()
+			body.add_child(row)
+			var check = CheckBox.new()
+			check.tooltip_text = str(option["label"])
+			check.disabled = not editable
+			check.button_pressed = option["id"] in draft.get("selected", [])
+			row.add_child(check)
+			choices[str(option["id"])] = check
+			if editable: question_touch_targets.append({"row": weakref(row), "check": weakref(check)})
+			var text = label(row, str(option["label"]) + ("\n" + str(option["description"]) if not str(option.get("description", "")).is_empty() else ""))
+			text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.gui_input.connect(func(event: InputEvent) -> void:
+				if check.disabled: return
+				if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+					check.button_pressed = not check.button_pressed
+					row.accept_event())
+			check.toggled.connect(func(on: bool) -> void:
+				if card["changing"]: return
+				card["changing"] = true
+				if on and not question.get("multiple", false):
+					for other in choices.values():
+						if other != check: other.set_pressed_no_signal(false)
+				card["changing"] = false
+				_question_edited(id))
+		var custom = TextEdit.new()
+		custom.placeholder_text = "Răspuns propriu (opțional)"
+		custom.tooltip_text = "Maximum 2000 de caractere"
+		custom.editable = editable
+		custom.custom_minimum_size.y = 44 * EditorInterface.get_editor_scale()
+		custom.custom_maximum_size.y = 90 * EditorInterface.get_editor_scale()
+		custom.scroll_fit_content_height = true
+		custom.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+		custom.text = str(draft.get("text", ""))
+		body.add_child(custom)
+		controls[qid] = {"choices": choices, "text": custom}
+		custom.text_changed.connect(func() -> void: _question_edited(id))
+	if not answered:
+		var hint = label(body, "Selectează variantele potrivite sau scrie răspunsul propriu.")
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint.add_theme_color_override("font_color", Color("aab5c9"))
+		card["hint"] = hint
+		var submit = button(body, "Trimite răspunsurile" if record.get("status") == "waiting" else "Trimite și continuă planul", func() -> void: action.emit("plan_answer", {"id": id, "answers": _question_values(id)}))
+		submit.clip_text = true
+		card["submit"] = submit
+		_question_edited(id, false)
+		if not editable: hint.text = "Întrebări încheiate fără răspuns."
+	elif resumable:
+		var resume = button(body, "Continuă planul", func() -> void: action.emit("plan_continue", {"id": id}))
+		resume.clip_text = true
+		card["resume"] = resume
+	_size_messages.call_deferred()
+	if previous.is_empty(): _follow.call_deferred()
+
+func _question_values(id: String) -> Dictionary:
+	var values = {}
+	for qid in question_cards.get(id, {}).get("controls", {}):
+		var control: Dictionary = question_cards[id]["controls"][qid]
+		var selected = []
+		for option in control["choices"]:
+			if control["choices"][option].button_pressed: selected.append(option)
+		values[qid] = {"selected": selected, "text": control["text"].text}
+	return values
+
+func _question_edited(id: String, notify: bool = true) -> void:
+	var card: Dictionary = question_cards.get(id, {})
+	if card.is_empty() or not card.has("submit"): return
+	var values = _question_values(id)
+	var complete = values.values().all(func(answer: Dictionary) -> bool: return (not answer["selected"].is_empty() or not answer["text"].strip_edges().is_empty()) and answer["text"].length() <= 2000)
+	card["submit"].disabled = not card["editing"] or not complete
+	if card["editing"] and card.has("hint"): card["hint"].text = "Răspunsul propriu poate avea cel mult 2000 de caractere." if values.values().any(func(answer: Dictionary) -> bool: return answer["text"].length() > 2000) else "Selectează variantele potrivite sau scrie răspunsul propriu."
+	if notify and card["editing"]: action.emit("plan_answer_draft", {"id": id, "answers": values})
 
 func show_plan(snapshot: Dictionary) -> void:
 	var id = str(snapshot.get("turn", ""))
@@ -1339,6 +1458,14 @@ func _chat_touch(event: InputEvent) -> bool:
 	if not is_visible_in_tree() or scroll == null or (picker != null and picker.visible): return false
 	if event is InputEventScreenTouch and event.pressed:
 		if not scroll.get_global_rect().has_point(event.position): return false
+		question_touch_targets = question_touch_targets.filter(func(target: Dictionary) -> bool: return target["row"].get_ref() != null and target["check"].get_ref() != null)
+		for target in question_touch_targets:
+			var row = target["row"].get_ref()
+			var check = target["check"].get_ref()
+			if not check.disabled and row.is_visible_in_tree() and row.get_global_rect().has_point(event.position):
+				touch_scroll = {"index": event.index, "start": event.position, "last": event.position, "scroll": scroll.scroll_vertical, "moved": false, "tap_check": target["check"]}
+				touch_suppress_until = Time.get_ticks_msec() + 1000
+				return true
 		for ref in touch_text_controls:
 			var control = ref.get_ref()
 			if control != null and control.is_visible_in_tree() and control.get_global_rect().has_point(event.position):
@@ -1356,7 +1483,11 @@ func _chat_touch(event: InputEvent) -> bool:
 		if touch_scroll["moved"]:
 			follow_bottom = false
 			scroll.scroll_vertical = int(touch_scroll["scroll"]) - int(delta.y)
-	elif not event.pressed: touch_scroll.clear()
+	elif not event.pressed:
+		if touch_scroll.has("tap_check") and not touch_scroll["moved"] and event.position.distance_to(touch_scroll["start"]) <= 8 * EditorInterface.get_editor_scale():
+			var check = touch_scroll["tap_check"].get_ref()
+			if check != null and not check.disabled and not event.canceled: check.button_pressed = not check.button_pressed
+		touch_scroll.clear()
 	return true
 
 func _touch_selection_after(token: int) -> void:
