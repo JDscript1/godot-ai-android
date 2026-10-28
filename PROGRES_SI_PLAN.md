@@ -52,6 +52,15 @@ ABI-ul ARM64, scripturile încorporate și baza Linux. APK-ul anterior rămâne
 `74887a1` până la finalizarea verificărilor noului pachet. Dovezile acestei runde
 se păstrează în `.ai-qa/recompile-20261028/`.
 
+Prima rundă, `4addd41`, a compilat APK-ul Android, dar verificarea completă a
+prins un test pe ecran lat care moștenea ascunderea explicită a istoricului din
+proba Plan. Fixture-ul restaurează acum selecția barei laterale înainte de
+verificarea regulii automate. Proba de salvare eșuată blochează doar destinația
+rezumatului, păstrând jurnalul disponibil. Instalatorul anterior nu este înlocuit
+cu un build ale cărui verificări complete au eșuat.
+Proba locală completă pe ecran lat trece după izolarea fixture-urilor:
+**641 verificări / 0 eșecuri**, fără mesajul de eroare din proba de jurnal.
+
 ## Etapa precedentă — corecțiile auditului de compactare și coadă, 28.10.2026
 
 Implementat în surse **AG-33**, pentru cele trei regresii reproduse în auditul

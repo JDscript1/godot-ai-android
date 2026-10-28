@@ -78,6 +78,7 @@ func run(test_host: EditorPlugin, test_panel: Control) -> void:
 	var original_providers = panel.config["providers"].duplicate(true)
 	var original_selection = panel._selection()
 	var original_permission = panel.full_control.button_pressed
+	var original_history_requested = panel.chat.history_requested
 	panel.settings_window.hide()
 	panel.chat.show_history(false)
 	panel.config["providers"] = [{"id": "interactive-plan", "name": "Plan QA", "kind": "chat", "issuer": "custom", "models": [{"id": "fixture"}]}]
@@ -200,3 +201,6 @@ func run(test_host: EditorPlugin, test_panel: Control) -> void:
 	panel.full_control.button_pressed = original_permission
 	panel._refresh_profiles()
 	panel._choose(original_selection)
+	panel.chat.history_requested = original_history_requested
+	panel.chat._resize()
+	await host.get_tree().process_frame

@@ -388,7 +388,15 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check(panel.chat.thread.size.x >= minf(740 * EditorInterface.get_editor_scale(), panel.chat.scroll.size.x - 40 * EditorInterface.get_editor_scale()), "Chat column uses the available readable width")
 	_check(panel.chat.thread.size.x <= 760 * EditorInterface.get_editor_scale() + 1, "Chat column stays within 760 logical pixels")
-	_check(panel.chat.sidebar.visible == (panel.chat.size.x / EditorInterface.get_editor_scale() >= 900), "History sidebar responds to available workspace width")
+	var history_requested = panel.chat.history_requested
+	var wide_history = panel.chat.size.x / EditorInterface.get_editor_scale() >= 900
+	_check(panel.chat.sidebar.visible == (wide_history if history_requested < 0 else history_requested == 1), "History sidebar respects the explicit user visibility selection")
+	panel.chat.history_requested = -1
+	panel.chat._resize()
+	await get_tree().process_frame
+	_check(panel.chat.sidebar.visible == (panel.chat.size.x / EditorInterface.get_editor_scale() >= 900), "Automatic history visibility responds to available workspace width")
+	panel.chat.history_requested = history_requested
+	panel.chat._resize()
 	var scene = EditorInterface.get_edited_scene_root()
 	if scene == null:
 		scene = Node3D.new()
@@ -1526,17 +1534,13 @@ func _compaction_regression_tests(service: RefCounted, summary_path: String) -> 
 	service.cancel_after_reply = false
 	_check(panel.compact_through == 2 and panel.compact_summary == previous and panel.chat.status.text.contains("oprită"), "A late successful response after Stop cannot commit a summary")
 	_check(panel.Common.read_json(summary_path, {}) == saved, "Stop leaves the saved summary unchanged")
-	var original_directory = panel.project_directory
-	var blocked = original_directory.path_join("compact-save-blocker")
-	var blocker = FileAccess.open(blocked, FileAccess.WRITE)
-	blocker.store_string("KEEP_ORIGINAL")
-	blocker.close()
-	panel.project_directory = blocked
+	# Block only the summary destination, leaving journal writes available.
+	var backup = summary_path + ".qa-backup"
+	_check(DirAccess.rename_absolute(summary_path, backup) == OK and DirAccess.make_dir_absolute(summary_path) == OK, "A directory collision blocks only the summary save destination")
 	await panel._start_compaction("manual")
-	panel.project_directory = original_directory
 	_check(panel.compact_failed and panel.compact_through == 2 and panel.compact_summary == previous, "A failed summary save cannot advance the active history boundary")
-	_check(FileAccess.get_file_as_string(blocked) == "KEEP_ORIGINAL" and panel.Common.read_json(summary_path, {}) == saved, "Save failure preserves the blocker and the original summary")
-	DirAccess.remove_absolute(blocked)
+	_check(DirAccess.dir_exists_absolute(summary_path) and panel.Common.read_json(backup, {}) == saved, "Save failure preserves the blocked destination and original summary bytes")
+	_check(DirAccess.remove_absolute(summary_path) == OK and DirAccess.rename_absolute(backup, summary_path) == OK and panel.Common.read_json(summary_path, {}) == saved, "The save-failure fixture restores its original summary destination")
 	panel.Common.atomic_json(summary_path, {"text": " \n", "through": 6})
 	panel._load_summary()
 	_check(panel.compact_through == 0, "A legacy empty summary cannot hide original history after restart")
