@@ -412,14 +412,25 @@ static func consume_event(kind: String, event: Dictionary, state: Dictionary) ->
 	if kind in ["responses", "siwc"]:
 		match str(event.get("type", "")):
 			"response.output_text.delta": state["text"] += str(event.get("delta", ""))
-			"response.completed":
-				state["terminal"] = true
+			"response.completed", "response.incomplete":
 				var response: Dictionary = event.get("response", {})
-				state["items"] = response.get("output", [])
+				var incomplete = event.get("type") == "response.incomplete"
+				if incomplete and response.get("incomplete_details", {}).get("reason") != "max_output_tokens":
+					state["error"] = JSON.stringify(event)
+					return
+				state["terminal"] = true
+				state["finish"] = "length" if incomplete else "stop"
+				# A truncated function call is never executable or sent back as an orphan call.
+				state["items"] = response.get("output", []).filter(func(item: Dictionary) -> bool: return not incomplete or item.get("type") != "function_call")
 				state["usage"] = response.get("usage", {})
+				var final_text = ""
 				for item in state["items"]:
 					if item.get("type") == "function_call": state["calls"][str(item.get("call_id", item.get("id", Common.uid())))] = {"id": item.get("call_id", item.get("id", Common.uid())), "name": item.get("name", ""), "arguments": item.get("arguments", "{}")}
-			"response.failed", "response.incomplete", "error": state["error"] = JSON.stringify(event)
+					if item.get("type") == "message":
+						for part in item.get("content", []):
+							if part.get("type") == "output_text": final_text += str(part.get("text", ""))
+				if str(state["text"]).is_empty(): state["text"] = final_text
+			"response.failed", "error": state["error"] = JSON.stringify(event)
 	elif kind == "anthropic":
 		var index = str(event.get("index", 0))
 		match str(event.get("type", "")):

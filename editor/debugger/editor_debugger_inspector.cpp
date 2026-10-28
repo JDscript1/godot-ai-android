@@ -497,6 +497,44 @@ void EditorDebuggerInspector::add_stack_variable(const Array &p_array, int p_off
 	edit(variables);
 }
 
+Dictionary EditorDebuggerInspector::get_variable_snapshot(int p_offset, int p_limit) const {
+	Array rows;
+	int total = 0;
+	int excluded = 0;
+	for (const PropertyInfo &property : variables->prop_list) {
+		const String name = String(property.name).uri_decode();
+		const String lower = name.to_lower();
+		if (lower.contains("password") || lower.contains("client_secret") || lower.contains("access_token") || lower.contains("refresh_token") || lower.contains("auth_token") || lower.contains("api_key") || lower.contains("apikey") || lower.contains("private_key")) {
+			excluded++;
+			continue;
+		}
+		if (total >= p_offset && rows.size() < p_limit) {
+			Dictionary row;
+			row["name"] = name;
+			row["type"] = Variant::get_type_name(property.type);
+			row["hint"] = property.hint;
+			row["remote_object_id"] = property.hint == PROPERTY_HINT_OBJECT_ID;
+			Variant value = variables->get_variant(property.name);
+			if (value.get_type() == Variant::ARRAY || value.get_type() == Variant::DICTIONARY || value.get_type() == Variant::OBJECT || value.get_type() >= Variant::PACKED_BYTE_ARRAY) {
+				row["value_scope"] = "Complex cached value; inspect its expanded UI or explicitly query the remote object.";
+			} else if (property.hint != PROPERTY_HINT_OBJECT_ID && (value.get_type() == Variant::NIL || value.get_type() == Variant::BOOL || value.get_type() == Variant::INT || value.get_type() == Variant::FLOAT)) {
+				row["value"] = value;
+			} else {
+				row["value"] = String(value).left(2000);
+				row["value_truncated"] = String(value).length() > 2000;
+			}
+			rows.push_back(row);
+		}
+		total++;
+	}
+	Dictionary result;
+	result["items"] = rows;
+	result["total"] = total;
+	result["excluded_sensitive"] = excluded;
+	result["next_offset"] = p_offset + rows.size() < total ? p_offset + rows.size() : -1;
+	return result;
+}
+
 void EditorDebuggerInspector::clear_stack_variables() {
 	variables->clear();
 	variables->update();

@@ -4,6 +4,10 @@ extends RefCounted
 static var Common: GDScript
 static var ToolRegistry: GDScript
 static var Diff: GDScript
+static var ChangeSet: GDScript
+static var PanelReader: GDScript
+var panel_reader: RefCounted
+var change_set: RefCounted
 var plugin: Node
 var panel: Node
 var handles: Dictionary = {}
@@ -15,11 +19,155 @@ var scene_changes = {}
 var scan_pending = false
 var last_run: Dictionary = {}
 var run_output_before = ""
+var play_owner = ""
+var owned_scene = ""
+var keep_playtest_open = false
+var launching_playtest = false
+var playback_bar: Node
 var external_changes: Array = []
+var symbol_cache: Dictionary = {}
 
 func _init(editor_plugin: Node = null, owner_panel: Node = null) -> void:
 	plugin = editor_plugin
 	panel = owner_panel
+
+func _panels() -> RefCounted:
+	if panel_reader == null: panel_reader = PanelReader.new(self)
+	return panel_reader
+
+func _run_scene(args: Dictionary) -> Dictionary:
+	var scene = str(args.get("scene", ""))
+	if not scene.is_empty() and (Common.project_path(scene).is_empty() or scene.get_extension() not in ["tscn", "scn"] or not FileAccess.file_exists(scene)): return Common.failure("Scenă invalidă.")
+	var target = scene if not scene.is_empty() else str(ProjectSettings.get_setting("application/run/main_scene", ""))
+	if target.begins_with("uid://") and ResourceUID.has_id(ResourceUID.text_to_id(target)): target = ResourceUID.get_id_path(ResourceUID.text_to_id(target))
+	var playing = EditorInterface.is_playing_scene()
+	if playing and not args.get("restart", false):
+		if EditorInterface.get_playing_scene() != target: return Common.failure("Altă scenă rulează deja. Verifică starea; folosește restart=true doar dacă schimbarea scenei este necesară.", "game_already_running")
+		if play_owner == turn_id and args.has("keep_open"): keep_playtest_open = args["keep_open"]
+		return Common.success({"running": true, "playing_scene": target, "reused": true, "requested": false, "agent_owned": not play_owner.is_empty(), "keep_open": keep_playtest_open, "verified": false})
+	var output: Array = _console_snapshot()["lines"]
+	run_output_before = "\n".join(output)
+	last_run = {"requested_scene": scene, "requested_at": Time.get_datetime_string_from_system(true), "baseline_available": not output.is_empty()}
+	_watch_playback()
+	launching_playtest = true
+	if scene.is_empty(): EditorInterface.play_main_scene()
+	else: EditorInterface.play_custom_scene(scene)
+	launching_playtest = false
+	if EditorInterface.is_playing_scene() and is_instance_valid(playback_bar) and not turn_id.is_empty():
+		play_owner = turn_id
+		owned_scene = EditorInterface.get_playing_scene()
+		keep_playtest_open = bool(args.get("keep_open", false))
+	else: _release_playback()
+	return Common.success(last_run.merged({"requested": true, "reused": false, "agent_owned": not play_owner.is_empty(), "keep_open": keep_playtest_open, "verified": false, "next": "Reuse this session for state, input and the necessary frames. Inspect godot_debugger and godot_run_state before reporting success. Stop when verification ends."}))
+
+func _watch_playback() -> void:
+	if is_instance_valid(playback_bar): return
+	var bars = EditorInterface.get_base_control().get_tree().root.find_children("*", "EditorRunBar", true, false)
+	if bars.is_empty(): return
+	playback_bar = bars[0]
+	playback_bar.connect("play_pressed", _playback_started)
+	playback_bar.connect("stop_pressed", _playback_stopped)
+
+func _playback_started() -> void:
+	# A user restarting even the same scene takes ownership of the new session.
+	if not launching_playtest: _release_playback()
+
+func _playback_stopped() -> void:
+	play_owner = ""
+	owned_scene = ""
+	if not launching_playtest: _release_playback()
+
+func _release_playback() -> void:
+	if is_instance_valid(playback_bar):
+		if playback_bar.is_connected("play_pressed", _playback_started): playback_bar.disconnect("play_pressed", _playback_started)
+		if playback_bar.is_connected("stop_pressed", _playback_stopped): playback_bar.disconnect("stop_pressed", _playback_stopped)
+	playback_bar = null
+	play_owner = ""
+	owned_scene = ""
+	keep_playtest_open = false
+
+func finish_playtest(turn: String, force_close: bool = false) -> Dictionary:
+	if play_owner.is_empty() or play_owner != turn: return {"stopped": false, "reason": "not_owned"}
+	var stop = (force_close or not keep_playtest_open) and EditorInterface.is_playing_scene() and EditorInterface.get_playing_scene() == owned_scene
+	var result = {"stopped": stop, "scene": owned_scene, "reason": "temporary_test_finished" if stop else ("left_open_by_request" if keep_playtest_open else "session_changed")}
+	_release_playback()
+	if stop: EditorInterface.stop_playing_scene()
+	return result
+
+func _changes() -> RefCounted:
+	if change_set == null:
+		change_set = ChangeSet.new()
+		change_set.configure(backup_directory.path_join("sets"))
+	return change_set
+
+func _change_guard(path: String, source: String) -> bool:
+	return Engine.is_editor_hint() and (_dirty_script(path, source) or _dirty_scene(path))
+
+func _dirty_scene(path: String) -> bool:
+	# Text writes must never clobber an unsaved edited scene.
+	if path.get_extension() not in ["tscn", "scn"]: return false
+	if path not in EditorInterface.get_open_scenes(): return false
+	if plugin != null and plugin.has_method("scene_is_unsaved"): return plugin.scene_is_unsaved(path)
+	# The stock public API cannot inspect dirty tabs reliably. Fail closed.
+	return true
+
+func execute_changes(name: String, args: Dictionary, cancel: Dictionary = {}) -> Dictionary:
+	if name not in ["godot_changes_prepare", "godot_changes_status", "godot_changes_apply", "godot_changes_rollback"]: return Common.failure("Instrument de lot necunoscut.", "unknown_tool")
+	var validation = validate(name, args)
+	if not validation.get("ok", false): return validation
+	var worker = _changes()
+	var result: Dictionary
+	if name == "godot_changes_prepare": result = worker.prepare(args["changes"], turn_id, _change_guard, _syntax_check)
+	elif name == "godot_changes_status": result = worker.status(str(args.get("id", "")))
+	elif name == "godot_changes_rollback": result = worker.rollback(str(args["id"]), _change_guard)
+	else: result = await worker.apply(str(args["id"]), cancel, panel.get_tree() if is_instance_valid(panel) and panel.is_inside_tree() else null, _change_guard)
+	var id = str(result.get("result", {}).get("id", ""))
+	if not id.is_empty() and _sync_change_journal(id) != OK:
+		result["ok"] = false
+		result["code"] = "journal_failed"
+		result["error"] = "Jurnalul lotului există, dar istoricul pe turn nu a putut fi actualizat. Verifică godot_changes_status."
+	if name in ["godot_changes_apply", "godot_changes_rollback"] and result.get("project_mutated", false): _request_scan()
+	return result
+
+func _sync_change_journal(id: String) -> Error:
+	var data = _changes()._load(id)
+	if data.is_empty(): return ERR_INVALID_DATA
+	var touched = false
+	for index in data["entries"].size():
+		var entry = data["entries"][index]
+		if not entry.get("touched", false): continue
+		touched = true
+		var found = -1
+		for cursor in file_changes.size():
+			if file_changes[cursor].get("set_id") == id and file_changes[cursor].get("set_index") == index: found = cursor; break
+		var record = {"turn_id": data.get("turn", ""), "set_id": id, "set_index": index, "path": entry["path"], "existed": entry["before"] != "missing", "backup": _changes()._blob(id, index, "before"), "before_sha": entry["before"], "after_sha": entry["after"], "time": data.get("created", ""), "restored": data["state"] == "rolled_back" or _changes()._hash(entry["path"]) == entry["before"]}
+		if found < 0: file_changes.append(record)
+		else:
+			record["restored"] = record["restored"] or file_changes[found].get("restored", false)
+			file_changes[found] = record
+	return Common.atomic_json(backup_directory.path_join("journal.json"), file_changes) if touched else OK
+
+func change_preview(id: String, restoring: bool = false) -> String:
+	var status = _changes().status(id)
+	if not status.get("ok", false): return str(status.get("error", "Lot indisponibil."))
+	var value = "Lot %s · %s\n" % [id, status["result"]["state"]]
+	if restoring:
+		var budget = 24000
+		for item in status["result"]["files"]:
+			if not item.get("touched", false): continue
+			var path = str(item["path"])
+			if item["position"] == "conflict": value += "\nCONFLICT · " + path + " · Editarea ulterioară va fi păstrată.\n"; continue
+			if item["position"] == "before": value += "\n" + path + " · Deja restaurat.\n"; continue
+			var before = FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
+			var restored = _changes()._blob_text(id, int(item["member_index"]), "before")
+			var diff = Diff.unified(path, Diff.compare(before, restored))
+			var bound = mini(4000, budget)
+			value += "\n" + diff.left(bound) + ("\n[diff trunchiat]" if diff.length() > bound else "")
+			budget -= mini(bound, diff.length())
+		return value
+	for item in status["result"]["change_preview"]:
+		value += "\n" + str(item["diff"]) + ("\n[diff trunchiat]" if item.get("truncated", false) else "")
+	return value
 
 func definitions() -> Array:
 	if panel != null and bool(panel.get("project_manager_mode")): return []
@@ -27,15 +175,16 @@ func definitions() -> Array:
 	var integer = {"type": "integer"}
 	var object = {"type": "object"}
 	var array = {"type": "array", "items": {}}
-	return [
+	return ChangeSet.definitions() + [
 		Common.tool("godot_project", "Inspect project, edited scene and selected nodes. Returns object handles for further discovery.", {}, []),
 		Common.tool("godot_files", "List project files; optional name/content search. Paths are relative to res://.", {"path": string, "query": string, "content": {"type": "boolean"}}, []),
 		Common.tool("godot_read_file", "Read a project text file.", {"path": string}, ["path"]),
 		Common.tool("godot_read_range", "Read a bounded range of a UTF-8 project file with one-based line numbers and its SHA-256 for a later patch.", {"path": string, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}, ["path"]),
-		Common.tool("godot_search_code", "Search literal text in project text files. Returns paths, one-based lines and bounded excerpts; no shell or regex needed.", {"path": string, "query": {"type": "string", "minLength": 1}, "case_sensitive": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, ["query"]),
-		Common.tool("godot_apply_patch", "Preview or apply sequential exact replacements in a UTF-8 file. Supply the expected_sha256 from godot_read_range. Every old_text must match exactly once. dry_run defaults to true; applying saves a recovery copy. Save any open script edits first.", {"path": string, "expected_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}, "edits": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object", "properties": {"old_text": {"type": "string", "minLength": 1}, "new_text": string}, "required": ["old_text", "new_text"], "additionalProperties": false}}, "dry_run": {"type": "boolean"}}, ["path", "expected_sha256", "edits"], "write"),
+		Common.tool("godot_search_code", "Search literal text in project text files. Returns paths, one-based lines and bounded excerpts; optional context lines (0-4) show the surrounding source. No shell or regex needed.", {"path": string, "query": {"type": "string", "minLength": 1}, "case_sensitive": {"type": "boolean"}, "context": {"type": "integer", "minimum": 0, "maximum": 4}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, ["query"]),
+		Common.tool("godot_symbols", "Map top-level GDScript symbols: classes, functions, signals, constants, enums, exports and variables, with paths and one-based lines. Filter by name, kind or a res:// directory. Cached by content hash and bounded.", {"path": string, "query": string, "kind": {"type": "string", "enum": ["class", "function", "signal", "constant", "enum", "export", "var"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}, []),
+		Common.tool("godot_apply_patch", "Preview or apply sequential exact replacements in a UTF-8 file. Supply the expected_sha256 from godot_read_range. Every old_text must match exactly once. dry_run defaults to true; applying saves a recovery copy. Save any open script edits first. GDScript results carry an automatic syntax verdict.", {"path": string, "expected_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}, "edits": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object", "properties": {"old_text": {"type": "string", "minLength": 1}, "new_text": string}, "required": ["old_text", "new_text"], "additionalProperties": false}}, "dry_run": {"type": "boolean"}}, ["path", "expected_sha256", "edits"], "write"),
 		Common.tool("godot_script_diagnostics", "Validate GDScript through the native Godot parser/analyzer without instantiating the script. Returns valid, errors, warnings and source hash. Optional text validates a draft instead of the saved file. Requires the rebuilt native editor bridge.", {"path": string, "text": string}, ["path"]),
-		Common.tool("godot_write_file", "Write a project text file with a recoverable previous version.", {"path": string, "text": string}, ["path", "text"], "write"),
+		Common.tool("godot_write_file", "Write a project text file with a recoverable previous version. GDScript files are parsed afterwards and return a syntax verdict when the native bridge is available.", {"path": string, "text": string}, ["path", "text"], "write"),
 		Common.tool("godot_delete_file", "Remove a project file, retaining a recovery copy.", {"path": string}, ["path"], "write"),
 		Common.tool("godot_restore_file", "Restore a prior file change using its journal index.", {"index": integer}, ["index"], "write"),
 		Common.tool("godot_scene_tree", "Inspect the open scene's nodes, types and object handles.", {}, []),
@@ -53,7 +202,7 @@ func definitions() -> Array:
 		Common.tool("godot_load_resource", "Load and inspect a project resource, including materials, animation libraries and scripts.", {"path": string}, ["path"]),
 		Common.tool("godot_create_resource", "Create an instantiable Resource class and return its handle.", {"class": string}, ["class"], "write"),
 		Common.tool("godot_save_resource", "Save a Resource handle to the project, with a recovery copy of any previous file.", {"handle": string, "path": string}, ["handle", "path"], "write"),
-		Common.tool("godot_run", "Run the project or a chosen scene.", {"scene": string}, [], "write"),
+		Common.tool("godot_run", "Run a scene for verification. Reuses the same running scene; restart=true explicitly restarts after relevant changes. Temporary agent-started tests close at turn end. Set keep_open=true only when the user requests leaving the game open. A user-started game is never adopted for automatic cleanup.", {"scene": string, "restart": {"type": "boolean"}, "keep_open": {"type": "boolean"}}, [], "write"),
 		Common.tool("godot_run_state", "Inspect the last requested scene, actual playing scene, unresolved main-scene UID and Output since the request. A run request alone does not prove startup or gameplay.", {}, []),
 		Common.tool("godot_stop", "Stop the running project.", {}, [], "write"),
 		Common.tool("godot_undo", "Undo the latest scene operation.", {}, [], "write"),
@@ -61,8 +210,12 @@ func definitions() -> Array:
 		Common.tool("godot_settings", "Read matching project or editor settings; secret values are excluded.", {"scope": string, "filter": string}, []),
 		Common.tool("godot_set_setting", "Change and save a project or editor setting.", {"scope": string, "key": string, "value": {}}, ["scope", "key", "value"], "write"),
 		Common.tool("godot_ui_tree", "Inspect visible Godot editor controls by semantic handle, including menus, debugger and output.", {"filter": string}, []),
+		Common.tool("godot_panels", "Inventory instantiated Godot panels and controls, including hidden docks, tabs and plugin UI. handle narrows the inventory to one panel subtree. Returns handles and reader capabilities. Page using snapshot and next_offset; snapshots expire after five minutes without access. Not-instantiated or custom-drawn data is not guaranteed readable. Excludes assistant UI and secret contents.", {"handle": string, "filter": string, "include_hidden": {"type": "boolean"}, "snapshot": string, "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, []),
+		Common.tool("godot_panel_read", "Read a panel/control by handle without opening or changing it. Supports collapsed Tree rows, lists, menus, tabs, text/code, numeric values and toggles. Children have their own handles. Page items via snapshot/offset; read long text or field=tooltip via text_offset, and long cells via item/column. No graph/custom-draw interpretation. Never treats missing or partial content as complete.", {"handle": string, "snapshot": string, "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}, "field": {"type": "string", "enum": ["text", "tooltip"]}, "text_offset": {"type": "integer", "minimum": 0}, "text_limit": {"type": "integer", "minimum": 1, "maximum": 16000}, "item": {"type": "integer", "minimum": 0}, "column": {"type": "integer", "minimum": 0}}, []),
+		Common.tool("godot_panel_data", "Read native cached panel data: output, profiler, visual_profiler, monitors, vram, stack, variables, threads, breakpoints, inspector, selection, audio_buses or animation. Animation accepts a player handle, animation name and optional track to page its keys. Works while hidden and reports session/collection state. Does not start profiling, refresh VRAM, pause a game or request variables. No samples means uncollected, not zero usage. offset/limit page rows; frame selects a profiler frame, -1 means latest. For monitors supply monitor=name to page its retained sample history.", {"section": {"type": "string", "enum": ["output", "profiler", "visual_profiler", "monitors", "vram", "stack", "variables", "threads", "breakpoints", "inspector", "selection", "audio_buses", "animation"]}, "handle": string, "animation": string, "monitor": string, "track": {"type": "integer", "minimum": 0}, "session": {"type": "integer", "minimum": -1}, "frame": {"type": "integer", "minimum": -1}, "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, ["section"]),
 		Common.tool("godot_ui_action", "Operate a discovered UI control. Actions: press, text, select, popup, menu, focus. value supplies text or item index.", {"handle": string, "action": string, "value": {}}, ["handle", "action"], "write"),
-		Common.tool("godot_output", "Read visible editor Output and Debugger text with secret fields excluded.", {}, []),
+		Common.tool("godot_output", "Read recent retained native Output plus Debugger errors, including hidden panels and stopped sessions. Without the native Output bridge, console text is a visible-only fallback. For older Output messages use godot_panel_data section=output. debugger contains structured counts, sources and stacks. Check coverage: empty visible console text alone never proves no errors.", {}, []),
+		Common.tool("godot_debugger", "Read the native Debugger error list without opening UI or starting a game. Includes errors/warnings, file, line, stack, session generation and active/stopped state. Retained errors are historical observations; check session and truncation before claiming a fresh clean run.", {}, []),
 		Common.tool("godot_animation", "Inspect animation libraries or play, stop, seek an AnimationPlayer preview.", {"path": string, "action": string, "animation": string, "position": {"type": "number"}}, ["path"], "write"),
 	]
 
@@ -89,6 +242,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 		"godot_files": return _files(args)
 		"godot_read_range": return _read_range(args)
 		"godot_search_code": return _search_code(args)
+		"godot_symbols": return _symbols(args)
 		"godot_apply_patch": return _apply_patch(args)
 		"godot_script_diagnostics": return _script_diagnostics(args)
 		"godot_read_file":
@@ -224,24 +378,18 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			retained.append(resource)
 			return Common.success(_encode(resource))
 		"godot_run":
-			var scene = str(args.get("scene", ""))
-			var output = []
-			_collect_output(EditorInterface.get_base_control(), output)
-			run_output_before = "\n".join(output)
-			last_run = {"requested_scene": scene, "requested_at": Time.get_datetime_string_from_system(true), "baseline_available": not output.is_empty()}
-			if scene.is_empty(): EditorInterface.play_main_scene()
-			elif not Common.project_path(scene).is_empty() and scene.get_extension() in ["tscn", "scn"] and FileAccess.file_exists(scene): EditorInterface.play_custom_scene(scene)
-			else: return Common.failure("Scenă invalidă.")
-			return Common.success(last_run.merged({"requested": true, "verified": false, "next": "Use godot_run_state, godot_output and playtest tools to verify the result."}))
+			return _run_scene(args)
 		"godot_run_state":
-			var output = []
-			_collect_output(EditorInterface.get_base_control(), output)
+			var console = _console_snapshot()
+			var output: Array = console["lines"]
 			var current_output = "\n".join(output)
 			var main = str(ProjectSettings.get_setting("application/run/main_scene", ""))
 			var unresolved = main.begins_with("uid://") and not ResourceUID.has_id(ResourceUID.text_to_id(main))
-			return Common.success(last_run.merged({"running": EditorInterface.is_playing_scene(), "playing_scene": EditorInterface.get_playing_scene(), "main_scene": main, "unresolved_main_uid": unresolved, "output_after_request": current_output.substr(run_output_before.length()) if current_output.begins_with(run_output_before) else current_output, "output_baseline_reset": not current_output.begins_with(run_output_before), "note": "An unresolved main UID is independent of an explicitly requested scene. Do not rewrite the main scene to hide it."}))
+			var debugger = _debugger_snapshot()
+			return Common.success(last_run.merged({"agent_owned": not play_owner.is_empty(), "keep_open": keep_playtest_open, "running": EditorInterface.is_playing_scene(), "playing_scene": EditorInterface.get_playing_scene(), "main_scene": main, "unresolved_main_uid": unresolved, "output_after_request": current_output.substr(run_output_before.length()) if current_output.begins_with(run_output_before) else current_output, "output_baseline_reset": not current_output.begins_with(run_output_before), "debugger": debugger.get("result", {}), "debugger_available": debugger.get("ok", false), "note": "An unresolved main UID is independent of an explicitly requested scene. Do not rewrite the main scene to hide it. Check native Debugger session generation and coverage; empty visible console text is not proof of no errors."}))
 		"godot_stop":
 			EditorInterface.stop_playing_scene()
+			_release_playback()
 			return Common.success("Oprire transmisă.")
 		"godot_undo", "godot_redo":
 			if root == null: return Common.failure("Nu există scenă activă.")
@@ -256,11 +404,22 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 			var output = []
 			_ui_tree(EditorInterface.get_base_control(), str(args.get("filter", "")).to_lower(), output, 0)
 			return Common.success(output)
+		"godot_panels":
+			var scope = EditorInterface.get_base_control().get_window() if str(args.get("handle", "")).is_empty() else _resolve(str(args["handle"]))
+			if not (scope is Control or scope is Window): return Common.failure("Panoul nu mai există.", "stale_handle")
+			return _panels().catalog(scope, args)
+		"godot_panel_read": return _panels().read(_resolve(str(args.get("handle", ""))), args)
+		"godot_panel_data": return _panel_data(args)
 		"godot_ui_action": return _ui_action(args)
 		"godot_output":
-			var output = []
-			_collect_output(EditorInterface.get_base_control(), output)
-			return Common.success(output)
+			var console = _console_snapshot()
+			var output: Array = console["lines"]
+			var snapshot = _debugger_snapshot()
+			var data: Dictionary = snapshot.get("result", {}) if snapshot.get("ok", false) else {}
+			for event in data.get("events", []):
+				output.append(_debugger_text(event))
+			return Common.success(output).merged({"debugger": data, "console": console.get("data", {}), "coverage": {"visible_console_only": not console["native"], "output_native_available": console["native"], "output_partial": console["partial"], "debugger_available": snapshot.get("ok", false), "debugger_truncated": data.get("truncated", true), "empty_console_proves_clean": false}, "debugger_error": snapshot.get("error", "")})
+		"godot_debugger": return _debugger_snapshot()
 		"godot_animation":
 			if root == null: return Common.failure("Nu există scenă activă.")
 			var player = root.get_node_or_null(NodePath(str(args["path"]))) as AnimationPlayer
@@ -536,10 +695,14 @@ func _search_code(args: Dictionary) -> Dictionary:
 	var sensitive = bool(args.get("case_sensitive", false))
 	if not sensitive: query = query.to_lower()
 	var limit = clampi(int(args.get("limit", 40)), 1, 100)
+	var context = clampi(int(args.get("context", 0)), 0, 4)
 	var queue = [start]
 	var output = []
 	var visited = 0
 	var scanned_bytes = 0
+	var emitted = 0
+	var covered = {}
+	var budget_hit = false
 	while not queue.is_empty() and visited < 2000 and scanned_bytes < 4 * 1024 * 1024 and output.size() < limit:
 		var path: String = queue.pop_front()
 		visited += 1
@@ -552,9 +715,73 @@ func _search_code(args: Dictionary) -> Dictionary:
 			for index in range(lines.size()):
 				var line = str(lines[index]).trim_suffix("\r")
 				var found = (line if sensitive else line.to_lower()).find(query)
-				if found >= 0:
-					var excerpt_start = maxi(0, found - 120)
-					output.append({"path": path, "line": index + 1, "column": found + 1, "text": line.substr(excerpt_start, 400), "excerpt_column": excerpt_start + 1})
+				if found < 0: continue
+				var excerpt_start = maxi(0, found - 120)
+				var entry = {"path": path, "line": index + 1, "column": found + 1, "text": line.substr(excerpt_start, 400), "excerpt_column": excerpt_start + 1}
+				emitted += entry["text"].length()
+				if context > 0:
+					var before = []
+					for offset in range(maxi(0, index - context), index):
+						if int(covered.get(path, 0)) >= offset + 1: continue
+						var nearby = str(lines[offset]).trim_suffix("\r").left(400)
+						before.append({"line": offset + 1, "text": nearby})
+						emitted += nearby.length()
+					var after = []
+					for offset in range(index + 1, mini(lines.size(), index + 1 + context)):
+						var nearby = str(lines[offset]).trim_suffix("\r").left(400)
+						after.append({"line": offset + 1, "text": nearby})
+						emitted += nearby.length()
+					if not before.is_empty(): entry["before"] = before
+					if not after.is_empty(): entry["after"] = after
+					covered[path] = mini(lines.size(), index + 1 + context)
+				output.append(entry)
+				if emitted >= 24000:
+					budget_hit = true
+					break
+				if output.size() >= limit: break
+			if budget_hit: break
+			continue
+		var directory = DirAccess.open(path)
+		if directory == null: continue
+		for folder in directory.get_directories():
+			if not folder.begins_with(".") and not directory.is_link(folder): queue.append(path.path_join(folder))
+		for filename in directory.get_files():
+			if not filename.begins_with(".") and not directory.is_link(filename): queue.append(path.path_join(filename))
+	return Common.success({"matches": output, "truncated": budget_hit or not queue.is_empty() or output.size() >= limit, "visited": visited, "scanned_bytes": scanned_bytes})
+
+func _symbols(args: Dictionary) -> Dictionary:
+	var start = Common.project_path(str(args.get("path", "res://")))
+	if start.is_empty(): return Common.failure("Cale invalidă.", "invalid_path")
+	var query = str(args.get("query", "")).to_lower()
+	var kind = str(args.get("kind", ""))
+	var limit = clampi(int(args.get("limit", 80)), 1, 200)
+	var queue = [start]
+	var output = []
+	var files = 0
+	var visited = 0
+	var scanned_bytes = 0
+	var truncated = false
+	while not queue.is_empty() and visited < 2000 and scanned_bytes < 4 * 1024 * 1024 and output.size() < limit:
+		var path: String = queue.pop_front()
+		visited += 1
+		if FileAccess.file_exists(path):
+			if path.get_extension() != "gd": continue
+			var read = _read_text(path)
+			if not read.get("ok", false): continue
+			var text = str(read["result"]["text"])
+			var sha = str(read["result"]["sha256"])
+			scanned_bytes += text.to_utf8_buffer().size()
+			files += 1
+			var cached: Dictionary = symbol_cache.get(path, {})
+			var symbols: Array
+			if str(cached.get("sha256", "")) == sha: symbols = cached.get("symbols", [])
+			else:
+				symbols = _scan_symbols(path, text)
+				symbol_cache[path] = {"sha256": sha, "symbols": symbols}
+			for symbol in symbols:
+				if not kind.is_empty() and symbol["kind"] != kind: continue
+				if not query.is_empty() and not query in str(symbol["name"]).to_lower(): continue
+				output.append(symbol)
 				if output.size() >= limit: break
 			continue
 		var directory = DirAccess.open(path)
@@ -563,7 +790,108 @@ func _search_code(args: Dictionary) -> Dictionary:
 			if not folder.begins_with(".") and not directory.is_link(folder): queue.append(path.path_join(folder))
 		for filename in directory.get_files():
 			if not filename.begins_with(".") and not directory.is_link(filename): queue.append(path.path_join(filename))
-	return Common.success({"matches": output, "truncated": not queue.is_empty() or output.size() >= limit, "visited": visited, "scanned_bytes": scanned_bytes})
+	truncated = not queue.is_empty() or output.size() >= limit
+	output.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["path"] < b["path"] or (a["path"] == b["path"] and int(a["line"]) < int(b["line"])))
+	if symbol_cache.size() > 600: symbol_cache.clear()
+	return Common.success({"symbols": output, "files_scanned": files, "scanned_bytes": scanned_bytes, "truncated": truncated, "limit": limit})
+
+func _scan_symbols(path: String, text: String) -> Array:
+	var output = []
+	var pending_export = false
+	var lines = text.split("\n")
+	var code_lines = _symbol_code_lines(lines)
+	for index in range(lines.size()):
+		var raw = str(code_lines[index]).trim_suffix("\r")
+		var trimmed = raw.strip_edges()
+		var signature = str(lines[index]).strip_edges()
+		if trimmed.is_empty() or trimmed.begins_with("#"): continue
+		if raw != raw.lstrip(" \t"): continue
+		if trimmed.begins_with("@"):
+			var at = trimmed.find("var ")
+			if at >= 0:
+				var exported = "export" in trimmed or pending_export
+				_add_symbol(output, path, index + 1, "export" if exported else "var", _symbol_name(trimmed.substr(at + 4)), signature)
+				pending_export = false
+			else:
+				pending_export = "export" in trimmed and not "group" in trimmed and not "category" in trimmed
+			continue
+		var added_kind = ""
+		var added_name = ""
+		if trimmed.begins_with("class_name "):
+			added_kind = "class"
+			added_name = trimmed.substr(11).split(" ")[0]
+		elif trimmed.begins_with("class "):
+			added_kind = "class"
+			added_name = trimmed.substr(6).split(":")[0].split(" ")[0]
+		elif trimmed.begins_with("static func "):
+			added_kind = "function"
+			added_name = trimmed.substr(12).split("(")[0].strip_edges()
+		elif trimmed.begins_with("func "):
+			added_kind = "function"
+			added_name = trimmed.substr(5).split("(")[0].strip_edges()
+		elif trimmed.begins_with("signal "):
+			added_kind = "signal"
+			added_name = trimmed.substr(7).split("(")[0].split(":")[0].strip_edges()
+		elif trimmed.begins_with("enum "):
+			added_kind = "enum"
+			added_name = trimmed.substr(5).split("{")[0].split(":")[0].strip_edges()
+		elif trimmed.begins_with("const "):
+			added_kind = "constant"
+			added_name = trimmed.substr(6).split("=")[0].split(":")[0].strip_edges()
+		elif trimmed.begins_with("var "):
+			added_kind = "export" if pending_export else "var"
+			added_name = _symbol_name(trimmed.substr(4))
+		if not added_name.is_empty(): _add_symbol(output, path, index + 1, added_kind, added_name, signature)
+		pending_export = false
+	return output
+
+static func _symbol_code_lines(lines: PackedStringArray) -> PackedStringArray:
+	# Mask whole spans using native string searches instead of copying per character.
+	var output = PackedStringArray()
+	var quote = ""
+	for line in lines:
+		var parts = PackedStringArray()
+		var index = 0
+		while index < line.length():
+			if not quote.is_empty():
+				var closing = line.find(quote, index)
+				while closing >= 0:
+					var slashes = 0
+					var cursor = closing - 1
+					while cursor >= 0 and line[cursor] == "\\":
+						slashes += 1
+						cursor -= 1
+					if slashes % 2 == 0: break
+					closing = line.find(quote, closing + 1)
+				if closing < 0:
+					parts.append(" ".repeat(line.length() - index))
+					break
+				var end = closing + quote.length()
+				parts.append(" ".repeat(end - index))
+				index = end
+				quote = ""
+				continue
+			var next = line.length()
+			for marker in ["#", "\"", "'"]:
+				var at = line.find(marker, index)
+				if at >= 0: next = mini(next, at)
+			parts.append(line.substr(index, next - index))
+			if next == line.length(): break
+			if line[next] == "#":
+				parts.append(" ".repeat(line.length() - next))
+				break
+			quote = line[next].repeat(3) if line.substr(next, 3) == line[next].repeat(3) else line[next]
+			parts.append(" ".repeat(quote.length()))
+			index = next + quote.length()
+		output.append("".join(parts))
+	return output
+
+static func _symbol_name(value: String) -> String:
+	return value.split(":")[0].split("=")[0].split("(")[0].strip_edges()
+
+static func _add_symbol(output: Array, path: String, line: int, kind: String, name: String, signature: String) -> void:
+	if name.is_empty(): return
+	output.append({"name": name, "kind": kind, "path": path, "line": line, "signature": signature.left(240)})
 
 static func prepare_patch(text: String, edits: Array) -> Dictionary:
 	if edits.is_empty() or edits.size() > 20: return Common.failure("Un patch trebuie să conțină între 1 și 20 modificări.", "invalid_arguments")
@@ -595,6 +923,8 @@ func _apply_patch(args: Dictionary) -> Dictionary:
 	info.erase("text")
 	info["path"] = path
 	info["dry_run"] = bool(args.get("dry_run", true))
+	var syntax = _syntax_check(text, path)
+	if not syntax.is_empty(): info["syntax"] = syntax
 	if info["dry_run"]:
 		var compared = Diff.compare(source, text)
 		info["change_preview"] = [{"path": path, "state": "Propus", "exact": compared["exact"], "added": compared.get("added", 0), "removed": compared.get("removed", 0), "diff": Diff.unified(path, compared), "first_line": compared.get("first_line", 1)}]
@@ -635,6 +965,21 @@ func _dirty_script(path: String, disk: String) -> bool:
 		var control = controls[index].get_base_editor()
 		if control is TextEdit: return control.text.replace("\r\n", "\n") != disk.replace("\r\n", "\n")
 	return false
+
+func _syntax_check(text: String, path: String) -> Dictionary:
+	if path.get_extension() != "gd": return {}
+	if plugin == null or not plugin.has_method("script_diagnostics"): return {}
+	var checked: Dictionary = plugin.script_diagnostics(text, path)
+	if not checked.get("ok", false): return {}
+	var info: Dictionary = checked.get("result", {})
+	var errors = []
+	var total = 0
+	for item in info.get("diagnostics", []):
+		if not item is Dictionary or item.get("severity") != "error": continue
+		total += 1
+		if errors.size() >= 20: continue
+		errors.append({"line": int(item.get("line", 0)), "column": int(item.get("column", 0)), "message": str(item.get("message", "")).left(400)})
+	return {"valid": bool(info.get("valid", false)) and errors.is_empty(), "errors": errors, "truncated": total > errors.size()}
 
 func _script_diagnostics(args: Dictionary) -> Dictionary:
 	var path = Common.project_path(str(args["path"]))
@@ -693,7 +1038,11 @@ func _file_change(operation: String, args: Dictionary) -> Dictionary:
 	file_changes[index]["after_sha"] = FileAccess.get_sha256(path) if FileAccess.file_exists(path) else "missing"
 	Common.atomic_json(backup_directory.path_join("journal.json"), file_changes)
 	_request_scan()
-	return Common.success({"path": path, "recovery_index": index})
+	var result = {"path": path, "recovery_index": index}
+	if operation == "godot_write_file":
+		var syntax = _syntax_check(str(args["text"]), path)
+		if not syntax.is_empty(): result["syntax"] = syntax
+	return Common.success(result)
 
 func _restore(index: int) -> Dictionary:
 	if index < 0 or index >= file_changes.size(): return Common.failure("Index de recuperare invalid.")
@@ -702,6 +1051,11 @@ func _restore(index: int) -> Dictionary:
 	if path.is_empty(): return Common.failure("Calea nu mai este validă.")
 	var current_sha = FileAccess.get_sha256(path) if FileAccess.file_exists(path) else "missing"
 	if change.has("after_sha") and current_sha != change["after_sha"]: return Common.failure("Fișierul a fost modificat ulterior. Compară diferențele înainte de restaurare.", "restore_conflict")
+	if change.has("set_id"):
+		var original = FileAccess.get_file_as_string(str(change["backup"]))
+		var current = FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
+		if change["existed"] and original.sha256_text() != change.get("before_sha", ""): return Common.failure("Copia lotului este coruptă; restaurarea a fost oprită.", "recovery_failed")
+		if _change_guard(path, current) and _change_guard(path, original): return Common.failure("Există editări nesalvate în editor.", "unsaved_changes")
 	var error = OK
 	if change["existed"]: error = DirAccess.copy_absolute(str(change["backup"]), ProjectSettings.globalize_path(path))
 	elif FileAccess.file_exists(path): error = DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
@@ -808,6 +1162,110 @@ func _ui_action(args: Dictionary) -> Dictionary:
 	elif action == "focus" and node is Control: node.grab_focus()
 	else: return Common.failure("Acțiunea nu este disponibilă pentru acest control.")
 	return Common.success(true)
+
+func _debugger_snapshot() -> Dictionary:
+	if not is_instance_valid(plugin) or not plugin.has_method("debugger_snapshot"):
+		return Common.failure("Citirea nativă a Debuggerului necesită editorul recompilat. Textul consolei nu dovedește lipsa erorilor.", "debugger_unavailable")
+	return plugin.debugger_snapshot()
+
+func _panel_data(args: Dictionary) -> Dictionary:
+	if str(args.get("section", "")) in ["inspector", "selection", "audio_buses", "animation"]: return _public_panel_data(args)
+	if not is_instance_valid(plugin) or not plugin.has_method("panel_snapshot"):
+		return Common.failure("Citirea datelor native din panouri necesită editorul recompilat. Poți inspecta separat controalele existente cu godot_panels și godot_panel_read.", "panel_data_unavailable")
+	if not str(args.get("monitor", "")).is_empty():
+		return plugin.panel_snapshot(str(args["section"]), int(args.get("session", -1)), int(args.get("offset", 0)), int(args.get("limit", 40)), int(args.get("frame", -1)), str(args["monitor"]))
+	return plugin.panel_snapshot(str(args["section"]), int(args.get("session", -1)), int(args.get("offset", 0)), int(args.get("limit", 40)), int(args.get("frame", -1)))
+
+func _console_snapshot() -> Dictionary:
+	var lines = []
+	var probe = _panel_data({"section": "output", "limit": 1})
+	if probe.get("ok", false):
+		var offset = maxi(0, int(probe["result"].get("total", 0)) - 40)
+		var measured = _panel_data({"section": "output", "offset": offset, "limit": 40})
+		if measured.get("ok", false):
+			var data: Dictionary = measured["result"]
+			for row in data.get("items", []):
+				var text = str(row.get("text", ""))
+				if int(row.get("type", 0)) == 1 and not text.begins_with("ERROR:"): text = "ERROR: " + text
+				elif int(row.get("type", 0)) == 3 and not text.begins_with("WARNING:"): text = "WARNING: " + text
+				lines.append(text)
+			return {"native": true, "lines": lines, "data": data.merged({"offset": offset}), "partial": offset > 0 or data.get("partial", false) or int(data.get("next_offset", -1)) != -1}
+	_collect_output(EditorInterface.get_base_control(), lines)
+	return {"native": false, "lines": lines, "partial": true}
+
+func _public_panel_data(args: Dictionary) -> Dictionary:
+	var section = str(args["section"])
+	var rows = []
+	var paged_total = -1
+	var result = {"available": true, "collected": true, "section": section, "read_only": true, "source": "public_editor_api"}
+	var offset = maxi(0, int(args.get("offset", 0)))
+	var limit = clampi(int(args.get("limit", 40)), 1, 100)
+	if section == "selection":
+		rows = EditorInterface.get_selection().get_selected_nodes().map(func(node: Node) -> Variant: return _encode(node))
+	elif section == "inspector":
+		var object = EditorInterface.get_inspector().get_edited_object()
+		result["object"] = _encode(object)
+		result["collected"] = object != null
+		if object != null:
+			for property in object.get_property_list():
+				if not _panels()._credential_name(str(property["name"])) and int(property["usage"]) & PROPERTY_USAGE_EDITOR: rows.append(property)
+		result["scope"] = "Inspected object and displayed property descriptors. Read selected values with godot_get and the returned object handle; no bulk property getters are executed here."
+	elif section == "audio_buses":
+		for index in AudioServer.bus_count:
+			var row = {"index": index, "name": AudioServer.get_bus_name(index), "volume_db": AudioServer.get_bus_volume_db(index), "mute": AudioServer.is_bus_mute(index), "solo": AudioServer.is_bus_solo(index), "bypass_effects": AudioServer.is_bus_bypassing_effects(index), "send": AudioServer.get_bus_send(index), "effects": [], "signal_activity_available": false}
+			for effect in AudioServer.get_bus_effect_count(index): row["effects"].append({"index": effect, "enabled": AudioServer.is_bus_effect_enabled(index, effect), "resource": _encode(AudioServer.get_bus_effect(index, effect))})
+			if plugin != null and plugin.has_method("audio_bus_activity"):
+				var activity: Dictionary = plugin.audio_bus_activity(index)
+				row["signal_activity_available"] = activity.get("available", false)
+				if row["signal_activity_available"]: row["signal_active"] = activity["active"]
+			row["peak_left_db"] = AudioServer.get_bus_peak_volume_left_db(index, 0)
+			row["peak_right_db"] = AudioServer.get_bus_peak_volume_right_db(index, 0)
+			rows.append(row)
+		result["scope"] = "Editor AudioServer bus configuration; the separately running game's audio state is not measured here."
+	elif section == "animation":
+		var player = _resolve(str(args.get("handle", ""))) as AnimationPlayer
+		if player == null:
+			for node in EditorInterface.get_selection().get_selected_nodes():
+				if node is AnimationPlayer:
+					player = node
+					break
+		if player == null:
+			result["collected"] = false
+			result["reason"] = "Select an AnimationPlayer or supply its handle."
+		else:
+			result["player"] = _encode(player)
+			result["playing"] = player.is_playing()
+			var name = str(args.get("animation", ""))
+			if name.is_empty():
+				for animation_name in player.get_animation_list():
+					var animation = player.get_animation(animation_name)
+					rows.append({"name": animation_name, "length": animation.length, "loop_mode": animation.loop_mode, "tracks": animation.get_track_count(), "resource": _encode(animation)})
+			elif not player.has_animation(name): return Common.failure("Animația nu există.", "animation_unavailable")
+			else:
+				var animation = player.get_animation(name)
+				result["animation"] = name
+				if args.has("track"):
+					var track = int(args["track"])
+					if track >= animation.get_track_count(): return Common.failure("Pista nu există.", "invalid_track")
+					paged_total = animation.track_get_key_count(track)
+					for key in range(offset, mini(offset + limit, paged_total)): rows.append({"index": key, "time": animation.track_get_key_time(track, key), "transition": animation.track_get_key_transition(track, key), "value": _encode(animation.track_get_key_value(track, key))})
+					result["track"] = track
+				else:
+					paged_total = animation.get_track_count()
+					for track in range(offset, mini(offset + limit, paged_total)): rows.append({"index": track, "path": str(animation.track_get_path(track)), "type": animation.track_get_type(track), "enabled": animation.track_is_enabled(track), "keys": animation.track_get_key_count(track), "interpolation": animation.track_get_interpolation_type(track)})
+		result["scope"] = "Selected player's animation resources and keys. Reading never plays, seeks, edits or evaluates an animation graph."
+	result["items"] = rows if paged_total >= 0 else rows.slice(offset, offset + limit)
+	result["total"] = paged_total if paged_total >= 0 else rows.size()
+	result["offset"] = offset
+	result["next_offset"] = offset + limit if offset + limit < int(result["total"]) else -1
+	return Common.success(result)
+
+func _debugger_text(event: Dictionary) -> String:
+	var text = ("WARNING: " if event.get("severity") == "warning" else "ERROR: ") + str(event.get("message", ""))
+	text += "\n at: %s (%s:%d) [debugger session=%s generation=%s %s]" % [event.get("function", ""), event.get("path", ""), int(event.get("line", 0)), event.get("session", "?"), event.get("generation", "?"), "active" if event.get("active", false) else "stopped"]
+	for frame in event.get("stack", []):
+		text += "\n at: %s (%s:%d)" % [frame.get("function", ""), frame.get("path", ""), int(frame.get("line", 0))]
+	return text
 
 func _collect_output(node: Node, output: Array) -> void:
 	if node == panel or output.size() >= 12: return

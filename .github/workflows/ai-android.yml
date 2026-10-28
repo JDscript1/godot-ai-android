@@ -49,6 +49,7 @@ jobs:
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario blender --only phone_compact --output .ai-qa/rendered/blender
           python modules/ai_assistant/tests/start.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --only narrow --output .ai-qa/rendered/start
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario generation --only narrow --output .ai-qa/rendered/generation
+          python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario chat_lifecycle --only phone_compact --output .ai-qa/rendered/chat-lifecycle
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -218,6 +219,8 @@ jobs:
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario panels --only phone_landscape --output .ai-qa/native-rendered/panels
           python modules/ai_assistant/tests/start.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --only narrow --output .ai-qa/native-rendered/start
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario generation --only phone_landscape --output .ai-qa/native-rendered/generation
+          python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario panel_access --only narrow --output .ai-qa/native-rendered/panel-access
+          python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario chat_lifecycle --only phone_compact --output .ai-qa/native-rendered/chat-lifecycle
       - uses: actions/upload-artifact@v4
         if: always()
         with:

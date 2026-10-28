@@ -23,6 +23,8 @@
 
 static Mutex error_mutex;
 static PackedStringArray runtime_errors;
+static Array runtime_diagnostics;
+static int64_t runtime_diagnostic_sequence = 0;
 
 bool AIAssistantDebugger::has_capture(const String &p_capture) const {
 	return p_capture == "ai_assistant";
@@ -905,6 +907,8 @@ Dictionary AIRuntimeInputGuard::status_command() {
 	{
 		MutexLock lock(error_mutex);
 		state["errors"] = runtime_errors;
+		state["diagnostics"] = runtime_diagnostics.duplicate(true);
+		state["diagnostics_truncated"] = runtime_diagnostic_sequence > runtime_diagnostics.size();
 	}
 	Array held;
 	for (int i = 0; i < sustained.size(); i++) {
@@ -947,11 +951,26 @@ void AIRuntimeInputGuard::_notification(int p_what) {
 
 static ObjectID input_guard_id;
 static ErrorHandlerList runtime_error_handler;
-static void ai_log_error(void *, const char *, const char *p_file, int p_line, const char *p_error, const char *p_description, bool, ErrorHandlerType p_type) {
-	if (!Engine::get_singleton() || Engine::get_singleton()->is_editor_hint() || p_type == ERR_HANDLER_WARNING) {
+static void ai_log_error(void *, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_description, bool, ErrorHandlerType p_type) {
+	if (!Engine::get_singleton() || Engine::get_singleton()->is_editor_hint()) {
 		return;
 	}
 	MutexLock lock(error_mutex);
+	Dictionary event;
+	event["sequence"] = ++runtime_diagnostic_sequence;
+	event["path"] = String::utf8(p_file);
+	event["line"] = p_line;
+	event["function"] = String::utf8(p_function);
+	event["severity"] = p_type == ERR_HANDLER_WARNING ? "warning" : "error";
+	event["category"] = p_type == ERR_HANDLER_SHADER ? "shader" : (p_type == ERR_HANDLER_SCRIPT ? "script" : "runtime");
+	event["message"] = (String::utf8(p_error) + " " + String::utf8(p_description)).strip_edges().left(1200);
+	if (runtime_diagnostics.size() >= 128) {
+		runtime_diagnostics.pop_front();
+	}
+	runtime_diagnostics.append(event);
+	if (p_type == ERR_HANDLER_WARNING) {
+		return;
+	}
 	if (runtime_errors.size() >= 32) {
 		runtime_errors.remove_at(0);
 	}

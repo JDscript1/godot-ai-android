@@ -117,6 +117,14 @@ private:
 
 	int error_count;
 	int warning_count;
+	// Structured counterparts of the Errors tab, independent of its visibility.
+	Array diagnostic_events;
+	int64_t diagnostic_generation = 0;
+	int64_t diagnostic_revision = 0;
+	bool stack_received = false;
+	int stack_variables_expected = -1;
+	int stack_variables_received = 0;
+	int64_t vram_generation = 0;
 
 	bool skip_breakpoints_value = false;
 	bool ignore_error_breaks_value = false;
@@ -347,6 +355,8 @@ public:
 
 	int get_error_count() const { return error_count; }
 	int get_warning_count() const { return warning_count; }
+	Dictionary get_error_snapshot() const;
+	Dictionary get_panel_snapshot(const String &p_section, int p_offset, int p_limit, int p_frame, const String &p_monitor) const;
 	String get_stack_script_file() const;
 	int get_stack_script_line() const;
 	int get_stack_script_frame() const;

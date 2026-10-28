@@ -49,6 +49,7 @@ public:
 		bool valid = false;
 
 		uint64_t frame_number = 0;
+		int64_t source_generation = 0;
 
 		struct Area {
 			String name;
@@ -151,5 +152,6 @@ public:
 
 	Vector<Vector<String>> get_data_as_csv() const;
 
+	Dictionary get_metric_snapshot(int p_frame, int p_offset, int p_limit) const;
 	EditorVisualProfiler();
 };

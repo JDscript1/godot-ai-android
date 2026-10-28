@@ -85,5 +85,7 @@ public:
 	void update_monitors(const Vector<StringName> &p_names, const PackedInt32Array &p_types);
 	void add_profile_frame(const Vector<float> &p_values);
 	List<float> *get_monitor_data(const StringName &p_name);
+	Dictionary get_monitor_snapshot(int p_offset, int p_limit) const;
+	Dictionary get_monitor_history(const StringName &p_name, int p_offset, int p_limit) const;
 	EditorPerformanceProfiler();
 };

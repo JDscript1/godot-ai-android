@@ -56,7 +56,7 @@ static func compare(before: String, after: String) -> Dictionary:
 	for op in all:
 		if op[0] != " ": break
 		first_line += 1
-	return {"exact": true, "added": added, "removed": removed, "operations": all, "first_line": first_line}
+	return {"exact": true, "added": added, "removed": removed, "operations": all, "first_line": first_line, "before_newline": before.ends_with("\n"), "after_newline": after.ends_with("\n")}
 
 static func _backtrack(trace: Array, a: Array, b: Array, depth: int) -> Array:
 	var x = a.size()
@@ -76,6 +76,53 @@ static func _backtrack(trace: Array, a: Array, b: Array, depth: int) -> Array:
 		else: output.append(["-", a[x - 1]]); x -= 1
 	output.reverse()
 	return output
+
+static func hunks(result: Dictionary, context: int = 3) -> Array:
+	if not result.get("exact", false): return []
+	var operations: Array = result["operations"]
+	var ranges = []
+	for index in range(operations.size()):
+		if operations[index][0] == " ": continue
+		var start = maxi(0, index - context)
+		var end = mini(operations.size(), index + context + 1)
+		if not ranges.is_empty() and start <= ranges[-1][1]: ranges[-1][1] = maxi(int(ranges[-1][1]), end)
+		else: ranges.append([start, end])
+	var locations = []
+	var old_line = 1
+	var new_line = 1
+	for op in operations:
+		locations.append([old_line, new_line])
+		if op[0] != "+": old_line += 1
+		if op[0] != "-": new_line += 1
+	var output = []
+	for index in range(ranges.size()):
+		var span: Array = ranges[index]
+		var added = 0
+		var removed = 0
+		for op in operations.slice(span[0], span[1]):
+			if op[0] == "+": added += 1
+			elif op[0] == "-": removed += 1
+		output.append({"index": index, "start": span[0], "end": span[1], "old_start": locations[span[0]][0], "new_start": locations[span[0]][1], "added": added, "removed": removed})
+	return output
+
+static func select(result: Dictionary, accepted: Array) -> String:
+	if not result.get("exact", false): return ""
+	var operations: Array = result["operations"]
+	var spans = hunks(result)
+	var hunk_of = {}
+	for hunk in spans:
+		for index in range(hunk["start"], hunk["end"]): hunk_of[index] = hunk["index"]
+	var keep = {}
+	for index in accepted: keep[int(index)] = true
+	var output = []
+	for index in range(operations.size()):
+		var op: Array = operations[index]
+		if op[0] == " ": output.append(op[1])
+		elif hunk_of.has(index) and (keep.has(hunk_of[index]) == (op[0] == "+")): output.append(op[1])
+	var newline = bool(result.get("after_newline", false))
+	if bool(result.get("before_newline", false)) != newline and not spans.is_empty() and not keep.has(int(spans[-1]["index"])):
+		newline = bool(result.get("before_newline", false))
+	return "\n".join(output) + ("\n" if newline and not output.is_empty() else "")
 
 static func unified(path: String, result: Dictionary) -> String:
 	if not result.get("exact", false): return path + " · " + str(result.get("reason", "Diff indisponibil"))

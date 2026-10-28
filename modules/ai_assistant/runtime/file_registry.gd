@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+signal captures_expired(ids: Array)
 ## Revisioned, conversation-scoped file snapshots. Originals are never modified.
 static var Common: GDScript
 static var Assets: GDScript
@@ -13,6 +14,9 @@ const IMAGE_EXT = ["png", "jpg", "jpeg", "webp"]
 const MESH_EXT = ["glb", "gltf"]
 const TEXT_EXT = ["txt", "md", "gd", "json", "tscn", "tres", "cfg", "csv", "shader", "gdshader", "py"]
 const MAX_FILE = 128 * 1024 * 1024
+const CAPTURE_MAX_COUNT = 64
+const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
+const CAPTURE_MAX_AGE = 24 * 60 * 60
 
 func _init(node: Node = null) -> void: owner = node
 
@@ -32,6 +36,69 @@ func configure(project_directory: String, include_project: bool = true) -> void:
 
 	for path in extra_roots:
 		if path not in roots: roots.append(path)
+	prune_captures()
+
+func register_capture(image: Dictionary, scope: String, temporary: bool = true) -> Dictionary:
+	if scope.is_empty() or image.get("mimeType") != "image/png": return Common.failure("Captură invalidă.")
+	var bytes = Marshalls.base64_to_raw(str(image.get("data", "")))
+	if bytes.is_empty() or bytes.size() > 2 * 1024 * 1024: return Common.failure("Captură prea mare.")
+	var pixels = Image.new()
+	if pixels.load_png_from_buffer(bytes) != OK or pixels.is_empty(): return Common.failure("Captură PNG invalidă.")
+	var hashing = HashingContext.new()
+	hashing.start(HashingContext.HASH_SHA256)
+	hashing.update(bytes)
+	var sha = hashing.finish().hex_encode()
+	var id = (("capture:" if temporary else "tool-image:") + sha).sha256_text().left(32)
+	if not temporary and not entries.has(id) and _cache_bytes() + bytes.size() > 512 * 1024 * 1024: return Common.failure("Cache-ul de preview a ajuns la limita de 512 MB.", "cache_full")
+	var folder = directory.path_join("captures" if temporary else "tool_images")
+	DirAccess.make_dir_recursive_absolute(folder)
+	var path = folder.path_join(sha + ".png")
+	var output = FileAccess.open(path, FileAccess.WRITE)
+	if output == null: return Common.failure("Nu pot salva captura.")
+	output.store_buffer(bytes)
+	output.close()
+	var item: Dictionary = entries.get(id, {"id": id, "scopes": [], "pinned_scopes": []}).duplicate(true)
+	item.merge({"name": str(image.get("name", "capture.png")).get_file(), "kind": "image", "source": path, "path": path, "sha256": FileAccess.get_sha256(path), "bytes": bytes.size(), "modified": FileAccess.get_modified_time(path), "captured_at": Time.get_unix_time_from_system(), "temporary_capture": temporary, "available": true, "width": pixels.get_width(), "height": pixels.get_height(), "preview": folder.path_join(sha + "-thumb.png")}, true)
+	item.erase("capture_expired")
+	if scope not in item["scopes"]: item["scopes"].append(scope)
+	var ratio = minf(1.0, 512.0 / maxf(pixels.get_width(), pixels.get_height()))
+	if ratio < 1: pixels.resize(maxi(1, int(pixels.get_width() * ratio)), maxi(1, int(pixels.get_height() * ratio)))
+	if pixels.save_png(item["preview"]) != OK: return Common.failure("Nu pot salva miniatura capturii.")
+	var thumbnail = FileAccess.open(item["preview"], FileAccess.READ)
+	item["cache_bytes"] = bytes.size() + (thumbnail.get_length() if thumbnail != null else 0)
+	if thumbnail != null: thumbnail.close()
+	entries[id] = item
+	if _save() != OK: return Common.failure("Nu pot salva registrul capturilor.")
+	prune_captures()
+	return Common.success(describe(id, scope))
+
+func prune_captures(now: float = -1.0) -> void:
+	if now < 0: now = Time.get_unix_time_from_system()
+	var candidates = []
+	for id in entries:
+		var item: Dictionary = entries[id]
+		if item.get("temporary_capture", false) and not item.get("capture_expired", false) and item.get("pinned_scopes", []).is_empty(): candidates.append(item)
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.get("captured_at", 0)) > float(b.get("captured_at", 0)))
+	var kept_bytes = 0
+	var changed = false
+	var expired = []
+	for index in candidates.size():
+		var item: Dictionary = candidates[index]
+		var weight = int(item.get("cache_bytes", item.get("bytes", 0)))
+		if index < CAPTURE_MAX_COUNT and kept_bytes + weight <= CAPTURE_MAX_BYTES and now - float(item.get("captured_at", 0)) < CAPTURE_MAX_AGE:
+			kept_bytes += weight
+			continue
+		# Only our dedicated cache is eligible. User files and generated assets
+		# never enter this directory or this collection.
+		for key in ["path", "preview"]:
+			var path = str(item.get(key, "")).simplify_path()
+			if path.get_base_dir() == directory.path_join("captures").simplify_path(): DirAccess.remove_absolute(path)
+		item["capture_expired"] = true
+		expired.append(item["id"])
+		changed = true
+	if changed:
+		_save()
+		captures_expired.emit(expired)
 
 static func definitions() -> Array:
 	return [Common.tool("file_catalog", "List files already shared in this conversation, including pinned references. A pin retains metadata; pixels are loaded only when needed.", {"pinned_only": {"type": "boolean"}}, []), Common.tool("storage_search", "Find recent files in accessible project, Screenshots/Pictures and Downloads folders. kind=image/mesh/text/any; query matches filename, path optionally narrows a configured root. Returns at most six preview cards in chat. Never claims access to unavailable folders.", {"query": Common.string_field(), "kind": {"type": "string", "enum": ["image", "mesh", "text", "any"]}, "path": Common.string_field(), "limit": {"type": "integer", "minimum": 1, "maximum": 6}, "after": {"type": "number"}}, []), Common.tool("file_show", "Display existing conversation file IDs as preview cards for the user to identify. Does not send image pixels to the model.", {"ids": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"type": "string"}}}, ["ids"]), Common.tool("file_observe", "Read a conversation file snapshot: image pixels for a vision model, text excerpt or 3D metadata/rendered views. Use the exact ID from storage_search or a user mention.", {"id": Common.string_field()}, ["id"])]
@@ -232,6 +299,7 @@ func pin(id: String, scope: String, enabled: bool) -> Error:
 	entries[id]["pinned_scopes"] = scopes
 	var error = _save()
 	if error != OK: entries[id]["pinned_scopes"] = previous
+	elif not enabled: prune_captures()
 	return error
 
 func catalog(scope: String, pinned_only: bool = false) -> Array:

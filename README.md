@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40617637786/artifacts/12786022441)
-(GitHub Actions artifact, source `1c7c777`, delivered 28 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40715736021/artifacts/12828926543)
+(GitHub Actions artifact, source `47cc26e`, delivered 28 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -31,6 +31,13 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+The linked APK includes [project knowledge, unified diagnostics, adaptive
+recovery and acceptance evidence](docs/AI_HARNESS_INTELLIGENCE.md), plus
+[coordinated file changes and compensating rollback](docs/AI_CHANGE_SETS.md), and
+[editor panel access and coverage](docs/AI_PANEL_ACCESS.md).
+The compiled native editor passed 732 checks on each of five layouts; physical
+Android use and live-provider behavior remain separate verification steps.
+
 The harness now [compacts long sessions automatically](docs/AI_HARNESS.md):
 when the sent context nears the model limit or an overflow occurs, it summarizes
 the older range, keeps the newest turn verbatim and persists the summary while
@@ -52,6 +59,16 @@ linked APK.
 
 The queue scrolls within a bounded height so the conversation and composer stay
 visible when many messages are pending.
+
+The harness now continues a response that the provider stopped at its output
+limit, merging the continuation and any tool calls into one assistant turn
+without inserting a user message. The new `godot_symbols` tool maps top-level
+GDScript declarations for bounded, content-hash-cached code navigation. Write
+approvals for an existing file now show per-hunk checkboxes over a unified diff,
+so only the selected changes are applied. Writes over `.gd` files also return an
+automatic syntax verdict from the native parser, code search accepts surrounding
+context lines, and the tool results of one step share a bounded batch budget with
+a tail preview. These changes are included in the linked APK.
 
 Playtest children now probe the running game directly: `playtest_act` measures
 probe expressions before and after held inputs, `playtest_watch` tracks

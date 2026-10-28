@@ -20,6 +20,30 @@ class UnreachableBlenderTransport:
 	func request(_url: String, _method: int, _headers: PackedStringArray, _body: Variant, _options: Dictionary) -> Dictionary:
 		return {"ok": false, "code": "connection_failed", "error": "Fixture connector is not listening"}
 
+class SyntaxBridge:
+	extends Node
+	func script_diagnostics(source: String, path: String) -> Dictionary:
+		var diagnostics = [{"severity": "warning", "line": 1, "column": 1, "message": "Fixture warning"}]
+		if "broken" in source:
+			for index in range(25):
+				diagnostics.append({"severity": "error", "line": index + 2, "column": 1, "message": "Fixture parse error %d" % (index + 1)})
+		return {"ok": true, "result": {"path": path, "valid": not "broken" in source, "diagnostics": diagnostics, "functions": [], "truncated": false}}
+
+class DebuggerBridge:
+	extends Node
+	var snapshot = {"available": true, "errors": 1, "warnings": 0, "truncated": false, "sessions": [{"session": 0, "generation": 2, "active": false}], "events": []}
+	func debugger_snapshot() -> Dictionary:
+		return {"ok": true, "result": snapshot.duplicate(true)}
+
+class NativePanelBridge:
+	extends Node
+	var calls = []
+	func panel_snapshot(section: String, session: int, offset: int, limit: int, frame: int, monitor: String = "") -> Dictionary:
+		var args = [section, session, offset, limit, frame]
+		if not monitor.is_empty(): args.append(monitor)
+		calls.append(args)
+		return {"ok": true, "result": {"available": true, "collected": false, "section": section, "items": []}}
+
 class HarnessHost:
 	extends RefCounted
 	var replies: Array = []
@@ -31,6 +55,7 @@ class HarnessHost:
 	var stop_after_tool = false
 	var tool_result = {"ok": true, "result": "fixture-secret"}
 	var tool_results: Array = []
+	var narrowed_arguments = {}
 	var fail_checkpoint_status = ""
 	var reenter: RefCounted
 	var reentry_result = {}
@@ -46,6 +71,7 @@ class HarnessHost:
 
 	func execute(name: String, arguments: Dictionary) -> Dictionary:
 		executed.append({"name": name, "arguments": arguments})
+		arguments.merge(narrowed_arguments, true)
 		if stop_after_tool: token["cancelled"] = true
 		return tool_result if tool_results.is_empty() else tool_results.pop_front()
 
@@ -54,6 +80,25 @@ class HarnessHost:
 		return snapshot.get("status") != fail_checkpoint_status
 	func redact(value: String) -> String: return value.replace("fixture-secret", "[redacted]")
 	func hooks() -> Dictionary: return {"complete": complete, "execute": execute, "checkpoint": checkpoint, "redact": redact}
+
+class ResponsesTransport:
+	extends RefCounted
+	var batches: Array = []
+	var requests: Array = []
+	func request(_url: String, _method: int, _headers: PackedStringArray, body: Variant, options: Dictionary) -> Dictionary:
+		requests.append(body.duplicate(true))
+		if batches.is_empty(): return {"ok": false, "error": "No fixture response"}
+		var events: Array = batches.pop_front()
+		for event in events: options["on_event"].call(event)
+		return {"ok": true, "events": events}
+
+class ResponsesHost:
+	extends HarnessHost
+	var provider: RefCounted
+	var kind = "responses"
+	func complete(context: Array, definitions: Array, cancel_token: Dictionary, delta: Callable) -> Dictionary:
+		contexts.append(context.duplicate(true))
+		return await provider.complete({"id": "fixture", "issuer": "openai", "kind": kind, "url": "https://api.openai.com/v1"}, context, definitions, "fixture-model", "", cancel_token, delta)
 
 class PricingTransport:
 	extends RefCounted
@@ -196,7 +241,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "diff", "transport", "tool_registry", "model_pricing", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -205,7 +250,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+		var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -287,12 +332,17 @@ func _run() -> void:
 	check(not scripts["providers"].vision_allowed(vision_profile, "vision"), "An explicit text-only choice takes precedence over catalog vision metadata")
 	var node = Node.new()
 	root.add_child(node)
+	_panel_reader_tests(node)
 	await _model_pricing_tests(node)
 	await _blender_diagnostic_tests(node)
 	var transport = scripts["transport"].new(node)
 	await _file_registry_tests(node)
 	_planning_tests(node)
+	await _intelligence_tests(node)
+	await _change_set_tests(node)
+	await _recovery_tests(node)
 	await _harness_tests(node)
+	await _responses_continuation_tests(node)
 	await _behavior_tests(node)
 	var pre_cancelled = await transport.request("http://127.0.0.1:1/", HTTPClient.METHOD_GET, [], null, {"allow_http": true, "cancel": {"cancelled": true}})
 	check(not pre_cancelled.get("ok", false), "Pre-cancelled requests terminate")
@@ -491,6 +541,588 @@ func _tool_registry_tests() -> void:
 	check(result.get("ok", false) and result.get("images", []).size() == 1 and not "data" in result["result"]["content"][1] and result["result"]["structuredContent"]["count"] == 2, "MCP preserves structured data and separates validated image attachments")
 	check(not mcp.normalize_result({"content": [], "structuredContent": {"count": "bad"}}, {"type": "object", "properties": {"count": {"type": "integer"}}}).get("ok", false), "MCP output schemas reject mismatched structured results")
 	check(mcp.normalize_result({"content": [{"type": "audio"}]}).get("code") == "unsupported_mcp_content", "Unsupported MCP content is reported explicitly")
+	var symbol_dir = "res://ai_test_symbols"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(symbol_dir))
+	var probe_source = "class_name SymbolProbe\nextends Node\n\nsignal finished(count: int)\n\nconst LIMIT = 4\n\nenum Mode { OFF, ON }\n\n@export var speed: float = 1.0\n\nvar plain = 0\n\nfunc run(value: int) -> int:\n\tvar local = 1\n\treturn value + local\n\nstatic func helper() -> void:\n\tpass\n"
+	var probe_path = symbol_dir.path_join("probe.gd")
+	var probe = FileAccess.open(probe_path, FileAccess.WRITE)
+	probe.store_string(probe_source)
+	probe.close()
+	var other_path = symbol_dir.path_join("other.gd")
+	var other = FileAccess.open(other_path, FileAccess.WRITE)
+	other.store_string("extends Node\n\nfunc run_other() -> void:\n\tpass\n")
+	other.close()
+	var mapped = tools._symbols({"path": symbol_dir})
+	var symbols: Array = mapped.get("result", {}).get("symbols", [])
+	var by_name = {}
+	for symbol in symbols: by_name[symbol["name"]] = symbol
+	check(mapped.get("ok", false) and by_name.size() == 9 and not by_name.has("local") and by_name["speed"]["kind"] == "export" and by_name["plain"]["kind"] == "var", "Symbol map lists top-level declarations and ignores locals")
+	check(by_name["SymbolProbe"]["kind"] == "class" and by_name["SymbolProbe"]["line"] == 1 and by_name["finished"]["kind"] == "signal" and by_name["LIMIT"]["kind"] == "constant" and by_name["Mode"]["kind"] == "enum" and by_name["helper"]["kind"] == "function", "Symbol map classifies classes, signals, constants, enums and static functions")
+	check(by_name["run"]["path"] == probe_path and by_name["run_other"]["path"] == other_path and by_name["run"]["line"] == 14, "Symbols carry project paths and one-based lines across a directory")
+	var literal_lines = ["extends Node", "# A comment with \"\"\" and '''", "var help = \"\"\"", "func phantom():", "signal ghost", "\\\"\"\"", "const ALSO_FAKE = 1", "\"\"\" # ''' in a comment", "var more = '''", "class FalseClass:", "'''", "@export_range(0, 4) # \"\"\"", "var actual: int = 1 # signal wrong", "func real():", "\tvar embedded = \"\"\"", "func fake_body():", "\t\"\"\"", "\tpass", "static func last():", "\tpass"]
+	var literal_symbols = tools._scan_symbols("res://literal.gd", "\n".join(literal_lines))
+	check(literal_symbols.map(func(item: Dictionary) -> String: return item["name"]) == ["help", "more", "actual", "real", "last"], "Symbol scanning ignores both multiline quote styles, escaped delimiters and indented literal content")
+	check(literal_symbols[2]["kind"] == "export" and literal_symbols[2]["line"] == 13 and literal_symbols[-1]["line"] == 19, "Masked strings and comments preserve annotations and real declaration line numbers")
+	var annotated = tools._scan_symbols("res://annotated.gd", "@export_enum(\"var fake\", \"func false():\")\nvar choice = 0\nvar escaped = \"quote \\\" # still a string\" # '''\nsignal actual_signal # comment\n")
+	check(annotated.map(func(item: Dictionary) -> String: return item["name"]) == ["choice", "escaped", "actual_signal"] and annotated[0]["kind"] == "export", "Quoted annotation arguments and escaped single-line quotes cannot inject symbols or open a false multiline literal")
+	var functions = tools._symbols({"path": symbol_dir, "kind": "function"}).get("result", {}).get("symbols", [])
+	check(functions.size() == 3 and functions.all(func(item: Dictionary) -> bool: return item["kind"] == "function"), "Symbol map filters by declaration kind")
+	var filtered = tools._symbols({"path": symbol_dir, "query": "spe"}).get("result", {}).get("symbols", [])
+	check(filtered.size() == 1 and filtered[0]["name"] == "speed", "Symbol map filters by case-insensitive name substring")
+	var bounded = tools._symbols({"path": symbol_dir, "limit": 2}).get("result", {})
+	check(bounded.get("symbols", []).size() == 2 and bounded.get("truncated", false), "Symbol map honors its result limit and reports truncation")
+	var cached = tools.symbol_cache.get(probe_path, {})
+	check(str(cached.get("sha256", "")) == probe_source.sha256_text(), "Symbol map caches parsed symbols by content hash")
+	probe = FileAccess.open(probe_path, FileAccess.WRITE)
+	probe.store_string("extends Node\n\nfunc replaced() -> void:\n\tpass\n")
+	probe.close()
+	var rescanned = tools._symbols({"path": symbol_dir, "query": "replaced"}).get("result", {}).get("symbols", [])
+	check(rescanned.size() == 1 and tools._symbols({"path": symbol_dir, "query": "SymbolProbe"}).get("result", {}).get("symbols", []).is_empty(), "Edited files invalidate their cached symbol entries")
+	var cleanup = DirAccess.open(symbol_dir)
+	if cleanup != null:
+		for filename in cleanup.get_files(): cleanup.remove(filename)
+	DirAccess.remove_absolute(symbol_dir)
+	var search_dir = "res://ai_test_search"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(search_dir))
+	var first = FileAccess.open(search_dir.path_join("one.gd"), FileAccess.WRITE)
+	first.store_string("alpha\nneedle first\nbeta\n")
+	first.close()
+	var second = FileAccess.open(search_dir.path_join("two.gd"), FileAccess.WRITE)
+	second.store_string("needle second\ngamma\n")
+	second.close()
+	var third = FileAccess.open(search_dir.path_join("three.gd"), FileAccess.WRITE)
+	third.store_string("needle one\nneedle two\n")
+	third.close()
+	var contextual: Dictionary = tools._search_code({"path": search_dir, "query": "needle", "context": 1}).get("result", {})
+	var by_path = {}
+	for match in contextual.get("matches", []): by_path[match["path"]] = match
+	check(contextual.get("matches", []).size() == 4 and by_path[search_dir.path_join("one.gd")].get("before", []) == [{"line": 1, "text": "alpha"}] and by_path[search_dir.path_join("one.gd")].get("after", []) == [{"line": 3, "text": "beta"}], "Search context returns the surrounding source lines of a match")
+	check(not by_path[search_dir.path_join("two.gd")].has("before") and by_path[search_dir.path_join("two.gd")].get("after", []) == [{"line": 2, "text": "gamma"}], "Search context omits lines outside the file instead of inventing them")
+	var adjacent: Array = contextual.get("matches", []).filter(func(item: Dictionary) -> bool: return item["path"] == search_dir.path_join("three.gd"))
+	check(adjacent.size() == 2 and adjacent[0].has("after") and not adjacent[1].has("before"), "Adjacent matches do not repeat context lines already shown")
+	var plain_search: Array = tools._search_code({"path": search_dir, "query": "needle"}).get("result", {}).get("matches", [])
+	check(plain_search.size() == 4 and plain_search.all(func(item: Dictionary) -> bool: return not item.has("before") and not item.has("after")), "Search without context keeps the previous compact match shape")
+	var search_cleanup = DirAccess.open(search_dir)
+	if search_cleanup != null:
+		for filename in search_cleanup.get_files(): search_cleanup.remove(filename)
+	DirAccess.remove_absolute(search_dir)
+	var bridge = SyntaxBridge.new()
+	tools.plugin = bridge
+	var clean_syntax: Dictionary = tools._syntax_check("extends Node\nvar value = 1\n", "res://clean.gd")
+	var broken_syntax: Dictionary = tools._syntax_check("extends Node\nbroken func\n", "res://broken.gd")
+	check(clean_syntax.get("valid", false) and clean_syntax.get("errors", []).is_empty() and clean_syntax.get("truncated", true) == false, "Automatic syntax checks treat a valid script without errors as valid and ignore warnings")
+	check(broken_syntax.get("valid", true) == false and broken_syntax.get("errors", []).size() == 20 and broken_syntax["errors"][0]["line"] == 2 and broken_syntax.get("truncated", false), "Automatic syntax checks keep bounded line-level parse errors and report truncation")
+	check(tools._syntax_check("extends Node\n", "res://note.txt").is_empty(), "Automatic syntax checks skip files that are not GDScript")
+	tools.plugin = null
+	bridge.free()
+
+func _recovery_tests(node: Node) -> void:
+	var core = scripts["harness"].new(node)
+	var host = HarnessHost.new()
+	var definition = scripts["common"].tool("godot_files", "Fixture project inspection", {}, [])
+	var events = []
+	core.event.connect(func(value: Dictionary) -> void: events.append(value))
+	for index in range(3): host.replies.append(_agent_response("", [{"id": "repeat-" + str(index), "name": "godot_files", "arguments": {}}]))
+	host.tool_result = {"ok": true, "result": ["res://world.tscn"]}
+	host.replies.append(_agent_response("Changed the investigation strategy"))
+	var history = []
+	var outcome = await core.run({"tools": [definition], "messages": history}, host.hooks())
+	check(outcome.get("ok", false) and events.any(func(item: Dictionary) -> bool: return item.get("kind") == "recovery"), "Repeated successful inspections trigger a change-of-strategy recovery event")
+	check(host.contexts[3].any(func(message: Dictionary) -> bool: return message.get("role") == "system" and "same inspection" in str(message.get("content", ""))) and not history.any(func(message: Dictionary) -> bool: return "same inspection" in str(message.get("content", ""))), "Recovery instructions reach the next model request without becoming persisted user messages")
+	host = HarnessHost.new()
+	host.tool_result = {"ok": true, "result": ["res://world.tscn"]}
+	for index in range(6): host.replies.append(_agent_response("", [{"id": "stuck-" + str(index), "name": "godot_files", "arguments": {}}]))
+	outcome = await core.run({"tools": [definition]}, host.hooks())
+	check(outcome.get("code") == "no_progress" and host.executed.size() == 6, "Ignoring recovery and repeatedly reading unchanged facts settles without a global step ceiling")
+	var patch = core._recovery_guidance("godot_apply_patch", {"ok": false, "code": "patch_conflict"})
+	var paid = core._recovery_guidance("asset_generate", {"ok": false, "code": "submission_unknown"})
+	check(patch.get("category") == "version_conflict" and "godot_read_range" in patch.get("next", []) and not patch.get("retry_tool_automatically", true), "Conflicted writes require fresh source/hash and never automatic retries")
+	check(paid.get("category") == "uncertain_side_effect" and "asset_status" in paid.get("next", []), "Uncertain paid submissions are routed to the existing job instead of regeneration")
+	check(core._recovery_guidance("godot_write_file", {"ok": false, "code": "permission_denied"}).get("category") == "user_boundary", "Permission refusals remain a boundary rather than a repair to bypass")
+	check(core._recovery_guidance("godot_write_file", {"ok": true, "result": {"syntax": {"valid": false}}}).get("category") == "syntax", "A successful write with parser errors still supplies a syntax-repair strategy")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("Done"), _agent_response("Done"), _agent_response("Done")]
+	var hooks = host.hooks()
+	hooks["completion_problem"] = func() -> String: return "Missing measured evidence"
+	outcome = await core.run({}, hooks)
+	check(outcome.get("status") == "blocked" and outcome.get("code") == "verification_required" and host.contexts.size() == 3, "Tool-free completion claims cannot bypass the host's acceptance-evidence gate")
+	check(host.contexts[1].any(func(message: Dictionary) -> bool: return "Missing measured evidence" in str(message.get("content", ""))), "The completion gate asks for the concrete missing verification before settling blocked")
+
+func _put_change_text(path: String, text: String) -> void:
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(text)
+	file.close()
+
+func _change_set_tests(node: Node) -> void:
+	var common = scripts["common"]
+	var worker = scripts["change_set"].new()
+	worker.configure("user://change-set-tests/" + common.uid())
+	var base = "res://change_set_tests/" + common.uid()
+	var actor = base.path_join("actor.gd")
+	var scene = base.path_join("world.tscn")
+	var old = "extends Node\nconst VALUE = 1\n"
+	var updated = "extends Node\nconst VALUE = 2\n"
+	_put_change_text(actor, old)
+	var changes = [{"path": actor, "action": "write", "expected_sha256": old.sha256_text(), "text": updated}, {"path": scene, "action": "write", "expected_sha256": "missing", "text": "[gd_scene format=3]\n[node name=\"World\" type=\"Node\"]\n"}]
+	for definition in worker.definitions():
+		check(scripts["tool_registry"].validate(definition, {"changes": changes} if definition["name"] == "godot_changes_prepare" else {"id": common.uid()}).get("ok", false), "Coordinated tools expose valid discoverable schemas: " + definition["name"])
+	var bridge = SyntaxBridge.new()
+	node.add_child(bridge)
+	var tools = scripts["editor_tools"].new(bridge)
+	tools.backup_directory = worker.directory.get_base_dir().path_join("editor-journal")
+	tools.change_set = worker
+	tools.turn_id = "batch-runtime"
+	var prepared = await tools.execute_changes("godot_changes_prepare", {"changes": changes})
+	check(prepared.get("ok", false) and prepared["result"]["state"] == "prepared", "A dependent script/scene set stages without modifying project files")
+	check(FileAccess.get_file_as_string(actor) == old and not FileAccess.file_exists(scene), "Preparation leaves every original and expected absence intact")
+	check(prepared["result"]["change_preview"].size() == 2 and prepared["result"]["change_preview"][0]["draft_syntax"].get("valid", false), "Preparation supplies per-file diffs and an explicitly draft syntax verdict")
+	check(not prepared.get("project_mutated", true) and tools.file_changes.is_empty(), "Private preparation creates no project mutation or file undo entries")
+	var id = prepared["result"]["id"]
+	var applied = await tools.execute_changes("godot_changes_apply", {"id": id})
+	check(applied.get("ok", false) and applied["result"]["state"] == "applied", "A coordinated apply commits the prepared set")
+	check(FileAccess.get_file_as_string(actor) == updated and FileAccess.file_exists(scene), "Both dependent outputs match the staged content")
+	check(tools.file_changes.size() == 2 and tools.file_changes[0].get("set_id") == id, "Coordinated writes share the existing per-turn recovery journal")
+	var repeated = await tools.execute_changes("godot_changes_apply", {"id": id})
+	check(repeated.get("ok", false) and tools.file_changes.size() == 2, "Repeated apply returns existing state without writing or duplicating recovery entries")
+	var rolled = await tools.execute_changes("godot_changes_rollback", {"id": id})
+	check(rolled.get("ok", false) and FileAccess.get_file_as_string(actor) == old and not FileAccess.file_exists(scene), "Rollback restores original bytes and removes only this set's new file")
+	check(tools.file_changes.all(func(item: Dictionary) -> bool: return item.get("restored", false)), "Restored coordinated entries no longer appear as outstanding turn changes")
+	check((await worker.apply(id)).get("code") == "recovery_required", "A rolled-back set cannot be silently reapplied")
+	_put_change_text(actor, "later user edit")
+	check(worker.rollback(id).get("ok", false) and FileAccess.get_file_as_string(actor) == "later user edit", "Repeated rollback never touches edits made after a completed rollback")
+	_put_change_text(actor, old)
+	var stale = worker.prepare(changes)
+	_put_change_text(actor, "changed before commit")
+	check((await worker.apply(stale["result"]["id"])).get("code") == "patch_conflict" and not FileAccess.file_exists(scene), "A stale member rejects the whole set before the first project write")
+	_put_change_text(actor, old)
+	var dirty = worker.prepare(changes, "", func(_p: String, _s: String) -> bool: return true)
+	check(dirty.get("code") == "unsaved_changes", "Unsaved editor buffers reject preparation")
+	var dirty_later = worker.prepare(changes)
+	check((await worker.apply(dirty_later["result"]["id"], {}, null, func(_p: String, _s: String) -> bool: return true)).get("code") == "unsaved_changes", "Buffers are checked again at apply, after preparation")
+	check(not worker.prepare(changes + [changes[0]]).get("ok", false), "Duplicate paths cannot create ambiguous snapshots")
+	check(worker.prepare([{"path": "res://project.godot", "action": "write", "expected_sha256": "missing", "text": ""}]).get("code") == "invalid_path", "Coordinated text writes cannot bypass the project-settings tool")
+	check(worker.prepare([{"path": "res://../outside.txt", "action": "write", "expected_sha256": "missing", "text": ""}]).get("code") == "invalid_path", "Coordinated preparation refuses path traversal")
+	check(not worker.prepare([{"path": actor, "action": "write", "expected_sha256": old.sha256_text()}]).get("ok", false), "Write operations require explicit text")
+	check(not worker.prepare([{"path": scene, "action": "delete", "expected_sha256": "missing"}]).get("ok", false), "Delete requires an existing file")
+	check(not worker.prepare([{"path": scene, "action": "write", "expected_sha256": "missing", "text": "a".repeat(1024 * 1024 + 1)}]).get("ok", false), "Coordinated files obey the per-file byte cap")
+	# A genuine mid-commit I/O error: create a file where a later parent must be.
+	var blocked = base.path_join("blocked")
+	var failing_changes = changes.duplicate(true)
+	failing_changes[1]["path"] = blocked.path_join("nested.txt")
+	var failing = worker.prepare(failing_changes)
+	var guard_calls = [0]
+	var guard = func(_p: String, _s: String) -> bool:
+		guard_calls[0] += 1
+		if guard_calls[0] == 4: _put_change_text(blocked, "user-owned parent")
+		return false
+	var failed = await worker.apply(failing["result"]["id"], {}, null, guard)
+	check(not failed.get("ok", false) and failed["result"]["state"] == "rolled_back", "A second-file I/O failure triggers compensating rollback")
+	check(FileAccess.get_file_as_string(actor) == old and FileAccess.get_file_as_string(blocked) == "user-owned parent", "Compensation preserves an unrelated parent file and restores the earlier write")
+	DirAccess.remove_absolute(blocked)
+	var concurrent = worker.prepare(changes)
+	var visits = [0]
+	var changing_guard = func(_p: String, _s: String) -> bool:
+		visits[0] += 1
+		if visits[0] == 4: _put_change_text(actor, "user changed the first commit")
+		return false
+	var raced = await worker.apply(concurrent["result"]["id"], {}, null, changing_guard)
+	check(raced.get("code") == "restore_conflict" and raced["result"]["state"] == "rollback_conflict", "A member changed after its commit prevents a false whole-set success")
+	check(FileAccess.get_file_as_string(actor) == "user changed the first commit" and not FileAccess.file_exists(scene), "Final consistency failure preserves the intervening edit and compensates the other member")
+	_put_change_text(actor, old)
+	var stopping = worker.prepare(changes)
+	var token = {}
+	var seen = [0]
+	var on_frame = func() -> void:
+		seen[0] += 1
+		if seen[0] == 2: token["cancelled"] = true
+	node.get_tree().process_frame.connect(on_frame)
+	var stopped = await worker.apply(stopping["result"]["id"], token, node.get_tree())
+	node.get_tree().process_frame.disconnect(on_frame)
+	check(stopped.get("code") == "cancelled" and stopped["result"]["state"] == "rolled_back", "Stop between files compensates earlier writes without continuing the set")
+	check(stopped["result"]["files"][0]["touched"] and not stopped["result"]["files"][1]["touched"], "Cancellation fixture proves the first member reached commit and the next did not")
+	check(FileAccess.get_file_as_string(actor) == old and not FileAccess.file_exists(scene), "A cancelled application leaves original bytes and absence intact")
+	var conflict = worker.prepare(changes)
+	await worker.apply(conflict["result"]["id"])
+	_put_change_text(actor, "manual edit after agent")
+	var refused = worker.rollback(conflict["result"]["id"])
+	check(refused.get("code") == "restore_conflict" and refused["result"]["conflicts"].size() == 1, "Rollback reports the exact later-edited file as a conflict")
+	check(FileAccess.get_file_as_string(actor) == "manual edit after agent" and not FileAccess.file_exists(scene), "Rollback preserves the manual edit while restoring unaffected members")
+	_put_change_text(actor, updated)
+	check(worker.rollback(conflict["result"]["id"]).get("ok", false), "An explicit retry completes rollback after the conflict is resolved")
+	var corrupt = worker.prepare(changes)
+	_put_change_text(worker._blob(corrupt["result"]["id"], 0, "after"), "corrupt draft")
+	check((await worker.apply(corrupt["result"]["id"])).get("code") == "recovery_failed" and FileAccess.get_file_as_string(actor) == old, "Corrupt staged content fails hash verification before any write")
+	# Recreate the actual write-ahead checkpoint left by process death after rename.
+	var interrupted = worker.prepare(changes)
+	var interrupted_id = interrupted["result"]["id"]
+	var data = worker._load(interrupted_id)
+	data["state"] = "applying"
+	data["entries"][0]["touched"] = true
+	worker._save(data)
+	check(worker._replace(data, 0, "before", "after").get("ok", false), "Crash fixture performs the first real rename using a durable write intent")
+	var reopened = scripts["change_set"].new()
+	reopened.configure(worker.directory)
+	var recovered = reopened.status(interrupted_id)
+	check(recovered["result"]["state"] == "interrupted" and recovered["result"]["files"][0]["position"] == "after", "A fresh runtime identifies interrupted intent using actual file hashes")
+	check((await reopened.apply(interrupted_id)).get("code") == "recovery_required", "Interrupted transactions are never blindly replayed")
+	check(reopened.rollback(interrupted_id).get("ok", false) and FileAccess.get_file_as_string(actor) == old, "A fresh runtime restores an interrupted set from verified private copies")
+	var temporary_set = worker.prepare(changes)
+	var temporary_id = temporary_set["result"]["id"]
+	var temporary_data = worker._load(temporary_id)
+	temporary_data["state"] = "applying"
+	temporary_data["entries"][0]["touched"] = true
+	temporary_data["entries"][0]["temporary_owned"] = true
+	worker._save(temporary_data)
+	var temporary_path = actor + ".ai-" + temporary_id + ".tmp"
+	_put_change_text(temporary_path, updated)
+	check(reopened.rollback(temporary_id).get("ok", false) and not FileAccess.file_exists(temporary_path) and FileAccess.get_file_as_string(actor) == old, "Recovery removes a hash-verified owned temporary left before rename")
+	var partial_set = worker.prepare(changes)
+	var partial_id = partial_set["result"]["id"]
+	var partial_data = worker._load(partial_id)
+	partial_data["state"] = "applying"
+	partial_data["entries"][0]["touched"] = true
+	partial_data["entries"][0]["temporary_owned"] = true
+	worker._save(partial_data)
+	var partial_path = actor + ".ai-" + partial_id + ".tmp"
+	_put_change_text(partial_path, "unknown partial bytes")
+	var partial_rollback = reopened.rollback(partial_id)
+	check(partial_rollback.get("code") == "restore_conflict" and FileAccess.get_file_as_string(partial_path) == "unknown partial bytes", "Recovery preserves an unverified partial temporary and reports a conflict")
+	DirAccess.remove_absolute(partial_path)
+	check(reopened.rollback(partial_id).get("ok", false), "Recovery can complete after a temporary-file conflict is explicitly resolved")
+	var delete_set = worker.prepare([{"path": actor, "action": "delete", "expected_sha256": old.sha256_text()}])
+	check((await worker.apply(delete_set["result"]["id"])).get("ok", false) and not FileAccess.file_exists(actor), "Delete participates in the same coordinated protocol")
+	check(worker.rollback(delete_set["result"]["id"]).get("ok", false) and FileAccess.get_file_as_string(actor) == old, "A coordinated deletion restores the exact original file")
+	var empty_file = base.path_join("new/sub/empty.txt")
+	var empty = worker.prepare([{"path": empty_file, "action": "write", "expected_sha256": "missing", "text": ""}])
+	await worker.apply(empty["result"]["id"])
+	check(FileAccess.file_exists(empty_file), "An empty new UTF-8 file is distinguishable from missing")
+	worker.rollback(empty["result"]["id"])
+	check(not DirAccess.dir_exists_absolute(base.path_join("new")), "Rollback removes the empty directories this set actually created")
+	check(worker.status().get("result", {}).get("sets", []).size() >= 8, "Persisted change sets remain discoverable after separate agent turns")
+	bridge.queue_free()
+
+func _panel_reader_tests(node: Node) -> void:
+	var host = Control.new()
+	host.name = "PanelFixture"
+	node.add_child(host)
+	var tools = scripts["editor_tools"].new()
+	var reader = tools._panels()
+	var tree = Tree.new()
+	tree.name = "HiddenTree"
+	tree.columns = 2
+	host.add_child(tree)
+	tree.hide()
+	var root_item = tree.create_item()
+	var branch = tree.create_item(root_item)
+	branch.set_text(0, "Branch")
+	branch.collapsed = true
+	var child = tree.create_item(branch)
+	child.set_text(0, "Hidden child")
+	child.set_text(1, "x".repeat(2000) + "END")
+	var other = tree.create_item(root_item)
+	other.set_text(0, "Last")
+	var catalog = reader.catalog(host, {"filter": "HiddenTree", "limit": 1})
+	check(catalog.get("ok", false) and catalog["result"]["total"] >= 1 and not catalog["result"]["items"][0]["visible"], "Panel inventory includes instantiated hidden controls without opening them")
+	check(reader.catalog(host, {"filter": "HiddenTree", "include_hidden": false})["result"]["total"] == 0, "Panel inventory can explicitly restrict itself to visible controls")
+	var handle = str(tools._encode(tree)["handle"])
+	var first = reader.read(tree, {"handle": handle, "limit": 2})
+	check(first["result"]["total"] == 4 and first["result"]["next_offset"] == 2 and first["result"]["items"][1]["collapsed"], "Tree snapshots include collapsed descendants and paginate rows")
+	var snapshot = str(first["result"]["snapshot"])
+	child.set_text(0, "Changed after snapshot")
+	var next = reader.read(tree, {"handle": handle, "snapshot": snapshot, "offset": 2, "limit": 2})
+	check(next["result"]["items"][0]["cells"][0]["text"] == "Hidden child" and next["result"]["next_offset"] == -1, "Panel pagination remains consistent when live UI changes between pages")
+	var long_cell = reader.read(tree, {"handle": handle, "snapshot": snapshot, "item": 2, "column": 1, "text_offset": 1995, "text_limit": 20})
+	check(long_cell["result"]["text"]["value"] == "xxxxxEND" and long_cell["result"]["text"]["next_offset"] == -1, "Long Tree cells can be read beyond their compact row excerpt")
+	check(branch.collapsed and not tree.visible, "Reading hidden Tree data neither expands branches nor opens the panel")
+	reader.snapshots[snapshot]["created"] = Time.get_ticks_msec() - 301000
+	reader.snapshots[snapshot]["accessed"] = Time.get_ticks_msec() - 301000
+	check(reader.read(tree, {"snapshot": snapshot}).get("code") == "stale_panel_snapshot", "Expired UI snapshots cannot silently become current evidence")
+	var text = CodeEdit.new()
+	text.text = "a".repeat(9000) + "TAIL"
+	host.add_child(text)
+	var code = reader.read(text, {"text_offset": 8998, "text_limit": 8})
+	check(code["result"]["text"]["value"] == "aaTAIL" and code["result"]["state"]["line_count"] == 1, "Code and text panels expose complete paged source without editing it")
+	var secret = LineEdit.new()
+	secret.name = "CredentialField"
+	secret.secret = true
+	secret.text = "fixture-private-password"
+	host.add_child(secret)
+	check(reader.read(secret, {}).get("code") == "protected_control", "Secret controls are excluded from panel content reads")
+	check(not JSON.stringify(reader.catalog(host, {})).contains("fixture-private-password"), "Panel inventory never leaks a secret field through labels")
+	var counter = Label.new()
+	counter.name = "TokenCounter"
+	counter.text = "15"
+	host.add_child(counter)
+	check(reader.read(counter, {})["result"]["text"]["value"] == "15", "Gameplay token counters are not mistaken for credential fields")
+	var tabs = TabContainer.new()
+	host.add_child(tabs)
+	for title in ["First", "Hidden tab"]:
+		var page = Control.new()
+		page.name = title
+		tabs.add_child(page)
+	tabs.set_tab_hidden(1, true)
+	var tab_data = reader.read(tabs, {})
+	check(tab_data["result"]["items"].size() == 2 and tab_data["result"]["items"][1]["hidden"] and tabs.current_tab == 0, "Hidden tabs are readable without changing the selected tab")
+	var list = ItemList.new()
+	list.add_item("One")
+	list.add_item("Two")
+	list.set_item_disabled(1, true)
+	host.add_child(list)
+	check(reader.read(list, {})["result"]["items"][1]["disabled"], "List snapshots retain disabled item state")
+	var graph = GraphEdit.new()
+	host.add_child(graph)
+	for name in ["Source", "Target"]:
+		var graph_node = GraphNode.new()
+		graph_node.name = name
+		graph_node.title = name
+		graph.add_child(graph_node)
+		graph_node.add_child(Label.new())
+		graph_node.set_slot(0, true, 0, Color.WHITE, true, 0, Color.WHITE)
+	graph.connect_node("Source", 0, "Target", 0)
+	var graph_data = reader.read(graph, {})
+	check(graph_data["result"]["items"].size() == 1 and str(graph_data["result"]["items"][0]["from_node"]) == "Source", "Graph panels expose actual cached connections instead of relying on drawn pixels")
+	check(reader.read(graph.get_node("Source"), {})["result"]["state"]["title"] == "Source", "Graph nodes expose their title, ports and position")
+	var color = ColorPickerButton.new()
+	color.color = Color(0.1, 0.2, 0.3, 0.4)
+	host.add_child(color)
+	check(absf(reader.read(color, {})["result"]["state"]["color"][3] - 0.4) < 0.0001, "Color controls preserve their numeric value")
+	var button = Button.new()
+	button.text = "Inspect"
+	button.tooltip_text = "t".repeat(5000) + "TIP"
+	host.add_child(button)
+	check(reader.read(button, {"field": "tooltip", "text_offset": 4998, "text_limit": 10})["result"]["text"]["value"] == "ttTIP", "Long button tooltips can be read past the inventory excerpt without hovering")
+	var options = OptionButton.new()
+	options.add_item("First", 77)
+	options.add_item("Second", 88)
+	options.select(1)
+	host.add_child(options)
+	var option_data = reader.read(options, {})
+	check(option_data["result"]["items"][1]["id"] == 88 and option_data["result"]["items"][1]["selected"], "Dropdown snapshots expose item IDs and selection without choosing another option")
+	check(tools._panel_data({"section": "monitors"}).get("code") == "panel_data_unavailable", "Missing native panel data cannot be mistaken for zero measurements")
+	var bridge = NativePanelBridge.new()
+	node.add_child(bridge)
+	var native_tools = scripts["editor_tools"].new(bridge)
+	var measured = native_tools._panel_data({"section": "profiler", "session": 2, "offset": 10, "limit": 5, "frame": 77})
+	check(bridge.calls == [["profiler", 2, 10, 5, 77]] and not measured["result"]["collected"], "Native panel adapter preserves section, session, frame and uncollected state without starting profiling")
+	native_tools._panel_data({"section": "monitors", "monitor": "time/fps", "offset": 3})
+	check(bridge.calls[-1] == ["monitors", -1, 3, 40, -1, "time/fps"], "Monitor history selectors and page offsets reach the native adapter")
+	check(not tools.validate("godot_panel_read", {"offset": -1}).get("ok", false) and not tools.validate("godot_panel_data", {"section": "invented"}).get("ok", false), "Panel reader schemas reject negative offsets and nonexistent native sections")
+	var verifier = scripts["verification"].new()
+	verifier.declare([{"id": "read", "description": "Read current data", "kind": "inspection"}])
+	check(verifier.observe("godot_panel_data", {}, measured).is_empty(), "Uncollected profiler data cannot issue measured inspection evidence")
+	check(verifier.observe("godot_panel_data", {}, {"ok": true, "result": {"collected": true, "stale_session": true}}).is_empty(), "Visual profiler or VRAM caches from older sessions cannot issue fresh inspection evidence")
+	check(verifier.observe("godot_panel_read", {"snapshot": snapshot}, first).is_empty(), "Old cached UI pages cannot issue newly observed evidence after project changes")
+	var opaque = Control.new()
+	host.add_child(opaque)
+	var opaque_read = reader.read(opaque, {})
+	check(not opaque_read["result"]["coverage"]["contents_readable"] and verifier.observe("godot_panel_read", {}, opaque_read).is_empty(), "An opaque custom control cannot issue content-read evidence from an empty container snapshot")
+	var many_rows = []
+	for index in range(40): many_rows.append({"index": index, "text": "row".repeat(250)})
+	var large_page = {"ok": true, "result": {"snapshot": "fixture-panel-snapshot", "offset": 50, "total": 200, "next_offset": 90, "items": many_rows}}
+	var bounded = JSON.parse_string(scripts["harness"]._bounded_result(JSON.stringify(large_page), 4000))
+	check(bounded is Dictionary and bounded["result"]["snapshot"] == "fixture-panel-snapshot" and bounded["result"]["next_offset"] == 50 + bounded["result"]["items"].size(), "Harness compaction preserves panel cursors without skipping omitted rows")
+	var long_text = {"ok": true, "result": {"snapshot": "fixture-text", "offset": 0, "next_offset": -1, "total": 0, "items": [], "text": {"offset": 100, "length": 20000, "next_offset": 16100, "value": "x".repeat(16000)}}}
+	var bounded_text = JSON.parse_string(scripts["harness"]._bounded_result(JSON.stringify(long_text), 3000))
+	check(bounded_text["result"]["text"]["next_offset"] == 100 + bounded_text["result"]["text"]["value"].length(), "Text compaction advances only past characters actually delivered to the model")
+	var minimal_page = scripts["harness"]._bounded_result(JSON.stringify(large_page), 512)
+	var minimal = JSON.parse_string(minimal_page)
+	check(minimal_page.length() <= 512 and minimal is Dictionary and minimal["result"]["snapshot"] == "fixture-panel-snapshot" and minimal["result"]["next_offset"] == 50, "Small parallel-tool budgets preserve a retryable panel cursor")
+	host.free()
+	bridge.free()
+
+func _intelligence_tests(node: Node) -> void:
+	var common = scripts["common"]
+	var directory = "res://ai_test_intelligence"
+	DirAccess.make_dir_recursive_absolute(directory)
+	var path = directory.path_join("actor.gd")
+	var scene_path = directory.path_join("world.tscn")
+	var source = "extends Node\nconst RESOURCE = preload(\"res://ai_test_intelligence/missing.tres\")\n# preload(\"res://comment_only.tres\")\nvar description = \"\"\"preload(\"res://string_only.tres\")\"\"\"\nfunc act():\n\tpass\n"
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(source)
+	file.close()
+	file = FileAccess.open(scene_path, FileAccess.WRITE)
+	file.store_string('[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://ai_test_intelligence/actor.gd" id="1"]\n[node name="World" type="Node"]\nscript = ExtResource("1")\n')
+	file.close()
+	var tools = scripts["editor_tools"].new()
+	var graph = scripts["project_knowledge"].new(node)
+	var private_directory = "user://intelligence-test"
+	graph.configure(private_directory)
+	var refreshed = await graph.refresh(tools)
+	var mapped = graph.query({"path": path})
+	var actor: Dictionary = mapped["result"]["files"][0]
+	check(refreshed.get("ok", false) and not graph.dirty and actor["sha256"] == source.sha256_text(), "Project map records current content hashes without loading project scripts")
+	check(actor["dependencies"] == [directory.path_join("missing.tres")] and actor["dependents"] == [scene_path], "Project map links real literal dependencies and reverse scene references, ignoring comments and quoted examples")
+	check(actor["symbols"].any(func(item: Dictionary) -> bool: return item["name"] == "act") and actor["missing"] == [directory.path_join("missing.tres")], "Map returns symbols and exact missing resources for a scoped file")
+	check(scripts["project_knowledge"]._dependencies('[application]\nrun/main_scene="uid://bnonexistentprobe"\n[autoload]\nState="*res://state.gd"\n', "godot", tools) == ["uid://bnonexistentprobe", "res://state.gd"], "Project settings index main-scene UIDs and autoload references without loading them")
+	var revision = graph.state["revision"]
+	await graph.refresh(tools)
+	check(graph.state["revision"] == revision, "Unchanged map refreshes retain the revision and cached parse results")
+	file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(source.replace("func act", "func updated"))
+	file.close()
+	await graph.refresh(tools)
+	check(graph.state["revision"] > revision and graph.query({"query": "updated"})["result"]["files"].any(func(item: Dictionary) -> bool: return item["path"] == path), "Editing a script invalidates cached graph facts and updates the symbol query")
+	var restored_graph = scripts["project_knowledge"].new()
+	restored_graph.configure(private_directory)
+	check(restored_graph.dirty and restored_graph.state["files"].has(path), "The persisted map survives a new instance but is explicitly stale until refreshed")
+	var previous_digest = graph.state["digest"]
+	var stopped = await graph.refresh(tools, {"cancelled": true})
+	check(stopped.get("code") == "cancelled" and graph.state["digest"] == previous_digest and graph.dirty, "Cancelled indexing preserves the previous durable map and reports staleness")
+	check(graph.query({"path": "res://../private"}).get("code") == "invalid_path", "Project-map queries reject paths outside the project")
+	await graph.refresh(tools, {}, path)
+	check(graph.summary()["coverage_scope"] == path and graph.state["files"].size() == 1, "Large projects can index a specific file independently of the global scan limits")
+	var uid = ResourceUID.create_id()
+	var uid_text = ResourceUID.id_to_text(uid)
+	var uid_path = directory.path_join("uid_probe.gd")
+	file = FileAccess.open(uid_path, FileAccess.WRITE)
+	file.store_string('extends Node\nconst REF = preload("' + uid_text + '")\n')
+	file.close()
+	await graph.refresh(tools, {}, uid_path)
+	check(graph.query({"path": uid_path})["result"]["files"][0]["unresolved_uids"] == [uid_text], "Unresolved UID references remain identifiable in the map")
+	ResourceUID.add_id(uid, path)
+	await graph.refresh(tools, {}, uid_path)
+	var uid_entry = graph.query({"path": uid_path})["result"]["files"][0]
+	check(uid_entry["unresolved_uids"].is_empty() and uid_entry["resolved_dependencies"] == [path], "Cached source dependencies re-resolve when the UID registry changes")
+	ResourceUID.remove_id(uid)
+	DirAccess.remove_absolute(uid_path)
+	var capped_source = "extends Node\n"
+	for index in range(101): capped_source += 'var resource_%d = preload("res://missing_%d.tres")\n' % [index, index]
+	file = FileAccess.open(uid_path, FileAccess.WRITE)
+	file.store_string(capped_source)
+	file.close()
+	await graph.refresh(tools, {}, uid_path)
+	var capped_entry = graph.query({"path": uid_path})["result"]["files"][0]
+	check(graph.state["partial"] and capped_entry["symbols_limit_reached"] and capped_entry["dependencies_limit_reached"], "Per-file symbol/dependency limits also mark project-map coverage partial")
+	DirAccess.remove_absolute(uid_path)
+	var issue_store = scripts["diagnostics"].new()
+	issue_store.configure(private_directory)
+	var issue = {"path": path, "line": 5, "message": "Fixture error", "severity": "error", "category": "syntax"}
+	issue_store.replace_source("script:" + path, [issue, issue], {"sha256": source.sha256_text()})
+	var report = issue_store.query()["result"]
+	check(report["counts"]["error"] == 1 and report["issues"][0]["occurrences"] == 2, "Unified diagnostics group identical errors while retaining their occurrence count")
+	issue_store.invalidate(path)
+	check(issue_store.query()["result"]["counts"]["stale"] == 1 and issue_store.query()["result"]["counts"]["error"] == 0, "Edited source invalidates old diagnostics rather than presenting them as current failures")
+	issue_store.syntax(path, {"valid": true, "errors": []}, FileAccess.get_sha256(path))
+	check(issue_store.query()["result"]["issues"].is_empty() and not issue_store.sources["script:" + path]["stale"], "A fresh successful parser verdict clears only the checked source")
+	var output_issues = scripts["diagnostics"].from_output("SCRIPT ERROR: Invalid call\n at: act (res://ai_test_intelligence/actor.gd:5)\nWARNING: Fixture warning\n")
+	check(output_issues.size() == 2 and output_issues[0]["path"] == path and output_issues[0]["line"] == 5 and not output_issues[0]["stack"].is_empty(), "Output fallback extracts severity, project path, line and observed stack text")
+	var debug_bridge = DebuggerBridge.new()
+	node.add_child(debug_bridge)
+	var debug_tools = scripts["editor_tools"].new(debug_bridge)
+	var debug_issue = {"path": path, "line": 7, "message": "Hidden Debugger error", "function": "_ready", "severity": "error", "session": 0, "generation": 2, "active": false, "stack": [{"path": path, "line": 7, "function": "_ready"}]}
+	debug_bridge.snapshot["events"] = [debug_issue]
+	var debug_snapshot = debug_tools._debugger_snapshot()
+	check(debug_snapshot.get("ok", false) and debug_snapshot["result"]["events"][0]["stack"][0]["line"] == 7 and not debug_snapshot["result"]["sessions"][0]["active"], "Debugger adapter preserves structured stacks and stopped-session provenance without accessing visible controls")
+	var debug_text = debug_tools._debugger_text(debug_issue)
+	check(debug_text.contains("ERROR: Hidden Debugger error") and debug_text.contains(path + ":7") and debug_text.contains("generation=2 stopped"), "Legacy console formatting includes native errors with source and session state")
+	debug_bridge.snapshot["truncated"] = true
+	check(debug_tools._debugger_snapshot()["result"]["truncated"], "Debugger adapter preserves native truncation instead of implying complete coverage")
+	check(scripts["editor_tools"].new()._debugger_snapshot().get("code") == "debugger_unavailable", "Missing native Debugger bridge is an explicit failure, never an empty clean result")
+	issue_store.replace_source("debugger", [debug_issue, debug_issue, debug_issue.merged({"generation": 3, "active": true}, true)], {"available": true, "errors": 3, "partial": false})
+	var debug_report = issue_store.query(1)["result"]
+	check(debug_report["counts"]["error"] == 2 and debug_report["truncated"] and debug_report["issues"][0]["generation"] == 3, "Debugger generations remain separate and active errors are prioritized even with a one-item query")
+	check(issue_store.sources["debugger"]["issues"][0]["occurrences"] == 2 and issue_store.sources["debugger"]["issues"][0]["stack"][0]["line"] == 7, "Repeated native errors retain occurrence counts and structured stack frames")
+	issue_store.invalidate(path)
+	check(issue_store.sources["debugger"]["stale"], "Project edits invalidate cached Debugger observations")
+	issue_store.replace_source("debugger", [], {"available": false, "partial": true})
+	check(not issue_store.query()["result"]["sources"]["debugger"]["available"], "Unavailable Debugger coverage remains explicit even when no issues could be collected")
+	debug_bridge.queue_free()
+	var restored_diagnostics = scripts["diagnostics"].new()
+	restored_diagnostics.configure(private_directory)
+	check(restored_diagnostics.sources["script:" + path]["stale"], "Reloaded diagnostic caches require a fresh observation")
+	var verifier = scripts["verification"].new()
+	var syntax_criterion = {"id": "syntax", "description": "Actor parses", "kind": "syntax", "paths": [path]}
+	var score_criterion = {"id": "score", "description": "Score reaches three", "kind": "interaction", "paths": [path], "check": {"pointer": "/after/score", "op": "gte", "expected": 3}}
+	check(verifier.declare([syntax_criterion, score_criterion]).get("ok", false), "Acceptance criteria declare scoped syntax and measured interaction checks")
+	check(not verifier.problem().is_empty() and verifier.check("syntax", ["invented"]).get("code") == "evidence_stale", "Completion needs real executor-issued evidence IDs")
+	var read_proof = verifier.observe("godot_read_file", {"path": path}, common.success(FileAccess.get_file_as_string(path)))
+	check(not verifier.check("syntax", [read_proof["id"]]).get("ok", true), "Reading source cannot satisfy a syntax criterion")
+	var invalid_proof = verifier.observe("godot_script_diagnostics", {"path": path}, common.success({"path": path, "valid": false}))
+	check(invalid_proof.is_empty(), "A successful diagnostics tool with invalid source does not issue a syntax-pass proof")
+	check(verifier.observe("godot_script_diagnostics", {"path": path, "text": "different unsaved draft"}, common.success({"path": path, "valid": true})).is_empty(), "Valid unsaved drafts cannot verify the different saved script")
+	check(verifier.observe("godot_apply_patch", {"path": path, "dry_run": true}, common.success({"path": path, "syntax": {"valid": true}})).is_empty(), "A patch preview cannot become syntax evidence for an unapplied edit")
+	var syntax_proof = verifier.observe("godot_script_diagnostics", {"path": path}, common.success({"path": path, "valid": true}))
+	check(verifier.check("syntax", [syntax_proof["id"]]).get("ok", false), "Valid native syntax evidence covers the declared file")
+	var no_input = verifier.observe("playtest_input", {}, common.success({"sent": true}))
+	check(no_input.is_empty(), "Input dispatch alone cannot become proof that a game mechanic works")
+	check(verifier.observe("godot_project_map", {}, common.success({"partial": true, "stale": false, "total": 0})).is_empty(), "Incomplete project-map coverage cannot issue a false absence proof")
+	check(verifier.observe("godot_output", {}, common.success([])).is_empty(), "An empty visible console cannot issue clean-runtime evidence")
+	check(verifier.observe("godot_debugger", {}, common.success({"available": true, "truncated": true, "events": []})).is_empty(), "Truncated native Debugger snapshots cannot issue complete inspection evidence")
+	var debug_proof = verifier.observe("godot_debugger", {}, common.success({"available": true, "truncated": false, "events": [debug_issue]}))
+	check(not debug_proof.is_empty() and debug_proof.get("kinds", []) == ["inspection"], "Retained native Debugger rows provide inspection evidence rather than proof of a fresh running game")
+	var partial_diagnostics = {"collection": {"debugger_available": false, "parser_available": true, "parser_partial": false, "running": false, "map": {"partial": false}}, "sources": {"debugger": {"partial": false}}}
+	check(verifier.observe("godot_diagnostics", {}, common.success(partial_diagnostics)).is_empty(), "Unified diagnostics cannot verify completeness when native Debugger access is unavailable")
+	partial_diagnostics["collection"]["debugger_available"] = true
+	partial_diagnostics["sources"]["debugger"]["partial"] = true
+	check(verifier.observe("godot_diagnostics", {}, common.success(partial_diagnostics)).is_empty(), "Unified diagnostics cannot hide native Debugger truncation behind a successful parser check")
+	var wrong = verifier.observe("playtest_act", {}, common.success({"until_met": true, "after": {"score": 2}}))
+	check(verifier.check("score", [wrong["id"]]).get("code") == "criterion_failed", "A measured result below the declared target fails the acceptance assertion")
+	var measured = verifier.observe("playtest_act", {}, common.success({"until_met": true, "after": {"score": 3}}))
+	check(verifier.check("score", [measured["id"]]).get("ok", false) and verifier.problem().is_empty(), "Only matching measured interaction evidence completes every declared criterion")
+	file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_string("extends Node\nfunc changed_externally(): pass\n")
+	file.close()
+	check(not verifier.problem().is_empty(), "External edits invalidate acceptance evidence by content hash even without a tool mutation")
+	check(verifier.observe("godot_read_range", {"path": path}, common.success({"sha256": "old-source-hash", "lines": []})).is_empty(), "A source change between reading and recording evidence cannot attach the new file hash to old data")
+	check(verifier.observe("godot_read_file", {"path": path}, common.success("old source contents")).is_empty(), "Plain source reads also reject observations that no longer match the saved bytes")
+	verifier.changed()
+	check(verifier.evidence.is_empty() and verifier.passed.is_empty(), "Project mutations invalidate previously verified criteria and evidence")
+	var restored_verifier = scripts["verification"].new()
+	restored_verifier.restore(verifier.snapshot())
+	check(restored_verifier.criteria.size() == 2 and restored_verifier.passed.is_empty(), "Resuming keeps acceptance requirements but requires fresh observations")
+	check(not verifier.declare([score_criterion, score_criterion]).get("ok", true) and verifier.criteria.size() == 2, "Invalid criteria updates cannot replace the previous valid requirements")
+	check(scripts["verification"]._pointer({"a/b": {"~value": [2]}}, "/a~1b/~0value/0").get("value") == 2 and not scripts["verification"]._pointer({}, "/absent").get("found", true), "Evidence pointers support escaped keys and reject missing measurements")
+	check(not scripts["verification"]._compare("3", {"op": "gte", "expected": 3}), "Numeric acceptance comparisons reject string coercion")
+	check(not scripts["verification"]._compare("text", {"op": "contains", "expected": {"invalid": true}}), "Mismatched assertion types fail cleanly instead of throwing an engine error")
+	var invalid_cache = private_directory.path_join("invalid-cache")
+	common.atomic_json(invalid_cache.path_join("project-map.json"), {"version": 1, "root": ProjectSettings.globalize_path("res://").sha256_text(), "files": {path: {"path": path, "dependencies": "invalid", "symbols": []}}})
+	var invalid_graph = scripts["project_knowledge"].new()
+	invalid_graph.configure(invalid_cache)
+	check(invalid_graph.state["files"].is_empty() and invalid_graph.dirty, "Structurally corrupted project caches are discarded safely")
+	common.atomic_json(invalid_cache.path_join("diagnostics.json"), {"version": 1, "sources": {"broken": {"issues": ["invalid"]}}})
+	var invalid_diagnostics = scripts["diagnostics"].new()
+	invalid_diagnostics.configure(invalid_cache)
+	check(invalid_diagnostics.query()["result"]["issues"].is_empty(), "Malformed cached diagnostics cannot crash the collector")
+	restored_verifier.restore({"criteria": "invalid"})
+	check(restored_verifier.criteria.is_empty() and not restored_verifier.problem().is_empty(), "Malformed restored requirements never become verified or crash Resume")
+	var many_issues = []
+	for index in range(120): many_issues.append({"path": path, "line": index + 1, "severity": "error", "message": "Issue " + str(index)})
+	issue_store.replace_source("bounded", many_issues)
+	check(issue_store.sources["bounded"]["issues"].size() == 100 and issue_store.sources["bounded"]["coverage"]["partial"], "Diagnostic truncation is explicit even when the native source buffer itself was not truncated")
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(scene_path)
+	DirAccess.remove_absolute(directory)
+
+func _responses_continuation_tests(node: Node) -> void:
+	for kind in ["responses", "siwc"]:
+		var api = scripts["providers"].new(node, FakeVault.new())
+		var transport = ResponsesTransport.new()
+		api.transport = transport
+		var host = ResponsesHost.new()
+		host.provider = api
+		host.kind = kind
+		var reasoning = {"type": "reasoning", "id": "r1", "summary": [], "encrypted_content": "fixture-encrypted"}
+		var partial = {"type": "message", "id": "m1", "role": "assistant", "status": "incomplete", "content": [{"type": "output_text", "text": "Part one"}]}
+		var complete = {"type": "message", "id": "m2", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": " part two"}]}
+		transport.batches = [[{"type": "response.output_text.delta", "delta": "Part one"}, {"type": "response.incomplete", "response": {"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}, "usage": {"output_tokens": 8}, "output": [reasoning, partial, {"type": "function_call", "call_id": "unfinished", "name": "write_fixture", "arguments": "{\"text\":"}]}}], [{"type": "response.completed", "response": {"status": "completed", "output": [complete]}}]]
+		var messages = []
+		var core = scripts["harness"].new(node)
+		var outcome = await core.run({"messages": messages, "auto_continue": 2}, host.hooks())
+		check(outcome.get("ok", false) and outcome.get("continuations") == 1 and outcome.get("text") == "Part one part two" and transport.requests.size() == 2, "Responses max_output_tokens continues through the real provider adapter and harness: " + kind)
+		check(messages.size() == 1 and messages[0].get("provider_items", []).size() == 3 and messages[0]["provider_items"][0] == reasoning, "Responses continuation preserves native reasoning/output items in one assistant message: " + kind)
+		check(host.executed.is_empty() and messages[0].get("tool_calls", []).is_empty() and not transport.requests[1]["input"].any(func(item: Dictionary) -> bool: return item.get("type") == "function_call"), "Truncated function calls are never executed or sent as orphaned provider items: " + kind)
+		check(JSON.stringify(transport.requests[1]).contains("output token limit"), "Responses continuation hint reaches the provider request: " + kind)
+		transport.batches = [[{"type": "response.incomplete", "response": {"incomplete_details": {"reason": "max_output_tokens"}, "usage": {"output_tokens": 9}, "output": [partial]}}]]
+		var response = await api.complete({"id": "fixture", "kind": kind, "url": "https://api.openai.com/v1"}, [], [], "fixture", "", {})
+		check(response.get("ok", false) and response.get("finish") == "length" and response.get("message", {}).get("content") == "Part one" and response.get("usage", {}).get("output_tokens") == 9, "Incomplete terminal output preserves text without deltas and usage: " + kind)
+		for reason in ["content_filter", "unknown"]:
+			transport.batches = [[{"type": "response.incomplete", "response": {"incomplete_details": {"reason": reason}, "output": []}}]]
+			outcome = await core.run({"auto_continue": 2}, host.hooks())
+			check(outcome.get("code") == "provider_error" and outcome.get("requests") == 1 and outcome.get("continuations") == 0, "Other Responses incomplete reasons remain failures: " + kind + "/" + reason)
+		transport.batches = [[{"type": "response.failed", "response": {"error": {"message": "Fixture failed"}}}]]
+		outcome = await core.run({"auto_continue": 2}, host.hooks())
+		check(outcome.get("code") == "provider_error" and outcome.get("requests") == 1, "Responses provider failures are not silently continued: " + kind)
 
 func _harness_tests(node: Node) -> void:
 	var core = scripts["harness"].new(node)
@@ -528,6 +1160,25 @@ func _harness_tests(node: Node) -> void:
 	host.replies = [_agent_response("", [call]), _agent_response("Previously applied")]
 	outcome = await core.run({"messages": messages, "tools": definitions}, host.hooks())
 	check(outcome.get("ok", false) and host.executed.is_empty(), "Resume reuses recorded tool results without replaying project writes")
+	var review_definition = scripts["common"].tool("review_fixture", "Fixture partial approval", {"text": {"type": "string"}}, ["text"], "write")
+	var requested_call = {"id": "partial-review", "name": "review_fixture", "arguments": {"text": "accepted and rejected changes"}}
+	var repeated_call = requested_call.duplicate(true)
+	var new_call = requested_call.duplicate(true)
+	new_call["id"] = "partial-new-id"
+	var reviewed_history = []
+	var reviewed_host = HarnessHost.new()
+	reviewed_host.narrowed_arguments = {"text": "accepted changes only"}
+	reviewed_host.tool_result = {"ok": true, "result": {"path": "res://review.gd"}, "approval": {"partial": true, "selected_hunks": [1], "rejected_hunks": [2]}}
+	reviewed_host.replies = [_agent_response("", [requested_call]), _agent_response("", [repeated_call]), _agent_response("", [new_call]), _agent_response("Only the approved change was applied")]
+	var reviewed = await core.run({"tools": [review_definition], "messages": reviewed_history, "deduplicate_tools": ["review_fixture"]}, reviewed_host.hooks())
+	check(reviewed.get("ok", false) and reviewed_host.executed.size() == 1 and reviewed.get("reused_calls") == 2, "Partial review keeps original call identity for same-ID replay and operation deduplication")
+	check(requested_call["arguments"]["text"] == "accepted and rejected changes" and reviewed_history[0]["tool_calls"][0]["arguments"] == requested_call["arguments"] and reviewed_host.executed[0]["arguments"]["text"] == "accepted changes only", "The executor narrows a private copy while provider arguments and history remain immutable")
+	check(int(JSON.parse_string(reviewed_history[1]["content"]).get("approval", {}).get("rejected_hunks", [0])[0]) == 2 and JSON.parse_string(reviewed_history[3]["content"]).get("approval", {}).get("partial", false), "Partial approval details reach the model and survive replay")
+	var restored_host = HarnessHost.new()
+	restored_host.replies = [_agent_response("", [requested_call.duplicate(true)]), _agent_response("Previously approved")]
+	var restored_core = scripts["harness"].new(node)
+	var restored_outcome = await restored_core.run({"messages": reviewed_history, "tools": [review_definition]}, restored_host.hooks())
+	check(restored_outcome.get("ok", false) and restored_host.executed.is_empty(), "Restored partial approval history replays without another write or review")
 	var changed = call.duplicate(true)
 	changed["arguments"] = {"unexpected": true}
 	host = HarnessHost.new()
@@ -629,6 +1280,30 @@ func _harness_tests(node: Node) -> void:
 	outcome = await core.run({}, host.hooks())
 	check(outcome.get("status") == "limited" and outcome.get("code") == "output_limit", "Output exhaustion is distinct from completion")
 	host = HarnessHost.new()
+	host.replies = [_agent_response("Part one", [], "length"), _agent_response(" part two")]
+	messages = []
+	var auto_events = []
+	var auto_listener = func(value: Dictionary) -> void:
+		if value.get("kind") == "auto_continue": auto_events.append(value)
+	core.event.connect(auto_listener)
+	outcome = await core.run({"messages": messages, "auto_continue": 2}, host.hooks())
+	core.event.disconnect(auto_listener)
+	check(outcome.get("ok", false) and outcome.get("text") == "Part one part two" and outcome.get("continuations") == 1, "Truncated output continues automatically and completes the answer")
+	check(messages.size() == 1 and messages[0].get("role") == "assistant" and messages[0].get("content") == "Part one part two", "Auto-continue merges the continuation into a single assistant record")
+	check(host.contexts.size() == 2 and str(host.contexts[1][-1].get("content", "")).contains("output token limit"), "The continuation request carries an internal instruction without adding a user message to history")
+	check(auto_events.size() == 1 and auto_events[0].get("attempt") == 1, "Continuation attempts are visible as events")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("A", [], "length"), _agent_response("B", [], "length"), _agent_response("C", [], "length")]
+	messages = []
+	outcome = await core.run({"messages": messages, "auto_continue": 2}, host.hooks())
+	check(outcome.get("status") == "limited" and outcome.get("code") == "output_limit" and outcome.get("continuations") == 2 and host.contexts.size() == 3, "Auto-continue stops at its two-attempt budget")
+	check(messages.size() == 1 and messages[0].get("content") == "ABC", "Bounded continuations still preserve the complete generated text")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("Let me inspect", [], "length"), _agent_response(" and fix it", [call]), _agent_response("Done")]
+	messages = []
+	outcome = await core.run({"messages": messages, "tools": definitions, "auto_continue": 2}, host.hooks())
+	check(outcome.get("ok", false) and host.executed.size() == 1 and messages[0].get("content") == "Let me inspect and fix it" and messages[0].get("tool_calls", []).size() == 1, "A continuation can carry merged tool calls without splitting the assistant turn")
+	host = HarnessHost.new()
 	host.fail_checkpoint_status = "waiting_tool"
 	host.replies = [_agent_response("", [call])]
 	messages = []
@@ -642,7 +1317,63 @@ func _harness_tests(node: Node) -> void:
 	var bounded: Variant = JSON.parse_string(str(messages[1]["content"]))
 	check(outcome.get("ok", false) and bounded is Dictionary and bounded.get("truncated", false) and str(messages[1]["content"]).length() <= 24000, "Large tool results remain bounded valid JSON")
 	check(bounded.get("ok", false), "Truncating a successful tool result preserves its success contract")
+	check(str(bounded.get("tail", "")).length() == 2000, "A truncated result keeps the end of the output alongside its start")
 	check(events.filter(func(item: Dictionary) -> bool: return item.get("kind") == "tool_result")[-1]["result"].get("ok", false), "Large successful results remain successful in activity events")
+	var batch = HarnessHost.new()
+	batch.tool_result = {"ok": true, "result": "y".repeat(30000)}
+	batch.replies = [_agent_response("", [{"id": "b1", "name": "write_fixture", "arguments": {}}, {"id": "b2", "name": "write_fixture", "arguments": {}}, {"id": "b3", "name": "write_fixture", "arguments": {}}, {"id": "b4", "name": "write_fixture", "arguments": {}}]), _agent_response("Done")]
+	messages = []
+	outcome = await core.run({"tools": definitions, "messages": messages}, batch.hooks())
+	var sizes = [str(messages[1]["content"]).length(), str(messages[2]["content"]).length(), str(messages[3]["content"]).length(), str(messages[4]["content"]).length()]
+	var last_bounded: Variant = JSON.parse_string(str(messages[4]["content"]))
+	check(outcome.get("ok", false) and sizes.max() <= 24000 and sizes[3] < sizes[0] and sizes.reduce(func(total: int, size: int) -> int: return total + size, 0) <= 48000, "Tool results in one step share a bounded batch budget")
+	check(last_bounded is Dictionary and last_bounded.get("ok", false) and last_bounded.get("truncated", false), "An exhausted batch budget still preserves the success contract and the truncation marker")
+	for failed in [false, true]:
+		batch = HarnessHost.new()
+		var batch_calls = []
+		for index in range(64): batch_calls.append({"id": "large-batch-" + str(index), "name": "advance_fixture", "arguments": {"index": index}})
+		batch.tool_result = {"ok": not failed, "result": {"id": "existing-job", "status": "failed" if failed else "completed", "text": "\"\\\n".repeat(20000)}}
+		batch.tool_result["approval"] = {"partial": true, "selected_hunks": [1], "rejected_hunks": range(2, 65), "requested_sha256": "a".repeat(64), "approved_sha256": "b".repeat(64)}
+		var batch_errors = []
+		for index in range(20): batch_errors.append({"line": index + 1, "message": "Parse error " + "e".repeat(250)})
+		batch.tool_result["result"]["syntax"] = {"valid": false, "errors": batch_errors}
+		if failed: batch.tool_result.merge({"code": "fixture_failure", "error": "Fixture failure fixture-secret"})
+		batch.replies = [_agent_response("", batch_calls), _agent_response("Batch inspected")]
+		messages = []
+		outcome = await core.run({"tools": [advance], "messages": messages}, batch.hooks())
+		var total = 0
+		var valid_contracts = true
+		var identities = true
+		var reviewed_verdicts = true
+		for index in range(1, 65):
+			var content = str(messages[index]["content"])
+			total += content.length()
+			var parsed: Variant = JSON.parse_string(content)
+			valid_contracts = valid_contracts and parsed is Dictionary and parsed.get("ok") == not failed and content.length() <= 24000
+			if failed: valid_contracts = valid_contracts and parsed.get("code") == "fixture_failure" and parsed.get("error") == "Fixture failure [redacted]"
+			identities = identities and messages[index].get("tool_call_id") == batch_calls[index - 1]["id"] and parsed.get("result", {}).get("id") == "existing-job"
+			var approval: Dictionary = parsed.get("approval", {})
+			reviewed_verdicts = reviewed_verdicts and approval.get("partial", false) and int(approval.get("rejected_hunks_count", approval.get("rejected_hunks", []).size())) == 63 and parsed.get("result", {}).get("syntax", {}).get("valid") == false
+		check(outcome.get("ok", false) and batch.executed.size() == 64 and total <= 48000, "All 64 valid calls share a strict 48000-character budget; failures=" + str(failed))
+		check(valid_contracts and identities, "Even the last reserved result is valid JSON with status, redacted errors and existing job/call identity; failures=" + str(failed))
+		check(reviewed_verdicts, "Compact batch results preserve partial approval and the structured invalid syntax verdict; failures=" + str(failed))
+	host = HarnessHost.new()
+	host.tool_result = {"ok": true, "result": {"path": "res://a.gd", "syntax": {"valid": false, "errors": [{"line": 2, "column": 1, "message": "Expected expression"}], "truncated": false}, "text": "z".repeat(30000)}}
+	host.replies = [_agent_response("", [call]), _agent_response("Done")]
+	messages = []
+	await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	bounded = JSON.parse_string(str(messages[1]["content"]))
+	check(bounded.get("result", {}).get("syntax", {}).get("valid", true) == false and bounded["result"]["syntax"]["errors"][0]["line"] == 2, "A truncated write result keeps its automatic syntax verdict")
+	var many_errors = []
+	for index in range(20): many_errors.append({"line": index + 1, "column": 1, "message": "Parse error " + "e".repeat(250)})
+	host.tool_result["result"]["syntax"]["errors"] = many_errors
+	host.tool_result["approval"] = {"partial": true, "selected_hunks": [1], "rejected_hunks": [2]}
+	host.replies = [_agent_response("", [call]), _agent_response("Parser errors inspected")]
+	messages = []
+	await core.run({"tools": definitions, "messages": messages}, host.hooks())
+	bounded = JSON.parse_string(str(messages[1]["content"]))
+	check(bounded.get("result", {}).get("syntax", {}).get("valid") == false and bounded["result"]["syntax"].get("errors_count") == 20 and bounded["result"]["syntax"].get("truncated", false), "Long parser diagnostics retain a structured invalid verdict and error count")
+	check(bounded.get("approval", {}).get("partial", false) and int(bounded["approval"].get("rejected_hunks", [0])[0]) == 2, "Large reviewed results retain the explicit partial approval contract")
 	host = HarnessHost.new()
 	host.tool_result = {"ok": true, "files": ["large-artifact"], "result": {"id": "existing-large-job", "status": "completed", "file": "/generated/tree.glb", "imported_path": "res://game/tree.glb", "text": "\"\\\n".repeat(20000)}}
 	host.replies = [_agent_response("", [call]), _agent_response("", [call]), _agent_response("Existing job recovered")]
@@ -943,6 +1674,12 @@ func _new_feature_tests() -> void:
 	check(store.listing("VISION").size() == 1, "Conversation search ignores case")
 	store.update(fork_id, {"archived": true})
 	check(store.listing("", true).size() == 1, "Archive and active history have separate lists")
+	var capture_history = scripts["conversations"].new()
+	capture_history.configure(directory.path_join("automatic-captures"))
+	var capture_messages = [{"id": "capture", "role": "tool", "content": "Frame", "attachments": [{"mimeType": "image/png", "data": data, "temporary_capture": true}]}]
+	check(capture_history.save(capture_messages) == OK, "Temporary capture metadata survives a cache-write failure")
+	check(not DirAccess.dir_exists_absolute(capture_history.directory.path_join("attachments")), "Temporary captures never fall back to an unbounded permanent attachment copy")
+	check(not capture_history.load_active()[0]["attachments"][0].has("data"), "Temporary pixel buffers are omitted from saved history")
 	var provider = scripts["providers"]
 	var summary_input = [{"role": "user", "content": "Summarize for continuation."}]
 	check(provider.build_request("chat", summary_input, [], "m", "", 512)["body"].get("max_tokens") == 512, "Bounded summaries reserve output on the Chat protocol")
@@ -1321,6 +2058,18 @@ func _diff_tests() -> void:
 	var unified = diff.unified("player.gd", diff.compare("a\nb\nc\n", "a\nB\nc\n"))
 	check("@@ -1,3 +1,3 @@" in unified and "-b\n+B" in unified and not "-a" in unified, "Unified diff retains unchanged context instead of deleting the entire original")
 	check(not diff.compare("a\n".repeat(20001), "b\n").get("exact", true), "Oversized diffs report a bound instead of fabricated line totals")
+	var review_before = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\n"
+	var review_after = "a\nB\nc\nd\ne\nf\ng\nh\ni\nJ\nk\nl\n"
+	var reviewed = diff.compare(review_before, review_after)
+	var spans = diff.hunks(reviewed)
+	check(spans.size() == 2 and spans[0]["added"] == 1 and spans[1]["removed"] == 1 and spans[1]["new_start"] == 7, "Distant changes become separate reviewable hunks with their own line locations")
+	check(diff.select(reviewed, [0]) == "a\nB\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\n" and diff.select(reviewed, [1]) == "a\nb\nc\nd\ne\nf\ng\nh\ni\nJ\nk\nl\n", "Accepting a hunk applies only its lines and reverts the rest")
+	check(diff.select(reviewed, [0, 1]) == review_after and diff.select(reviewed, []) == review_before, "Selecting every or no hunk reproduces the proposed or the original file")
+	var newline_change = diff.compare("a\nb\n", "a\nB")
+	check(diff.select(newline_change, [0]) == "a\nB" and diff.select(newline_change, []) == "a\nb\n", "Partial review preserves the original trailing newline unless its hunk is accepted")
+	var newline_only = diff.compare("a\n", "a")
+	check(diff.select(newline_only, [0]) == "a" and diff.select(newline_only, []) == "a\n", "A newline-only change is still a selectable hunk")
+	check(scripts["panel"]._match_eol("a\nb\n", "a\r\nb\r\n") == "a\r\nb\r\n" and scripts["panel"]._match_eol("a\nb\n", "a\nb\n") == "a\nb\n", "Reviewed writes keep the proposed file's CRLF convention")
 
 func _store_tests(node: Node) -> void:
 	var service = scripts["store"].new(node)

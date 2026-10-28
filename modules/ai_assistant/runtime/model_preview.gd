@@ -16,6 +16,7 @@ var radius = 1.0
 var target = Vector3.ZERO
 var touches = {}
 var dragging = false
+var last_magnify_msec = -1000
 var players: Array = []
 var active_animation = -1
 var grid: MeshInstance3D
@@ -214,6 +215,10 @@ func preset(name: String) -> void:
 
 func command(name: String) -> void:
 	match name:
+		"zoom_in", "zoom_out":
+			_zoom(0.8 if name == "zoom_in" else 1.25)
+			_update_camera()
+			pose_changed.emit(pose())
 		"wireframe": viewport.debug_draw = Viewport.DEBUG_DRAW_DISABLED if viewport.debug_draw == Viewport.DEBUG_DRAW_WIREFRAME else Viewport.DEBUG_DRAW_WIREFRAME
 		"grid": grid.visible = not grid.visible
 		"light": environment.ambient_light_energy = 1.2 if environment.ambient_light_energy < 1 else 0.7
@@ -234,10 +239,21 @@ func _update_camera() -> void:
 func _release_navigation() -> void:
 	touches.clear()
 	dragging = false
+	last_magnify_msec = -1000
+
+func _zoom(factor: float) -> void:
+	if not is_finite(factor) or factor <= 0: return
+	distance = clampf(distance * factor, radius * 0.2, radius * 30)
 
 func _navigation_input(event: InputEvent) -> void:
 	if event.device == -1: return
-	if event is InputEventMouseButton:
+	if event is InputEventMagnifyGesture:
+		if not is_finite(event.factor) or event.factor <= 0: return
+		_zoom(1.0 / event.factor)
+		last_magnify_msec = Time.get_ticks_msec()
+	elif event is InputEventPanGesture:
+		if touches.is_empty(): target += (-camera.global_basis.x * event.delta.x + camera.global_basis.y * event.delta.y) * radius / 30.0
+	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
 			if dragging: input_surface.grab_focus()
@@ -259,7 +275,7 @@ func _navigation_input(event: InputEvent) -> void:
 		if after.size() == 2:
 			var old = Vector2(previous[0]).distance_to(previous[1])
 			var now = Vector2(after[0]).distance_to(after[1])
-			if now > 1: distance *= old / now
+			if now > 1 and Time.get_ticks_msec() - last_magnify_msec > 100: _zoom(old / now)
 			var movement = ((Vector2(after[0]) + Vector2(after[1])) - (Vector2(previous[0]) + Vector2(previous[1]))) * 0.5
 			target += (-camera.global_basis.x * movement.x + camera.global_basis.y * movement.y) * radius / (300 * EditorInterface.get_editor_scale())
 		elif after.size() == 1: _orbit(event.relative)
@@ -270,6 +286,8 @@ func _navigation_input(event: InputEvent) -> void:
 			KEY_UP: _orbit(Vector2(0, -12))
 			KEY_DOWN: _orbit(Vector2(0, 12))
 			KEY_HOME: preset("reset")
+			KEY_PLUS, KEY_EQUAL, KEY_KP_ADD: _zoom(0.8)
+			KEY_MINUS, KEY_KP_SUBTRACT: _zoom(1.25)
 			_: return
 	else: return
 	distance = clampf(distance, radius * 0.2, radius * 30)

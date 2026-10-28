@@ -127,6 +127,7 @@ private:
 	int line_limit = 10000;
 
 	Vector<LogMessage> messages;
+	int64_t message_revision = 0;
 	// Maps MessageTypes to LogFilters for convenient access and storage (don't need 1 member per filter).
 	HashMap<MessageType, LogFilter *> type_filter_map;
 
@@ -184,6 +185,7 @@ public:
 	void deinit();
 
 	void clear();
+	Dictionary get_message_snapshot(int p_offset, int p_limit) const;
 
 	EditorLog();
 	~EditorLog();

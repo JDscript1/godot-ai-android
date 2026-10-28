@@ -11,15 +11,19 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "editor/asset_library/editor_asset_installer.h"
+#include "editor/debugger/editor_debugger_node.h"
+#include "editor/debugger/script_editor_debugger.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_log.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "servers/audio/audio_server.h"
 
 #include "modules/gdscript/gdscript_cache.h"
 
@@ -168,11 +172,26 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantEditorPlugin::linux_runtime_request);
 	ClassDB::bind_method(D_METHOD("termux_blender_request", "action", "arguments"), &AIAssistantEditorPlugin::termux_blender_request);
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
+	ClassDB::bind_method(D_METHOD("diagnostics_snapshot"), &AIAssistantEditorPlugin::diagnostics_snapshot);
+	ClassDB::bind_method(D_METHOD("debugger_snapshot"), &AIAssistantEditorPlugin::debugger_snapshot);
+	ClassDB::bind_method(D_METHOD("panel_snapshot", "section", "session", "offset", "limit", "frame", "monitor"), &AIAssistantEditorPlugin::panel_snapshot, DEFVAL(String()));
+	ClassDB::bind_method(D_METHOD("audio_bus_activity", "bus"), &AIAssistantEditorPlugin::audio_bus_activity);
+	ClassDB::bind_method(D_METHOD("scene_is_unsaved", "path"), &AIAssistantEditorPlugin::scene_is_unsaved);
 	ClassDB::bind_method(D_METHOD("create_scene_root", "node"), &AIAssistantEditorPlugin::create_scene_root);
 	ClassDB::bind_method(D_METHOD("prepare_script_removal", "paths"), &AIAssistantEditorPlugin::prepare_script_removal);
 	ClassDB::bind_method(D_METHOD("push_editor_input", "viewport", "event"), &AIAssistantEditorPlugin::push_editor_input);
 	ClassDB::bind_method(D_METHOD("install_asset_archive", "path", "title"), &AIAssistantEditorPlugin::install_asset_archive);
 	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantEditorPlugin::open_settings, DEFVAL(String()));
+}
+
+bool AIAssistantEditorPlugin::scene_is_unsaved(const String &p_path) {
+	EditorData &data = EditorNode::get_editor_data();
+	for (int index = 0; index < data.get_edited_scene_count(); index++) {
+		if (data.get_scene_path(index) == p_path) {
+			return EditorNode::get_singleton()->is_scene_unsaved(index);
+		}
+	}
+	return false;
 }
 
 bool AIAssistantEditorPlugin::create_scene_root(Node *p_node) {
@@ -181,6 +200,147 @@ bool AIAssistantEditorPlugin::create_scene_root(Node *p_node) {
 	EditorNode::get_singleton()->new_scene();
 	EditorInterface::get_singleton()->add_root_node(p_node);
 	return EditorInterface::get_singleton()->get_edited_scene_root() == p_node;
+}
+
+void AIAssistantEditorPlugin::_capture_diagnostic(void *p_user, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_description, bool p_notify, ErrorHandlerType p_type) {
+	auto *self = static_cast<AIAssistantEditorPlugin *>(p_user);
+	MutexLock lock(self->diagnostic_mutex);
+	Dictionary event;
+	event["sequence"] = ++self->diagnostic_sequence;
+	event["path"] = String::utf8(p_file);
+	event["line"] = p_line;
+	event["function"] = String::utf8(p_function);
+	event["severity"] = p_type == ERR_HANDLER_WARNING ? "warning" : "error";
+	event["category"] = p_type == ERR_HANDLER_SHADER ? "shader" : (p_type == ERR_HANDLER_SCRIPT ? "script" : "engine");
+	event["message"] = (String::utf8(p_error) + " " + String::utf8(p_description)).strip_edges().left(1200);
+	if (self->diagnostic_events.size() >= 128) {
+		self->diagnostic_events.pop_front();
+	}
+	self->diagnostic_events.append(event);
+}
+
+Dictionary AIAssistantEditorPlugin::diagnostics_snapshot() {
+	MutexLock lock(diagnostic_mutex);
+	Dictionary data;
+	data["events"] = diagnostic_events.duplicate(true);
+	data["sequence"] = diagnostic_sequence;
+	data["truncated"] = diagnostic_sequence > diagnostic_events.size();
+	Dictionary result;
+	result["ok"] = true;
+	result["result"] = data;
+	return result;
+}
+
+Dictionary AIAssistantEditorPlugin::debugger_snapshot() {
+	Dictionary response;
+	EditorDebuggerNode *node = EditorDebuggerNode::get_singleton();
+	if (!node || runtime_debugger.is_null()) {
+		response["ok"] = false;
+		response["code"] = "debugger_unavailable";
+		response["error"] = "Native editor debugger is unavailable.";
+		return response;
+	}
+	Array sessions;
+	Array events;
+	int errors = 0;
+	int warnings = 0;
+	bool truncated = false;
+	const Array registered = runtime_debugger->get_sessions();
+	ScriptEditorDebugger *current = node->get_current_debugger();
+	Vector<int> order;
+	for (int i = 0; i < registered.size(); i++) {
+		if (node->get_debugger(i) == current) {
+			order.insert(0, i);
+		} else {
+			order.push_back(i);
+		}
+	}
+	for (int index = 0; index < order.size(); index++) {
+		const int i = order[index];
+		ScriptEditorDebugger *debugger = node->get_debugger(i);
+		if (!debugger) {
+			continue;
+		}
+		Dictionary snapshot = debugger->get_error_snapshot();
+		Array rows = snapshot["events"];
+		for (int j = 0; j < rows.size(); j++) {
+			Dictionary event = rows[j];
+			event["session"] = i;
+			event["generation"] = snapshot["generation"];
+			event["active"] = snapshot["active"];
+			if (events.size() < 512) {
+				events.push_back(event);
+			} else {
+				truncated = true;
+			}
+		}
+		errors += int(snapshot["errors"]);
+		warnings += int(snapshot["warnings"]);
+		truncated = truncated || bool(snapshot["truncated"]);
+		snapshot.erase("events");
+		snapshot["session"] = i;
+		snapshot["current"] = debugger == current;
+		sessions.push_back(snapshot);
+	}
+	Dictionary data;
+	data["available"] = true;
+	data["sessions"] = sessions;
+	data["events"] = events;
+	data["errors"] = errors;
+	data["warnings"] = warnings;
+	data["truncated"] = truncated;
+	response["ok"] = true;
+	response["result"] = data;
+	return response;
+}
+
+Dictionary AIAssistantEditorPlugin::panel_snapshot(const String &p_section, int p_session, int p_offset, int p_limit, int p_frame, const String &p_monitor) {
+	Dictionary response;
+	if (p_offset < 0 || p_limit < 1 || p_limit > 100 || p_session < -1 || p_frame < -1) {
+		response["ok"] = false;
+		response["code"] = "invalid_arguments";
+		return response;
+	}
+	Dictionary data;
+	EditorDebuggerNode *node = EditorDebuggerNode::get_singleton();
+	if (p_section == "output" && EditorNode::get_singleton() && EditorNode::get_log()) {
+		data = EditorNode::get_log()->get_message_snapshot(p_offset, p_limit);
+	} else if (node && runtime_debugger.is_valid() && p_session < runtime_debugger->get_sessions().size()) {
+		ScriptEditorDebugger *debugger = p_session < 0 ? node->get_current_debugger() : node->get_debugger(p_session);
+		if (debugger) {
+			data = debugger->get_panel_snapshot(p_section, p_offset, p_limit, p_frame, p_monitor);
+			const Array sessions = runtime_debugger->get_sessions();
+			for (int i = 0; i < sessions.size(); i++) {
+				if (node->get_debugger(i) == debugger) {
+					data["session"] = i;
+					break;
+				}
+			}
+		}
+	}
+	if (data.is_empty() || bool(data.get("unsupported", false))) {
+		response["ok"] = false;
+		response["code"] = "panel_data_unavailable";
+		response["error"] = "Native panel source or session is unavailable.";
+	} else {
+		data["available"] = true;
+		data["offset"] = p_offset;
+		response["ok"] = true;
+		response["result"] = data;
+	}
+	return response;
+}
+
+Dictionary AIAssistantEditorPlugin::audio_bus_activity(int p_bus) const {
+	Dictionary result;
+	AudioServer *audio = AudioServer::get_singleton();
+	if (!audio || p_bus < 0 || p_bus >= audio->get_bus_count()) {
+		result["available"] = false;
+		return result;
+	}
+	result["available"] = true;
+	result["active"] = audio->is_bus_channel_active(p_bus, 0);
+	return result;
 }
 
 Dictionary AIAssistantEditorPlugin::script_diagnostics(const String &p_source, const String &p_path) {
@@ -467,6 +627,9 @@ static bool ai_load_scripts(Vector<Ref<GDScript>> &scripts) {
 }
 
 AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
+	diagnostic_handler.errfunc = _capture_diagnostic;
+	diagnostic_handler.userdata = this;
+	add_error_handler(&diagnostic_handler);
 	connect("main_screen_changed", callable_mp(this, &AIAssistantEditorPlugin::_main_screen_changed));
 	EDITOR_DEF("ai_assistant/general/configure", String());
 	EDITOR_DEF("ai_assistant/providers/configure", String());
@@ -500,6 +663,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 }
 
 AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
+	remove_error_handler(&diagnostic_handler);
 	if (runtime_debugger.is_valid()) {
 		remove_debugger_plugin(runtime_debugger);
 	}

@@ -41,6 +41,48 @@
 #include "scene/gui/label.h"
 #include "scene/resources/image_texture.h"
 
+Dictionary EditorVisualProfiler::get_metric_snapshot(int p_frame, int p_offset, int p_limit) const {
+	Dictionary result;
+	result["profiling_requested"] = activate->is_pressed();
+	result["profiling"] = activate->is_pressed() && !activate->is_disabled();
+	result["collected"] = false;
+	result["cpu"] = cpu_name;
+	result["gpu"] = gpu_name;
+	result["units"] = "milliseconds";
+	const Metric *metric = last_metric >= 0 ? &frame_metrics[last_metric] : nullptr;
+	if (p_frame >= 0) {
+		metric = nullptr;
+		for (int i = 0; i < frame_metrics.size() && last_metric >= 0; i++) {
+			const Metric &candidate = frame_metrics[(last_metric - i + frame_metrics.size()) % frame_metrics.size()];
+			if (candidate.valid && candidate.frame_number == uint64_t(p_frame)) {
+				metric = &candidate;
+				break;
+			}
+		}
+	}
+	if (!metric || !metric->valid) {
+		result["reason"] = "No retained visual profiler frame; reading does not enable profiling.";
+		return result;
+	}
+	result["collected"] = true;
+	result["frame"] = metric->frame_number;
+	result["generation"] = metric->source_generation;
+	Array rows;
+	for (int i = p_offset; i < metric->areas.size() && rows.size() < p_limit; i++) {
+		const Metric::Area &area = metric->areas[i];
+		Dictionary row;
+		row["name"] = area.name;
+		row["path"] = area.fullpath_cache;
+		row["cpu_time"] = area.cpu_time;
+		row["gpu_time"] = area.gpu_time;
+		rows.push_back(row);
+	}
+	result["items"] = rows;
+	result["total"] = metric->areas.size();
+	result["next_offset"] = p_offset + rows.size() < metric->areas.size() ? p_offset + rows.size() : -1;
+	return result;
+}
+
 void EditorVisualProfiler::set_hardware_info(const String &p_cpu_name, const String &p_gpu_name) {
 	cpu_name = p_cpu_name;
 	gpu_name = p_gpu_name;

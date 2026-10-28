@@ -75,7 +75,7 @@ func save(messages: Array, selection: Dictionary = {}) -> Error:
 		for attachment_index in range(originals.size()):
 			var attachment: Dictionary = originals[attachment_index]
 			if attachment.has("data"):
-				if attachment.has("file_id"):
+				if attachment.has("file_id") or attachment.get("temporary_capture", false):
 					copies[attachment_index].erase("data")
 					continue
 				if not attachment.has("cache_id"): attachment["cache_id"] = Common.uid()

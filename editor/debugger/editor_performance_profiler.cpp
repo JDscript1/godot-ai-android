@@ -379,6 +379,67 @@ void EditorPerformanceProfiler::add_profile_frame(const Vector<float> &p_values)
 	monitor_draw->queue_redraw();
 }
 
+Dictionary EditorPerformanceProfiler::get_monitor_history(const StringName &p_name, int p_offset, int p_limit) const {
+	Dictionary result;
+	const Monitor *monitor = monitors.getptr(p_name);
+	result["collected"] = monitor && !monitor->history.is_empty();
+	result["monitor"] = p_name;
+	result["order"] = "oldest_first";
+	result["reason"] = "Retained samples; append-only within this session, reset with a new session.";
+	Array rows;
+	int index = 0;
+	if (monitor) {
+		for (const List<float>::Element *item = monitor->history.back(); item && rows.size() < p_limit; item = item->prev(), index++) {
+			if (index < p_offset) {
+				continue;
+			}
+			Dictionary row;
+			row["sample"] = index;
+			row["value"] = item->get();
+			rows.push_back(row);
+		}
+		result["units"] = monitor->type == Performance::MONITOR_TYPE_MEMORY ? "bytes" : monitor->type == Performance::MONITOR_TYPE_TIME ? "seconds" : "quantity";
+	}
+	const int total = monitor ? monitor->history.size() : 0;
+	result["items"] = rows;
+	result["total"] = total;
+	result["next_offset"] = p_offset + rows.size() < total ? p_offset + rows.size() : -1;
+	return result;
+}
+
+Dictionary EditorPerformanceProfiler::get_monitor_snapshot(int p_offset, int p_limit) const {
+	Vector<String> names;
+	bool collected = false;
+	for (const KeyValue<StringName, Monitor> &entry : monitors) {
+		names.push_back(entry.key);
+		collected = collected || !entry.value.history.is_empty();
+	}
+	names.sort();
+	Array rows;
+	for (int i = p_offset; i < names.size() && rows.size() < p_limit; i++) {
+		const Monitor &monitor = monitors[names[i]];
+		Dictionary row;
+		row["name"] = names[i];
+		row["label"] = monitor.name;
+		row["type"] = monitor.type;
+		row["units"] = monitor.type == Performance::MONITOR_TYPE_MEMORY ? "bytes" : monitor.type == Performance::MONITOR_TYPE_TIME ? "seconds" : "quantity";
+		row["samples"] = monitor.history.size();
+		row["max"] = monitor.max;
+		row["collected"] = !monitor.history.is_empty();
+		if (!monitor.history.is_empty()) {
+			row["value"] = monitor.history.front()->get();
+		}
+		rows.push_back(row);
+	}
+	Dictionary result;
+	result["items"] = rows;
+	result["marker_frame"] = marker_frame;
+	result["collected"] = collected;
+	result["total"] = names.size();
+	result["next_offset"] = p_offset + rows.size() < names.size() ? p_offset + rows.size() : -1;
+	return result;
+}
+
 List<float> *EditorPerformanceProfiler::get_monitor_data(const StringName &p_name) {
 	if (monitors.has(p_name)) {
 		return &monitors[p_name].history;

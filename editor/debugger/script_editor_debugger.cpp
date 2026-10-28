@@ -342,6 +342,9 @@ Size2 ScriptEditorDebugger::get_minimum_size() const {
 }
 
 void ScriptEditorDebugger::_thread_debug_enter(uint64_t p_thread_id) {
+	stack_received = false;
+	stack_variables_expected = -1;
+	stack_variables_received = 0;
 	ERR_FAIL_COND(!threads_debugged.has(p_thread_id));
 	ThreadDebugged &td = threads_debugged[p_thread_id];
 	_set_reason_text(td.error, MESSAGE_ERROR);
@@ -476,6 +479,7 @@ void ScriptEditorDebugger::_msg_scene_debug_mute_audio(uint64_t p_thread_id, con
 }
 
 void ScriptEditorDebugger::_msg_servers_memory_usage(uint64_t p_thread_id, const Array &p_data) {
+	vram_generation = diagnostic_generation;
 	vmem_tree->clear();
 	TreeItem *root = vmem_tree->create_item();
 	ServersDebugger::ResourceUsage usage;
@@ -491,6 +495,7 @@ void ScriptEditorDebugger::_msg_servers_memory_usage(uint64_t p_thread_id, const
 		it->set_text(1, type);
 		it->set_text(2, E.format);
 		it->set_text(3, String::humanize_size(bytes));
+		it->set_metadata(0, int64_t(E.vram));
 		total += bytes;
 
 		// If it does not have a theme icon, just go up the inheritance tree until we find one.
@@ -519,6 +524,9 @@ void ScriptEditorDebugger::_msg_servers_drawn(uint64_t p_thread_id, const Array 
 void ScriptEditorDebugger::_msg_stack_dump(uint64_t p_thread_id, const Array &p_data) {
 	DebuggerMarshalls::ScriptStackDump stack;
 	stack.deserialize(p_data);
+	stack_received = true;
+	stack_variables_expected = -1;
+	stack_variables_received = 0;
 
 	stack_dump->clear();
 	inspector->clear_stack_variables();
@@ -550,11 +558,14 @@ void ScriptEditorDebugger::_msg_stack_dump(uint64_t p_thread_id, const Array &p_
 void ScriptEditorDebugger::_msg_stack_frame_vars(uint64_t p_thread_id, const Array &p_data) {
 	inspector->clear_stack_variables();
 	ERR_FAIL_COND(p_data.size() != 1);
+	stack_variables_expected = p_data[0];
+	stack_variables_received = 0;
 	emit_signal(SNAME("stack_frame_vars"), p_data[0]);
 }
 
 void ScriptEditorDebugger::_msg_stack_frame_var(uint64_t p_thread_id, const Array &p_data) {
 	inspector->add_stack_variable(p_data);
+	stack_variables_received++;
 	emit_signal(SNAME("stack_frame_var"), p_data);
 }
 
@@ -612,6 +623,7 @@ void ScriptEditorDebugger::_msg_visual_profile_frame(uint64_t p_thread_id, const
 	frame.deserialize(p_data);
 
 	EditorVisualProfiler::Metric metric;
+	metric.source_generation = diagnostic_generation;
 	metric.areas.resize(frame.areas.size());
 	metric.frame_number = frame.frame_number;
 	metric.valid = true;
@@ -631,10 +643,36 @@ void ScriptEditorDebugger::_msg_error(uint64_t p_thread_id, const Array &p_data)
 	DebuggerMarshalls::OutputError oe;
 	ERR_FAIL_COND_MSG(oe.deserialize(p_data) == false, "Failed to deserialize error message");
 
-	// Format time.
+	// Format time once for both the structured snapshot and the Errors tab.
 	Array time_vals = { oe.hr, oe.min, oe.sec, oe.msec };
 	bool e;
 	String time = String("%d:%02d:%02d:%03d").sprintf(time_vals, &e);
+
+	Dictionary diagnostic;
+	diagnostic["time"] = time;
+	diagnostic["severity"] = oe.warning ? "warning" : "error";
+	diagnostic["category"] = "debugger";
+	diagnostic["path"] = oe.source_file.left(512);
+	diagnostic["line"] = oe.source_line;
+	diagnostic["function"] = oe.source_func.left(200);
+	diagnostic["message"] = (oe.error_descr.is_empty() ? oe.error : oe.error_descr).left(1200);
+	diagnostic["condition"] = oe.error.left(1200);
+	diagnostic["thread"] = p_thread_id;
+	diagnostic["sequence"] = ++diagnostic_revision;
+	Array stack;
+	for (unsigned int i = 0; i < oe.callstack.size() && i < 20; i++) {
+		Dictionary frame;
+		frame["path"] = oe.callstack[i].file.left(512);
+		frame["line"] = oe.callstack[i].line;
+		frame["function"] = oe.callstack[i].func.left(200);
+		stack.push_back(frame);
+	}
+	diagnostic["stack"] = stack;
+	diagnostic["stack_truncated"] = oe.callstack.size() > 20;
+	if (diagnostic_events.size() >= 256) {
+		diagnostic_events.pop_front();
+	}
+	diagnostic_events.push_back(diagnostic);
 
 	// Rest of the error data.
 	bool source_is_project_file = oe.source_file.begins_with("res://");
@@ -1221,6 +1259,9 @@ void ScriptEditorDebugger::_notification(int p_what) {
 }
 
 void ScriptEditorDebugger::_clear_execution() {
+	stack_received = false;
+	stack_variables_expected = -1;
+	stack_variables_received = 0;
 	TreeItem *ti = stack_dump->get_selected();
 	if (!ti) {
 		return;
@@ -1262,6 +1303,7 @@ String ScriptEditorDebugger::_format_frame_text(const ScriptLanguage::StackInfo 
 
 void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer) {
 	_clear_errors_list();
+	diagnostic_generation++;
 	stop();
 
 	profiler->set_enabled(true, true);
@@ -1586,6 +1628,8 @@ bool ScriptEditorDebugger::request_stack_dump(const int &p_frame) {
 	ERR_FAIL_COND_V(!is_session_active() || p_frame < 0, false);
 
 	Array msg = { p_frame };
+	stack_variables_expected = -1;
+	stack_variables_received = 0;
 	_put_msg("get_stack_frame_vars", msg, debugging_thread_id);
 	return true;
 }
@@ -1894,6 +1938,8 @@ void ScriptEditorDebugger::_vmem_item_menu_id_pressed(int p_option) {
 
 void ScriptEditorDebugger::_clear_errors_list() {
 	error_tree->clear();
+	diagnostic_events.clear();
+	diagnostic_revision++;
 	error_count = 0;
 	warning_count = 0;
 	emit_signal(SNAME("errors_cleared"));
@@ -1902,6 +1948,115 @@ void ScriptEditorDebugger::_clear_errors_list() {
 	expand_all_button->set_disabled(true);
 	collapse_all_button->set_disabled(true);
 	clear_button->set_disabled(true);
+}
+
+Dictionary ScriptEditorDebugger::get_error_snapshot() const {
+	Dictionary snapshot;
+	snapshot["events"] = diagnostic_events.duplicate(true);
+	snapshot["errors"] = error_count;
+	snapshot["warnings"] = warning_count;
+	snapshot["generation"] = diagnostic_generation;
+	snapshot["revision"] = diagnostic_revision;
+	snapshot["active"] = peer.is_valid() && peer->is_peer_connected();
+	snapshot["paused"] = is_breaked();
+	snapshot["has_session"] = diagnostic_generation > 0;
+	snapshot["truncated"] = error_count + warning_count > diagnostic_events.size();
+	return snapshot;
+}
+
+Dictionary ScriptEditorDebugger::get_panel_snapshot(const String &p_section, int p_offset, int p_limit, int p_frame, const String &p_monitor) const {
+	Dictionary data;
+	Array rows;
+	int total = 0;
+	if (p_section == "profiler") {
+		data = profiler->get_metric_snapshot(p_frame, p_offset, p_limit);
+	} else if (p_section == "visual_profiler") {
+		data = visual_profiler->get_metric_snapshot(p_frame, p_offset, p_limit);
+	} else if (p_section == "monitors") {
+		data = p_monitor.is_empty() ? performance_profiler->get_monitor_snapshot(p_offset, p_limit) : performance_profiler->get_monitor_history(p_monitor, p_offset, p_limit);
+	} else if (p_section == "variables") {
+		data = inspector->get_variable_snapshot(p_offset, p_limit);
+		data["collected"] = is_breaked() && stack_variables_expected >= 0 && stack_variables_received >= stack_variables_expected;
+		data["expected_variables"] = stack_variables_expected;
+		data["received_variables"] = stack_variables_received;
+		data["loading"] = is_breaked() && (stack_variables_expected < 0 || stack_variables_received < stack_variables_expected);
+		data["frame"] = get_stack_script_frame();
+	} else if (p_section == "threads") {
+		Vector<uint64_t> ids;
+		for (const KeyValue<uint64_t, ThreadDebugged> &entry : threads_debugged) {
+			ids.push_back(entry.key);
+		}
+		ids.sort();
+		for (int i = p_offset; i < ids.size() && rows.size() < p_limit; i++) {
+			const ThreadDebugged &thread = threads_debugged[ids[i]];
+			Dictionary row;
+			row["id"] = ids[i];
+			row["name"] = thread.name;
+			row["error"] = thread.error;
+			row["can_debug"] = thread.can_debug;
+			row["has_stackdump"] = thread.has_stackdump;
+			row["selected"] = ids[i] == debugging_thread_id;
+			rows.push_back(row);
+		}
+		total = ids.size();
+		data["collected"] = is_breaked();
+	} else if (p_section == "stack" || p_section == "vram" || p_section == "breakpoints") {
+		Tree *tree = p_section == "stack" ? stack_dump : p_section == "vram" ? vmem_tree : breakpoints_tree;
+		TreeItem *root = tree->get_root();
+		for (TreeItem *item = root ? root->get_first_child() : nullptr; item; item = item->get_next()) {
+			if (p_section == "breakpoints") {
+				for (TreeItem *breakpoint = item->get_first_child(); breakpoint; breakpoint = breakpoint->get_next()) {
+					if (total >= p_offset && rows.size() < p_limit) {
+						Dictionary row;
+						row["path"] = item->get_text(0);
+						row["line"] = breakpoint->get_meta("line", 0);
+						rows.push_back(row);
+					}
+					total++;
+				}
+			} else {
+				if (total >= p_offset && rows.size() < p_limit) {
+					Dictionary row;
+					if (p_section == "stack") {
+						row = item->get_metadata(0);
+						row["selected"] = item->is_selected(0);
+					} else {
+						row["path"] = item->get_text(0);
+						row["type"] = item->get_text(1);
+						row["format"] = item->get_text(2);
+						row["bytes"] = item->get_metadata(0);
+					}
+					rows.push_back(row);
+				}
+				total++;
+			}
+		}
+		data["collected"] = p_section == "vram" ? root != nullptr : p_section == "stack" ? is_breaked() && stack_received : true;
+		if (p_section == "vram") {
+			data["generation"] = vram_generation;
+		}
+	} else {
+		data["unsupported"] = true;
+		return data;
+	}
+	if (!data.has("items")) {
+		data["items"] = rows;
+		data["total"] = total;
+		data["next_offset"] = p_offset + rows.size() < total ? p_offset + rows.size() : -1;
+	}
+	data["section"] = p_section;
+	if (!data.has("generation")) {
+		data["generation"] = diagnostic_generation;
+	}
+	data["current_generation"] = diagnostic_generation;
+	data["stale_session"] = bool(data.get("collected", false)) && int64_t(data["generation"]) != diagnostic_generation;
+	data["active"] = peer.is_valid() && peer->is_peer_connected();
+	data["paused"] = is_breaked();
+	data["has_session"] = diagnostic_generation > 0;
+	data["offset"] = p_offset;
+	data["read_only"] = true;
+	data["scope"] = "Cached native data; no profiling, refresh, pause or expression evaluation was requested. Values from stopped sessions are historical.";
+	return data;
 }
 
 void ScriptEditorDebugger::_breakpoints_item_rmb_selected(const Vector2 &p_pos, MouseButton p_button) {

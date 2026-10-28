@@ -180,5 +180,6 @@ public:
 
 	Vector<Vector<String>> get_data_as_csv() const;
 
+	Dictionary get_metric_snapshot(int p_frame, int p_offset, int p_limit) const;
 	EditorProfiler();
 };

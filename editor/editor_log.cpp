@@ -251,10 +251,37 @@ void EditorLog::_meta_clicked(const String &p_meta) {
 }
 
 void EditorLog::_clear_request() {
+	message_revision++;
 	log->clear();
 	messages.clear();
 	_reset_message_counts();
 	_set_dock_tab_icon(Ref<Texture2D>());
+}
+
+Dictionary EditorLog::get_message_snapshot(int p_offset, int p_limit) const {
+	Array rows;
+	bool shortened = false;
+	for (int i = p_offset; i < messages.size() && rows.size() < p_limit; i++) {
+		const LogMessage &message = messages[i];
+		Dictionary row;
+		row["index"] = i;
+		row["text"] = message.text.left(8000);
+		row["type"] = message.type;
+		row["occurrences"] = message.count;
+		row["text_truncated"] = message.text.length() > 8000;
+		row["text_length"] = message.text.length();
+		shortened = shortened || message.text.length() > 8000;
+		rows.push_back(row);
+	}
+	Dictionary result;
+	result["items"] = rows;
+	result["total"] = messages.size();
+	result["revision"] = message_revision;
+	result["next_offset"] = p_offset + rows.size() < messages.size() ? p_offset + rows.size() : -1;
+	result["partial"] = shortened;
+	result["collected"] = true;
+	result["scope"] = "Retained Output messages, independent of UI search and visibility; not an unlimited log archive.";
+	return result;
 }
 
 void EditorLog::clear() {
@@ -262,6 +289,7 @@ void EditorLog::clear() {
 }
 
 void EditorLog::_process_message(const String &p_msg, MessageType p_type, bool p_clear) {
+	message_revision++;
 	if (messages.size() > 0 && messages[messages.size() - 1].text == p_msg && messages[messages.size() - 1].type == p_type) {
 		// If previous message is the same as the new one, increase previous count rather than adding another
 		// instance to the messages list.

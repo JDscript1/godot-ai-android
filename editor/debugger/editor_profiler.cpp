@@ -42,6 +42,75 @@
 #include "scene/gui/label.h"
 #include "scene/resources/image_texture.h"
 
+Dictionary EditorProfiler::get_metric_snapshot(int p_frame, int p_offset, int p_limit) const {
+	Dictionary result;
+	result["profiling_requested"] = activate->is_pressed();
+	result["profiling"] = activate->is_pressed() && !activate->is_disabled();
+	result["collected"] = false;
+	result["units"] = "seconds";
+	result["retained_frames"] = total_metrics;
+	if (total_metrics == 0 || last_metric < 0) {
+		result["reason"] = "No profiler frames collected; reading does not enable profiling.";
+		return result;
+	}
+	const Metric *metric = &frame_metrics[last_metric];
+	if (p_frame >= 0) {
+		metric = nullptr;
+		for (int i = 0; i < total_metrics; i++) {
+			if (_get_frame_metric(i).frame_number == p_frame) {
+				metric = &_get_frame_metric(i);
+				break;
+			}
+		}
+	}
+	if (!metric || !metric->valid) {
+		result["reason"] = "Requested frame is not retained.";
+		return result;
+	}
+	result["collected"] = true;
+	result["first_retained_frame"] = _get_frame_metric(0).frame_number;
+	result["last_retained_frame"] = frame_metrics[last_metric].frame_number;
+	result["frame"] = metric->frame_number;
+	result["frame_time"] = metric->frame_time;
+	result["process_time"] = metric->process_time;
+	result["physics_time"] = metric->physics_time;
+	Array rows;
+	int total = 0;
+	for (const Metric::Category &category : metric->categories) {
+		if (total >= p_offset && rows.size() < p_limit) {
+			Dictionary row;
+			row["kind"] = "category";
+			row["name"] = category.name;
+			row["signature"] = category.signature;
+			row["total"] = category.total_time;
+			rows.push_back(row);
+		}
+		total++;
+		for (const Metric::Category::Item &item : category.items) {
+			if (total >= p_offset && rows.size() < p_limit) {
+				Dictionary row;
+				row["kind"] = "item";
+				row["category"] = category.name;
+				row["category_total"] = category.total_time;
+				row["name"] = item.name;
+				row["signature"] = item.signature;
+				row["path"] = item.script;
+				row["line"] = item.line;
+				row["calls"] = item.calls;
+				row["self"] = item.self;
+				row["total"] = item.total;
+				row["internal"] = item.internal;
+				rows.push_back(row);
+			}
+			total++;
+		}
+	}
+	result["items"] = rows;
+	result["total"] = total;
+	result["next_offset"] = p_offset + rows.size() < total ? p_offset + rows.size() : -1;
+	return result;
+}
+
 void EditorProfiler::_make_metric_ptrs(Metric &m) {
 	for (int i = 0; i < m.categories.size(); i++) {
 		m.category_ptrs[m.categories[i].signature] = &m.categories.write[i];

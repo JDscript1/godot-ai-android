@@ -87,12 +87,19 @@ class FixtureProvider:
 	extends RefCounted
 	var requests = 0
 	var call_id = "fixture-native-write"
-	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
+	func complete(_profile: Dictionary, messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
 		requests += 1
 		var calls = []
-		if requests == 1: calls = [{"id": call_id + "-describe", "name": "tool_describe", "arguments": {"name": "godot_create_node"}}]
+		if requests == 1:
+			calls = [{"id": call_id + "-describe", "name": "tool_describe", "arguments": {"name": "godot_create_node"}}, {"id": call_id + "-plan", "name": "task_update", "arguments": {"tasks": [{"step": "Create and inspect the node", "status": "in_progress"}], "phase": "executing", "criteria": [{"id": "node", "description": "The created node is named HarnessProbe", "kind": "inspection", "check": {"pointer": "", "op": "eq", "expected": "HarnessProbe"}}]}}]
 		if requests == 2: calls = [{"id": call_id, "name": "godot_create_node", "arguments": {"type": "Node3D", "name": "HarnessProbe"}}]
-		var text = "" if requests <= 2 else "Verificat în editor."
+		if requests in [3, 4]:
+			var found = {}
+			for message in messages:
+				if message.get("role") == "tool" and message.get("tool_name") == ("godot_create_node" if requests == 3 else "godot_get"): found = JSON.parse_string(str(message.get("content", "{}")))
+			calls = [{"id": call_id + "-inspect", "name": "godot_get", "arguments": {"handle": found.get("result", {}).get("handle", ""), "property": "name"}}] if requests == 3 else [{"id": call_id + "-check", "name": "task_check", "arguments": {"criterion": "node", "evidence": [str(found.get("verification_evidence", {}).get("id", ""))]}}]
+		if requests == 5: calls = [{"id": call_id + "-finish", "name": "task_update", "arguments": {"tasks": [{"step": "Create and inspect the node", "status": "completed"}], "phase": "completed", "verification": "Actual node name inspected"}}]
+		var text = "" if requests <= 5 else "Verificat în editor."
 		if not text.is_empty(): delta.call(text)
 		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": "stop"}
 
@@ -102,6 +109,11 @@ class FixtureLocalCatalog:
 	func list_models(_profile: Dictionary, _cancel: Dictionary = {}, _key_override: String = "") -> Dictionary:
 		requests += 1
 		return {"ok": true, "result": [{"id": "unloaded-code", "loaded": false, "capabilities": {}}, {"id": "loaded-code", "loaded": true, "context": 4096, "capabilities": {}}]}
+
+class FixtureDebuggerBridge:
+	extends Node
+	var data: Dictionary = {}
+	func debugger_snapshot() -> Dictionary: return {"ok": true, "result": data.duplicate(true)}
 
 class FixtureLongProvider:
 	extends RefCounted
@@ -211,21 +223,27 @@ class FixtureRedirectProvider:
 class FixturePlanningProvider:
 	extends RefCounted
 	var requests = 0
-	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
+	func complete(_profile: Dictionary, messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, delta: Callable) -> Dictionary:
 		requests += 1
 		var name = ""
 		var args = {}
-		var phase = {1: "planning", 5: "executing", 7: "verifying", 9: "completed"}.get(requests, "")
+		var phase = {1: "planning", 5: "executing", 7: "verifying", 10: "completed"}.get(requests, "")
 		if not phase.is_empty():
 			name = "task_update"
-			args = {"phase": phase, "tasks": [{"step": "Pregătește nodul scenei", "status": "completed" if requests >= 7 else ("in_progress" if requests == 5 else "pending")}, {"step": "Verifică structura scenei", "status": "completed" if requests == 9 else ("in_progress" if requests == 7 else "pending")}], "explanation": "Două etape dependente; verific scena înainte de finalizare.", "verification": "godot_scene_tree confirms PlannedProbe after creation.", "verification_kind": "inspection"}
+			args = {"phase": phase, "tasks": [{"step": "Pregătește nodul scenei", "status": "completed" if requests >= 7 else ("in_progress" if requests == 5 else "pending")}, {"step": "Verifică structura scenei", "status": "completed" if requests == 10 else ("in_progress" if requests == 7 else "pending")}], "explanation": "Două etape dependente; verific scena înainte de finalizare.", "verification": "godot_scene_tree confirms PlannedProbe after creation.", "verification_kind": "inspection"}
 		if requests == 3:
 			name = "tool_describe"
 			args = {"name": "godot_create_node"}
 		if requests in [4, 6]:
 			name = "godot_create_node"
 			args = {"type": "Node3D", "name": "PlannedProbe"}
-		if requests == 8: name = "godot_scene_tree"
+		if requests == 1: args["criteria"] = [{"id": "node", "description": "The created node is named PlannedProbe", "kind": "inspection", "check": {"pointer": "", "op": "eq", "expected": "PlannedProbe"}}]
+		if requests in [8, 9]:
+			var found = {}
+			for message in messages:
+				if message.get("role") == "tool" and message.get("tool_name") == ("godot_create_node" if requests == 8 else "godot_get"): found = JSON.parse_string(str(message.get("content", "{}")))
+			name = "godot_get" if requests == 8 else "task_check"
+			args = {"handle": found.get("result", {}).get("handle", ""), "property": "name"} if requests == 8 else {"criterion": "node", "evidence": [str(found.get("verification_evidence", {}).get("id", ""))]}
 		var calls = [] if name.is_empty() else [{"id": "planning-" + str(requests), "name": name, "arguments": args}]
 		var text = ("Plan pregătit." if requests == 2 else "Implementat și verificat.") if name.is_empty() else ""
 		if not text.is_empty(): delta.call(text)
@@ -266,8 +284,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "diff": "Diff", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "diff", "transport", "tool_registry", "model_pricing", "providers", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -296,6 +314,10 @@ func _run() -> void:
 		await _scene_path_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "chat_lifecycle":
+		await _chat_lifecycle_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "todo":
 		var todo = load(get_script().resource_path.get_base_dir().path_join("todo.gd")).new()
 		await todo.run(self, panel)
@@ -310,6 +332,23 @@ func _run() -> void:
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "approval":
 		await _approval_dialog_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "intelligence":
+		await _intelligence_editor_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "debugger":
+		await _debugger_editor_tests()
+		if native: await _native_debugger_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "panel_access":
+		await _panel_access_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "changesets":
+		await _change_set_editor_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "compact":
@@ -368,6 +407,9 @@ func _run() -> void:
 	var planning = load(get_script().resource_path.get_base_dir().path_join("interactive_plan.gd")).new()
 	await planning.run(self, panel)
 	await _approval_dialog_tests("")
+	await _intelligence_editor_tests()
+	await _panel_access_tests()
+	await _change_set_editor_tests()
 	await _history_button_tests()
 	await _settings_action_tests()
 	await _provider_connection_tests("")
@@ -451,6 +493,7 @@ func _run() -> void:
 		toolset.turn_id = ""
 	if native:
 		await _native_runtime_tests()
+		await _native_debugger_tests()
 		hide_bottom_panel()
 	await _populated_chat_tests()
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
@@ -504,6 +547,146 @@ func _run() -> void:
 		await _configuration_screenshots(output)
 	await _chat_experience_tests()
 	_finish_report(output)
+
+func _chat_lifecycle_tests() -> void:
+	var chat = panel.chat
+	chat.clear_messages()
+	for index in 30: chat.append_message("assistant", "Mesaj %d\nConținut pentru testul de derulare.\nÎncă un rând de text." % index, {"id": "scroll-" + str(index)})
+	await get_tree().create_timer(0.3).timeout
+	chat._jump_to_latest()
+	await get_tree().create_timer(0.1).timeout
+	_check(chat.follow_bottom and not chat.latest_button.visible, "New conversation follows the latest message")
+	var bar = chat.scroll.get_v_scroll_bar()
+	_check(bar.max_value > bar.page + 200, "Scroll fixture has a real overflowing conversation")
+	var point = chat.scroll.get_global_rect().get_center()
+	var touch = InputEventScreenTouch.new()
+	touch.index = 9
+	touch.position = point
+	touch.pressed = true
+	chat._chat_touch(touch)
+	var drag = InputEventScreenDrag.new()
+	drag.index = 9
+	drag.position = point + Vector2(0, 140)
+	chat._chat_touch(drag)
+	touch.pressed = false
+	touch.position = drag.position
+	chat._chat_touch(touch)
+	var position = chat.scroll.scroll_vertical
+	_check(not chat.follow_bottom and chat.latest_button.visible, "Upward history browsing reveals the jump-to-latest arrow")
+	chat.append_message("assistant", "Mesaj nou în timpul citirii istoricului", {"id": "scroll-new"})
+	await get_tree().create_timer(0.15).timeout
+	_check(not chat.follow_bottom and chat.scroll.scroll_vertical == position, "Incoming message preserves the reader's position")
+	var stream = chat.append_message("assistant", "")
+	chat.stream_text(stream, "Răspuns în streaming\n".repeat(12))
+	await get_tree().create_timer(0.2).timeout
+	_check(not chat.follow_bottom and chat.scroll.scroll_vertical == position, "Streaming growth cannot pull the reader to the bottom")
+	chat.latest_button.pressed.emit()
+	await get_tree().create_timer(0.1).timeout
+	_check(chat.follow_bottom and not chat.latest_button.visible and absf(bar.value - (bar.max_value - bar.page)) < 2, "Arrow jumps to the latest message and resumes following")
+	chat.append_message("assistant", "Următorul mesaj\n".repeat(8), {"id": "scroll-follow"})
+	await get_tree().create_timer(0.15).timeout
+	_check(chat.follow_bottom and absf(bar.value - (bar.max_value - bar.page)) < 2, "Following survives content-height changes")
+	var wheel = InputEventMouseButton.new()
+	wheel.position = point
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	wheel.pressed = true
+	chat._input(wheel)
+	await get_tree().process_frame
+	_check(not chat.follow_bottom and chat.latest_button.visible, "Mouse-wheel history browsing also detaches following")
+	_check(chat.scroll.get_global_rect().encloses(chat.latest_button.get_global_rect()), "Latest-message arrow fits inside the conversation")
+	_workspace_capture(OS.get_environment("GODOT_AI_QA_OUTPUT"), "chat-history-arrow")
+	chat._jump_to_latest()
+	chat.composer.text = "Mesaj pe mai multe rânduri, vizibil în timpul scrierii.\n".repeat(8)
+	chat.composer.set_caret_line(chat.composer.get_line_count() - 1)
+	chat.composer.grab_focus()
+	var free_below = maxf(0, chat.get_viewport_rect().size.y - chat.get_global_rect().end.y)
+	var scale_y = chat.get_viewport().get_screen_transform().get_scale().y
+	chat._update_keyboard_inset((260 + free_below) * scale_y)
+	await get_tree().create_timer(0.2).timeout
+	_check(chat.keyboard_spacer.visible and is_equal_approx(chat.keyboard_spacer.size.y, 260), "Keyboard occlusion is converted to a real layout inset")
+	_check(chat.composer.get_global_rect().end.y <= chat.get_viewport_rect().size.y - 260 + 2, "Multiline input remains entirely above the simulated keyboard")
+	_check(chat.composer.size.y <= chat.composer.custom_maximum_size.y + 2, "Long drafts scroll within the available composer height")
+	_check(chat.composer.get_caret_draw_pos().y <= chat.composer.size.y + 2, "Draft caret stays visible above the keyboard after scrolling to the last line")
+	_workspace_capture(OS.get_environment("GODOT_AI_QA_OUTPUT"), "chat-keyboard-inset")
+	chat._update_keyboard_inset(0)
+	await get_tree().create_timer(0.1).timeout
+	_check(not chat.keyboard_spacer.visible and chat.keyboard_spacer.custom_minimum_size.y == 0, "Keyboard dismissal restores the full conversation area")
+	chat.composer.clear()
+	chat.clear_messages()
+	var registry = embedded["file_registry"].new()
+	registry.configure("user://capture-retention-qa", false)
+	var image = Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	image.fill(Color.RED)
+	var capture = registry.register_capture({"name": "game.png", "mimeType": "image/png", "data": Marshalls.raw_to_base64(image.save_png_to_buffer())}, "qa")
+	var id = str(capture.get("result", {}).get("id", ""))
+	_check(capture.get("ok", false) and FileAccess.file_exists(capture["result"]["path"]), "Automatic capture is saved in its dedicated cache")
+	var duplicate = registry.register_capture({"name": "game.png", "mimeType": "image/png", "data": Marshalls.raw_to_base64(image.save_png_to_buffer())}, "qa")
+	_check(duplicate.get("result", {}).get("id") == id and registry.entries.size() == 1, "Identical frames reuse one cached image and thumbnail")
+	registry.pin(id, "qa", true)
+	registry.prune_captures(Time.get_unix_time_from_system() + 90000)
+	_check(registry.describe(id, "qa").get("available", false), "Pinned screenshot survives automatic expiry")
+	var previous_registry = chat.file_registry
+	var previous_scope = chat.file_scope
+	chat.file_registry = registry
+	chat.file_scope = "qa"
+	registry.captures_expired.connect(chat.expire_capture_cards)
+	var card = chat._file_card(chat.thread, id)
+	registry.pin(id, "qa", false)
+	chat.sync_file_pins(id)
+	_check(card.get_child(0).get_node("CaptureRetention").text.contains("temporară"), "Changing the pin updates the capture retention caption immediately")
+	registry.prune_captures(Time.get_unix_time_from_system() + 90000)
+	_check(not registry.describe(id, "qa").get("available", true) and registry.describe(id, "qa").get("capture_expired", false), "Unpinned screenshot expires after 24 hours while its card metadata survives")
+	_check(card.get_child(0).get_node_or_null("FileThumbnail") == null and card.get_child(0).get_node("CaptureRetention").text.contains("expirată"), "Expiry also releases the visible thumbnail from memory and labels the card")
+	chat.clear_messages()
+	chat.file_registry = previous_registry
+	chat.file_scope = previous_scope
+	var original = "user://original-user-attachment.png"
+	image.save_png(original)
+	registry.permit(original)
+	var attachment = registry.register_file(original, "qa")
+	var tool_asset = registry.register_capture({"name": "generated-external.png", "mimeType": "image/png", "data": Marshalls.raw_to_base64(image.save_png_to_buffer())}, "qa", false)
+	var latest_capture = {}
+	for index in 66:
+		image.fill(Color(float(index) / 70.0, 0.5, 0.3))
+		latest_capture = registry.register_capture({"name": "editor-editor.png", "mimeType": "image/png", "data": Marshalls.raw_to_base64(image.save_png_to_buffer())}, "qa")
+	_check(registry.catalog("qa").filter(func(item: Dictionary) -> bool: return item.get("available", false)).size() <= 64 and DirAccess.get_files_at(registry.directory.path_join("captures")).size() == 128, "Capture cache keeps at most 64 unpinned images with their thumbnails")
+	registry.entries[latest_capture["result"]["id"]]["cache_bytes"] = registry.CAPTURE_MAX_BYTES + 1
+	registry.prune_captures()
+	_check(not FileAccess.file_exists(latest_capture["result"]["path"]), "Capture byte budget is enforced independently of the image-count limit")
+	registry.prune_captures(Time.get_unix_time_from_system() + 90000)
+	_check(FileAccess.file_exists(original) and registry.describe(str(attachment.get("result", {}).get("id", "")), "qa").get("available", false), "Automatic cleanup preserves user originals and ordinary attachment snapshots")
+	_check(FileAccess.file_exists(tool_asset.get("result", {}).get("path", "")) and not tool_asset["result"].get("temporary_capture", true), "Images returned by generation or external tools are not mistaken for temporary screenshots")
+	var scene_path = "res://qa_lifecycle.tscn"
+	var scene_file = FileAccess.open(scene_path, FileAccess.WRITE)
+	scene_file.store_string("[gd_scene format=3]\n[node name=\"LifecycleProbe\" type=\"Node\"]\n")
+	scene_file.close()
+	panel.tools.turn_id = "lifecycle-qa"
+	var launched = panel.tools.execute("godot_run", {"scene": scene_path}, 2, true)
+	await get_tree().create_timer(1.0).timeout
+	_check(launched.get("ok", false) and panel.tools.play_owner == "lifecycle-qa" and EditorInterface.is_playing_scene(), "Agent owns the temporary game it actually launched")
+	var reused = panel.tools.execute("godot_run", {"scene": scene_path}, 2, true)
+	_check(reused.get("result", {}).get("reused", false) and not reused["result"]["requested"], "Repeated run of the same scene reuses the live session")
+	var stopped = panel.tools.finish_playtest("lifecycle-qa")
+	_check(stopped.get("stopped", false) and not EditorInterface.is_playing_scene(), "Turn completion closes an agent-owned temporary game")
+	EditorInterface.play_custom_scene(scene_path)
+	await get_tree().create_timer(0.2).timeout
+	panel.tools.execute("godot_run", {"scene": scene_path}, 2, true)
+	_check(not panel.tools.finish_playtest("lifecycle-qa").get("stopped", false) and EditorInterface.is_playing_scene(), "Reusing a user-started game never grants cleanup ownership")
+	panel.tools.execute("godot_run", {"scene": scene_path, "restart": true, "keep_open": true}, 2, true)
+	_check(not panel.tools.finish_playtest("lifecycle-qa").get("stopped", false) and EditorInterface.is_playing_scene(), "Explicit keep-open request preserves the game at turn completion")
+	EditorInterface.stop_playing_scene()
+	panel.tools.execute("godot_run", {"scene": scene_path}, 2, true)
+	EditorInterface.stop_playing_scene()
+	EditorInterface.play_custom_scene(scene_path)
+	_check(not panel.tools.finish_playtest("lifecycle-qa").get("stopped", false) and EditorInterface.is_playing_scene(), "Manual restart of the same scene transfers ownership back to the user")
+	EditorInterface.stop_playing_scene()
+	panel.tools.execute("godot_run", {"scene": scene_path, "keep_open": true}, 2, true)
+	_check(panel.tools.finish_playtest("lifecycle-qa", true).get("stopped", false) and not EditorInterface.is_playing_scene(), "Cancelling closes the agent's current game even if keep-open was requested")
+	panel.tools.execute("godot_run", {"scene": scene_path}, 2, true)
+	panel.agent_jobs._finish({"id": "child-lifecycle-qa", "parent": "lifecycle-qa", "kind": "Playtest", "task": "Fixture", "steps": 0, "started_game": true}, "blocked", "Fixture runtime bridge unavailable")
+	_check(not EditorInterface.is_playing_scene() and panel.tools.play_owner.is_empty(), "Playtest child cleanup also runs when an early prerequisite fails")
+	EditorInterface.stop_playing_scene()
+	panel.tools._release_playback()
 
 func _scene_path_tests() -> void:
 	var scene = EditorInterface.get_edited_scene_root()
@@ -614,11 +797,318 @@ func _native_runtime_tests() -> void:
 		await get_tree().create_timer(2.5).timeout
 		var released = await _rpc("inspect", {"path": "AIProbe", "properties": ["held"]})
 		_check(released.get("ok", false) and released.get("result", {}).get("properties", {}).get("held") == false, "Native watchdog releases held game input")
+		var monitors = panel.tools.execute("godot_panel_data", {"section": "monitors", "limit": 3}, 0, false)
+		_check(monitors.get("result", {}).get("collected", false) and not monitors.get("result", {}).get("items", []).is_empty(), "Native Monitors returns real samples from the running game")
+		if not monitors.get("result", {}).get("items", []).is_empty():
+			var history = panel.tools.execute("godot_panel_data", {"section": "monitors", "monitor": str(monitors["result"]["items"][0]["name"]), "limit": 2}, 0, false)
+			_check(history.get("result", {}).get("collected", false) and history["result"].get("order") == "oldest_first" and not history["result"].get("items", []).is_empty(), "Native monitor history exposes retained measured samples in stable append order")
+		var profilers = EditorInterface.get_base_control().find_children("*", "EditorProfiler", true, false)
+		var start: BaseButton
+		if not profilers.is_empty():
+			for button in profilers[0].find_children("*", "Button", true, false):
+				if button.toggle_mode and button.text in ["Start", "Stop"]:
+					start = button
+					break
+		_check(start != null, "Native profiler sampling control is discoverable")
+		if start != null:
+			start.button_pressed = true
+			start.emit_signal("pressed")
+			var profile = {}
+			var deadline = Time.get_ticks_msec() + 8000
+			while Time.get_ticks_msec() < deadline:
+				await get_tree().create_timer(0.2).timeout
+				profile = panel.tools.execute("godot_panel_data", {"section": "profiler", "limit": 1}, 0, false)
+				if profile.get("result", {}).get("collected", false): break
+			_check(profile.get("result", {}).get("collected", false) and profile["result"].get("units") == "seconds", "Native Profiler returns an actual collected frame with explicit units")
+			if profile.get("result", {}).get("collected", false):
+				var next = panel.tools.execute("godot_panel_data", {"section": "profiler", "frame": int(profile["result"]["frame"]), "offset": 1, "limit": 1}, 0, false)
+				_check(next.get("result", {}).get("frame") == profile["result"]["frame"] and not next.get("result", {}).get("items", []).is_empty(), "Profiler pages can address the same retained frame while new frames arrive")
+			start.button_pressed = false
+			start.emit_signal("pressed")
 	EditorInterface.stop_playing_scene()
 	await get_tree().create_timer(0.4).timeout
 
 func _fixture_approval(name: String, results: Dictionary, operation_cancel: Dictionary = {}) -> void:
 	results[name] = await panel._authorize({"name": name, "risk": "write"}, {}, operation_cancel)
+
+func _debugger_editor_tests() -> void:
+	var bridge = FixtureDebuggerBridge.new()
+	add_child(bridge)
+	var event = {"message": "AI_SIMULATED_HIDDEN_DEBUGGER", "severity": "error", "path": "res://fixture.gd", "line": 8, "function": "_ready", "session": 0, "generation": 2, "active": false, "stack": [{"path": "res://fixture.gd", "line": 8, "function": "_ready"}]}
+	bridge.data = {"available": true, "errors": 1, "warnings": 0, "events": [event], "sessions": [{"session": 0, "generation": 2, "active": false, "has_session": true}], "truncated": false}
+	var toolset = embedded["editor_tools"].new(bridge, panel)
+	var snapshot = toolset.execute("godot_debugger", {}, 0, false)
+	_check(snapshot.get("ok", false) and snapshot["result"]["events"][0]["stack"][0]["line"] == 8, "Simulated native adapter returns stopped Debugger errors with structured stacks")
+	var output = toolset.execute("godot_output", {}, 0, false)
+	_check(output.get("ok", false) and "AI_SIMULATED_HIDDEN_DEBUGGER" in "\n".join(output.get("result", [])) and output.get("coverage", {}).get("debugger_available", false), "Console tool includes native adapter errors independently of visible labels")
+	_check(output.get("debugger", {}).get("errors") == 1 and not output.get("coverage", {}).get("empty_console_proves_clean", true), "Console response retains structured counts and rejects empty-console clean inference")
+	var missing = embedded["editor_tools"].new(self, panel)
+	_check(missing.execute("godot_debugger", {}, 0, false).get("code") == "debugger_unavailable", "An editor without the native bridge explicitly reports unavailable Debugger access")
+	bridge.data["truncated"] = true
+	_check(toolset.execute("godot_output", {}, 0, false).get("coverage", {}).get("debugger_truncated", false), "Console coverage preserves a native truncated list")
+	bridge.queue_free()
+
+func _panel_access_tests() -> void:
+	_check(panel._running_tool_label("godot_panel_data", {"section": "profiler"}) == "Running Profiler Reader Tool", "Running Tools identifies the panel data source being read")
+	var host = VBoxContainer.new()
+	host.name = "QAHiddenPluginPanel"
+	EditorInterface.get_base_control().add_child(host)
+	var tree = Tree.new()
+	tree.name = "CachedTree"
+	tree.columns = 2
+	host.add_child(tree)
+	var root = tree.create_item()
+	var branch = tree.create_item(root)
+	branch.set_text(0, "Collapsed branch")
+	branch.collapsed = true
+	var leaf = tree.create_item(branch)
+	leaf.set_text(0, "Hidden child")
+	leaf.set_text(1, "A".repeat(1500) + "TAIL")
+	host.hide()
+	var catalog = panel.tools.execute("godot_panels", {"filter": "QAHiddenPluginPanel", "limit": 1}, 0, false)
+	_check(catalog.get("ok", false) and catalog["result"]["total"] >= 2 and catalog["result"]["next_offset"] == 1, "Panel inventory discovers hidden plugin controls and provides a continuation cursor")
+	var handle = str(panel.tools._encode(tree)["handle"])
+	var scoped = panel.tools.execute("godot_panels", {"handle": handle, "limit": 2}, 0, false)
+	_check(scoped.get("result", {}).get("collection", {}).get("root_handle") == handle, "Panel inventory can narrow discovery to one known subtree")
+	var observed = panel.tools.execute("godot_panel_read", {"handle": handle, "limit": 1}, 0, false)
+	_check(observed.get("ok", false) and observed["result"]["total"] == 3 and observed["result"]["next_offset"] == 1, "Read-only editor tool sees rows below collapsed hidden branches")
+	var snapshot = str(observed["result"]["snapshot"])
+	var detail = panel.tools.execute("godot_panel_read", {"snapshot": snapshot, "item": 2, "column": 1, "text_offset": 1498, "text_limit": 10}, 0, false)
+	_check(detail.get("ok", false) and detail["result"]["text"]["value"] == "AATAIL" and detail["result"]["selected_item"] == 2, "Long hidden cell text remains accessible through snapshot item/column pagination")
+	_check(not host.visible and branch.collapsed, "Panel tools leave visibility and tree expansion unchanged")
+	var inventory = panel.tools.execute("godot_panels", {"filter": "Inspector", "limit": 5}, 0, false)
+	_check(inventory.get("ok", false) and inventory["result"]["total"] > 0, "Real editor Inspector controls are discoverable without selecting the dock")
+	for section in ["output", "profiler", "visual_profiler", "monitors", "vram", "stack", "variables", "threads", "breakpoints"]:
+		var native_data = panel.tools.execute("godot_panel_data", {"section": section, "limit": 2}, 0, false)
+		if native:
+			_check(native_data.get("ok", false) and native_data.get("result", {}).get("available", false), "Native cached panel source is accessible: " + section)
+		else:
+			_check(native_data.get("code") == "panel_data_unavailable", "Stock editor explicitly reports missing native source: " + section)
+	var list = ItemList.new()
+	list.add_item("One")
+	list.add_item("Two")
+	list.select(1)
+	host.add_child(list)
+	var selected = panel.tools.execute("godot_panel_read", {"handle": str(panel.tools._encode(list)["handle"])}, 0, false)
+	_check(selected.get("result", {}).get("items", []).size() == 2 and selected["result"]["items"][1]["selected"], "Editor list snapshots retain selection while staying read-only")
+	for section in ["inspector", "selection", "audio_buses"]:
+		var observed_public = panel.tools.execute("godot_panel_data", {"section": section, "limit": 2}, 0, false)
+		_check(observed_public.get("ok", false) and observed_public["result"].get("available", false), "Public editor panel source is readable: " + section)
+	var player = AnimationPlayer.new()
+	host.add_child(player)
+	var library = AnimationLibrary.new()
+	var animation = Animation.new()
+	var track = animation.add_track(Animation.TYPE_VALUE)
+	animation.track_set_path(track, NodePath(".:position"))
+	animation.track_insert_key(track, 0.0, Vector2.ZERO)
+	animation.track_insert_key(track, 1.0, Vector2.ONE)
+	library.add_animation("clip", animation)
+	player.add_animation_library("", library)
+	var player_handle = str(panel.tools._encode(player)["handle"])
+	var animated = panel.tools.execute("godot_panel_data", {"section": "animation", "handle": player_handle, "animation": "clip", "track": 0, "offset": 1, "limit": 1}, 0, false)
+	_check(animated.get("ok", false) and animated["result"]["total"] == 2 and animated["result"]["items"][0]["time"] == 1.0 and not player.is_playing(), "Animation keys are paged from the real resource without starting playback")
+	var data = {"inventory": catalog, "tree": observed, "cell": detail, "native": native}
+	panel.Common.atomic_json(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("panel-access.json"), data)
+	host.free()
+
+func _native_debugger_tests() -> void:
+	# Real remote-game errors: no simulation and no dependency on the AI runtime RPC.
+	var script_path = "res://ai_test_debugger_errors.gd"
+	var scene_path = "res://ai_test_debugger_errors.tscn"
+	var clean_path = "res://ai_test_debugger_clean.tscn"
+	var file = FileAccess.open(script_path, FileAccess.WRITE)
+	file.store_string('extends Node\nfunc _ready():\n\tpush_error("AI_NATIVE_DEBUGGER_ERROR")\n\tpush_warning("AI_NATIVE_DEBUGGER_WARNING")\n')
+	file.close()
+	file = FileAccess.open(scene_path, FileAccess.WRITE)
+	file.store_string('[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://ai_test_debugger_errors.gd" id="1"]\n[node name="DebuggerProbe" type="Node"]\nscript = ExtResource("1")\n')
+	file.close()
+	file = FileAccess.open(clean_path, FileAccess.WRITE)
+	file.store_string('[gd_scene format=3]\n[node name="CleanDebuggerProbe" type="Node"]\n')
+	file.close()
+	EditorInterface.get_resource_filesystem().scan()
+	await get_tree().process_frame
+	while EditorInterface.get_resource_filesystem().is_scanning(): await get_tree().process_frame
+	var docks = EditorInterface.get_base_control().find_children("*", "EditorDebuggerNode", true, false)
+	var was_visible = not docks.is_empty() and docks[0].visible
+	if not docks.is_empty(): docks[0].hide()
+	EditorInterface.play_custom_scene(scene_path)
+	var observed = {}
+	var errors = []
+	var deadline = Time.get_ticks_msec() + 12000
+	while Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.1).timeout
+		if not docks.is_empty(): docks[0].hide()
+		observed = panel.tools.execute("godot_debugger", {}, 0, false)
+		errors = observed.get("result", {}).get("events", []).filter(func(item: Dictionary) -> bool: return str(item.get("message", "")).contains("AI_NATIVE_DEBUGGER_"))
+		if errors.size() == 2: break
+	_check(errors.size() == 2, "Native Debugger reads real remote error and warning while its panel is hidden")
+	_check(errors.any(func(item: Dictionary) -> bool: return item.get("severity") == "error" and item.get("stack", []).any(func(frame: Dictionary) -> bool: return frame.get("path") == script_path and frame.get("line") == 3)), "Native Debugger preserves the original remote script stack and line")
+	var console = panel.tools.execute("godot_output", {}, 0, false)
+	_check("AI_NATIVE_DEBUGGER_ERROR" in "\n".join(console.get("result", [])), "Legacy console tool includes the real hidden Debugger error")
+	var diagnostics = await panel._project_observe("godot_diagnostics", {"path": script_path, "limit": 100})
+	_check(diagnostics.get("result", {}).get("collection", {}).get("debugger_available", false) and diagnostics.get("result", {}).get("issues", []).any(func(item: Dictionary) -> bool: return item.get("source") == "debugger" and str(item.get("message", "")).contains("AI_NATIVE_DEBUGGER_ERROR")), "Unified diagnostics include real native Debugger rows")
+	EditorInterface.stop_playing_scene()
+	await get_tree().create_timer(0.5).timeout
+	var stopped = panel.tools.execute("godot_debugger", {}, 0, false)
+	_check(stopped.get("result", {}).get("events", []).any(func(item: Dictionary) -> bool: return str(item.get("message", "")).contains("AI_NATIVE_DEBUGGER_ERROR") and not item.get("active", true)), "Stopped games retain accessible native Debugger errors with stopped provenance")
+	EditorInterface.play_custom_scene(clean_path)
+	deadline = Time.get_ticks_msec() + 12000
+	var active = []
+	while Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.1).timeout
+		observed = panel.tools.execute("godot_debugger", {}, 0, false)
+		active = observed.get("result", {}).get("sessions", []).filter(func(item: Dictionary) -> bool: return item.get("active", false))
+		if not active.is_empty(): break
+	_check(not active.is_empty() and active.all(func(item: Dictionary) -> bool: return item.get("errors", -1) == 0 and item.get("warnings", -1) == 0), "New clean game session resets the previous run's native error list")
+	if not active.is_empty() and not errors.is_empty():
+		_check(active[0].get("session") != errors[0].get("session") or active[0].get("generation", 0) > errors[0].get("generation", 0), "New sessions expose distinct provenance rather than reusing old clean evidence")
+	EditorInterface.stop_playing_scene()
+	await get_tree().create_timer(0.3).timeout
+	if was_visible and not docks.is_empty(): docks[0].show()
+	for path in [script_path, scene_path, clean_path]: DirAccess.remove_absolute(path)
+
+func _change_set_editor_tests() -> void:
+	var previous_definitions = panel.active_definitions
+	var previous_mode = panel.mode_picker.selected
+	var previous_control = panel.full_control.button_pressed
+	var previous_turn = panel.tools.turn_id
+	var previous_plan = panel.planner.snapshot()
+	var previous_mutations = panel.turn_has_mutations
+	panel.active_definitions = panel.tools.definitions() + panel._agent_definitions()
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.cancel = {"cancelled": false}
+	panel.verification.reset()
+	panel.planner.reset("changeset-fixture")
+	panel.tools.turn_id = "changeset-fixture"
+	var base = "res://ai_test_batch/" + panel.Common.uid()
+	var one = base.path_join("one.txt")
+	var two = base.path_join("two.txt")
+	var changes = [{"path": one, "action": "write", "expected_sha256": "missing", "text": "ready\n"}, {"path": two, "action": "write", "expected_sha256": "missing", "text": "dependent\n"}]
+	var declared = await panel._execute_call("task_update", {"tasks": [{"step": "Write two dependent files", "status": "in_progress"}], "phase": "executing", "criteria": [{"id": "batch", "description": "Saved first member is ready", "kind": "inspection", "paths": [one], "check": {"pointer": "/lines/0/text", "op": "eq", "expected": "ready"}}]})
+	_check(declared.get("ok", false), "A coordinated edit starts with a concrete acceptance criterion")
+	var prepared = await panel._execute_call("godot_changes_prepare", {"changes": changes})
+	_check(prepared.get("ok", false) and not FileAccess.file_exists(one), "Panel routes preparation without writing project files")
+	var id = str(prepared.get("result", {}).get("id", ""))
+	panel.mode_picker.select(2)
+	var denied = await panel._execute_call("godot_changes_apply", {"id": id})
+	_check(not denied.get("ok", false) and not FileAccess.file_exists(one), "Plan mode cannot apply a privately prepared set")
+	panel.mode_picker.select(1)
+	var applied = await panel._execute_call("godot_changes_apply", {"id": id})
+	_check(applied.get("ok", false) and FileAccess.get_file_as_string(two) == "dependent\n", "Panel applies both staged outputs through the coordinated executor")
+	_check(panel.project_knowledge.dirty and panel.turn_has_mutations, "Coordinated writes invalidate project knowledge and require fresh verification")
+	var observed = await panel._execute_call("godot_read_range", {"path": one})
+	var proof = str(observed.get("verification_evidence", {}).get("id", ""))
+	_check((await panel._execute_call("task_check", {"criterion": "batch", "evidence": [proof]})).get("ok", false), "Fresh source inspection verifies a real coordinated output")
+	var followup = [{"path": one, "action": "write", "expected_sha256": "ready\n".sha256_text(), "text": "changed\n"}, {"path": two, "action": "write", "expected_sha256": "dependent\n".sha256_text(), "text": "also changed\n"}]
+	var cancelled_set = await panel._execute_call("godot_changes_prepare", {"changes": followup})
+	_check(panel.verification.passed.has("batch"), "Private preparation preserves existing acceptance evidence")
+	var frames = [0]
+	var on_frame = func() -> void:
+		frames[0] += 1
+		if frames[0] == 2: panel.cancel["cancelled"] = true
+	get_tree().process_frame.connect(on_frame)
+	var cancelled_apply = await panel._execute_call("godot_changes_apply", {"id": cancelled_set["result"]["id"]})
+	get_tree().process_frame.disconnect(on_frame)
+	panel.cancel = {"cancelled": false}
+	_check(cancelled_apply.get("code") == "cancelled" and cancelled_apply["result"]["state"] == "rolled_back" and FileAccess.get_file_as_string(one) == "ready\n", "The real panel compensates a Stop after a partial coordinated write")
+	_check(panel.verification.passed.is_empty(), "A failed apply invalidates old evidence even when compensation restores the same bytes")
+	observed = await panel._execute_call("godot_read_range", {"path": one})
+	await panel._execute_call("task_check", {"criterion": "batch", "evidence": [str(observed.get("verification_evidence", {}).get("id", ""))]})
+	_check(panel.tools.change_preview(id, true).contains("-ready"), "Rollback review shows the actual reverse diff rather than proposing the staged edit again")
+	var restored = await panel._execute_call("godot_changes_rollback", {"id": id})
+	_check(restored.get("ok", false) and not FileAccess.file_exists(one) and not FileAccess.file_exists(two), "Panel rollback removes only the two created members")
+	_check(not panel._completion_problem().is_empty(), "Rollback invalidates the acceptance proof collected before restoration")
+	var prepared_again = await panel._execute_call("godot_changes_prepare", {"changes": changes})
+	id = str(prepared_again.get("result", {}).get("id", ""))
+	await panel._execute_call("godot_changes_apply", {"id": id})
+	var turn_restored = panel.tools.restore_turn("changeset-fixture")
+	_check(turn_restored.get("ok", false) and not FileAccess.file_exists(one), "The existing Restore turn action includes coordinated file writes")
+	var inspected = await panel._execute_call("godot_changes_status", {"id": id})
+	_check(inspected.get("ok", false) and inspected["result"]["files"][0]["position"] == "before", "Status reconciles real disk state after a separate turn restore")
+	var staged_review = await panel._execute_call("godot_changes_prepare", {"changes": changes})
+	id = staged_review["result"]["id"]
+	var was_embedded = get_tree().root.gui_embed_subwindows
+	get_tree().root.gui_embed_subwindows = true
+	panel.approval_pending = true
+	panel._show_approval({"name": "godot_changes_apply", "risk": "write"}, {"id": id})
+	for frame in range(3): await get_tree().process_frame
+	_check(panel.approval_details.text.contains(one) and panel.approval_details.text.contains(two) and panel.approval_details.text.contains("+ready"), "Approval displays the actual multi-file diffs instead of only an opaque set ID")
+	_check(panel.approval_dialog.visible and panel.approval_dialog.size.x <= get_tree().root.size.x, "The actual coordinated approval dialog fits the rendered viewport")
+	_check(not panel.approval_hunk_scroll.visible, "Dependent file sets are reviewed together without unsafe partial-hunk application")
+	_check(panel._running_tool_label("godot_changes_apply") == "Running Coordinated File Editor Tool", "Activity identifies coordinated file editing explicitly")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty():
+		await RenderingServer.frame_post_draw
+		panel.approval_dialog.get_texture().get_image().save_png(output.path_join("changeset-approval.png"))
+		get_tree().root.get_texture().get_image().save_png(output.path_join("changeset-editor.png"))
+		panel.Common.atomic_json(output.path_join("changeset-state.json"), inspected)
+	panel.approval_pending = false
+	panel.approval_dialog.hide()
+	get_tree().root.gui_embed_subwindows = was_embedded
+	panel.active_definitions = previous_definitions
+	panel.mode_picker.select(previous_mode)
+	panel.full_control.button_pressed = previous_control
+	panel.tools.turn_id = previous_turn
+	panel.planner.restore(previous_plan)
+	panel.turn_has_mutations = previous_mutations
+	panel.verification.reset()
+
+func _intelligence_editor_tests() -> void:
+	var previous_definitions = panel.active_definitions
+	var previous_mode = panel.mode_picker.selected
+	var previous_control = panel.full_control.button_pressed
+	var previous_plan = panel.planner.snapshot()
+	var previous_mutations = panel.turn_has_mutations
+	panel.active_definitions = panel.tools.definitions() + panel._agent_definitions()
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.cancel = {"cancelled": false}
+	panel.verification.reset()
+	panel.planner.reset("intelligence-fixture")
+	var path = "res://ai_test_acceptance.txt"
+	var criteria = [{"id": "content", "description": "Saved content is ready", "kind": "inspection", "paths": [path], "check": {"pointer": "/lines/0/text", "op": "eq", "expected": "ready"}}]
+	var declared = await panel._execute_call("task_update", {"tasks": [{"step": "Write and verify content", "status": "in_progress"}], "phase": "executing", "criteria": criteria})
+	_check(declared.get("ok", false) and panel.verification.criteria.size() == 1, "A real task_update declares concrete acceptance requirements")
+	var written = await panel._execute_call("godot_write_file", {"path": path, "text": "ready\n"})
+	_check(written.get("ok", false) and panel.project_knowledge.dirty and panel.verification.passed.is_empty(), "Actual project writes invalidate knowledge and acceptance evidence")
+	panel.turn_has_mutations = true
+	_check(not panel._completion_problem().is_empty(), "Final-answer settlement remains blocked until the declared requirement is verified")
+	var mapped = await panel._execute_call("godot_project_map", {"path": "res://", "limit": 3})
+	_check(mapped.get("ok", false) and not mapped["result"]["stale"] and panel.project_knowledge.state["files"].size() > 0, "The agent tool refreshes and persists the actual project map")
+	var observed = await panel._execute_call("godot_read_range", {"path": path})
+	var proof = str(observed.get("verification_evidence", {}).get("id", ""))
+	_check(not proof.is_empty(), "A real file inspection issues executor-owned acceptance evidence")
+	var checked = await panel._execute_call("task_check", {"criterion": "content", "evidence": [proof]})
+	_check(checked.get("ok", false) and panel._completion_problem().is_empty(), "The actual saved content satisfies the declared JSON-pointer assertion")
+	var completed = await panel._execute_call("task_update", {"tasks": [{"step": "Write and verify content", "status": "completed"}], "phase": "completed", "verification": "Actual content inspected"})
+	_check(completed.get("ok", false), "A completed plan is accepted only after matching criterion evidence")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty():
+		for frame in range(2): await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_tree().root.get_texture().get_image().save_png(output.path_join("acceptance-verified.png"))
+		panel.Common.atomic_json(output.path_join("acceptance-verified.json"), {"plan": panel.planner.snapshot(), "verification": panel.verification.snapshot(), "map": panel.project_knowledge.summary()})
+	panel.plugin.get_undo_redo().version_changed.emit()
+	_check(not panel._completion_problem().is_empty(), "Editor Undo/Redo version changes invalidate observations of unsaved scene state")
+	observed = await panel._execute_call("godot_read_range", {"path": path})
+	checked = await panel._execute_call("task_check", {"criterion": "content", "evidence": [str(observed["verification_evidence"]["id"])]})
+	_check(checked.get("ok", false), "Fresh scoped evidence can revalidate a criterion after an editor change")
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_string("changed externally\n")
+	file.close()
+	_check(not panel._completion_problem().is_empty(), "An external file edit invalidates an already completed criterion by hash")
+	var diagnostics = await panel._execute_call("godot_diagnostics", {"path": path, "limit": 5})
+	_check(diagnostics.get("ok", false) and diagnostics["result"].has("collection") and diagnostics["result"]["collection"]["parser_available"] == panel.plugin.has_method("script_diagnostics"), "Unified diagnostics report actual parser availability and observed source coverage")
+	_check(diagnostics.get("result", {}).get("collection", {}).get("debugger_available", false) == panel.plugin.has_method("debugger_snapshot"), "Unified diagnostics explicitly report native Debugger availability")
+	await _debugger_editor_tests()
+	panel.verification.reset()
+	panel.planner.restore(previous_plan)
+	panel.turn_has_mutations = previous_mutations
+	panel.active_definitions = previous_definitions
+	panel.mode_picker.select(previous_mode)
+	panel.full_control.button_pressed = previous_control
+	DirAccess.remove_absolute(path)
 
 func _fixture_file_approval(args: Dictionary, results: Dictionary) -> void:
 	results["accepted"] = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
@@ -626,6 +1116,12 @@ func _fixture_file_approval(args: Dictionary, results: Dictionary) -> void:
 func _fixture_sequential_approvals(args: Dictionary, results: Dictionary) -> void:
 	results["first"] = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
 	results["second"] = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
+
+func _fixture_patch_execution(args: Dictionary, results: Dictionary) -> void:
+	results["executed"] = await panel._execute_call("godot_apply_patch", args)
+
+func _fixture_write_execution(args: Dictionary, results: Dictionary) -> void:
+	results["executed"] = await panel._execute_call("godot_write_file", args)
 
 func _approval_geometry(label: String) -> void:
 	var dialog: Window = panel.approval_dialog
@@ -725,6 +1221,80 @@ func _approval_dialog_tests(output: String) -> void:
 	_check("godot_write_file" in panel.always_label.text, "General settings lists the operations granted with Permite mereu")
 	panel._clear_always_permissions()
 	_check(panel.always_allowed.is_empty() and panel.always_clear.disabled and panel.always_label.text.contains("nicio operație"), "Revoking clears the session grants and restores the empty state")
+	# Hunk-level review: only checked modifications reach the write arguments.
+	var review_path = "res://ai_test_review_board.txt"
+	var seed = FileAccess.open(review_path, FileAccess.WRITE)
+	seed.store_string("alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\ntheta\niota\nkappa\nlambda\nmu\n")
+	seed.close()
+	var partial = {"path": review_path, "text": "alpha\nBETA\ngamma\ndelta\nepsilon\nzeta\neta\ntheta\niota\nKAPPA\nlambda\nmu\n"}
+	var partial_result = {}
+	_fixture_file_approval.call_deferred(partial, partial_result)
+	for frame in range(4): await get_tree().process_frame
+	_check(panel.approval_hunk_checks.size() == 2 and panel.approval_hunk_scroll.is_visible_in_tree(), "Existing-file proposals expose every diff hunk as an independent review control")
+	_approval_geometry("Hunk review")
+	panel.approval_hunk_checks[0].button_pressed = false
+	panel.approval_hunk_checks[1].button_pressed = false
+	await get_tree().process_frame
+	_approval_geometry("Hunk review without selection")
+	_check(panel.approval_dialog.get_ok_button().disabled and panel.approval_hunk_summary.text.begins_with("0 din 2"), "Approval is blocked while no hunk is selected")
+	panel.approval_dialog.get_ok_button().pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(panel.approval_pending and panel.approval_dialog.visible, "Pressing the disabled approval cannot discard every hunk")
+	_check(panel.approval_always.disabled, "Permite mereu is blocked while no hunk is selected")
+	panel.approval_always.pressed.emit()
+	await get_tree().process_frame
+	_check(not panel.always_allowed.has("godot_write_file") and panel.approval_pending, "Permite mereu cannot grant the tool without an approved hunk")
+	panel.approval_hunk_checks[0].button_pressed = true
+	panel.approval_dialog.get_ok_button().pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(partial_result.get("accepted", false) and partial.text == "alpha\nBETA\ngamma\ndelta\nepsilon\nzeta\neta\ntheta\niota\nkappa\nlambda\nmu\n", "Only the checked hunk is written; unchecked changes keep the original lines")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(review_path))
+	# Apply-patch approvals reuse the review and execute only the checked hunks.
+	var patch_path = "res://ai_test_review_patch.txt"
+	var patch_before = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n"
+	seed = FileAccess.open(patch_path, FileAccess.WRITE)
+	seed.store_string(patch_before)
+	seed.close()
+	var original_definitions = panel.active_definitions
+	panel.active_definitions = panel.tools.definitions()
+	var patch_args = {"path": patch_path, "expected_sha256": patch_before.sha256_text(), "edits": [{"old_text": "two\n", "new_text": "TWO\n"}, {"old_text": "ten\n", "new_text": "TEN\n"}], "dry_run": false}
+	var requested_patch = patch_args.duplicate(true)
+	var patch_result = {}
+	_fixture_patch_execution.call_deferred(patch_args, patch_result)
+	for frame in range(4): await get_tree().process_frame
+	_check(panel.approval_hunk_checks.size() == 2, "Apply-patch approvals reuse the same hunk review controls")
+	panel.approval_hunk_checks[1].button_pressed = false
+	for frame in range(3): await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	_approval_geometry("Partial patch review")
+	if not output.is_empty():
+		panel.approval_dialog.get_texture().get_image().save_png(output.path_join("approval-partial.png"))
+		root.get_texture().get_image().save_png(output.path_join("approval-partial-editor.png"))
+		var geometry = {"size": panel.approval_dialog.size, "position": panel.approval_dialog.position, "factor": panel.approval_dialog.content_scale_factor, "texture": panel.approval_dialog.get_texture().get_size(), "details": panel.approval_details.get_global_rect(), "buttons": []}
+		for button in [panel.approval_dialog.get_ok_button(), panel.approval_dialog.get_cancel_button(), panel.approval_always]: geometry["buttons"].append({"text": button.text, "rect": button.get_global_rect()})
+		panel.Common.atomic_json(output.path_join("approval-partial-geometry.json"), panel.Common.json_safe(geometry))
+	panel.approval_dialog.get_ok_button().pressed.emit()
+	for frame in range(4): await get_tree().process_frame
+	_check(patch_result.get("executed", {}).get("ok", false) and FileAccess.get_file_as_string(patch_path) == "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n", "Rejecting a patch hunk writes the remaining changes and keeps the original line")
+	var decision: Dictionary = patch_result.get("executed", {}).get("approval", {})
+	_check(patch_args == requested_patch and decision.get("partial", false) and decision.get("selected_hunks") == [1] and decision.get("rejected_hunks") == [2], "A real partial patch leaves the requested arguments intact and returns the effective approval to the model")
+	_check(decision.get("requested_sha256") == patch_before.replace("two\n", "TWO\n").replace("ten\n", "TEN\n").sha256_text() and decision.get("approved_sha256") == FileAccess.get_file_as_string(patch_path).sha256_text(), "Partial approval hashes distinguish the requested proposal from the actual saved content")
+	seed = FileAccess.open(patch_path, FileAccess.WRITE)
+	seed.store_string(patch_before)
+	seed.close()
+	var write_args = {"path": patch_path, "text": patch_before.replace("two\n", "TWO\n").replace("ten\n", "TEN\n")}
+	var requested_write = write_args.duplicate(true)
+	var write_result = {}
+	_fixture_write_execution.call_deferred(write_args, write_result)
+	for frame in range(4): await get_tree().process_frame
+	panel.approval_hunk_checks[0].button_pressed = false
+	panel.approval_dialog.get_ok_button().pressed.emit()
+	for frame in range(4): await get_tree().process_frame
+	decision = write_result.get("executed", {}).get("approval", {})
+	_check(write_result.get("executed", {}).get("ok", false) and write_args == requested_write and FileAccess.get_file_as_string(patch_path) == patch_before.replace("ten\n", "TEN\n"), "A real reviewed write applies only the second hunk without mutating the original request")
+	_check(decision.get("partial", false) and decision.get("selected_hunks") == [2] and decision.get("rejected_hunks") == [1] and decision.get("approved_sha256") == FileAccess.get_file_as_string(patch_path).sha256_text(), "Reviewed write results tell the model exactly which hunk was rejected and which content was approved")
+	panel.active_definitions = original_definitions
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(patch_path))
 	root.gui_embed_subwindows = was_embedded
 
 func _reflection_tool_tests(scene: Node) -> void:
@@ -770,12 +1340,12 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel.mode_picker.select(1)
 	panel.full_control.button_pressed = true
 	await panel._start_chat("Create the fixture node and verify the tool result")
-	_check(not panel.busy and panel.harness.state == "completed" and service.requests == 3 and scene.get_node_or_null("HarnessProbe") != null, "Native harness discovers a tool, connects chat/model and edits the scene")
-	_check(panel.history.size() == 6 and panel.history[2].get("role") == "tool" and panel.history[-1].get("content") == "Verificat în editor.", "Harness preserves discovery, tool turn and streamed assistant message")
+	_check(not panel.busy and panel.harness.state == "completed" and service.requests == 6 and scene.get_node_or_null("HarnessProbe") != null, "Native harness discovers a tool, connects chat/model and edits the scene")
+	_check(panel.history.size() == 13 and panel.history[2].get("role") == "tool" and panel.history[-1].get("content") == "Verificat în editor.", "Harness preserves discovery, tool turn and streamed assistant message")
 	var snapshot: Dictionary = embedded["common"].read_json(panel.project_directory.path_join("runs").path_join(panel.current_turn + ".json"), {})
-	_check(snapshot.get("status") == "completed" and snapshot.get("tool_calls") == 1, "Harness saves its settled run in private project storage")
+	_check(snapshot.get("status") == "completed" and snapshot.get("tool_calls") == 5, "Harness saves its settled run in private project storage")
 	var journal_results = panel.journal.filter(func(item: Dictionary) -> bool: return item.get("turn_id") == panel.current_turn and item.get("tool") == "agent_tool_result")
-	_check(journal_results.size() == 2 and journal_results[-1].get("arguments", {}).get("call_id") == service.call_id and journal_results[-1].get("arguments", {}).get("executed", false) and journal_results[-1].get("arguments", {}).get("duration_ms", -1) >= 0, "Activity journal correlates discovery and execution by call ID and records timing")
+	_check(journal_results.size() == 6 and journal_results.any(func(item: Dictionary) -> bool: return item.get("arguments", {}).get("call_id") == service.call_id) and journal_results[-1].get("arguments", {}).get("executed", false) and journal_results[-1].get("arguments", {}).get("duration_ms", -1) >= 0, "Activity journal correlates discovery and execution by call ID and records timing")
 	panel.tools.execute("godot_undo", {}, 2, true)
 	_check(scene.get_node_or_null("HarnessProbe") == null, "Harness scene mutation remains compatible with native Undo")
 	panel._new_conversation()
@@ -830,9 +1400,9 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel.providers = planning_service
 	await panel._start_chat("Pregătește un plan, creează nodul și verifică rezultatul")
 	_check(panel.mode_picker.item_count == 3 and panel.mode_picker.get_item_text(0) == "Auto" and panel.mode_picker.get_item_text(1) == "Default" and panel.mode_picker.get_item_text(2) == "Plan", "Auto, Default and Plan are exposed as work modes")
-	_check(planning_service.requests == 10 and panel.harness.state == "completed" and scene.get_node_or_null("PlannedProbe") != null, "Auto continues a proposed execution plan and completes real scene edits")
+	_check(planning_service.requests == 11 and panel.harness.state == "completed" and scene.get_node_or_null("PlannedProbe") != null, "Auto continues a proposed execution plan and completes real scene edits")
 	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_create_node" and "plan_read_only" in str(item.get("content", ""))), "Planning blocks project writes before the explicit execution phase")
-	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_scene_tree" and "PlannedProbe" in str(item.get("content", ""))), "The verification phase inspects the actual modified scene")
+	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_get" and "PlannedProbe" in str(item.get("content", ""))) and panel.verification.passed.has("node"), "The verification phase inspects the modified node and checks the declared criterion")
 	_check(panel.planner.phase == "completed" and panel.history[-1].get("plan_snapshot", {}).get("phase") == "completed", "Completed plan state is saved with the conversation")
 	panel._render_history()
 	_check(panel.chat.plan_cards.size() == 1 and panel.chat.plan_cards[panel.current_turn]["toggle"].text.contains("2/2"), "Conversation restore shows one updated plan card with completed steps")
@@ -893,8 +1463,13 @@ func _code_tool_tests() -> void:
 	print("AI code tools: patch, recovery and diagnostics")
 	var path = "res://ai_patch_probe.gd"
 	var source = "extends Node\nvar patch_value = 1 # română 🐦\n"
+	var has_bridge = panel.plugin.has_method("script_diagnostics")
 	var created = panel.tools.execute("godot_write_file", {"path": path, "text": source}, 2, true)
 	_check(created.get("ok", false), "Create an isolated patch fixture with normal file recovery")
+	if has_bridge:
+		_check(created.get("result", {}).get("syntax", {}).get("valid", false), "A successful GDScript write returns its automatic syntax verdict")
+	else:
+		_check(not created.get("result", {}).has("syntax"), "Without the native bridge a write reports no invented syntax verdict")
 	var read = panel.tools.execute("godot_read_range", {"path": path, "start_line": 2, "end_line": 2}, 0, false)
 	_check(read.get("ok", false) and read["result"]["lines"][0]["line"] == 2 and read["result"]["sha256"] == source.sha256_text(), "Read ranges return exact source hashes and line numbers")
 	var edits = [{"old_text": "patch_value = 1", "new_text": "patch_value = 2"}]
@@ -903,9 +1478,13 @@ func _code_tool_tests() -> void:
 	var preview = panel.tools.execute("godot_apply_patch", args, 2, true)
 	_check(preview.get("result", {}).get("change_preview", [{}])[0].get("state") == "Propus", "Dry-run diff is explicitly proposed rather than applied")
 	_check(preview.get("ok", false) and preview["result"]["dry_run"] and FileAccess.get_file_as_string(path) == source and panel.tools.file_changes.size() == before_count, "Patch preview changes neither file bytes nor recovery history")
+	if has_bridge:
+		_check(preview.get("result", {}).get("syntax", {}).get("valid", false), "A patch preview carries the syntax verdict of the proposed text")
 	args["dry_run"] = false
 	var applied = panel.tools.execute("godot_apply_patch", args, 2, true)
 	_check(applied.get("ok", false) and FileAccess.get_file_as_string(path) == source.replace("value = 1", "value = 2"), "Apply a version-checked exact patch in the real editor")
+	if has_bridge:
+		_check(applied.get("result", {}).get("syntax", {}).get("valid", false), "An applied patch returns the verified syntax of the written file")
 	var stale = panel.tools.execute("godot_apply_patch", args, 2, true)
 	_check(stale.get("code") == "patch_conflict" and FileAccess.get_file_as_string(path) == source.replace("value = 1", "value = 2"), "A stale patch cannot overwrite a newer file")
 	var restored = panel.tools.execute("godot_restore_file", {"index": applied.get("result", {}).get("recovery_index", -1)}, 2, true)
@@ -935,6 +1514,10 @@ func _code_tool_tests() -> void:
 		var invalid = panel.tools.execute("godot_script_diagnostics", {"path": path, "text": "extends Node\nfunc broken(:\n"}, 0, false)
 		_check(invalid.get("ok", false) and not invalid["result"]["valid"] and invalid["result"]["diagnostics"].any(func(item: Dictionary) -> bool: return item.get("severity") == "error" and item.get("line", 0) >= 2), "Native parser returns structured diagnostics for an invalid draft")
 		_check(FileAccess.get_file_as_string(path) == source, "Diagnosing a draft does not save it over the project script")
+		var broken_path = "res://ai_patch_broken.gd"
+		var broken = panel.tools.execute("godot_write_file", {"path": broken_path, "text": "extends Node\nfunc broken(:\n"}, 2, true)
+		_check(broken.get("ok", false) and broken.get("result", {}).get("syntax", {}).get("valid", true) == false and not broken["result"]["syntax"]["errors"].is_empty() and broken["result"]["syntax"]["errors"][0]["line"] >= 2, "A write that leaves unparseable GDScript reports its parse errors instead of failing silently")
+		panel.tools.execute("godot_delete_file", {"path": broken_path}, 2, true)
 	else:
 		_check(diagnostics.get("code") == "native_bridge_unavailable", "Upstream editor explicitly reports the missing native diagnostics bridge")
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
@@ -1273,7 +1856,7 @@ func _activity_drawer_tests() -> void:
 	chat.show_work_plan(snapshot)
 	_check(chat.activity_counter.text == "3/5" and chat.activity_details.visible, "Live plan updates preserve the drawer expansion and advance only confirmed completed steps")
 	panel._harness_event({"kind": "tool_result", "id": "activity-animation", "name": "godot_call", "executed": true, "arguments": {}, "result": {"ok": false, "code": "permission_denied", "error": "Operația nu a fost autorizată."}})
-	_check(JSON.parse_string(panel.journal.back()["result"]).get("code") == "permission_denied" and chat.running_tools.text == "Running Tools · —", "Denied tool results stay in Jurnal and clear the active tool without claiming completion")
+	_check(JSON.parse_string(panel.journal.back()["result"]).get("code") == "permission_denied" and not chat.running_tools.visible, "Denied tool results stay in Jurnal and hide the active tool without claiming completion")
 	snapshot.phase = "paused"
 	chat.show_work_plan(snapshot)
 	chat.finish_work("activity-visual", "cancelled")
@@ -2061,9 +2644,9 @@ func _populated_chat_tests() -> void:
 	await get_tree().create_timer(0.2).timeout
 	_check(is_instance_valid(anchor) and assistant["body"].get_instance_id() == body_id and absf(assistant["card"].size.y - before) < 2, "Completion keeps the same message widgets and layout")
 	_check(not assistant["actions"][0].disabled and assistant["metadata"]["id"] == "visual-answer", "Completed message actions bind to the stored conversation message")
-	_check(panel.chat.running_tools is Label and panel.chat.running_tools.get_child_count() == 0, "Operation history is replaced by a non-expandable Running Tools label")
+	_check(panel.chat.running_tools is Label and not panel.chat.running_tools.visible and panel.chat.running_tools.get_child_count() == 0, "The non-expandable Running Tools row stays hidden after completion")
 	panel.chat.show_running_tool("godot_script_diagnostics")
-	_check(panel.chat.running_tools.text == "Running Tools · godot_script_diagnostics", "Running Tools displays the active tool name")
+	_check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Godot Script Diagnostics Tool" and panel.chat.running_tools.tooltip_text == "godot_script_diagnostics", "Running Tools describes the active tool and retains its exact name in the tooltip")
 	panel.chat.show_running_tool()
 	panel.config["providers"] = [{"id": "visual-provider", "name": "DeepSeek", "issuer": "deepseek", "kind": "chat", "url": "https://api.deepseek.com", "models": [{"id": "visual-code", "name": "Model de probă"}]}]
 	panel._refresh_lists()
@@ -2490,6 +3073,38 @@ func _model_and_control_tests() -> void:
 			key.pressed = true
 			panel.media_view.push_input(key, true)
 			_check(model.touches.is_empty() and model.target == Vector3.ZERO and is_equal_approx(model.distance, model.radius * 3), "Releasing fingers clears navigation and Home resets camera framing")
+			var magnify = InputEventMagnifyGesture.new()
+			magnify.position = point
+			magnify.factor = 1.5
+			panel.media_view.push_input(magnify, true)
+			_check(is_equal_approx(model.distance, model.radius * 2), "Android's native magnify gesture zooms the actual 3D camera in")
+			magnify.factor = 0.5
+			panel.media_view.push_input(magnify, true)
+			_check(is_equal_approx(model.distance, model.radius * 4), "The native pinch gesture also zooms the 3D camera out")
+			var valid_distance = model.distance
+			magnify.factor = 0
+			panel.media_view.push_input(magnify, true)
+			_check(model.distance == valid_distance, "An invalid pinch factor cannot corrupt camera distance")
+			var pan = InputEventPanGesture.new()
+			pan.position = point
+			pan.delta = Vector2(2, -1)
+			panel.media_view.push_input(pan, true)
+			_check(model.target != Vector3.ZERO, "Native pan gestures move the preview camera target")
+			for command in ["zoom_in", "zoom_out"]:
+				var zoom_button = panel.media_view.commands[command]
+				var before = model.distance
+				touch.position = zoom_button.get_global_rect().get_center()
+				touch.pressed = true
+				panel.media_view.push_input(touch, true)
+				touch.pressed = false
+				panel.media_view.push_input(touch, true)
+				_check(zoom_button.visible and (model.distance < before if command == "zoom_in" else model.distance > before), "The visible " + command + " button controls 3D zoom through real window taps")
+			for i in 60: model.command("zoom_out")
+			_check(model.distance <= model.radius * 30, "Repeated zoom-out stays inside the preview camera range")
+			for i in 60: model.command("zoom_in")
+			_check(model.distance >= model.radius * 0.2, "Repeated zoom-in keeps a positive safe camera distance")
+			model.preset("reset")
+			touch.position = point
 			touch.pressed = true
 			panel.media_view.push_input(touch, true)
 			panel.media_view.focus_exited.emit()
