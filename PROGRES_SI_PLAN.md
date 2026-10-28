@@ -12,10 +12,10 @@ drept funcție validată cu un serviciu real.
 
 - Repository: `JDscript1/godot-ai-android`, ramura `ai/android-assistant`.
 - Bază: Godot **4.7.2-stable**; modul propriu `modules/ai_assistant`.
-- APK-ul curent din Download este **`74887a1`**
-  (`74887a1fc49bc2a969ef33c9a9ac1d6f293f6d8e`), livrat la
-  **27.10.2026, 15:52:51 +01:00**, cu implementările AG-01–AG-20 și curățenia
-  codului nefolosit.
+- APK-ul curent din Download este **`1c7c777`**
+  (`1c7c777635507e36431a4e6951a376a46a763161`), livrat la
+  **28.10.2026, 04:04:22 +02:00**, cu implementările AG-01–AG-33 și curățenia
+  codului nefolosit. Instalarea acestei versiuni rămâne la utilizator.
   Include și eliminarea plafonului și aprobările încadrate, anterior numai în surse.
 - APK-ul include **Auto / Default / Plan**, control YOLO, context, dock-uri,
   sunete, Integrări, Skills, Jurnal, AGENT.MD, generare Meshy/Tripo/OpenAI,
@@ -30,7 +30,7 @@ drept funcție validată cu un serviciu real.
 - PRoot propriu, loader-ul ARM64 și baza Debian sunt acum în APK. Panoul
   Runtime Linux oferă utilitare opționale, inclusiv Blender CLI, fără Termux.
 - Livrat cu numele stabil `Godot-AI-Android-arm64-debug.apk`; versiunea
-  `7576033` a fost înlocuită atomic după verificare. În Download rămâne un
+  `74887a1` a fost înlocuită atomic după verificare. În Download rămâne un
   singur APK al fork-ului, cu fișierul SHA-256 actualizat.
 - Compilarea și testele automate au trecut. În runda de stabilitate, două scene
   și mecanicile unui mini-joc au trecut în APK cu DeepSeek real. Atingerea fizică,
@@ -39,25 +39,45 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — recompilare autorizată, 28.10.2026
+## Etapa curentă — APK recompilat și înlocuit în Download, 28.10.2026
 
 Utilizatorul a cerut recompilarea și înlocuirea instalatorului din Download.
-Se pregătește build-ul complet pentru AG-21–AG-33: teste runtime, compilarea
-editorului nativ și compilarea Android ARM64 în fluxul existent al proiectului.
-Sursele corespund copiei verificate local: 537 aserțiuni runtime, 638 verificări
-editor narrow și 68 verificări chat la scalarea telefonului, fără eșecuri.
+Build-ul **`1c7c777`** include AG-21–AG-33: Plan interactiv, playtest măsurabil,
+aprobări de sesiune, compactare tranzacțională adaptată modelului și recuperarea
+chatului, inclusiv coada derulabilă. Toate cele trei joburi ale
+[rundei CI 40617637786](https://github.com/JDscript1/godot-ai-android/actions/runs/40617637786)
+au reușit: runtime, editor nativ compilat și Android ARM64.
 
-Înainte de înlocuire se verifică sursa exactă, semnătura persistentă, pachetul,
-ABI-ul ARM64, scripturile încorporate și baza Linux. APK-ul anterior rămâne
-`74887a1` până la finalizarea verificărilor noului pachet. Dovezile acestei runde
-se păstrează în `.ai-qa/recompile-20261028/`.
+Verificat: **537 aserțiuni runtime / 0 eșecuri**, **641 verificări × 5** în
+editorul upstream și **654 verificări × 5** în editorul nativ compilat. Au trecut
+și probele dedicate native: todo **90/0**, panouri **58/0**, generare **54/0**,
+precum și cele **9 teste companion** și build-ul lui. Aceste probe folosesc
+date și furnizori simulați; nu sunt generări plătite sau testare tactilă Android.
+
+APK-ul are **112.345.138 bytes**, pachetul `com.jdscript.godotai.debug`, ABI
+`arm64-v8a` și SHA-256
+`a9ce6c7949b21ba45dbb067e6fe3e4037ab3ce129cae31096efbd7c5311c9236`.
+Semnătura persistentă a fost verificată, toate cele **30 de scripturi runtime**
+au fost comparate byte cu byte cu sursa exactă, iar manifestele, serviciul,
+PRoot/loader-ul și cele **2.678 fișiere** ale bazei Linux au trecut verificarea.
+Identitatea agentului, Asset Store și asistentului din lista de proiecte este
+prezentă în biblioteca APK-ului.
+
+Înlocuirea a fost atomică, cu checksum actualizat și hash final recitit din
+`/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`. În Download
+rămâne un singur instalator al fork-ului; celelalte descărcări sunt păstrate.
+APK-ul anterior este păstrat privat în
+`.ai-qa/recompile-20261028/previous-installer.apk`. Dovezi:
+`.ai-qa/delivery-1c7c777.json`, `.ai-qa/recompile-20261028/ci-verification.json`,
+`apk-verification.json`, `linux-verification.log` și rapoartele `*-evidence-latest`
+din același director. Noul APK nu a fost instalat automat; acceptarea pe telefon,
+playtest-ul condus de model și consumul real al furnizorilor rămân separate.
 
 Prima rundă, `4addd41`, a compilat APK-ul Android, dar verificarea completă a
 prins un test pe ecran lat care moștenea ascunderea explicită a istoricului din
 proba Plan. Fixture-ul restaurează acum selecția barei laterale înainte de
 verificarea regulii automate. Proba de salvare eșuată blochează doar destinația
-rezumatului, păstrând jurnalul disponibil. Instalatorul anterior nu este înlocuit
-cu un build ale cărui verificări complete au eșuat.
+rezumatului, păstrând jurnalul disponibil. Build-ul primei runde nu a fost livrat.
 Proba locală completă pe ecran lat trece după izolarea fixture-urilor:
 **641 verificări / 0 eșecuri**, fără mesajul de eroare din proba de jurnal.
 
@@ -2631,6 +2651,11 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
+- **28.10.2026:** recompilat și livrat **1c7c777**, cu AG-21–AG-33; 537 aserțiuni
+  runtime, 641 × 5 verificări upstream și 654 × 5 native trecute. APK ARM64 de
+  112.345.138 bytes, semnătura, cele 30 de scripturi și Linux verificate;
+  instalatorul și checksum-ul din Download înlocuite atomic. Instalarea și
+  acceptarea fizică a noilor funcții rămân la utilizator.
 - **27.10.2026:** recompilat și livrat **74887a1**, cu curățenia codului inclusă;
   toate joburile CI trecute, 30 de scripturi și runtime-ul Linux verificate.
   APK-ul **112,300,230 bytes** înlocuiește `7576033` în Download, cu aceeași

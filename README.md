@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40298487521/artifacts/12639626146)
-(GitHub Actions artifact, source `c418f97`, delivered 26 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40617637786/artifacts/12786022441)
+(GitHub Actions artifact, source `1c7c777`, delivered 28 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -34,8 +34,8 @@ its tested source is identified above.
 The harness now [compacts long sessions automatically](docs/AI_HARNESS.md):
 when the sent context nears the model limit or an overflow occurs, it summarizes
 the older range, keeps the newest turn verbatim and persists the summary while
-the full history stays on disk. The switch is in Settings → General. This source
-change awaits a new APK.
+the full history stays on disk. The switch is in Settings → General and is
+included in the linked APK.
 
 Summaries are validated and saved before replacing active context. Long ranges
 are processed in model-sized batches, with output space reserved; failed or
@@ -47,8 +47,8 @@ files changed by the answer and returns its prompt to the composer, while
 messages render as removable cards above the composer, each completed answer
 shows elapsed time, tokens and an estimated cost, persisted reasoning folds into
 a collapsed Thinking block, Find searches the loaded conversation, and 15
-seconds without output shows a stall warning. These changes are in source and
-await a new APK.
+seconds without output shows a stall warning. These changes are included in the
+linked APK.
 
 The queue scrolls within a bounded height so the conversation and composer stay
 visible when many messages are pending.
@@ -56,31 +56,31 @@ visible when many messages are pending.
 Playtest children now probe the running game directly: `playtest_act` measures
 probe expressions before and after held inputs, `playtest_watch` tracks
 expressions and signals, and a per-turn chat console shows the measured evidence
-and verdict. These additions are in source and await a new APK.
+and verdict. These additions are included in the linked APK.
 
 Approvals add a session-scoped **Permite mereu** grant per tool, revocable from
 Settings → General and never bypassing Plan's read-only rule. A completed
 proposal card can hand its exact steps to Auto (**Implementează planul**) or back
 into Plan for editing (**Ajustează**). An independent audit's six playtest
-findings are fixed in source: the C++ bridge passes a syntax check, probes run
+findings are fixed: the C++ bridge compiled for the native editor and Android, probes run
 with `const_calls_only`, Stop cancels an active act with a distinct result, the
 input guard keeps releasing held inputs, expiry reports `timed_out` with
 `until_met=false`, and identical acts are refused only when their measured
-results stop changing. All of this awaits a new APK.
+results stop changing. These fixes are included in the linked APK.
 
 [Interactive Plan](docs/AI_INTERACTIVE_PLAN.md) adds selectable clarification
-questions, custom answers and conversation recovery in the current sources.
-It is tested locally and awaits a new APK delivery.
+questions, custom answers and conversation recovery in the linked APK.
+Automated rendered checks passed; physical touch and live-model choices remain
+separate acceptance tests.
 
 [Installed Android workflow testing](docs/AI_DEVICE_WORKFLOW.md) uses a temporary
 test-project plugin to submit tasks to the actual APK agent and collect its logs,
 without rebuilding or extracting keys. The first physical Runware/Terrain3D probe
 reproduced a result-recovery failure and did not complete the map.
 
-[Automatic agent tariffs](docs/AI_MODEL_PRICING.md) are implemented in source:
+[Automatic agent tariffs](docs/AI_MODEL_PRICING.md) are included in the linked APK:
 key paste discovers models, with input/output token rates, a six-hour public
-price cache, source dates and offline retention. This update is not yet in the
-APK linked above.
+price cache, source dates and offline retention.
 
 The start screen and project editor use the same **AI Assistant** tab name.
 Missing cloud endpoints recover from the selected provider catalog, including
@@ -115,7 +115,7 @@ The direct-provider harness remains in Godot; third-party CLI harness adapters
 and full Blender operation still need separate integration and device validation.
 
 The signed APK's complete Linux package, native service, agent, Asset Store and
-29 embedded scripts were verified before replacing the Download installer.
+30 embedded scripts were verified before replacing the Download installer.
 Python/Node/Git/ripgrep passed real development controls; execution inside the
 installed Godot APK has not yet been physically verified.
 The [older Termux backend](docs/AI_TERMUX_BLENDER.md) remains in source for

@@ -1,7 +1,8 @@
 # TODO — agent și harness
 
-Actualizat: **28.10.2026**. APK livrat și instalat verificat: **74887a1**.
-Implementările AG-01–AG-20 sunt incluse. Bifele de acceptare nu se închid numai
+Actualizat: **28.10.2026**. APK livrat în Download: **1c7c777**, cu AG-01–AG-33.
+Ultima instalare verificată separat: **74887a1**; noul APK nu a fost instalat automat.
+Bifele de acceptare nu se închid numai
 din compilare: gesturile fizice, aprobările și probele reale de workflow se
 confirmă separat. În noua rundă au trecut două scene și un mini-joc cu input
 real prin unelte, inclusiv **46 cereri**. Continue a expus o eroare DeepSeek,
@@ -9,25 +10,33 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
-## Stabilizare după probele reale — surse, încă nelivrate
+## Stabilizare după probele reale — inclusă în APK 1c7c777
+
+Toate schimbările de mai jos sunt compilate și livrate. CI: **537 aserțiuni
+runtime**, **641 × 5** verificări upstream și **654 × 5** native, fără eșecuri.
+Puntea C++ este construită pentru editorul nativ și Android. Semnătura, cele
+30 de scripturi și baza Linux au fost verificate înaintea înlocuirii.
+[Dovadă de compilare](https://github.com/JDscript1/godot-ai-android/actions/runs/40617637786),
+dovadă locală de livrare: `.ai-qa/delivery-1c7c777.json`.
+Acceptările fizice și probele cu furnizori reali rămân deschise unde sunt indicate.
 
 | ID | Constatare și schimbare | Acceptare |
 | --- | --- | --- |
-| AG-21 | Rezultatele mari pierdeau `ok` și ID-urile la trunchiere; rezumatul păstrează contractul și identitatea artefactelor, cu limita măsurată după serializarea JSON. | Regresie reprodusă, fixture verde; de confirmat în APK nou. |
+| AG-21 | Rezultatele mari pierdeau `ok` și ID-urile la trunchiere; rezumatul păstrează contractul și identitatea artefactelor, cu limita măsurată după serializarea JSON. | Regresie reprodusă, fixture verde; inclus în APK 1c7c777, workflow-ul real pe noua versiune rămâne de confirmat. |
 | AG-22 | Inspectarea claselor încărca prea mult context și filtrul `shader\|color` nu avea alternative; paginare stabilă și filtru OR literal. | Acoperirea tuturor paginilor verificată; Node 48.786→7.342 caractere în pagina implicită. Cost live înainte/după încă nemăsurat. |
-| AG-23 | Continue după Stop produce HTTP 400 DeepSeek; notificarea locală era trimisă ca răspuns al modelului. Proveniență explicită, context de aplicație separat, metadata confirmată păstrată inclusiv la ramificare. | Eșec live reprodus; fixture HTTP roșu→verde; reluare DeepSeek real trecută cu adaptor temporar. Livrarea și acceptarea într-un APK nou rămân deschise. |
+| AG-23 | Continue după Stop produce HTTP 400 DeepSeek; notificarea locală era trimisă ca răspuns al modelului. Proveniență explicită, context de aplicație separat, metadata confirmată păstrată inclusiv la ramificare. | Eșec live reprodus; fixture HTTP roșu→verde; reluare DeepSeek real trecută cu adaptor temporar. Livrat în APK 1c7c777; acceptarea live pe noua versiune rămâne deschisă. |
 | AG-24 | Driverul seta YOLO și nu actualiza starea finală pentru Continue din UI. Păstrează permisiunea, actualizează snapshot-ul și colectează JSONL complet. Persistă selecția restaurată la finalul probelor viitoare. | Confirmat pe telefon: permisiune păstrată, starea finală actualizată după Resume și JSONL complet colectat. Ultima persistență a selectorului are verificare de parser; revenirea după restart mai cere o probă. Nu extrage vault-ul sau cheile. |
 | AG-25 | Planul vizibil rămâne pe construcție în timpul verificării, timp de mai multe minute. Instrucțiuni explicite pentru schimbarea pasului și a fazei la încheierea etapei. | Ghidaj în surse; comportamentul implicit pe APK nou încă de evaluat. Nu este o sincronizare automată garantată. |
 | AG-26 | Răspunsuri finale prea lungi, cu proprietăți și coordonate inutile. Implicit trei puncte concise, aproximativ 120 cuvinte, cu limitele materiale păstrate. | Instrucțiuni în surse; respectarea lor în noul APK rămâne de confirmat. |
 | AG-27 | Tap-uri cunoscute și inspecții independente consumă multe runde; sute de mesaje PASS pot ascunde eșecurile în coada Output. Ghidaj pentru gruparea apelurilor și rapoarte compacte cu număr de verificări/eșecuri. | Fără plafon nou de pași; eficiența înainte/după nu este încă măsurată în condiții identice. |
-| AG-28 | Plan interactiv: întrebări cu opțiuni simple/multiple și text propriu în chat; trimitere explicită, ciorne salvate, răspunsuri persistente și reluarea aceleiași sarcini după Stop/întrerupere. | Implementat în surse; selecția și gesturile simulate, refuzul scrierilor, persistența și recuperarea probate în editor. [Raport](docs/AI_INTERACTIVE_PLAN.md). APK, gesturi fizice și alegerea întrebărilor cu un model real rămân deschise. |
-| AG-29 | Playtest măsurabil: `playtest_act` cu intrări ținute, probe înainte/după, `until` și servo; `playtest_watch` pentru expresii și semnale; consolă de dovezi cu verdict în chat. | Implementat în surse; 531 aserțiuni runtime / 0 eșecuri și parse-check Godot 4.7.2 headless. Puntea C++ trece `clang++ -fsyntax-only`, dar nu a fost construită; consola neexercitată pe dispozitiv. [Harness](docs/AI_HARNESS.md). |
-| AG-30 | Aprobări de sesiune cu **Permite mereu** (revocabile din Setări → General, niciodată peste refuzul Plan); predarea planului prin **Implementează planul**/**Ajustează** pe cardul propunerii; corecția celor șase probleme din auditul independent AG-29: compilare C++, probe `const_calls_only`, Stop anulează actul, garda rămâne în procesare, expirarea nu mai raportează `until_met=true`, refuzul repetării după măsurători. | Implementat în surse; runtime 531/0, QA approval 84/0 și todo 88/0, parse-check pe trei scripturi, `clang++ -fsyntax-only` pe punte și probă headless pe regula de repetare (copil și părinte). APK, build nativ și proba playtest pe dispozitiv rămân deschise. |
-| AG-31 | Compactare automată a contextului după fluxul Ziva, rescris independent: prag `limită - rezervă` (16384 implicit, redus la ferestre mici; sub 8192 tokeni compactarea automată nu pornește), păstrare ~20000 tokeni recenți, tăiere pe mesaj de utilizator fără a rezuma ultima cerere, rezumat incremental cu cel anterior, detectarea overflow, persistență, stare anulabilă și comutator în Setări → General. | Implementat în surse; runtime 531/0, QA `compact` 54/0, approval 84/0 și todo 88/0 narrow, scenariul complet narrow 580/0, parse-check pe `panel.gd`. Tura eșuată după overflow nu este reluată automat. APK, proba pe dispozitiv și consumul real de tokeni rămân deschise. |
-| AG-32 | Experiența de chat după inventarul Ziva, doar elementele utile: Undo/Regenerează pe ultimul răspuns încheiat (restaurare fișiere prin jurnal, prompt și atașamente înapoi în composer), coadă vizibilă cu restore/remove/reia, metrici pe tur (durată fără aprobări, tokeni măsurați sau estimați, cost din tarife), blocuri Gândire pliate, căutare în conversație și avertisment după 15 s fără ieșire. | Implementat în surse; runtime 531/0, QA `chat` 62/0, scenariul complet narrow 604/0, todo 88/0, parse-check pe trei scripturi. Regenerează a fost verificat doar pe calea de gardă, nu cu o cerere live; Undo refuză scena pierdută din sesiune. APK, build nativ și proba pe dispozitiv rămân deschise. |
-| AG-33 | Corecțiile auditului: rezumate validate și salvate înaintea schimbării contextului; loturi adaptate modelului, fără omiterea mesajelor lungi sau a rezumatului anterior; rezervă de ieșire și reducerea lotului la overflow; recuperarea rezumatelor vechi goale; coadă derulabilă cu înălțime limitată. | Surse; runtime 537/0, compact narrow 82/0, suita completă narrow 638/0 și chat phone_compact 68/0. Regresii pentru răspuns gol/incomplet, Stop, salvare eșuată, eșec intermediar, istoric lung și 20 de mesaje în coadă. Capturi inspectate; sursele verificate prin hash-uri. APK și proba tactilă rămân deschise. |
+| AG-28 | Plan interactiv: întrebări cu opțiuni simple/multiple și text propriu în chat; trimitere explicită, ciorne salvate, răspunsuri persistente și reluarea aceleiași sarcini după Stop/întrerupere. | Livrat în APK 1c7c777; selecția și gesturile simulate, refuzul scrierilor, persistența și recuperarea probate în editor. [Raport](docs/AI_INTERACTIVE_PLAN.md). Gesturile fizice și alegerea întrebărilor cu un model real rămân deschise. |
+| AG-29 | Playtest măsurabil: `playtest_act` cu intrări ținute, probe înainte/după, `until` și servo; `playtest_watch` pentru expresii și semnale; consolă de dovezi cu verdict în chat. | Livrat în APK 1c7c777; runtime 537/0 și C++ compilat pentru editorul nativ și Android. Consola și playtest-ul condus de model nu sunt încă probate pe noul APK instalat. [Harness](docs/AI_HARNESS.md). |
+| AG-30 | Aprobări de sesiune cu **Permite mereu** (revocabile din Setări → General, niciodată peste refuzul Plan); predarea planului prin **Implementează planul**/**Ajustează** pe cardul propunerii; corecția celor șase probleme din auditul independent AG-29: compilare C++, probe `const_calls_only`, Stop anulează actul, garda rămâne în procesare, expirarea nu mai raportează `until_met=true`, refuzul repetării după măsurători. | Livrat în APK 1c7c777; runtime 537/0, todo nativ 90/0, punte compilată și probă headless pe regula de repetare (copil și părinte). Aprobările fizice și proba playtest pe dispozitiv rămân deschise. |
+| AG-31 | Compactare automată a contextului după fluxul Ziva, rescris independent: prag `limită - rezervă` (16384 implicit, redus la ferestre mici; sub 8192 tokeni compactarea automată nu pornește), păstrare ~20000 tokeni recenți, tăiere pe mesaj de utilizator fără a rezuma ultima cerere, rezumat incremental cu cel anterior, detectarea overflow, persistență, stare anulabilă și comutator în Setări → General. | Livrat în APK 1c7c777, cu regresiile suplimentare AG-33. Tura eșuată după overflow nu este reluată automat. Proba pe dispozitiv și consumul real de tokeni rămân deschise. |
+| AG-32 | Experiența de chat după inventarul Ziva, doar elementele utile: Undo/Regenerează pe ultimul răspuns încheiat (restaurare fișiere prin jurnal, prompt și atașamente înapoi în composer), coadă vizibilă cu restore/remove/reia, metrici pe tur (durată fără aprobări, tokeni măsurați sau estimați, cost din tarife), blocuri Gândire pliate, căutare în conversație și avertisment după 15 s fără ieșire. | Livrat în APK 1c7c777; chat phone_compact 68/0 și editor nativ complet 654/0 × 5. Regenerează a fost verificat doar pe calea de gardă, nu cu o cerere live; Undo refuză scena pierdută din sesiune. Acceptarea fizică și Regenerează live rămân deschise. |
+| AG-33 | Corecțiile auditului: rezumate validate și salvate înaintea schimbării contextului; loturi adaptate modelului, fără omiterea mesajelor lungi sau a rezumatului anterior; rezervă de ieșire și reducerea lotului la overflow; recuperarea rezumatelor vechi goale; coadă derulabilă cu înălțime limitată. | Livrat în APK 1c7c777; runtime 537/0, compact narrow 82/0, suita completă upstream 641/0 × 5 și nativă 654/0 × 5. Regresii pentru răspuns gol/incomplet, Stop, salvare eșuată, eșec intermediar, istoric lung și 20 de mesaje în coadă. Capturi inspectate; 30 de surse comparate exact în APK. Proba tactilă rămâne deschisă. |
 
-Sursele trec **537 aserțiuni runtime**, **638 verificări editor** și
+Sursele trec **537 aserțiuni runtime**, **641 verificări editor upstream × 5** și
 **67 × 5** verificări dedicate Planului interactiv, fără
 eșecuri; cardurile media, întrebările și starea întreruptă inspectate în randări.
 AG-30 adaugă QA narrow **84/0** (approval) și **88/0** (todo), verificarea de
@@ -38,11 +47,12 @@ fără interval nou, eșec fără retry până la următoarea cerere și ferestr
 ignorate. AG-32 adaugă scenariul QA **chat**, narrow **62/0**: gating pe ultimul
 tur, restaurarea unui fișier scris de agent, trunchierea istoricului, coada
 vizibilă, metrici măsurate și estimate, blocuri Gândire, căutare cu wraparound și
-avertismentul de stagnare. Probele de playtest, compactarea și chatul nu au un
-APK. AG-33 adaugă validarea și salvarea tranzacțională a rezumatelor, loturi
+avertismentul de stagnare. Playtest-ul, compactarea și chatul sunt incluse în
+APK-ul 1c7c777. AG-33 adaugă validarea și salvarea tranzacțională a rezumatelor, loturi
 adaptate modelului și coada cu înălțime limitată: compact narrow **82/0**, suita
 completă narrow **638/0**, chat phone_compact **68/0**. Dovezi în
-`.ai-qa/fix-review-20261028/`. Nu există un APK nou pentru AG-21–AG-33. Pragurile ST-01–ST-12 din raport
+`.ai-qa/fix-review-20261028/`. Compilarea și livrarea AG-21–AG-33 sunt documentate
+în `.ai-qa/recompile-20261028/`. Pragurile ST-01–ST-12 din raport
 păstrează distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
 
 ## Aplicare în APK 7576033 — 27.10.2026
@@ -97,7 +107,7 @@ se păstrează pentru reluare, fără a declara sarcina terminată. Timeoutul un
 operații și detectarea unei bucle fără progres nu înlocuiesc plafonul eliminat
 cu altă limită totală de pași.
 
-**Stare:** eliminarea plafonului este inclusă și în APK-ul **74887a1**.
+**Stare:** eliminarea plafonului este inclusă și în APK-ul curent **1c7c777**.
 Confirmare live: mini-joc terminat după **46 cereri** în noua rundă. Reluarea
 după Stop are un blocaj separat, AG-23; nu este o nouă limită de pași.
 
