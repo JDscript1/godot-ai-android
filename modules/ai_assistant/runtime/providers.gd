@@ -270,14 +270,14 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 				if capacity > 0: item["context"] = capacity
 	return Common.success(models)
 
-func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable()) -> Dictionary:
+func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable(), max_output_tokens: int = 0) -> Dictionary:
 	var credential_error = _credential_error(profile)
 	if not credential_error.is_empty(): return Common.failure(credential_error, "credential_type_mismatch")
 	var resolved = endpoint(profile)
 	if not resolved.get("ok", false): return resolved
 	messages = normalize_context(profile, model, messages)
 	var kind = str(profile.get("kind", "chat"))
-	var wire = build_request(kind, messages, tools, model, effort)
+	var wire = build_request(kind, messages, tools, model, effort, max_output_tokens)
 	var path = str(wire["path"])
 	var collected = {"text": "", "reasoning": "", "calls": {}, "blocks": {}, "items": [], "terminal": false, "finish": "", "usage": {}, "error": ""}
 	var receive = func(event: Dictionary) -> void:
@@ -315,7 +315,7 @@ func _credential_error(profile: Dictionary) -> String:
 	if profile.get("kind") != "siwc" and stored is Dictionary and stored.has("access_token"): return "Un cont cu abonament nu poate fi convertit într-o cheie API. Reconectează profilul din Abonamente."
 	return ""
 
-static func build_request(kind: String, messages: Array, tools: Array, model: String, effort: String = "") -> Dictionary:
+static func build_request(kind: String, messages: Array, tools: Array, model: String, effort: String = "", max_output_tokens: int = 0) -> Dictionary:
 	messages = expand_tool_images(application_context(messages))
 	var system = []
 	for message in messages:
@@ -399,6 +399,10 @@ static func build_request(kind: String, messages: Array, tools: Array, model: St
 			body["tools"] = []
 			for tool in tools: body["tools"].append({"type": "function", "function": {"name": tool["name"], "description": tool["description"], "parameters": tool["parameters"]}})
 		if not effort.is_empty(): body["reasoning_effort"] = effort
+	if max_output_tokens > 0:
+		if kind in ["responses", "siwc"]: body["max_output_tokens"] = max_output_tokens
+		elif kind == "gemini": body["generationConfig"] = {"maxOutputTokens": max_output_tokens}
+		else: body["max_tokens"] = max_output_tokens
 	return {"path": path, "body": body}
 
 static func consume_event(kind: String, event: Dictionary, state: Dictionary) -> void:

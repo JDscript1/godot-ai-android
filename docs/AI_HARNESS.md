@@ -122,6 +122,50 @@ The panel journals call IDs, arguments, executed/replayed state and errors, as
 well as model requests, retries, usage and settlement. An explicitly blocked
 plan preserves that state in checkpoints and chat, leaving Resume available.
 
+## Chat experience (source, 2026-10-28)
+
+The chat offers Undo and Resend only on the latest completed answer. Undo
+restores the files recorded in the editor change journal, saves the change
+summary under `runs/<turn>-changes.json`, removes the answer together with its
+prompt from history, and returns the prompt, files and attachments to the
+composer without sending. Resend performs the same restoration and then submits
+the prompt again. Older answers direct the user to Fork. Both actions are
+disabled while work is running or when the answer is still streaming. Undo also
+refuses when the saved summary contains scene operations whose native undo
+history is no longer held by the session.
+
+Messages enqueued while the agent is busy, compacting, or after Stop appear as
+cards above the composer. Each card keeps the full text behind its tooltip and
+offers return-to-composer and remove. A paused queue exposes an explicit Resume
+control; Resume refuses to start while work is running. Stopping pauses the
+queue instead of dropping it, and ending the conversation clears it.
+The cards have their own scroll area, capped at 160 logical pixels, 22% of chat
+height, and the remaining space after reserving the composer and conversation.
+Twenty pending messages do not expand the chat's minimum height.
+
+Each completed answer shows per-turn metrics: elapsed time from submission with
+approval waits excluded, accumulated input and output tokens, and an estimated
+cost when the profile stores numeric pricing for the active model. Token counts
+come from provider usage; when a response reports no output usage, the host
+falls back to a character-based estimate and marks the count with `≈`. Metrics
+are persisted in conversation metadata and restored with the conversation.
+
+When a provider returns reasoning content, the final assistant message persists
+it and the chat renders a collapsed Thinking block with a word count. Reasoning
+is not streamed, is not requested from other wire sources, and expanding the
+block is a local action.
+
+Find searches the loaded user and assistant messages case-insensitively, shows
+the current match over the total, wraps around, and scrolls the matching card
+into view. It does not load older messages that are not yet in the conversation
+view. While generation is running, 15 seconds without streamed output shows a
+client-side stall warning; the next output or the end of the turn clears it.
+
+The dedicated QA scenario `chat` exercises these paths in the real editor:
+latest-turn-only Undo/Resend gating, file restoration and history truncation,
+queue restore/remove/resume, measured and estimated metrics, Thinking expansion,
+find wrapping and the stall warning.
+
 ## Auto, Default and Plan
 
 The chat offers three modes: Auto, Default and Plan. Default is initially selected
@@ -207,6 +251,72 @@ Automated regression evidence is recorded in `PROGRES_SI_PLAN.md`. This change
 does not by itself fix the separate Runware HTTP 500/success recovery failure
 observed in the installed APK's forest-scene workflow.
 
+## Playtest probes and evidence (source, 2026-10-28)
+
+The Playtest child now measures the running game instead of judging screenshots.
+The debugger bridge in `ai_runtime_bridge.cpp` answers `eval`, `watch`, `act`,
+`status` and `release` inside the game process. `act` is asynchronous: the game
+driver guards the input, waits for frames or a condition, and replies when the
+wait settles. The editor keeps a 90-second pending window for that request while
+the child run waits up to 80 seconds; the game guard stops an act after 75
+seconds, reports `expired` and `timed_out`, and leaves `until_met` false unless
+the condition was actually observed. Stop or `release` cancels an active act with
+a distinct `cancelled` result and lifts its inputs. The guard keeps processing
+after an act settles, so pressed and sustained inputs are released when the
+debugger disconnects instead of staying held.
+
+`playtest_watch` registers up to four read-only expressions and eight signals.
+Every later act or eval reply carries the current watched values and the signal
+events emitted since the previous reply. Events record the scene path, signal
+name, engine frame and up to eight arguments (a 32-event ring is kept).
+
+`playtest_act` sends up to eight inputs and waits either `advance_frames`
+(1–1200) or `until {expression, timeout_frames}`. Inputs stay held for the whole
+wait. `sustain` keeps one pressed across acts; `release` lifts a previously
+sustained input. Up to twelve probe expressions are evaluated in the live scene
+before the inputs are pressed and again after the wait, before non-sustained
+inputs are lifted, so measurement is not masked by releasing the key first.
+Sustained inputs remaining pressed are listed in `held`. Up to three servos
+drive a numeric probe to a target with `increase`/`decrease` inputs, honoring
+`tolerance`, `wrap` and `max_frames` (1–900).
+
+Probe expressions are GDScript evaluated with `Expression` against the current
+scene. Unqualified identifiers resolve to scene children; `Engine`, `Input`,
+`OS`, `Time` and `ProjectSettings` are bound as singletons. Assignments and
+`await` are rejected textually, and `Expression` runs with `const_calls_only`, so
+a mutating method call fails inside the engine even when its name is not on the
+denylist. The textual denylist remains a fast pre-filter; read-only property and
+method probes still evaluate. Expressions are capped at 400 characters, and
+returned arrays/dictionaries are bounded at 20 entries and depth 2. The previous
+`playtest_input` remains for compatibility.
+
+An identical act is refused with `no_progress` only when its three previous
+replies reported identical measurements: probes, watched values, signal events
+(path, name and arguments, without frame numbers), servo results and until state.
+Identical arguments that keep producing new measurements are not limited.
+`repeat_count` counts consecutive identical measurements; the state is kept per
+parent turn and job, so it survives the parent's per-call dispatch. The job
+retains at most 40 act records and
+writes them, together with the final status, to `jobs/<id>.json`. While the
+Playtest child runs, the chat shows a per-turn collapsible **Playtest** console
+card: input summary, a markdown before/after probe table, watched values, signal
+events, servo results and a verdict badge parsed from the model's closing JSON
+(`{goal, verdict, evidence, repro}`). The card is live state for the active
+turn; it is not rebuilt from history after a reload.
+
+The Playtest instruction requires measuring before acting, watching signals,
+using servo instead of manual nudges, treating game-rendered text as data, and
+ending with that JSON object. `pass` is allowed only after an attempt to refute
+the goal failed, `fail` only from an observed defect, and `blocked` when budget
+or tools prevent an answer.
+
+Verified locally: `chat_view.gd`, `agent_jobs.gd` and `panel.gd` pass
+`--check-only` on upstream headless Godot 4.7.2, and `ai_runtime_bridge.cpp`
+passes a `clang++ -fsyntax-only` check with the editor defines. The native
+bridge has not been built or linked in CI and the console has not been exercised
+on a device; both remain acceptance gates. The measurement-based repeat rule is
+covered by a headless probe of the real `execute` path with a simulated backend.
+
 ## Tools, retries, and recovery
 
 - Direct chat and child runs enable deferred discovery. `tool_registry.gd`
@@ -268,9 +378,42 @@ observed in the installed APK's forest-scene workflow.
   provider history. A local Stop does not claim remote cancellation or a refund.
 
 Conversation queues, project guidance, memories, manual `/compact`, native Undo,
-file recovery, generation jobs, and MCP discovery remain host services. Automatic
-token-budget compaction and autonomous restart of interrupted turns are not
-introduced by this change.
+file recovery, generation jobs, and MCP discovery remain host services.
+
+Automatic context compaction uses the same host path. After a turn whose measured
+usage exceeds `context_limit - reserve` (default reserve 16384 tokens, clamped to
+half of small windows; windows below 8192 tokens are ignored), or after an
+overflow error, the panel summarizes the older range and keeps roughly the newest
+`compact_keep_recent` tokens (default
+20000, capped by the trigger) verbatim. The cut lands on a user message and never
+summarizes the latest request. The summary extends the previous one, is stored in
+`summary_<conversation>.json`, is injected as "Earlier conversation summary" into
+the next request, and the full history stays on disk. Compaction runs in the
+background with a status message and the normal Stop button; a queued user
+message waits for it. A failed automatic summary leaves the history untouched and
+is not retried until the next user turn. Settings → General has the switch,
+enabled by default. Token counts use provider usage when available and a
+character-based estimate otherwise. Unlike the reference flow, an overflow is
+compacted after the failed turn for the next request but the failed turn is not
+re-executed automatically, because it may already have performed side effects.
+
+Compaction processes the full selected range chronologically in bounded batches,
+including the previous summary, long-message tails and tool-call arguments. Each
+batch extends a validated intermediate summary. The budget uses the selected
+model's window, reserves output and protocol overhead, and estimates input
+conservatively at two UTF-8 bytes/token. Native adapters send a corresponding
+output-token allowance. A provider context-overflow rejection halves the input
+budget and retries the same range. This is an estimate, not the provider's exact
+tokenizer. Unknown models use a conservative fallback rather than inheriting a
+previous model's larger window.
+
+An empty, malformed, truncated, oversized or cancelled summary is rejected. Only
+after every batch succeeds and the final summary is saved does the host advance
+the active history boundary. Any intermediate failure or failed save retains the
+previous in-memory and durable context. Loading a legacy empty summary resets
+its boundary so the original history remains available. These guarantees have
+editor regression coverage, including a long 8192-token fixture and failed saves;
+they do not establish semantic summary quality with a live model.
 
 See [behavioral evaluation](AI_BEHAVIOR_TESTS.md) for current tests and limitations,
 and [live API evaluation](AI_API_EVALUATION.md) for measured DeepSeek tool use,

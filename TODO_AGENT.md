@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **27.10.2026**. APK livrat și instalat verificat: **74887a1**.
+Actualizat: **28.10.2026**. APK livrat și instalat verificat: **74887a1**.
 Implementările AG-01–AG-20 sunt incluse. Bifele de acceptare nu se închid numai
 din compilare: gesturile fizice, aprobările și probele reale de workflow se
 confirmă separat. În noua rundă au trecut două scene și un mini-joc cu input
@@ -21,12 +21,29 @@ repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă
 | AG-26 | Răspunsuri finale prea lungi, cu proprietăți și coordonate inutile. Implicit trei puncte concise, aproximativ 120 cuvinte, cu limitele materiale păstrate. | Instrucțiuni în surse; respectarea lor în noul APK rămâne de confirmat. |
 | AG-27 | Tap-uri cunoscute și inspecții independente consumă multe runde; sute de mesaje PASS pot ascunde eșecurile în coada Output. Ghidaj pentru gruparea apelurilor și rapoarte compacte cu număr de verificări/eșecuri. | Fără plafon nou de pași; eficiența înainte/după nu este încă măsurată în condiții identice. |
 | AG-28 | Plan interactiv: întrebări cu opțiuni simple/multiple și text propriu în chat; trimitere explicită, ciorne salvate, răspunsuri persistente și reluarea aceleiași sarcini după Stop/întrerupere. | Implementat în surse; selecția și gesturile simulate, refuzul scrierilor, persistența și recuperarea probate în editor. [Raport](docs/AI_INTERACTIVE_PLAN.md). APK, gesturi fizice și alegerea întrebărilor cu un model real rămân deschise. |
+| AG-29 | Playtest măsurabil: `playtest_act` cu intrări ținute, probe înainte/după, `until` și servo; `playtest_watch` pentru expresii și semnale; consolă de dovezi cu verdict în chat. | Implementat în surse; 531 aserțiuni runtime / 0 eșecuri și parse-check Godot 4.7.2 headless. Puntea C++ trece `clang++ -fsyntax-only`, dar nu a fost construită; consola neexercitată pe dispozitiv. [Harness](docs/AI_HARNESS.md). |
+| AG-30 | Aprobări de sesiune cu **Permite mereu** (revocabile din Setări → General, niciodată peste refuzul Plan); predarea planului prin **Implementează planul**/**Ajustează** pe cardul propunerii; corecția celor șase probleme din auditul independent AG-29: compilare C++, probe `const_calls_only`, Stop anulează actul, garda rămâne în procesare, expirarea nu mai raportează `until_met=true`, refuzul repetării după măsurători. | Implementat în surse; runtime 531/0, QA approval 84/0 și todo 88/0, parse-check pe trei scripturi, `clang++ -fsyntax-only` pe punte și probă headless pe regula de repetare (copil și părinte). APK, build nativ și proba playtest pe dispozitiv rămân deschise. |
+| AG-31 | Compactare automată a contextului după fluxul Ziva, rescris independent: prag `limită - rezervă` (16384 implicit, redus la ferestre mici; sub 8192 tokeni compactarea automată nu pornește), păstrare ~20000 tokeni recenți, tăiere pe mesaj de utilizator fără a rezuma ultima cerere, rezumat incremental cu cel anterior, detectarea overflow, persistență, stare anulabilă și comutator în Setări → General. | Implementat în surse; runtime 531/0, QA `compact` 54/0, approval 84/0 și todo 88/0 narrow, scenariul complet narrow 580/0, parse-check pe `panel.gd`. Tura eșuată după overflow nu este reluată automat. APK, proba pe dispozitiv și consumul real de tokeni rămân deschise. |
+| AG-32 | Experiența de chat după inventarul Ziva, doar elementele utile: Undo/Regenerează pe ultimul răspuns încheiat (restaurare fișiere prin jurnal, prompt și atașamente înapoi în composer), coadă vizibilă cu restore/remove/reia, metrici pe tur (durată fără aprobări, tokeni măsurați sau estimați, cost din tarife), blocuri Gândire pliate, căutare în conversație și avertisment după 15 s fără ieșire. | Implementat în surse; runtime 531/0, QA `chat` 62/0, scenariul complet narrow 604/0, todo 88/0, parse-check pe trei scripturi. Regenerează a fost verificat doar pe calea de gardă, nu cu o cerere live; Undo refuză scena pierdută din sesiune. APK, build nativ și proba pe dispozitiv rămân deschise. |
+| AG-33 | Corecțiile auditului: rezumate validate și salvate înaintea schimbării contextului; loturi adaptate modelului, fără omiterea mesajelor lungi sau a rezumatului anterior; rezervă de ieșire și reducerea lotului la overflow; recuperarea rezumatelor vechi goale; coadă derulabilă cu înălțime limitată. | Surse; runtime 537/0, compact narrow 82/0, suita completă narrow 638/0 și chat phone_compact 68/0. Regresii pentru răspuns gol/incomplet, Stop, salvare eșuată, eșec intermediar, istoric lung și 20 de mesaje în coadă. Capturi inspectate; sursele verificate prin hash-uri. APK și proba tactilă rămân deschise. |
 
-Sursele trec **531 aserțiuni runtime**, **548 verificări editor** și
+Sursele trec **537 aserțiuni runtime**, **638 verificări editor** și
 **67 × 5** verificări dedicate Planului interactiv, fără
-eșecuri; cardurile media, întrebările și starea întreruptă inspectate în randări. Nu există
-un APK nou pentru AG-21–AG-28. Pragurile ST-01–ST-12 din raport păstrează
-distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
+eșecuri; cardurile media, întrebările și starea întreruptă inspectate în randări.
+AG-30 adaugă QA narrow **84/0** (approval) și **88/0** (todo), verificarea de
+sintaxă C++ și o probă headless pentru regula de repetare. AG-31 adaugă scenariul
+QA **compact**, narrow **54/0**: comutator, prag și rezervă, tăiere pe mesaj de
+utilizator, excluderea ultimei cereri, persistență/restaurare, refuzul compactării
+fără interval nou, eșec fără retry până la următoarea cerere și ferestre mici
+ignorate. AG-32 adaugă scenariul QA **chat**, narrow **62/0**: gating pe ultimul
+tur, restaurarea unui fișier scris de agent, trunchierea istoricului, coada
+vizibilă, metrici măsurate și estimate, blocuri Gândire, căutare cu wraparound și
+avertismentul de stagnare. Probele de playtest, compactarea și chatul nu au un
+APK. AG-33 adaugă validarea și salvarea tranzacțională a rezumatelor, loturi
+adaptate modelului și coada cu înălțime limitată: compact narrow **82/0**, suita
+completă narrow **638/0**, chat phone_compact **68/0**. Dovezi în
+`.ai-qa/fix-review-20261028/`. Nu există un APK nou pentru AG-21–AG-33. Pragurile ST-01–ST-12 din raport
+păstrează distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
 
 ## Aplicare în APK 7576033 — 27.10.2026
 

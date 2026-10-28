@@ -1,6 +1,6 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **27 octombrie 2026**.
+Ultima actualizare: **28 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
@@ -39,7 +39,211 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — Plan interactiv, 27.10.2026
+## Etapa curentă — recompilare autorizată, 28.10.2026
+
+Utilizatorul a cerut recompilarea și înlocuirea instalatorului din Download.
+Se pregătește build-ul complet pentru AG-21–AG-33: teste runtime, compilarea
+editorului nativ și compilarea Android ARM64 în fluxul existent al proiectului.
+Sursele corespund copiei verificate local: 537 aserțiuni runtime, 638 verificări
+editor narrow și 68 verificări chat la scalarea telefonului, fără eșecuri.
+
+Înainte de înlocuire se verifică sursa exactă, semnătura persistentă, pachetul,
+ABI-ul ARM64, scripturile încorporate și baza Linux. APK-ul anterior rămâne
+`74887a1` până la finalizarea verificărilor noului pachet. Dovezile acestei runde
+se păstrează în `.ai-qa/recompile-20261028/`.
+
+## Etapa precedentă — corecțiile auditului de compactare și coadă, 28.10.2026
+
+Implementat în surse **AG-33**, pentru cele trei regresii reproduse în auditul
+`.ai-qa/review-20261028-followup/`. Rezumatele goale, invalide, întrerupte,
+anulate sau prea mari sunt refuzate. Rezumatul și limita istoricului se schimbă
+numai după finalizarea tuturor loturilor și salvarea reușită. Eșecul unui lot
+sau al salvării păstrează contextul anterior în memorie și pe disc. La încărcare,
+un rezumat gol salvat de versiunea veche nu mai ascunde istoricul original.
+
+Rezumarea folosește fereastra modelului selectat, cu rezervă pentru răspuns și
+mesaje de protocol. Istoricul, inclusiv rezumatul anterior, mesajele lungi și
+argumentele uneltelor, este parcurs cronologic în loturi fără omiterea unor
+intervale. Bugetul folosește o estimare conservatoare după UTF-8; o eroare de
+overflow reduce lotul și reîncearcă același interval. Adaptoarele directe primesc
+și limita de ieșire a rezumatului. Limita de pași a agentului nu este schimbată.
+
+Coada are derulare proprie și înălțime limitată în funcție de spațiul disponibil.
+Cu 20 de mesaje, conversația și composer-ul rămân accesibile; ultimul card poate
+fi derulat și eliminat individual. Nu se schimbă mesajele sau atașamentele din
+coadă.
+
+Verificat: runtime **537 aserțiuni / 0 eșecuri**, inclusiv transmiterea limitei
+de ieșire prin HTTP local; QA compact narrow **82/0**, chat narrow **67/0**.
+Pentru fereastra de 8192 tokeni, cel mai mare buget estimat al probei este
+**8182**, inclusiv rezerva de ieșire și protocol. Toate marcajele istoricului
+au ajuns în loturi; istoricul complet și ultima cerere au fost păstrate.
+Captura cu 20 de mesaje în coadă a fost inspectată: conversație de **501 px**,
+coadă de **120 px**, composer complet vizibil. Suita completă pe copia finală
+a surselor: **638/0** narrow; QA chat la scalarea telefonului: **68/0**. În
+această randare, conversația are **188 px**, coada **155 px**, iar ultimul card
+și composer-ul sunt complet accesibile. Înălțimea cozii este rotunjită la pixeli
+întregi, iar cardurile propagă gesturile de derulare. Capturile au fost inspectate.
+Dovezi și hash-uri ale surselor în `.ai-qa/fix-review-20261028/`. Aceste probe
+folosesc furnizori simulați, nu chei
+cloud. Nu a fost compilat sau înlocuit un APK; proba tactilă rămâne separată.
+
+Jurnal: 28.10.2026 — corectate cele trei probleme din audit, cu regresii pentru
+rezumate invalide, Stop, salvare eșuată, loturi lungi și coadă de 20 de mesaje.
+
+## Etapa precedentă — experiența de chat după inventarul Ziva, 28.10.2026
+
+Implementat în surse **AG-32**, cu doar elementele considerate utile din
+inventarul comparativ Ziva–noi. **Undo** și **Regenerează răspunsul** sunt
+disponibile pe ultimul răspuns încheiat: restaurează fișierele prin jurnalul
+execuției, salvează rezumatul modificărilor, elimină răspunsul împreună cu
+promptul lui și readuce promptul, fișierele și atașamentele în composer. Undo
+readuce promptul fără să trimită; Regenerează îl retrimite. Pentru tururile mai
+vechi acțiunea indică ramificarea, iar scena se refuză dacă istoricul nativ de
+Undo al sesiunii s-a pierdut. Mesajele aflate în coadă apar ca un panou compact
+deasupra composer-ului, cu număr, buton **Reia** când coada e oprită și câte un
+card cu textul integral în tooltip, mutare înapoi în composer și scoatere.
+Fiecare răspuns primește o linie de metrici pe tur: durata fără pauzele de
+aprobare, tokenii de ieșire (marcați „≈” când lipsesc datele furnizorului),
+intrarea cumulată în tooltip și costul estimat din tarifele salvate. Blocurile
+**Gândire** apar pliate, numără cuvintele și se deschid la cerere; avertismentul
+de blocare apare după 15 s fără ieșire în timpul generării. **Caută în
+conversație** numără potrivirile fără diferență de majuscule și sare între ele,
+cu încadrare în derulare, fără a încărca anticipat mesaje mai vechi.
+
+Verificat: **531 aserțiuni runtime / 0 eșecuri**; scenariul QA nou `chat`, narrow
+**62/0**, scenariul complet narrow **604/0** (include compactarea și aprobările),
+todo **88/0**; `--check-only` pe `panel.gd`, `chat_view.gd` și `icons.gd` cu Godot
+4.7.2 headless. Testele fixture acoperă gating-ul pe ultimul tur, restaurarea
+reală a unui fișier scris de agent, trunchierea istoricului, coada cu
+restore/remove/reia, metricile măsurate și estimate, blocurile Gândire, căutarea
+cu wraparound și avertismentul de stagnare. Regenerează a fost verificat doar pe
+calea de gardă, nu printr-o cerere live; APK-ul, build-ul nativ și proba pe
+dispozitiv rămân deschise. Nu există un APK nou.
+
+Jurnal: 28.10.2026 — adăugate Undo/Regenerează, coada vizibilă, metrici pe tur,
+blocuri Gândire, căutare în conversație și avertismentul de stagnare.
+
+## Etapa precedentă — compactare automată a contextului, 28.10.2026
+
+Implementat în surse **AG-31**, pornind de la fluxul de autocompactare observat în
+Ziva și rescris independent în harnesul nostru. Pragul este
+`context_limit - reserve`; rezerva implicită este 16384 de tokeni, redusă la
+jumătatea ferestrei mici, iar ferestrele sub 8192 de tokeni sunt ignorate, ca
+modelele mici folosite în teste să nu declanșeze compactări repetate. Partea
+recentă păstrată are până la 20000 de tokeni, limitată de prag. După o tură care depășește pragul, sau după o eroare de
+tip overflow, panoul rezumă intervalul vechi și păstrează textual mesajele
+recente. Tăierea cade pe un mesaj de utilizator și nu rezumă niciodată ultima
+cerere. Rezumatul îl extinde pe cel anterior, este salvat în
+`summary_<conversație>.json` și este trimis ca „Earlier conversation summary” în
+cererea următoare; istoricul complet rămâne pe disc. Compactarea rulează în fundal,
+cu mesaj de stare și butonul Stop obișnuit, iar un mesaj aflat în coadă așteaptă
+încheierea ei. Un eșec păstrează istoricul neatins și nu se reîncearcă până la
+următoarea cerere a utilizatorului. Comutatorul este în Setări → General, activ
+implicit. Numărătorile folosesc usage-ul furnizorului când există și o estimare
+după caractere altfel. Diferă de fluxul de referință printr-un singur punct: după
+un overflow compactăm pentru cererea următoare, dar nu reluăm automat tura
+eșuată, care poate să fi produs deja efecte.
+
+Verificat: **531 aserțiuni runtime / 0 eșecuri**; scenariul QA editor nou
+`compact`, narrow **54/0**; approval **84/0**, todo **88/0** și scenariul complet
+narrow **580/0**; `--check-only` pe `panel.gd` cu Godot 4.7.2 headless. Testele fixture acoperă
+comutatorul, pragul și rezerva, tăierea pe mesaj de utilizator, excluderea ultimei
+cereri din rezumat, persistența și restaurarea, refuzul unei a doua compactări
+fără interval nou, eșecul fără retry imediat și ferestrele mici ignorate. APK-ul,
+proba pe dispozitiv și consumul real de tokeni rămân deschise. Nu există un APK
+nou.
+
+Jurnal: 28.10.2026 — compactare automată legată la harnes, cu prag, rezervă,
+rezumat incremental și comutator în Setări → General.
+
+## Etapa precedentă — aprobări de sesiune, predarea planului și corecțiile auditului, 28.10.2026
+
+Implementat în surse **AG-30**. Dialogul de aprobare are un al treilea buton,
+**Permite mereu**, care aprobă aceeași unealtă până la închiderea editorului.
+Permisiunea se verifică după refuzul Plan și după YOLO, deci Plan rămâne doar
+pentru citire; decizia se înregistrează ca `approved_always`. Setări → General
+listează uneltele aprobate și le poate revoca pentru sesiune. Acordarea nu se
+salvează în fișiere și dispare la închiderea editorului.
+
+Cardul unui plan propus, complet, oferă **Implementează planul** și **Ajustează**.
+Implementarea trece în Auto și trimite pașii propuși, cerând un `task_update` la
+executing înainte de prima modificare. Ajustarea deschide Plan mode cu pașii în
+composer. Acțiunea brută de pe mesaj a fost eliminată. Doar propunerea aceleiași
+ture este acceptată; un card de execuție nu afișează aceste butoane.
+
+Auditul independent din `.ai-qa/review-playtest-20261028/` a găsit șase probleme
+în AG-29, corectate în aceeași etapă:
+
+- puntea C++ compilează: antetul corect `core/os/time.h`, singletonii de scripting
+  `CoreBind::Engine`/`CoreBind::OS` și `CLAMP` în locul lui `clampi`;
+- probele rulează cu `const_calls_only`, deci un apel mutator este oprit de motor
+  chiar dacă lipsește din lista euristică; `playtest_watch` rămâne sigur în Plan;
+- Stop/anularea închide actul activ cu rezultat distinct `cancelled` și eliberează
+  intrările, inclusiv servo înainte de alegerea direcției;
+- garda de input rămâne în procesare după act, ca intrările reținute să fie
+  eliberate la expirare sau la deconectarea debuggerului;
+- expirarea de 75 s raportează `timed_out` și `until_met=false`, nu o dovadă falsă;
+- refuzul repetării se bazează pe măsurători consecutive identice (probe, valori
+  urmărite, evenimente fără numărul cadrului, servo, until), cu stare păstrată pe
+  tura părinte și job, deci aceleași argumente care produc progres nu sunt oprite.
+
+Verificat: **531 aserțiuni runtime / 0 eșecuri**; QA editor narrow approval
+**84/0** și todo **88/0**; `--check-only` pe `panel.gd`, `chat_view.gd` și
+`agent_jobs.gd`; `clang++ -fsyntax-only` pe puntea C++ cu define-urile de editor;
+probă headless pe calea reală `execute` cu backend simulat: patru acte identice
+cu progres trec, trei fără schimbare sunt permise, al patrulea primește
+`no_progress`, atât pe copil, cât și pe părinte. Puntea nu a fost construită sau
+linkată și nu există probă playtest pe dispozitiv; ambele rămân porți. Nu există
+un APK nou.
+
+Jurnal: 28.10.2026 — adăugate Permite mereu, Implementează/Ajustează planul și
+corecțiile auditului AG-29; verificarea nativă și cea fizică rămân deschise.
+
+## Etapa precedentă — probe de playtest în joc, 28.10.2026
+
+Implementat în surse **AG-29**: subagentul Playtest poate măsura jocul care
+rulează, nu doar îl fotografia. Puntea nativă de debugger răspunde la `eval`,
+`watch`, `act`, `status` și `release` în procesul jocului; `playtest_watch` și
+`playtest_act` înlocuiesc judecata pe capturi cu valori măsurate înainte și după
+fiecare intrare.
+
+`playtest_act` ține apăsat până la 8 intrări pe toată așteptarea și citește până
+la 12 probe înainte și după, cu așteptare pe cadre (`advance_frames`) sau pe
+condiție (`until`). Probele de după se evaluează înainte de eliberarea
+intrărilor ne-reținute, ca mișcarea verificată să nu fie mascată de ridicarea
+tastei. Servo-ul (maxim 3) duce o probă numerică la țintă cu intrări
+increase/decrease, cu toleranță, wrap și cel mult 900 de cadre. `playtest_watch`
+urmărește 4 expresii și 8 semnale, cu evenimentele atașate următorului răspuns.
+Repetarea acelorași argumente este refuzată (`no_progress`) numai când ultimele
+trei răspunsuri raportează măsurători identice; starea se păstrează pe tura
+părinte și job, iar dovezile (maxim 40) se salvează în `jobs/<id>.json`.
+
+Probele sunt expresii GDScript evaluate read-only în scena curentă:
+identificatorii simpli se rezolvă ca noduri copil, iar `Engine`, `Input`, `OS`,
+`Time` și `ProjectSettings` sunt legate. Atribuirile și `await` sunt respinse
+textual, iar expresia rulează cu `const_calls_only`, deci un apel mutator este
+oprit de motor chiar dacă nu apare în lista euristică. Un act se oprește după 75
+de secunde și raportează `expired` și `timed_out`, cu `until_met=false` dacă
+condiția nu a fost observată; Stop anulează actul activ cu un rezultat distinct
+`cancelled`. Garda rămâne în procesare după act, ca intrările reținute să fie
+eliberate la expirare sau la deconectarea debuggerului.
+
+În chat apare o consolă Playtest pliabilă pe tura părinte: intrări, tabel
+înainte/după, valori urmărite, semnale, servo și verdictul final
+(`pass|fail|blocked`) parsat din JSON-ul de închidere al modelului. Consola
+trăiește în tura activă; nu se reconstruiește la reîncărcarea istoricului.
+
+Verificat local: **531 aserțiuni runtime / 0 eșecuri** și `--check-only` pe
+Godot 4.7.2 headless pentru `chat_view.gd`, `agent_jobs.gd` și `panel.gd`;
+corecțiile AG-30 adaugă verificarea `clang++ -fsyntax-only` a punții. Construirea
+reală în CI și proba playtest pe dispozitiv rămân porți separate. Nu există un
+APK nou pentru AG-29.
+
+Jurnal: 28.10.2026 — adăugate probele de playtest, servo/until, urmărirea de
+semnale și consola de dovezi; verificarea nativă și cea fizică sunt încă deschise.
+
+## Etapa precedentă — Plan interactiv, 27.10.2026
 
 Implementat în surse **AG-28**: agentul poate cere clarificări în chat prin
 `plan_ask`, cu 1–3 întrebări, opțiuni simple/multiple și răspuns propriu. Nu este
@@ -2194,8 +2398,9 @@ validarea fizică Android rămân probe distincte.
   iar faza executing permite modificări. Ambele moduri de execuție continuă
   planurile neîncheiate în limitele harness-ului. Stop păstrează progresul.
 - Planul se afișează într-un card pliabil din conversație, cu un singur pas în
-  lucru, stări distincte și restaurare din istoric. **Aplică planul** trece în
-  Auto și păstrează preferința YOLO.
+  lucru, stări distincte și restaurare din istoric. Un plan propus complet oferă
+  **Implementează planul** (trece în Auto și păstrează preferința YOLO) și
+  **Ajustează** (redeschide Plan cu pașii propuși în composer).
 - Textul conversației are titluri, liste, citate, cod inline, tabele și linkuri
   HTTP(S) validate, fără interpretarea HTML/BBCode din răspunsuri. Blocurile de
   cod și identitatea furnizorului au o prezentare compactă.

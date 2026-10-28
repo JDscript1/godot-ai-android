@@ -841,6 +841,10 @@ func _network_tests(node: Node) -> void:
 	var listed = await adapter.list_models(profile)
 	check(listed.get("ok", false) and listed.get("result", []).size() == 1, "Real HTTP model discovery")
 	check(listed.get("result", [{}])[0].get("efforts", []) == ["high", "max"], "Use provider-declared reasoning efforts")
+	var bounded_profile = profile.duplicate()
+	bounded_profile["url"] = mock_url + "/bounded/v1"
+	var bounded = await adapter.complete(bounded_profile, [{"role": "user", "content": "Summarize"}], [], "fixture", "", {}, Callable(), 512)
+	check(bounded.get("ok", false) and bounded.get("message", {}).get("content") == "Bounded summary verified", "Real HTTP summary request carries its reserved output allowance")
 	var history = [{"role": "user", "content": "Inspect"}]
 	var first = await adapter.complete(profile, history, [], "fixture", "", {})
 	check(first.get("ok", false) and first.get("calls", []).size() == 1, "Real HTTP streaming tool call")
@@ -940,6 +944,12 @@ func _new_feature_tests() -> void:
 	store.update(fork_id, {"archived": true})
 	check(store.listing("", true).size() == 1, "Archive and active history have separate lists")
 	var provider = scripts["providers"]
+	var summary_input = [{"role": "user", "content": "Summarize for continuation."}]
+	check(provider.build_request("chat", summary_input, [], "m", "", 512)["body"].get("max_tokens") == 512, "Bounded summaries reserve output on the Chat protocol")
+	check(provider.build_request("anthropic", summary_input, [], "m", "", 512)["body"].get("max_tokens") == 512, "Bounded summaries override the Anthropic default output allowance")
+	check(provider.build_request("responses", summary_input, [], "m", "", 512)["body"].get("max_output_tokens") == 512, "Bounded summaries reserve output on the Responses protocol")
+	check(provider.build_request("gemini", summary_input, [], "m", "", 512)["body"].get("generationConfig", {}).get("maxOutputTokens") == 512, "Bounded summaries reserve output on the Gemini protocol")
+	check(not provider.build_request("chat", summary_input, [], "m")["body"].has("max_tokens"), "Ordinary agent requests retain their existing output policy")
 	var internals = [{"role": "assistant", "content": "Public", "wire_source": "a:m", "reasoning_content": "private", "provider_items": [{"type": "reasoning"}], "provider_blocks": [{"type": "thinking"}]}]
 	var normalized = provider.normalize_context({"id": "b"}, "m", internals)
 	check(not normalized[0].has("reasoning_content") and not normalized[0].has("provider_blocks") and not normalized[0].has("provider_items"), "Provider switching strips foreign reasoning and signed blocks")

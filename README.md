@@ -31,6 +31,43 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+The harness now [compacts long sessions automatically](docs/AI_HARNESS.md):
+when the sent context nears the model limit or an overflow occurs, it summarizes
+the older range, keeps the newest turn verbatim and persists the summary while
+the full history stays on disk. The switch is in Settings → General. This source
+change awaits a new APK.
+
+Summaries are validated and saved before replacing active context. Long ranges
+are processed in model-sized batches, with output space reserved; failed or
+cancelled compaction preserves the previous context.
+
+The chat now exposes the latest turn's recovery directly: **Undo** restores the
+files changed by the answer and returns its prompt to the composer, while
+**Regenerează** restores the same files and submits the prompt again. Queued
+messages render as removable cards above the composer, each completed answer
+shows elapsed time, tokens and an estimated cost, persisted reasoning folds into
+a collapsed Thinking block, Find searches the loaded conversation, and 15
+seconds without output shows a stall warning. These changes are in source and
+await a new APK.
+
+The queue scrolls within a bounded height so the conversation and composer stay
+visible when many messages are pending.
+
+Playtest children now probe the running game directly: `playtest_act` measures
+probe expressions before and after held inputs, `playtest_watch` tracks
+expressions and signals, and a per-turn chat console shows the measured evidence
+and verdict. These additions are in source and await a new APK.
+
+Approvals add a session-scoped **Permite mereu** grant per tool, revocable from
+Settings → General and never bypassing Plan's read-only rule. A completed
+proposal card can hand its exact steps to Auto (**Implementează planul**) or back
+into Plan for editing (**Ajustează**). An independent audit's six playtest
+findings are fixed in source: the C++ bridge passes a syntax check, probes run
+with `const_calls_only`, Stop cancels an active act with a distinct result, the
+input guard keeps releasing held inputs, expiry reports `timed_out` with
+`until_met=false`, and identical acts are refused only when their measured
+results stop changing. All of this awaits a new APK.
+
 [Interactive Plan](docs/AI_INTERACTIVE_PLAN.md) adds selectable clarification
 questions, custom answers and conversation recovery in the current sources.
 It is tested locally and awaits a new APK delivery.

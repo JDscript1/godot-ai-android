@@ -109,6 +109,17 @@ func run(host: Node, panel: Control) -> void:
 	await host.get_tree().process_frame
 	var plan = panel.chat.plan_cards["qa-todo-plan"]["node"]
 	host._check(plan.size.x <= minf(440 * EditorInterface.get_editor_scale(), panel.chat.scroll.size.x) + 1, "Plan card stays compact inside the available dock width")
+	var proposal = {"turn": "qa-plan-proposal", "phase": "completed", "intent": "propose", "steps": [{"step": "Păstrează intrarea existentă", "status": "pending"}, {"step": "Adaugă o monedă colectabilă", "status": "pending"}]}
+	panel.chat.show_plan(proposal)
+	var proposal_card = panel.chat.plan_cards["qa-plan-proposal"]
+	host._check(proposal_card["actions"].visible and proposal_card["actions"].get_child_count() == 2 and proposal_card["actions"].get_child(0).text == "Implementează planul", "A completed proposal exposes implementation actions in its plan card")
+	panel.chat.show_plan({"turn": "qa-plan-proposal", "phase": "executing", "intent": "execute", "steps": [{"step": "Aplică schimbarea", "status": "in_progress"}]})
+	host._check(not proposal_card["actions"].visible, "Execution-only plans hide the proposal actions")
+	var original_history = panel.history
+	panel.history = [{"id": "qa-proposal-message", "role": "assistant", "turn_id": "qa-plan-proposal", "content": "", "plan_snapshot": proposal}]
+	host._check(panel._plan_proposal("qa-plan-proposal").get("steps", []).size() == 2 and panel._plan_proposal("missing").is_empty(), "Plan handoff only accepts a completed proposal from the same turn")
+	host._check(panel._plan_steps(proposal) == "1. Păstrează intrarea existentă\n2. Adaugă o monedă colectabilă", "Plan handoff lists the proposed steps in order")
+	panel.history = original_history
 	panel.chat.follow_bottom = false
 	panel.chat.scroll.scroll_vertical = 180
 	await host.get_tree().process_frame

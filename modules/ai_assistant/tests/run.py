@@ -293,6 +293,12 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         elif location.path == "/prompt":
             self.reply({"prompt_id": "fixture-job", "number": 0})
         elif location.path.endswith("/chat/completions"):
+            if location.path.startswith("/bounded/"):
+                if payload.get("max_tokens") != 512:
+                    self.reply({"error": "Missing bounded summary output allowance"}, 400)
+                    return
+                self.sse([{"choices": [{"delta": {"content": "Bounded summary verified"}, "finish_reason": "stop"}]}])
+                return
             has_result = any(message.get("role") == "tool" for message in payload.get("messages", []))
             if location.path.startswith("/thinking/"):
                 if not payload.get("tools") or payload.get("reasoning_effort") != "high":

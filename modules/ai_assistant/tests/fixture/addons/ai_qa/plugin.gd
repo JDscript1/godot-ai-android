@@ -231,6 +231,25 @@ class FixturePlanningProvider:
 		if not text.is_empty(): delta.call(text)
 		return {"ok": true, "message": {"role": "assistant", "content": text, "tool_calls": calls}, "calls": calls, "finish": "stop"}
 
+class FixtureCompactionProvider:
+	extends RefCounted
+	var requests = 0
+	var messages: Array = []
+	var output_limits: Array = []
+	var replies: Array = []
+	var cancel_after_reply = false
+	var fail = false
+	var summary = "Rezumat fixture: obiectivele, schimbările reale și verificările rămân păstrate."
+	func complete(_profile: Dictionary, context: Array, _tools: Array, _model: String, _effort: String, cancel: Dictionary, _delta: Callable = Callable(), max_output_tokens: int = 0) -> Dictionary:
+		requests += 1
+		messages.append(context.duplicate(true))
+		output_limits.append(max_output_tokens)
+		if cancel.get("cancelled", false): return {"ok": false, "code": "cancelled", "error": "Oprit"}
+		if fail: return {"ok": false, "error": "Fixture summary failure"}
+		if cancel_after_reply: cancel["cancelled"] = true
+		if not replies.is_empty(): return replies.pop_front()
+		return {"ok": true, "message": {"role": "assistant", "content": summary}}
+
 func _enter_tree() -> void:
 	if OS.get_environment("GODOT_AI_QA_SOURCE").is_empty(): return
 	_run.call_deferred()
@@ -293,6 +312,14 @@ func _run() -> void:
 		await _approval_dialog_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "compact":
+		await _auto_compaction_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "chat":
+		await _chat_experience_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "linux":
 		await _linux_runtime_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -353,6 +380,7 @@ func _run() -> void:
 	await _layout_tests()
 	await _activity_drawer_tests()
 	await _control_settings_tests()
+	await _auto_compaction_tests()
 	_vision_settings_tests()
 	await _file_chat_tests()
 	await _model_and_control_tests()
@@ -466,6 +494,7 @@ func _run() -> void:
 		await _drawer_screenshots(output)
 		await _plan_and_markdown_screenshots(output)
 		await _configuration_screenshots(output)
+	await _chat_experience_tests()
 	_finish_report(output)
 
 func _scene_path_tests() -> void:
@@ -595,7 +624,7 @@ func _approval_geometry(label: String) -> void:
 	var viewport_rect = Rect2(Vector2.ZERO, Vector2(get_tree().root.size))
 	_check(viewport_rect.encloses(Rect2(Vector2(dialog.position), Vector2(dialog.size))), label + ": approval stays inside the visible editor")
 	var content = Rect2(Vector2.ZERO, Vector2(dialog.size) / dialog.content_scale_factor)
-	for button in [dialog.get_ok_button(), dialog.get_cancel_button()]:
+	for button in [dialog.get_ok_button(), dialog.get_cancel_button(), panel.approval_always]:
 		_check(button.is_visible_in_tree() and content.encloses(button.get_global_rect()), label + ": " + button.text + " is visible and reachable")
 		_check(not panel.approval_details.get_global_rect().intersects(button.get_global_rect()), label + ": scrolling content cannot cover " + button.text)
 
@@ -667,6 +696,27 @@ func _approval_dialog_tests(output: String) -> void:
 	panel.approval_dialog.get_ok_button().pressed.emit()
 	for frame in range(2): await get_tree().process_frame
 	_check(result.get("second", false) and not panel.approval_pending, "The immediate next request requires its own Permite click")
+	# Permite mereu is session-scoped and per tool; Plan keeps its read-only rule.
+	var grant = {}
+	args.path = "res://scripts/always_board.gd"
+	args.text = "extends Node\n"
+	_fixture_file_approval.call_deferred(args, grant)
+	for frame in range(4): await get_tree().process_frame
+	_check(panel.approval_pending and panel.approval_always.is_visible_in_tree(), "The approval dialog offers a reachable Permite mereu action")
+	panel.approval_always.pressed.emit()
+	for frame in range(2): await get_tree().process_frame
+	_check(grant.get("accepted", false) and not panel.approval_pending and panel.always_allowed.has("godot_write_file"), "Permite mereu approves the pending operation and records only its tool for this session")
+	var repeat = {}
+	_fixture_file_approval.call_deferred(args, repeat)
+	for frame in range(2): await get_tree().process_frame
+	_check(repeat.get("accepted", false) and not panel.approval_dialog.visible, "A granted operation resolves later calls without opening the dialog again")
+	panel.mode_picker.select(2)
+	var scoped = await panel._authorize({"name": "godot_write_file", "risk": "write"}, args)
+	panel.mode_picker.select(1)
+	_check(not scoped, "Plan remains read-only even after a Permite mereu grant")
+	_check("godot_write_file" in panel.always_label.text, "General settings lists the operations granted with Permite mereu")
+	panel._clear_always_permissions()
+	_check(panel.always_allowed.is_empty() and panel.always_clear.disabled and panel.always_label.text.contains("nicio operație"), "Revoking clears the session grants and restores the empty state")
 	root.gui_embed_subwindows = was_embedded
 
 func _reflection_tool_tests(scene: Node) -> void:
@@ -1191,7 +1241,10 @@ func _activity_drawer_tests() -> void:
 	panel._harness_event({"kind": "tool_started", "id": "activity-animation", "name": "godot_call", "arguments": {}})
 	chat.set_working(true)
 	await get_tree().create_timer(0.2).timeout
-	_check(chat.activity_panel.get_parent() == chat.compose_panel.get_parent() and chat.activity_panel.get_index() + 1 == chat.compose_panel.get_index() and chat.activity_panel.get_global_rect().end.y <= chat.compose_panel.get_global_rect().position.y + 1, "Activity status stays immediately above the composer, outside the conversation scroll")
+	var between = []
+	for index in range(chat.activity_panel.get_index() + 1, chat.compose_panel.get_index()):
+		if chat.root_column.get_child(index).visible: between.append(chat.root_column.get_child(index))
+	_check(chat.activity_panel.get_parent() == chat.compose_panel.get_parent() and chat.activity_panel.get_index() < chat.compose_panel.get_index() and between.is_empty() and chat.activity_panel.get_global_rect().end.y <= chat.compose_panel.get_global_rect().position.y + 1, "Activity status stays immediately above the composer, outside the conversation scroll")
 	_check(chat.activity_counter.text == "2/5" and not chat.activity_details.visible and chat.activity_toggle.focus_mode == Control.FOCUS_ALL, "Running activity is compact, counts real completed steps and supports keyboard focus")
 	_activity_capture("activity-collapsed")
 	chat.activity_toggle.pressed.emit()
@@ -1340,6 +1393,201 @@ func _control_settings_tests() -> void:
 	panel.journal_filter.text_changed.emit("")
 	panel.full_control.button_pressed = false
 	panel.planner.reset()
+
+func _auto_compaction_tests() -> void:
+	print("AI automatic context compaction")
+	if panel.settings_window != null: panel.settings_window.hide()
+	var original_service = panel.providers
+	var original_profiles: Array = panel.config["providers"]
+	var saved_preferences: Dictionary = panel.config["preferences"].duplicate(true)
+	var saved_selection = panel._selection()
+	var saved_history: Array = panel.history
+	var saved_summary = panel.compact_summary
+	var saved_through = panel.compact_through
+	var saved_pending = panel.compact_pending
+	var saved_tokens = panel.compact_tokens
+	var saved_limit = panel.compact_limit
+	var saved_failed = panel.compact_failed
+	var saved_queue: Array = panel.queued
+	var saved_paused = panel.queue_paused
+	var saved_mode = panel.mode_picker.selected
+	panel.queued = []
+	panel.queue_paused = false
+	var summary_path = panel.project_directory.path_join("summary_" + str(panel.conversations.index["active"]) + ".json")
+	var original_summary_exists = FileAccess.file_exists(summary_path)
+	var original_summary_bytes = FileAccess.get_file_as_bytes(summary_path) if original_summary_exists else PackedByteArray()
+	panel.config["providers"] = [{"id": "compact-fixture", "name": "Compact fixture", "issuer": "custom", "kind": "chat", "models": [{"id": "fixture", "context": 32768}]}]
+	panel._refresh_profiles()
+	panel._choose({"profile": "compact-fixture", "model": "fixture"})
+	var service = FixtureCompactionProvider.new()
+	panel.providers = service
+	var profile = {"id": "compact-fixture", "models": [{"id": "fixture", "context": 32768}]}
+
+	var form: Dictionary = panel.forms["general"]
+	_check(form.has("auto_compact") and form["auto_compact"].button_pressed, "General exposes an enabled automatic context compaction switch")
+	panel._control_preference("auto_compact", false)
+	_check(not panel._auto_compact_enabled(), "Disabling automatic compaction is saved immediately")
+	panel._control_preference("auto_compact", true)
+	_check(panel._auto_compact_enabled(), "Automatic compaction can be re-enabled")
+	panel.compact_limit = 32768
+	_check(panel._compact_threshold() == 16384 and panel._compact_keep_recent() == 16384, "The default reserve and recent window follow the documented token budget")
+	_check(panel._is_overflow_text("400 context_length_exceeded: maximum context length is 32768") and not panel._is_overflow_text("Connection refused"), "Overflow errors are recognized without treating ordinary failures as context overflows")
+
+	panel.history = []
+	for index in range(6):
+		panel.history.append({"id": "compact-%d" % index, "role": "user" if index % 2 == 0 else "assistant", "content": ("Cerere %d. " % index) + "x".repeat(2400)})
+	panel.history.append({"id": "compact-6", "role": "user", "content": "Cererea finală rămâne în context.\n" + "y".repeat(2400)})
+	panel.config["preferences"]["compact_keep_recent"] = 1200
+	panel.compact_summary = ""
+	panel.compact_through = 0
+	panel.compact_pending = false
+	panel.compact_failed = false
+	var cut = panel._compact_cut(panel._compact_keep_recent())
+	_check(cut == 6 and panel.history[cut].get("role") == "user", "The automatic cut keeps the newest user turn and lands on a user boundary")
+	await panel._start_compaction("manual")
+	_check(service.requests == 1 and panel.compact_summary == service.summary and panel.compact_through == cut and not panel.busy and not panel.send_button.disabled, "Manual compaction summarizes the old range and keeps recent work verbatim")
+	_check(not str(service.messages[-1][1].get("content", "")).contains("Cererea finală"), "Compaction input excludes the kept recent turn")
+	var saved_file: Dictionary = panel.Common.read_json(summary_path, {})
+	_check(saved_file.get("text") == service.summary and int(saved_file.get("through", 0)) == cut, "Compaction summary and cut are persisted for restore")
+	panel._load_summary()
+	_check(panel.compact_summary == service.summary and panel.compact_through == cut, "The saved summary is restored with the conversation")
+	var context = panel._context_messages()
+	_check(str(context[0]["content"]).contains("Earlier conversation summary") and context[1].get("id") == "compact-6", "The next request uses the summary plus the kept newest turn")
+	service.requests = 0
+	panel.compact_limit = 32768
+	await panel._start_compaction("manual")
+	_check(service.requests == 0 and panel.chat.status.text.contains("deja compactată"), "A conversation with no new range is not summarized again")
+
+	panel.compact_summary = ""
+	panel.compact_through = 0
+	panel.compact_pending = true
+	service.fail = true
+	await panel._start_compaction("auto")
+	_check(service.requests == 1 and panel.compact_failed and not panel.compact_pending and panel.compact_through == 0, "A failed automatic summary keeps history intact and suppresses an immediate retry")
+	service.fail = false
+
+	panel.compact_pending = false
+	panel.compact_tokens = 0
+	panel.compact_limit = 32768
+	panel._set_usage({"usedTokens": 20000, "contextWindowTokens": 32768}, profile, "fixture")
+	_check(panel.compact_pending and panel.compact_tokens == 20000, "Usage above the reserved budget marks automatic compaction as pending")
+	panel.compact_pending = false
+	panel._set_usage({"usedTokens": 4000, "contextWindowTokens": 32768}, profile, "fixture")
+	_check(not panel.compact_pending, "Usage well below the reserved budget does not schedule compaction")
+	panel.compact_pending = false
+	panel.compact_limit = 0
+	panel._set_usage({"usedTokens": 900, "contextWindowTokens": 1024}, {"id": "compact-fixture", "models": []}, "fixture")
+	_check(not panel.compact_pending and panel.compact_limit == 0, "Tiny context windows are left alone instead of using provider defaults")
+	await _compaction_regression_tests(service, summary_path)
+
+	panel.providers = original_service
+	panel.config["providers"] = original_profiles
+	panel.config["preferences"] = saved_preferences
+	panel.history = saved_history
+	panel.compact_summary = saved_summary
+	panel.compact_through = saved_through
+	panel.compact_pending = saved_pending
+	panel.compact_tokens = saved_tokens
+	panel.compact_limit = saved_limit
+	panel.compact_failed = saved_failed
+	panel.queued = saved_queue
+	panel.queue_paused = saved_paused
+	panel._refresh_profiles()
+	panel._choose(saved_selection)
+	panel.mode_picker.select(saved_mode)
+	if original_summary_exists:
+		var file = FileAccess.open(summary_path, FileAccess.WRITE)
+		if file != null:
+			file.store_buffer(original_summary_bytes)
+			file.close()
+	elif FileAccess.file_exists(summary_path): DirAccess.remove_absolute(summary_path)
+
+func _compaction_regression_tests(service: RefCounted, summary_path: String) -> void:
+	var previous = "Obiectiv păstrat: conservă scena originală res://forest.tscn."
+	panel.compact_summary = previous
+	panel.compact_through = 2
+	_check(panel._persist_summary() == OK, "Regression setup persists the previous verified summary")
+	var saved = panel.Common.read_json(summary_path, {})
+	var invalid = [
+		{"ok": true, "message": {"content": ""}},
+		{"ok": true, "message": {"content": " \n\t "}},
+		{"ok": true, "message": {"content": null}},
+		{"ok": true, "message": "invalid"},
+		{"ok": true, "message": {"content": "Rezumat incomplet"}, "finish": "length"},
+		{"ok": true, "message": {"content": "x".repeat(10000)}}
+	]
+	for index in range(invalid.size()):
+		service.replies = [invalid[index]]
+		await panel._start_compaction("auto")
+		_check(panel.compact_failed and panel.compact_through == 2 and panel.compact_summary == previous, "Invalid summary preserves the active context: %d" % index)
+		_check(panel.Common.read_json(summary_path, {}) == saved, "Invalid summary preserves the saved context: %d" % index)
+	service.cancel_after_reply = true
+	await panel._start_compaction("manual")
+	service.cancel_after_reply = false
+	_check(panel.compact_through == 2 and panel.compact_summary == previous and panel.chat.status.text.contains("oprită"), "A late successful response after Stop cannot commit a summary")
+	_check(panel.Common.read_json(summary_path, {}) == saved, "Stop leaves the saved summary unchanged")
+	var original_directory = panel.project_directory
+	var blocked = original_directory.path_join("compact-save-blocker")
+	var blocker = FileAccess.open(blocked, FileAccess.WRITE)
+	blocker.store_string("KEEP_ORIGINAL")
+	blocker.close()
+	panel.project_directory = blocked
+	await panel._start_compaction("manual")
+	panel.project_directory = original_directory
+	_check(panel.compact_failed and panel.compact_through == 2 and panel.compact_summary == previous, "A failed summary save cannot advance the active history boundary")
+	_check(FileAccess.get_file_as_string(blocked) == "KEEP_ORIGINAL" and panel.Common.read_json(summary_path, {}) == saved, "Save failure preserves the blocker and the original summary")
+	DirAccess.remove_absolute(blocked)
+	panel.Common.atomic_json(summary_path, {"text": " \n", "through": 6})
+	panel._load_summary()
+	_check(panel.compact_through == 0, "A legacy empty summary cannot hide original history after restart")
+
+	panel.config["providers"][0]["models"][0]["context"] = 8192
+	panel.compact_limit = 1048576
+	_check(panel._compaction_window(panel._current_profile(), "fixture") == 8192 and panel._compaction_window({}, "unknown") == 8192, "Summary budgets use the selected model and never inherit a previous large window")
+	panel.config["preferences"]["compact_keep_recent"] = 256
+	panel.history = []
+	for index in range(40):
+		panel.history.append({"role": "user" if index % 2 == 0 else "assistant", "content": "BEGIN_%02d " % index + "Păstrează mesh-ul și scena originală. 🌲 ".repeat(100) + " END_%02d" % index})
+	panel.history[10]["content"] += " Text lung. ".repeat(1500) + " LONG_MESSAGE_TAIL"
+	panel.history.append({"role": "assistant", "content": "", "tool_calls": [{"name": "godot_write_file", "arguments": {"path": "res://original.gd", "text": "TOOL_ARGUMENT_MARKER"}}]})
+	panel.history.append({"role": "user", "content": "Ultima cerere rămâne textuală: KEEP_NEWEST"})
+	panel.compact_through = 0
+	panel.compact_summary = "PREVIOUS_BEGIN " + "Istoric anterior. ".repeat(1500) + " PREVIOUS_END"
+	var history_copy = panel.history.duplicate(true)
+	service.messages.clear()
+	service.output_limits.clear()
+	service.requests = 0
+	# First request models a provider whose tokenizer needs an even smaller batch.
+	service.replies = [{"ok": false, "code": "context_length_exceeded", "error": "maximum context length"}]
+	await panel._start_compaction("manual")
+	_check(not panel.compact_failed and panel.compact_through == panel.history.size() - 1 and service.requests > 2, "A long conversation and oversized previous summary compact in bounded batches")
+	var sent = ""
+	var max_budget = 0
+	var bounded = true
+	for index in range(service.messages.size()):
+		var context: Array = service.messages[index]
+		var tokens = int(service.output_limits[index]) + 256
+		for message in context: tokens += int(ceil(str(message["content"]).to_utf8_buffer().size() / 2.0)) + 12
+		max_budget = maxi(max_budget, tokens)
+		bounded = bounded and tokens <= 8192 and int(service.output_limits[index]) > 0
+		sent += str(context[1]["content"])
+	_check(bounded, "Every summary request reserves output and framing inside the 8192-token conservative budget")
+	_check(str(service.messages[1][1]["content"]).length() < str(service.messages[0][1]["content"]).length(), "Provider overflow retries with a smaller source batch")
+	var covered = true
+	for index in range(40): covered = covered and sent.contains("BEGIN_%02d" % index) and sent.contains("END_%02d" % index)
+	_check(covered and sent.contains("LONG_MESSAGE_TAIL") and sent.contains("PREVIOUS_BEGIN") and sent.contains("PREVIOUS_END") and sent.contains("TOOL_ARGUMENT_MARKER"), "Batches include every source range, long-message tails, prior summary and tool arguments")
+	_check(not sent.contains("KEEP_NEWEST") and not sent.contains("�") and panel.history == history_copy, "Batching preserves Unicode, full saved history and the newest request")
+	_check(str(service.messages[-1][0]["content"]).contains(service.summary), "Later batches extend the last validated summary")
+	_check(panel.Common.read_json(summary_path, {}).get("through") == panel.compact_through, "Only the complete validated batch sequence is committed")
+	panel.compact_summary = previous
+	panel.compact_through = 0
+	panel._persist_summary()
+	service.replies = [{"ok": true, "message": {"content": service.summary}}, {"ok": false, "error": "Second batch failed"}]
+	await panel._start_compaction("manual")
+	_check(panel.compact_failed and panel.compact_summary == previous and panel.compact_through == 0, "Failure after a successful intermediate batch rolls back the whole compaction")
+	_check(panel.Common.read_json(summary_path, {}).get("text") == previous and panel.Common.read_json(summary_path, {}).get("through") == 0, "Intermediate batches never replace the durable summary")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty(): panel.Common.atomic_json(output.path_join("compact-regressions.json"), {"window": 8192, "largest_reserved_estimate": max_budget, "bounded": bounded, "all_source_markers_sent": covered, "history_preserved": panel.history == history_copy})
 
 func _blender_mesh_verification_tests() -> void:
 	_check(Engine.is_editor_hint(), "Blender GLB readiness is tested inside the real editor")
@@ -1856,6 +2104,140 @@ func _populated_chat_tests() -> void:
 	panel.chat.follow_bottom = false
 	panel.chat.scroll.scroll_vertical = 0
 	await get_tree().create_timer(0.2).timeout
+
+func _chat_experience_tests() -> void:
+	panel.history = [
+		{"id": "ux-user-1", "role": "user", "content": "Primul prompt", "turn_id": "ux-turn-1"},
+		{"id": "ux-answer-1", "role": "assistant", "content": "Primul răspuns.", "turn_id": "ux-turn-1", "run_status": "completed"},
+		{"id": "ux-user-2", "role": "user", "content": "Al doilea prompt", "turn_id": "ux-turn-2"},
+		{"id": "ux-answer-2", "role": "assistant", "content": "Al doilea răspuns.", "turn_id": "ux-turn-2", "run_status": "completed", "reasoning_content": "Analizez fișierul. Verific apoi rezultatul."}
+	]
+	panel.current_turn = ""
+	panel._render_history()
+	await get_tree().process_frame
+	var older: Dictionary = panel.chat.message_records[1]
+	var latest: Dictionary = panel.chat.message_records[3]
+	_check(not older["actions"][2].visible and latest["actions"][2].visible and not latest["actions"][2].disabled, "Undo is offered only for the latest completed answer")
+	_check(older["actions"][4].get_popup().is_item_disabled(older["actions"][4].get_popup().get_item_index(1)) and not latest["actions"][4].get_popup().is_item_disabled(latest["actions"][4].get_popup().get_item_index(1)), "Resend stays available only on the latest answer")
+	var reasoning: Dictionary = latest.get("reasoning", {})
+	_check(not reasoning.is_empty() and reasoning["toggle"].text.contains("Gândire · 5 cuvinte") and not reasoning["body"].visible, "Persisted reasoning collapses into a Thinking block")
+	reasoning["toggle"].pressed.emit()
+	_check(reasoning["body"].visible, "Thinking block expands on demand")
+	panel.chat.set_turn_metrics("ux-turn-2", {"elapsed_ms": 65000, "input_tokens": 1200, "output_tokens": 340, "estimated": false, "cost_usd": 0.0123})
+	var metrics: Label = latest.get("metrics_label")
+	_check(metrics != null and metrics.visible and metrics.text.contains("1 min 05 s") and metrics.text.contains("340 tokeni") and metrics.text.contains("$0.0123"), "Per-turn metrics show elapsed time, tokens and cost")
+	panel.chat.set_turn_metrics("ux-turn-1", {"elapsed_ms": 0, "output_tokens": 400, "estimated": true})
+	var estimate: Label = older.get("metrics_label")
+	_check(estimate != null and estimate.text == "≈ 400 tokeni", "Missing usage falls back to an estimated token count")
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		var metrics_image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+		if metrics_image != null and not metrics_image.is_empty(): metrics_image.save_png(output.path_join("chat-metrics.png"))
+	panel.chat._show_find(true)
+	panel.chat.find_input.text = "prompt"
+	panel.chat._search_find()
+	_check(panel.chat.find_panel.visible and panel.chat.find_matches.size() == 2 and panel.chat.find_count.text == "1/2", "Find in chat lists case-insensitive matches")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		var find_image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+		if find_image != null and not find_image.is_empty(): find_image.save_png(output.path_join("chat-find.png"))
+	panel.chat._step_find(1)
+	_check(panel.chat.find_count.text == "2/2", "Find next advances to the following match")
+	panel.chat._step_find(1)
+	_check(panel.chat.find_count.text == "1/2", "Find wraps past the last match")
+	panel.chat._show_find(false)
+	_check(not panel.chat.find_panel.visible and panel.chat.find_matches.is_empty() and panel.chat.find_count.text == "0/0", "Closing find clears its results")
+	panel.chat.set_generating(true)
+	panel.chat.last_output_msec = Time.get_ticks_msec() - 16000
+	panel.chat.stall_clock = 1.0
+	panel.chat._process(0.0)
+	_check(panel.chat.stall_label.visible and panel.chat.stall_label.text.contains("Fără ieșire"), "Long silence during generation shows a stall warning")
+	panel.chat.set_generating(false)
+	_check(not panel.chat.stall_label.visible, "Finishing or stopping generation hides the stall warning")
+	panel.queued = [{"text": "Primul mesaj în coadă", "selection": {}}, {"text": "Al doilea mesaj în coadă", "selection": {"files": ["ux-file"], "references": ["res://ux.gd"]}}]
+	panel.queue_paused = true
+	panel._sync_queue()
+	_check(panel.chat.queue_panel.visible and panel.chat.queue_rows.get_child_count() == 2, "Queued messages render as visible cards above the composer")
+	var header = panel.chat.queue_panel.get_child(0)
+	_check(str(header.get_child(0).text).contains("Coadă · 2 mesaje"), "Queue header counts the pending messages")
+	_check(header.get_child_count() == 2 and header.get_child(1).text == "Reia", "Paused queue offers an explicit resume control")
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		var queue_image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
+		if queue_image != null and not queue_image.is_empty(): queue_image.save_png(output.path_join("chat-queue.png"))
+	panel.composer.text = ""
+	panel.pending_files.clear()
+	panel.pending_attachments.clear()
+	panel.pending_references.clear()
+	panel._chat_action("queue_restore", {"index": 1})
+	_check(panel.queued.size() == 1 and panel.composer.text == "Al doilea mesaj în coadă" and "ux-file" in panel.pending_files and "res://ux.gd" in panel.pending_references, "Restoring a queued message returns its text and context to the composer")
+	panel._chat_action("queue_remove", {"index": 0})
+	_check(panel.queued.is_empty() and not panel.queue_paused and not panel.chat.queue_panel.visible, "Removing the last queued message clears the queue panel")
+	panel.composer.clear()
+	panel.pending_files.clear()
+	panel.pending_attachments.clear()
+	panel.pending_references.clear()
+	panel._composer_hints()
+	panel.queued = [{"text": "Coadă în așteptare", "selection": {}}]
+	panel.queue_paused = true
+	panel.busy = true
+	panel._sync_queue()
+	panel._chat_action("queue_resume", {})
+	_check(panel.queued.size() == 1 and panel.queue_paused and panel.chat.queue_panel.visible, "Queue resume refuses to start while work is running")
+	panel.busy = false
+	panel.queued.clear()
+	panel.queue_paused = false
+	panel._sync_queue()
+	for index in range(20): panel.queued.append({"text": "Queued test %d" % index, "selection": {}})
+	panel.queue_paused = true
+	panel._sync_queue()
+	await get_tree().create_timer(0.3).timeout
+	var chat_rect: Rect2 = panel.chat.get_global_rect()
+	var composer_rect: Rect2 = panel.composer.get_global_rect()
+	_check(panel.chat.scroll.size.y >= minf(80 * EditorInterface.get_editor_scale(), chat_rect.size.y * 0.15), "Twenty queued messages leave a usable conversation viewport")
+	_check(composer_rect.position.y >= chat_rect.position.y and composer_rect.end.y <= minf(chat_rect.end.y, panel.get_viewport_rect().end.y), "The composer stays fully visible with twenty queued messages")
+	var queue_bar: VScrollBar = panel.chat.queue_scroll.get_v_scroll_bar()
+	_check(queue_bar.max_value > queue_bar.page and panel.chat.queue_scroll.size.y <= panel.chat.size.y * 0.22 + 1, "The long queue scrolls within a bounded share of the chat height")
+	_check(panel.chat.queue_rows.get_children().all(func(card: Control) -> bool: return card.mouse_filter == Control.MOUSE_FILTER_PASS), "Queue cards pass drag gestures to their scroll container")
+	panel.chat.queue_scroll.scroll_vertical = int(queue_bar.max_value)
+	await get_tree().create_timer(0.2).timeout
+	var last_card: Control = panel.chat.queue_rows.get_child(19)
+	_check(panel.chat.queue_scroll.get_global_rect().encloses(last_card.get_global_rect()), "Scrolling the queue reaches its last card")
+	if not output.is_empty():
+		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("chat-queue-20.png"))
+		panel.Common.atomic_json(output.path_join("queue-regressions.json"), {"items": panel.queued.size(), "conversation_height": panel.chat.scroll.size.y, "queue_height": panel.chat.queue_scroll.size.y, "chat_height": panel.chat.size.y, "composer_bottom": composer_rect.end.y, "viewport_bottom": panel.get_viewport_rect().end.y, "queue_rect": str(panel.chat.queue_scroll.get_global_rect()), "last_card_rect": str(last_card.get_global_rect())})
+	last_card.get_child(0).get_child(2).pressed.emit()
+	_check(panel.queued.size() == 19 and panel.queued[-1]["text"] == "Queued test 18", "The last queued card removes its own message after scrolling")
+	panel.queued.clear()
+	panel.queue_paused = false
+	panel._sync_queue()
+	var target = panel._undo_target({"message": "ux-answer-2"})
+	_check(target.get("turn") == "ux-turn-2" and target.get("index") == 2, "Undo resolves the prompt of the latest answer")
+	panel._undo_turn({"message": "ux-answer-1"}, false)
+	_check(panel.chat.status.text.contains("Doar cel mai recent"), "Older answers direct the user to the fork action instead of undo")
+	panel.busy = true
+	panel._undo_turn({"message": "ux-answer-2"}, false)
+	_check(panel.chat.status.text.contains("Oprește execuția"), "Undo refuses to run while the agent is working")
+	panel.busy = false
+	panel.tools.turn_id = "ux-undo-turn"
+	panel.tools.execute("godot_write_file", {"path": "res://ux_undo_probe.txt", "text": "fixture"}, 2, true)
+	panel.tools.turn_id = ""
+	panel.history = [
+		{"id": "ux-undo-user", "role": "user", "content": "Creează fișierul", "turn_id": "ux-undo-turn"},
+		{"id": "ux-undo-answer", "role": "assistant", "content": "L-am creat.", "turn_id": "ux-undo-turn", "run_status": "completed"}
+	]
+	panel._render_history()
+	await get_tree().process_frame
+	panel._apply_undo("ux-undo-turn", false)
+	await get_tree().process_frame
+	_check(not FileAccess.file_exists("res://ux_undo_probe.txt"), "Undo restores the files written by the answer")
+	_check(panel.history.is_empty() and not panel.chat.message_records.any(func(record: Dictionary) -> bool: return record["role"] == "assistant"), "Undo removes the answer and its prompt from the conversation")
+	_check(panel.composer.text == "Creează fișierul", "Undo returns the original prompt to the composer")
+	panel.composer.clear()
+	panel._composer_hints()
+	panel.history = []
+	panel._render_history()
 
 func _file_chat_tests() -> void:
 	var scope = str(panel.conversations.index["active"])

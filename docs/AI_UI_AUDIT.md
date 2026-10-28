@@ -1,5 +1,63 @@
 # Audit interfață AI — 22 octombrie 2026
 
+## Actualizare 28 octombrie — corecțiile auditului independent
+
+Coada are acum o zonă proprie de derulare, cu înălțime limitată și spațiu
+rezervat conversației și composer-ului. Proba narrow cu 20 de mesaje păstrează
+501 px pentru conversație și 120 px pentru coadă; ultimul card este accesibil
+prin derulare și poate fi eliminat separat. QA chat: 67/0, captura inspectată în
+`.ai-qa/fix-review-20261028/chat/narrow/chat-queue-20.png`. Proba tactilă în APK
+rămâne separată.
+
+La scalarea de telefon, înălțimea este rotunjită la pixeli întregi pentru a
+evita decuparea ultimului card la capătul derulării. Cardurile permit propagarea
+gesturilor către zona lor de derulare.
+Pe copia finală a surselor, suita completă narrow trece **638/0**, iar chat
+phone_compact **68/0**. Captura telefonului, inspectată, este în
+`.ai-qa/fix-review-20261028/phone/phone_compact/chat-queue-20.png`; conversația
+are 188 px, coada 155 px, ultimul card și composer-ul sunt complet vizibile.
+
+## Actualizare 28 octombrie — experiența de chat
+
+Ultimul răspuns încheiat are acum **Undo** și **Regenerează**. Undo restaurează
+fișierele prin jurnal, salvează rezumatul modificărilor, elimină răspunsul cu
+promptul lui și readuce promptul, fișierele și atașamentele în composer; pentru
+tururile vechi acțiunea trimite la ramificare. Regenerează restaurează la fel și
+retrimite cererea. Ambele sunt blocate în timpul execuției, iar Undo refuză o
+scenă al cărei istoric nativ de Undo s-a pierdut în sesiune.
+
+Coada apare ca un panou deasupra composer-ului, cu număr, buton **Reia** când
+este oprită și carduri cu mutare înapoi în composer sau scoatere. Fiecare
+răspuns afișează durata fără așteptarea aprobărilor, tokenii de ieșire (marcați
+„≈” când sunt estimați) și costul din tarifele salvate. Gândirea furnizorului
+apare pliată, numărată în cuvinte. Căutarea în conversație numără potrivirile
+din mesajele încărcate și sare între ele, iar 15 s fără ieșire arată un
+avertisment de stagnare.
+
+Verificat pe Godot 4.7.2 headless: suită runtime 531/0, scenariul QA `chat`
+narrow 62/0, scenariul complet narrow 604/0, todo 88/0 și `--check-only` pe
+`panel.gd`, `chat_view.gd` și `icons.gd`. Capturile sunt în
+`.ai-qa/ag32-20261028/`. Regenerează nu a fost probat cu o cerere live; APK-ul și
+proba tactilă rămân separate.
+
+## Actualizare 28 octombrie — aprobări de sesiune și predarea planului
+
+Dialogul de aprobare are un al treilea buton, **Permite mereu**, care aprobă
+automat aceeași unealtă până la închiderea editorului. Verificarea lui vine după
+refuzul Plan și după YOLO, deci Plan rămâne doar pentru citire; decizia apare în
+jurnal ca `approved_always`. Setări → General listează uneltele aprobate și le
+poate revoca pentru sesiune; starea nu se salvează pe disc.
+
+Un card de plan propus, complet, oferă **Implementează planul** și **Ajustează**.
+Implementarea trece în Auto și trimite pașii propuși, cerând un `task_update` la
+executing înainte de prima modificare; ajustarea deschide Plan cu pașii în
+composer. Butonul brut **Aplică planul** de pe mesaj a fost eliminat.
+
+Verificat pe Godot 4.7.2 headless: suită runtime 531/0, scenariul QA approval
+84/0 și todo 88/0, `--check-only` pe `panel.gd`, `chat_view.gd` și
+`agent_jobs.gd`. Capturile și raportul independent sunt în
+`.ai-qa/review-playtest-20261028/`. APK-ul și proba tactilă rămân separate.
+
 ## Actualizare 25 octombrie — panouri de diagnostic
 
 Captura `Screenshot_20261025_203433.jpg` arată Output deschis sub chat.
@@ -46,9 +104,11 @@ Setări și Trimite, iar Șterge impunea arhivarea fără să indice această co
 - Redenumirea elimină spațiile marginale, refuză un nume gol și acceptă Enter.
 - Ciornele și referințele sunt separate pe conversații în sesiunea editorului.
   Nu sunt prezentate drept ciorne persistente după închiderea aplicației.
-- Ramificarea refuză un ID de mesaj expirat. Aplică planul trimite textul planului
-  ales. Modificări/Undo este dezactivat dacă răspunsul nu are modificări;
-  Copiază este dezactivat pentru un răspuns fără text.
+- Ramificarea refuză un ID de mesaj expirat. Un plan propus complet oferă
+  Implementează planul (Auto, cu pașii propuși) și Ajustează (Plan, cu pașii în
+  composer); cardurile de execuție nu afișează aceste acțiuni. Modificări/Undo
+  este dezactivat dacă răspunsul nu are modificări; Copiază este dezactivat
+  pentru un răspuns fără text.
 
 - Listele de profiluri și rezultate păstrează selecția după ID, inclusiv după
   actualizare sau reordonare. Rezultatul nou este selectat după trimitere.
