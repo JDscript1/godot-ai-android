@@ -174,10 +174,10 @@ func setup(store: RefCounted, conversation: String, files: Array, id: String, co
 	add_child(column)
 	var toolbar = HFlowContainer.new()
 	column.add_child(toolbar)
-	for entry in [["‹", "previous"], ["›", "next"], ["Menționează", "mention"], ["Decupare", "crop"], ["Săgeată", "arrow"], ["Atașează zona", "region"], ["Reset", "reset"], ["Față", "front"], ["Lateral", "side"], ["Sus", "top"], ["Wireframe", "wireframe"], ["Grilă", "grid"], ["Lumină", "light"], ["Animație", "animation"], ["×", "close"]]:
+	for entry in [["‹", "previous"], ["›", "next"], ["Menționează", "mention"], ["Decupare", "crop"], ["Săgeată", "arrow"], ["Atașează zona", "region"], ["Zoom +", "zoom_in"], ["Zoom −", "zoom_out"], ["Reset", "reset"], ["Față", "front"], ["Lateral", "side"], ["Sus", "top"], ["Wireframe", "wireframe"], ["Grilă", "grid"], ["Lumină", "light"], ["Animație", "animation"], ["×", "close"]]:
 		var button = Button.new()
 		button.text = entry[0]
-		var symbol = {"previous": "Back", "next": "ArrowRight", "mention": "Attach", "crop": "Crop", "arrow": "Annotate", "region": "Attach", "reset": "Reset", "front": "Preview3D", "side": "Preview3D", "top": "Preview3D", "wireframe": "Wireframe", "grid": "Grid", "light": "Light", "animation": "Animation", "close": "Close"}.get(entry[1], "More")
+		var symbol = {"previous": "Back", "next": "ArrowRight", "mention": "Attach", "crop": "Crop", "arrow": "Annotate", "region": "Attach", "zoom_in": "Search", "zoom_out": "Search", "reset": "Reset", "front": "Preview3D", "side": "Preview3D", "top": "Preview3D", "wireframe": "Wireframe", "grid": "Grid", "light": "Light", "animation": "Animation", "close": "Close"}.get(entry[1], "More")
 		var pixels = Image.new()
 		if pixels.load_svg_from_string(str(Icons.DATA.get(symbol, Icons.DATA["More"])).replace("currentColor", "#dce2f2"), EditorInterface.get_editor_scale()) == OK: button.icon = ImageTexture.create_from_image(pixels)
 		button.add_theme_constant_override("icon_max_width", int(16 * EditorInterface.get_editor_scale()))
@@ -208,6 +208,7 @@ func _show(id: String, compare: String = "") -> void:
 	var primary = registry.describe(id, scope)
 	var kind = primary.get("kind", "file")
 	for command in ["crop", "arrow", "region"]: commands[command].visible = kind == "image"
+	for command in ["zoom_in", "zoom_out"]: commands[command].visible = kind in ["image", "mesh"]
 	for command in ["front", "side", "top", "wireframe", "grid", "light", "animation"]: commands[command].visible = kind == "mesh"
 	for selected in [id, compare] if not compare.is_empty() else [id]:
 		var item = registry.describe(selected, scope)
@@ -267,6 +268,8 @@ func _command(command: String) -> void:
 		"reset":
 			for canvas in canvases:
 				canvas.zoom = 1; canvas.offset = Vector2.ZERO; canvas.selection = Rect2(); canvas.arrows.clear(); canvas.queue_redraw()
+		"zoom_in", "zoom_out":
+			for canvas in canvases: canvas.zoom_at(canvas.size * 0.5, 1.25 if command == "zoom_in" else 0.8)
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE, KEY_BACK]: hide(); set_input_as_handled()

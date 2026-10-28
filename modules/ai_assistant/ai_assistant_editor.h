@@ -1,6 +1,8 @@
 #pragma once
 
 #include "ai_runtime_bridge.h"
+#include "core/error/error_macros.h"
+#include "core/os/mutex.h"
 
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
@@ -46,6 +48,11 @@ class AIAssistantEditorPlugin : public EditorPlugin {
 	Ref<AIAssistantSecretStore> secrets;
 	Ref<AIAssistantDebugger> runtime_debugger;
 	Vector<Ref<GDScript>> scripts;
+	ErrorHandlerList diagnostic_handler;
+	Mutex diagnostic_mutex;
+	Array diagnostic_events;
+	int64_t diagnostic_sequence = 0;
+	static void _capture_diagnostic(void *p_user, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_description, bool p_notify, ErrorHandlerType p_type);
 
 protected:
 	static void _bind_methods();
@@ -63,6 +70,8 @@ public:
 	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
 	Dictionary termux_blender_request(const String &p_action, const Dictionary &p_args);
 	Dictionary script_diagnostics(const String &p_source, const String &p_path);
+	Dictionary diagnostics_snapshot();
+	bool scene_is_unsaved(const String &p_path);
 	bool create_scene_root(Node *p_node);
 	void prepare_script_removal(const PackedStringArray &p_paths);
 	void push_editor_input(Viewport *p_viewport, const Ref<InputEvent> &p_event);

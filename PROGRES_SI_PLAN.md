@@ -39,7 +39,296 @@ drept funcție validată cu un serviciu real.
 APK-ul curent include și eliminarea cardului Servicii și a scurtăturilor
 MCP / Generare 2D/3D din Integrări. Aceste servicii au paginile lor.
 
-## Etapa curentă — APK recompilat și înlocuit în Download, 28.10.2026
+## Recompilare solicitată — harness AG-34–AG-52, 28.10.2026
+
+Utilizatorul a cerut compilarea surselor actuale. Verificările locale precedente
+sunt 703/0 runtime, 716/0 editor narrow și 60/0 changesets phone_compact; în această
+rundă au trecut și cele 3 teste de livrare, 28 Termux/Blender și proba timestamp.
+Build-ul folosește pipeline-ul existent GitHub Actions, cu semnătura persistentă,
+pe o ramură separată de build. NDK-ul local disponibil este pentru host x86-64;
+ramura și modificările locale ale utilizatorului sunt păstrate.
+
+Dovezi de compilare și livrare: `.ai-qa/compile-harness-20261028/`. APK-ul din
+Download se va înlocui numai după verificarea rezultatului complet al pipeline-ului,
+a pachetului, semnăturii, ABI-ului, celor 34 de surse încorporate și bazei Linux.
+Instalarea și acceptarea fizică pe Android rămân separate.
+
+Jurnal: 28.10.2026 — recompilare autorizată explicit; pregătit snapshot izolat
+al surselor și reactivată livrarea unui APK verificat în Download.
+
+## Etapa curentă — loturi de fișiere și rollback, 28.10.2026
+
+**AG-49–AG-52, în surse:** agentul poate pregăti și examina împreună până la
+16 fișiere dependente, cu hash-uri sau absență explicită, copii private și
+manifest persistent. `godot_changes_apply` verifică întregul lot înaintea primei
+scrieri și fiecare destinație înaintea commit-ului. Stop sau eroarea declanșează
+rollback compensatoriu; editările ulterioare și copiile corupte rămân conflicte,
+fără suprascriere forțată. Nu există o limită nouă de pași a agentului.
+
+Aprobarea arată diff-urile concrete, Plan nu poate aplica lotul, iar istoricul
+pe turn include membrii modificați. După întrerupere, un runtime nou poate
+inspecta și restaura același manifest; operațiile nu sunt reaplicate automat.
+Inclusiv o aplicare eșuată cu rollback invalidează dovezile anterioare. Scenele
+deschise au verificare nativă pentru editări nesalvate; în editorul stock fără
+punte, scrierea lor prin lot este blocată conservator.
+
+Verificat pe sursele finale: **703 aserțiuni runtime / 0 eșecuri**,
+**716/0** în regresia completă a editorului narrow și **60/0** în scenariul
+changesets phone_compact. Capturile reale ale dialogului sunt inspectate în
+ambele layouturi. C++ trece verificarea de sintaxă/tipuri pentru cele două unități,
+iar toate cele **34 de scripturi încorporate** coincid exact cu sursele.
+Dovezi: `.ai-qa/changesets-20261028/`, inclusiv raport, hash-uri și stările
+loturilor. [Contracte și limite](docs/AI_CHANGE_SETS.md).
+Rollback-ul nu este atomic global și nu acoperă obiectele din memorie,
+instalările de pluginuri sau generările cloud. Simularea checkpoint-ului de
+întrerupere nu demonstrează recuperare după crash Android sau pierdere de curent.
+Nu s-a compilat, înlocuit, instalat sau publicat APK; Download rămâne **1c7c777**.
+Nu au fost folosite chei reale ori credite de generare.
+
+Jurnal: 28.10.2026 — adăugate pregătirea loturilor dependente, aplicarea cu
+verificări de versiune, rollback compensatoriu și recuperarea din manifest,
+cu integrare în aprobări, istoricul pe turn și invalidarea dovezilor.
+
+## Etapa anterioară — cunoașterea proiectului, diagnostic și dovezi, 28.10.2026
+
+Prima etapă a consolidării harness-ului este implementată în surse:
+
+- **AG-45:** `godot_project_map` și cache privat persistent: referințe literale,
+  dependențe inverse în scopul indexat, simboluri, hash-uri, fișiere lipsă și
+  UID-uri rezolvate dinamic. Scanare globală sau pe fișier/folder; maximum 600 de
+  fișiere, 4 MB de text și 4.000 de intrări pe scanare, cu acoperire și staleness
+  explicite. Anularea păstrează harta anterioară. Lexerul maschează fragmente
+  întregi prin căutări native, evitând copierea textului caracter cu caracter.
+- **AG-46:** `godot_diagnostics` unește observațiile parserului nativ,
+  referințele lipsă, Output-ul disponibil și diagnosticele editorului/jocului.
+  Puntea C++ captează evenimente structurate într-un buffer de 128 de intrări,
+  inclusiv erori de shader și avertismente. Cache-ul privat păstrează sursa,
+  severitatea, localizarea disponibilă, repetițiile și starea învechită; lipsa
+  punții sau o observație parțială nu înseamnă proiect fără erori.
+- **AG-47:** rezultate cu indicații de recuperare pentru handle-uri învechite,
+  conflicte de patch, tipuri/căi greșite, sintaxă invalidă și joburi externe
+  neconfirmate. Trei citiri identice fără progres cer schimbarea strategiei;
+  șase citiri identice încheie cu `no_progress`. Scrierile și generările nu
+  sunt repetate automat. Munca progresivă păstrează pașii nelimitați.
+- **AG-48:** criterii concrete în `task_update.criteria` și `task_check` pe ID-uri
+  de dovezi emise de executor. Sunt verificate tipul observației, condiția
+  măsurată, revizia și hash-urile fișierelor. Editările, Undo/Redo, schimbarea
+  criteriilor și reluarea invalidează dovezile. Un read nu probează sintaxa,
+  apăsarea unui buton nu probează mecanica, iar un draft sau patch neaplicat nu
+  probează fișierul salvat. Finalizarea directă și continuarea companionului
+  verifică starea criteriilor; omiterea ultimului `task_update` nu ocolește poarta.
+
+Verificat: **654 aserțiuni runtime / 0 eșecuri**, regresie completă randată
+narrow **697/0** și proba dedicată intelligence phone_compact **52/0**. Sunt
+acoperite inclusiv cache-uri corupte, UID rezolvat ulterior, drafturi neaplicate,
+editări externe și concurența dintre citire și emiterea dovezii. Codul C++ nou
+trece `clang++ -fsyntax-only` cu define-uri de editor; scripturile încorporate
+sunt acum **33**. Dovezi în
+`.ai-qa/intelligence-20261028/`; contractele și limitele sunt în
+[documentația etapei](docs/AI_HARNESS_INTELLIGENCE.md).
+
+Acoperirea dinamică completă a proiectului, stack-uri structurate dintr-un joc
+oprit în debugger, recuperarea după crash nativ, verificatorul independent și
+evaluările cu modele reale rămân etape distincte. Criteriile și aserțiunile trebuie să descrie fidel cererea; un ID de
+dovadă nu garantează că modelul a ales un test suficient.
+
+Nu s-a compilat, înlocuit sau instalat APK-ul. Captura nativă necesită editor
+recompilat; verificarea C++ de sintaxă nu reprezintă execuție pe Android. Download
+rămâne **1c7c777**. Nu au fost folosite chei reale sau credite de generare.
+
+Jurnal: 28.10.2026 — adăugate harta persistentă, diagnosticele unificate,
+recuperarea adaptivă și verificarea criteriilor prin dovezi reale ale uneltelor,
+cu invalidare după schimbări și probe de regresie.
+
+## Corectarea celor patru probleme din audit, 28.10.2026
+
+Corecțiile sunt în surse, peste modificările existente AG-34–AG-44:
+
+- Aprobarea parțială modifică o copie privată a argumentelor. Cererea originală,
+  istoricul și semnătura folosită la replay rămân identice; rezultatul raportează
+  hunk-urile acceptate/refuzate și hash-uri separate pentru propunere și conținutul
+  aprobat. Repetarea apelului și reluarea istoricului păstrează rezultatul fără
+  o nouă scriere.
+- Adaptorul Responses, inclusiv sesiunea de abonament care îl folosește, tratează
+  `response.incomplete` / `max_output_tokens` ca răspuns trunchiat continuabil.
+  Păstrează textul, consumul și elementele native de text/raționament; apelurile
+  de funcție ale răspunsului incomplet nu sunt executate sau retrimise ca apeluri
+  fără rezultat. Alte motive de întrerupere rămân erori.
+- Bugetul comun este strict: maximum 48.000 de caractere pentru toate rezultatele
+  dintr-un pas, inclusiv 64 de apeluri. Se rezervă 512 caractere pentru fiecare
+  apel rămas; nu se mai adaugă automat un minim după epuizarea bugetului.
+  Rezumatele rămân JSON valid; diagnosticele mari păstrează structurat verdictul
+  de sintaxă și numărul de erori, iar aprobările mari păstrează selecția parțială
+  și numărul hunk-urilor.
+- `godot_symbols` maschează stringurile și comentariile înainte de identificarea
+  declarațiilor, inclusiv ambele forme de ghilimele triple și delimitatorii
+  escapați. Păstrează liniile și semnăturile reale.
+
+Verificat: runtime **600 aserțiuni / 0 eșecuri** și suita completă randată
+narrow **662/0**, inclusiv scriere și patch reale aprobate parțial. Scenariul
+dedicat approval phone_compact trece **117/0**, cu verificări de geometrie și
+captura completă a editorului inspectată. Proba inițială
+a auditului măsoară acum **46.587** de caractere pentru 64 de rezultate, față de
+**78.291** înainte, replay finalizat cu o singură execuție și numai declarațiile
+reale din stringul de probă. Responses repetat trunchiat face cele două continuări
+configurate și raportează `output_limit`; fixture-ul care apoi se încheie normal
+este verificat separat în suita runtime. Dovezi în `.ai-qa/fixes-20261028/`.
+Nu a fost compilat, înlocuit sau instalat un APK; Download rămâne **1c7c777**.
+Nu s-au folosit chei reale sau credite de generare. Proba pe Android fizic și cu
+un furnizor real rămâne separată.
+
+Jurnal: 28.10.2026 — aplicate cele patru corecții reproduse în audit, cu regresii
+pentru replay după aprobare parțială, Responses trunchiat, 64 de rezultate mari
+și declarații false din stringuri. Plafonul de pași rămâne eliminat.
+
+## Consolidări — verificare după scriere, context de căutare și buget pe rundă, 28.10.2026
+
+Trei consolidări ale harness-ului, în surse (**AG-42–AG-44**).
+`godot_search_code` și limita de 24.000 de caractere pe rezultat existau deja;
+runda le completează, nu le dublează.
+
+- **AG-42:** după `godot_write_file` sau `godot_apply_patch` pe un `.gd`,
+  rezultatul include verdictul automat al parserului nativ: `valid`, erori cu
+  linie, coloană și mesaj, plus `truncated`. Sunt păstrate maximum 20 de erori,
+  fiecare mesaj limitat la 400 de caractere; avertismentele rămân în
+  `godot_script_diagnostics`. Preview-ul unui patch validează textul propus, nu
+  fișierul de pe disc. Fără puntea nativă câmpul `syntax` lipsește — unealta nu
+  inventează un verdict.
+- **AG-43:** `godot_search_code` acceptă `context` 0–4; fiecare potrivire poate
+  include liniile dinainte și de după, fără repetarea liniilor deja afișate de o
+  potrivire vecină. Extrasele sunt limitate la 24.000 de caractere pe rezultat,
+  iar folderele și fișierele legate simbolic sunt sărite.
+- **AG-44:** rezultatele uneltelor dintr-un pas împart un buget de 48.000 de
+  caractere; minimul inițial de 2.000 pe rezultat a fost înlocuit cu rezervarea
+  spațiului pentru apelurile rămase în corecția auditului de mai sus. Un rezultat tăiat păstrează, când există spațiu,
+  începutul, coada (`tail`), contractul `ok`/`code`/`error`, identitatea
+  artefactului și verdictul `syntax`. Listele `matches`, `symbols` și
+  `diagnostics` păstrează numărul total și primele trei intrări compacte.
+
+Verificat: **569 aserțiuni runtime / 0 eșecuri**, inclusiv verdictul de sintaxă
+cu punte simulată, contextul de căutare cu suprapunere suprimată și bugetul pe
+rundă cu un al patrulea rezultat redus; suita completă narrow **658/0**;
+`--check-only` pe `editor_tools.gd` și `harness.gd`. Dovezi în
+`.ai-qa/harness-20261028/`.
+
+Limite: parserul nativ nu există în binarul stock folosit de probele locale, deci
+verdictul real de sintaxă rulează doar în editorul recompilat; local s-a verificat
+ramura fără punte, care nu inventează un verdict. Contextul și bugetul sunt
+independente de motor și au fost probate local. Un APK nou și proba pe dispozitiv
+rămân deschise; APK-ul din Download rămâne **1c7c777**.
+
+Jurnal: 28.10.2026 — verdict de sintaxă după scriere, context la căutarea în cod
+și buget comun pe rundă pentru rezultatele uneltelor.
+
+## Etapa precedentă — continuare automată, harta simbolurilor și review pe hunk-uri, 28.10.2026
+
+Trei capacități tehnice alese din comparația cu Ziva și rescrise independent în
+surse (**AG-39–AG-41**). Nicio linie de cod Ziva nu a fost copiată.
+
+- **AG-39:** un răspuns oprit la limita de ieșire a furnizorului (`length`,
+  `MAX_TOKENS`, `max_tokens`) continuă automat de până la două ori. Instrucțiunea
+  internă intră doar în contextul acelei cereri, nu în istoric; textul,
+  raționamentul și apelurile de unelte se topesc într-un singur mesaj assistant și
+  un singur balon. Fiecare încercare emite evenimentul `auto_continue` și este
+  numărată în `continuations`; după buget, turul se încheie
+  `limited`/`output_limit` cu textul complet. Panoul pasează două încercări;
+  harness-ul implicit rămâne 0.
+- **AG-40:** unealta `godot_symbols` citește declarațiile top-level dintr-un
+  director de proiect: `class_name`, `class`, `func`/`static func`, `signal`,
+  `const`, `enum`, `@export var` și `var`, cu cale, linie de la 1 și semnătură
+  mărginită. Filtrează după nume (fără diferență de majuscule), tip și limită;
+  scanarea este mărginită la 2000 de intrări, 4 MB și 600 de fișiere în cache, iar
+  parsarea este cache-uită după hash-ul conținutului. Variabilele locale și
+  liniile comentate sunt ignorate; rezultatul raportează `files_scanned`,
+  `scanned_bytes` și `truncated`.
+- **AG-41:** aprobarea scrierii peste un fișier existent arată diff-ul unificat și
+  o bifă per hunk, cu +/− și linia de start. Toate bifele pornesc selectate; cele
+  nebifate păstrează liniile originale, iar **Permite** și **Permite mereu** sunt
+  dezactivate când nu e selectat niciun hunk. La `godot_write_file` selecția
+  înlocuiește textul; la
+  `godot_apply_patch` se aplică o singură înlocuire exactă peste original,
+  păstrând verificarea hash-ului, copia de recuperare și jurnalul. Fișierele noi
+  și diff-urile peste limite cad pe preview-ul textual anterior. Dacă dialogul
+  nativ se ascunde deși OK e dezactivat, aprobarea este reafișată.
+
+Verificat: **558 aserțiuni runtime / 0 eșecuri**; scenariul QA `approval`
+**92/0** în cinci layout-uri, cu bife per hunk, blocare fără selecție, reafișare
+și un `godot_apply_patch` real din care un hunk este respins; chat narrow
+**68/0**; todo narrow **115/0**; suita completă narrow **657/0**;
+`--check-only` pe `diff.gd`, `editor_tools.gd`, `harness.gd` și `panel.gd`.
+Dovezi în `.ai-qa/continuare-simboluri-hunks-20261028/`.
+
+Limite: testele dovedesc comportamentul în editorul headless și fixture-urile QA,
+nu un furnizor live, un APK nou sau dispozitivul fizic. Continuarea automată a
+fost probată cu răspunsuri fixture marcate `length`, nu cu un model real care
+atinge limita. Harta simbolurilor acoperă numai declarațiile top-level ale
+fișierelor `.gd`, nu simboluri din scene sau resurse. Review-ul pe hunk-uri se
+aplică doar scrierilor aprobate manual; YOLO și „Permite mereu” rămân fără ecran
+de review. AG-39–AG-41 sunt în surse; APK-ul din Download rămâne **1c7c777** și
+nu le include.
+
+Jurnal: 28.10.2026 — adăugate continuarea automată, `godot_symbols` și review-ul
+pe hunk-uri înainte de scriere.
+
+## Etapa precedentă — Plan, operații și navigare tactilă, 28.10.2026
+
+Captura `Screenshot_20261028_041559.jpg` arată planul în poziția inițială și
+`asset_wait` fără identificarea generatorului. Corecții în surse:
+
+- **AG-35:** un singur card Plan activ urmărește capătul conversației. La
+  finalizare rămâne în istoric; citirea mesajelor vechi nu forțează derularea
+  la final. Stările pașilor rămân cele confirmate prin plan, fără completări
+  inventate pe baza numelui uneltei.
+- **AG-36:** operațiile au nume lizibile. Profilul sau jobul existent determină
+  `Running Image Generator Tool` / `Running 3D Generator Tool`, inclusiv la
+  așteptare și verificare. Un job necunoscut folosește denumirea generică.
+  Identificatorul tehnic rămâne în tooltip și Jurnal.
+- **AG-37:** preview-ul 3D acceptă gesturile native Android de mărire și pan,
+  păstrând rotirea și pinch-ul brut. Butoanele **Zoom + / Zoom −** oferă control
+  explicit; distanța camerei rămâne limitată la intervalul preview-ului.
+- **AG-38:** derularea conversației acoperă textul, codul, cardurile media și
+  marginile goale. Primul mouse emulat de Android este interceptat înainte
+  să pornească selecția textului. Pan-ul nativ este acceptat; butoanele și
+  câmpurile editabile păstrează interacțiunea lor. Glisarea orizontală a unui
+  fișier îl menționează, tap-ul deschide preview-ul, apăsarea lungă păstrează
+  meniul de acțiuni și eliberează gestul capturat.
+
+Probele folosesc ferestre reale Godot, input trimis prin viewport și fișiere
+fixture în proiecte temporare. Dovezi în `.ai-qa/navigation-20261028/`.
+Regresia completă narrow trece **649 verificări / 0 eșecuri**; preview-ul 3D
+phone_landscape trece **79/0**. Proba finală de navigare și operații trece **115/0**
+phone_compact, inclusiv Plan după mesaje, carduri de modificări și rezultate
+Store, gesturi pe margini/text/cod/media, mențiuni și meniul apăsării lungi.
+Capturile preview-ului 3D și ale chatului au fost inspectate. Recalcularea
+intervalului de scroll este urmărită pentru a păstra întregul card Plan deasupra
+composer-ului după schimbarea înălțimii conținutului; proba finală verifică
+explicit limita de jos a cardului, iar captura confirmă încadrarea completă.
+Planul interactiv a fost repetat pe sursele finale la scalarea telefonului:
+**67 verificări / 0 eșecuri**, cu selecții, câmpuri proprii, trimitere și reluare.
+Prima probă simultană a expirat și a țintit o miniatură înaintea layoutului;
+fixture-ul așteaptă acum încadrarea și verifică aria vizibilă înainte de input.
+Probele reluate separat au trecut; limitele testelor nu schimbă pașii agentului.
+APK-ul din Download rămâne **1c7c777**; AG-34–AG-38 nu sunt încă livrate în el.
+ADB nu are un dispozitiv conectat, deci gesturile fizice Android nu sunt
+prezentate drept verificate.
+
+## Etapa precedentă — Running Tools numai pentru unelte active, 28.10.2026
+
+Corectat în surse **AG-34**: rândul „Running Tools” pornește ascuns și apare
+numai la începutul unui apel de unealtă, cu numele curent. Rezultatul apelului,
+inclusiv un refuz sau o eroare, ascunde rândul și eliberează spațiul din chat.
+Stop îl ascunde imediat; finalizarea cererii și schimbarea conversației îl
+resetează. Nu mai rămâne eticheta goală „Running Tools · —”.
+
+Proba dedicată pe scalarea telefonului a trecut **94 verificări / 0 eșecuri**,
+inclusiv schimbarea uneltei, rezultat, refuz, Stop, finalizare și conversație nouă.
+Regresia completă în editorul îngust a trecut **641 verificări / 0 eșecuri**.
+Capturile cu unealta activă și cu planul încheiat au fost inspectate. Dovezi:
+`.ai-qa/running-tools-20261028/`. Este o corecție în surse; APK-ul din Download
+rămâne **1c7c777** și nu conține încă AG-34. Verificarea fizică Android rămâne
+separată.
+
+## Etapa precedentă — APK recompilat și înlocuit în Download, 28.10.2026
 
 Utilizatorul a cerut recompilarea și înlocuirea instalatorului din Download.
 Build-ul **`1c7c777`** include AG-21–AG-33: Plan interactiv, playtest măsurabil,
@@ -2651,6 +2940,20 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
+- **28.10.2026:** AG-49–AG-52 în surse: loturi dependente cu hash-uri, diff-uri
+  pentru aprobare, rollback compensatoriu, recuperare după întrerupere simulată
+  și invalidarea dovezilor inclusiv după aplicare eșuată. Probe finale: runtime
+  703/0, editor narrow 716/0, phone_compact 60/0. Fără APK nou.
+
+- **28.10.2026:** AG-35–AG-38 în surse: Plan la capătul conversației,
+  denumiri specifice generatoarelor, zoom 3D nativ și prin butoane, glisare
+  tactilă pe suprafețele conversației. Regresie narrow 649/0, preview 79/0,
+  navigare phone_compact 115/0 și Plan interactiv final 67/0; fără generări
+  plătite sau APK nou.
+- **28.10.2026:** AG-34 corectat în surse: Running Tools apare numai pentru
+  unelte active și dispare la rezultat, Stop sau finalizare. Proba dedicată
+  phone_compact: 94/0; regresie completă narrow: 641/0. APK-ul din Download
+  nu a fost schimbat.
 - **28.10.2026:** recompilat și livrat **1c7c777**, cu AG-21–AG-33; 537 aserțiuni
   runtime, 641 × 5 verificări upstream și 654 × 5 native trecute. APK ARM64 de
   112.345.138 bytes, semnătura, cele 30 de scripturi și Linux verificate;

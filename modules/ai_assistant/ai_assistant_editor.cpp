@@ -168,11 +168,23 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantEditorPlugin::linux_runtime_request);
 	ClassDB::bind_method(D_METHOD("termux_blender_request", "action", "arguments"), &AIAssistantEditorPlugin::termux_blender_request);
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
+	ClassDB::bind_method(D_METHOD("diagnostics_snapshot"), &AIAssistantEditorPlugin::diagnostics_snapshot);
+	ClassDB::bind_method(D_METHOD("scene_is_unsaved", "path"), &AIAssistantEditorPlugin::scene_is_unsaved);
 	ClassDB::bind_method(D_METHOD("create_scene_root", "node"), &AIAssistantEditorPlugin::create_scene_root);
 	ClassDB::bind_method(D_METHOD("prepare_script_removal", "paths"), &AIAssistantEditorPlugin::prepare_script_removal);
 	ClassDB::bind_method(D_METHOD("push_editor_input", "viewport", "event"), &AIAssistantEditorPlugin::push_editor_input);
 	ClassDB::bind_method(D_METHOD("install_asset_archive", "path", "title"), &AIAssistantEditorPlugin::install_asset_archive);
 	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantEditorPlugin::open_settings, DEFVAL(String()));
+}
+
+bool AIAssistantEditorPlugin::scene_is_unsaved(const String &p_path) {
+	EditorData &data = EditorNode::get_editor_data();
+	for (int index = 0; index < data.get_edited_scene_count(); index++) {
+		if (data.get_scene_path(index) == p_path) {
+			return EditorNode::get_singleton()->is_scene_unsaved(index);
+		}
+	}
+	return false;
 }
 
 bool AIAssistantEditorPlugin::create_scene_root(Node *p_node) {
@@ -181,6 +193,35 @@ bool AIAssistantEditorPlugin::create_scene_root(Node *p_node) {
 	EditorNode::get_singleton()->new_scene();
 	EditorInterface::get_singleton()->add_root_node(p_node);
 	return EditorInterface::get_singleton()->get_edited_scene_root() == p_node;
+}
+
+void AIAssistantEditorPlugin::_capture_diagnostic(void *p_user, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_description, bool p_notify, ErrorHandlerType p_type) {
+	auto *self = static_cast<AIAssistantEditorPlugin *>(p_user);
+	MutexLock lock(self->diagnostic_mutex);
+	Dictionary event;
+	event["sequence"] = ++self->diagnostic_sequence;
+	event["path"] = String::utf8(p_file);
+	event["line"] = p_line;
+	event["function"] = String::utf8(p_function);
+	event["severity"] = p_type == ERR_HANDLER_WARNING ? "warning" : "error";
+	event["category"] = p_type == ERR_HANDLER_SHADER ? "shader" : (p_type == ERR_HANDLER_SCRIPT ? "script" : "engine");
+	event["message"] = (String::utf8(p_error) + " " + String::utf8(p_description)).strip_edges().left(1200);
+	if (self->diagnostic_events.size() >= 128) {
+		self->diagnostic_events.pop_front();
+	}
+	self->diagnostic_events.append(event);
+}
+
+Dictionary AIAssistantEditorPlugin::diagnostics_snapshot() {
+	MutexLock lock(diagnostic_mutex);
+	Dictionary data;
+	data["events"] = diagnostic_events.duplicate(true);
+	data["sequence"] = diagnostic_sequence;
+	data["truncated"] = diagnostic_sequence > diagnostic_events.size();
+	Dictionary result;
+	result["ok"] = true;
+	result["result"] = data;
+	return result;
 }
 
 Dictionary AIAssistantEditorPlugin::script_diagnostics(const String &p_source, const String &p_path) {
@@ -467,6 +508,9 @@ static bool ai_load_scripts(Vector<Ref<GDScript>> &scripts) {
 }
 
 AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
+	diagnostic_handler.errfunc = _capture_diagnostic;
+	diagnostic_handler.userdata = this;
+	add_error_handler(&diagnostic_handler);
 	connect("main_screen_changed", callable_mp(this, &AIAssistantEditorPlugin::_main_screen_changed));
 	EDITOR_DEF("ai_assistant/general/configure", String());
 	EDITOR_DEF("ai_assistant/providers/configure", String());
@@ -500,6 +544,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 }
 
 AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
+	remove_error_handler(&diagnostic_handler);
 	if (runtime_debugger.is_valid()) {
 		remove_debugger_plugin(runtime_debugger);
 	}

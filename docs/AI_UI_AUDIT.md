@@ -1,5 +1,50 @@
 # Audit interfață AI — 22 octombrie 2026
 
+## Corecții după audit — 28 octombrie 2026
+
+Aprobarea parțială lucrează pe o copie a argumentelor. Cererea originală rămâne
+în istoric și identifică replay-ul; rezultatul arată explicit hunk-urile
+acceptate/refuzate și hash-urile propunerii și conținutului aprobat. Probele din
+editor execută atât scrierea, cât și patch-ul, păstrând partea respinsă pe disc
+și argumentele originale în memorie. Succesul autorizării nu ascunde o eroare
+ulterioară a uneltei.
+
+Runtime: **600/0**; regresie completă narrow: **662/0**; aprobări
+phone_compact: **117/0**, inclusiv geometria hunk-urilor fără selecție și a
+selecției parțiale. Captura completă a editorului confirmă butoanele accesibile;
+captura directă a subferestrei încorporate diferă de compoziția finală. Dovezi în
+`.ai-qa/fixes-20261028/`. Corectate și continuarea Responses la limita de tokeni,
+bugetul comun pentru 64 de rezultate și scanarea declarațiilor din stringuri.
+Acestea sunt verificări automate în editor; APK-ul și proba tactilă Android
+rămân separate.
+
+## Actualizare 28 octombrie — continuare automată și review pe hunk-uri
+
+Un răspuns oprit la limita de ieșire a modelului continuă automat de până la
+două ori. Textul și continuarea sunt topite într-un singur mesaj, cu un singur
+balon, iar statusul arată modul, „răspuns tăiat” și progresul continuării
+(`1/2`). Instrucțiunea internă de continuare nu apare ca mesaj de utilizator; la
+epuizarea bugetului, turul se încheie ca `limited`, păstrând textul complet.
+
+Dialogul de aprobare pentru un fișier existent arată diff-ul unificat al
+scrierii propuse și câte o bifă pentru fiecare hunk, cu numărul de linii
+adăugate/șterse și linia de început. Toate bifele pornesc selectate; cele
+nebifate sunt reverterite la liniile originale, iar **Permite** și **Permite
+mereu** rămân dezactivate cât timp nu este selectat niciun hunk. Pentru
+`godot_write_file`
+selecția înlocuiește textul scris; pentru `godot_apply_patch` se aplică o
+înlocuire exactă peste fișierul original, astfel încât verificarea hash-ului,
+copia de recuperare și jurnalul rămân active. Fișierele noi păstrează preview-ul
+textual integral de dinainte.
+
+Verificat pe Godot 4.7.2 headless: suită runtime 558/0, scenariul QA `approval`
+92/0 în cele cinci layout-uri, `--check-only` pe `diff.gd`, `editor_tools.gd`,
+`harness.gd` și `panel.gd`. Probele fixture acoperă bifele per hunk, blocarea
+aprobării și a grantului de sesiune fără selecție, reafișarea dialogului și
+executarea reală a unui patch din care un hunk este respins. Capturile sunt în
+`.ai-qa/continuare-simboluri-hunks-20261028/approval/`. APK-ul și proba tactilă
+rămân separate.
+
 ## Actualizare 28 octombrie — corecțiile auditului independent
 
 Coada are acum o zonă proprie de derulare, cu înălțime limitată și spațiu

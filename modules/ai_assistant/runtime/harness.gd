@@ -8,10 +8,14 @@ static var Common: GDScript
 static var ToolRegistry: GDScript
 
 const TOOL_RESULT_LIMIT = 24000
+const TOOL_BATCH_LIMIT = 48000
+# Reserve a compact JSON contract for every remaining call (at most 64 per batch).
+const TOOL_RESULT_RESERVE = 512
 
 var owner: Node
 var state = "idle"
 var stats = {}
+var _tool_budget = TOOL_BATCH_LIMIT
 var _active = false
 var _cancel: Dictionary = {}
 var _hooks: Dictionary = {}
@@ -22,6 +26,10 @@ var _deduplicate_tools: Array = []
 var _turn = ""
 var _checkpoint_failed = false
 var _started_msec = 0
+var _continuations = 0
+var _continuation_hint = ""
+var _repair_hint = ""
+var _inspection_repeats = {}
 
 func _init(node: Node = null) -> void:
 	owner = node
@@ -42,7 +50,11 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	_turn = str(options.get("metadata", {}).get("turn_id", options.get("id", "")))
 	_deduplicate_tools = options.get("deduplicate_tools", [])
 	_effects = _restore_effects(_messages)
-	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0, "reused_calls": 0}
+	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0, "reused_calls": 0, "continuations": 0}
+	_continuations = 0
+	_continuation_hint = ""
+	_repair_hint = ""
+	_inspection_repeats.clear()
 	var definitions: Array = options.get("tools", [])
 	var registry = ToolRegistry.new(definitions, bool(options.get("deferred_tools", false)))
 	if not registry.error.is_empty(): return _finish("failed", registry.error, "invalid_tools")
@@ -50,6 +62,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	# Normal editor runs have no step ceiling. Only isolated evaluations opt in.
 	var maximum = maxi(0, int(options.get("max_steps", 0)))
 	var retries = clampi(int(options.get("max_retries", 2)), 0, 3)
+	var auto_continue = clampi(int(options.get("auto_continue", 0)), 0, 5)
 	var metadata: Dictionary = options.get("metadata", {})
 	var last_text = ""
 	var empty_rounds = 0
@@ -66,17 +79,24 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 		step += 1
 		stats["steps"] = step
+		_tool_budget = TOOL_BATCH_LIMIT
+		var continuation_hint = _continuation_hint
+		_continuation_hint = ""
 		definitions = registry.active_definitions()
 		var declared = {}
 		for definition in definitions: declared[definition["name"]] = true
 		var context: Array = _hooks["context"].call() if _hooks.get("context", Callable()).is_valid() else _messages.duplicate(true)
+		if not continuation_hint.is_empty(): context.append({"role": "user", "content": continuation_hint})
+		if not _repair_hint.is_empty():
+			context.append({"role": "system", "content": _repair_hint})
+			_repair_hint = ""
 		var response: Dictionary = {}
 		var response_msec = 0
 		for attempt in range(retries + 1):
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			_transition("running")
 			if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
-			event.emit({"kind": "request_started", "step": step, "maximum": maximum, "attempt": attempt + 1})
+			event.emit({"kind": "request_started", "step": step, "maximum": maximum, "attempt": attempt + 1, "continuation": not continuation_hint.is_empty(), "continuation_attempt": _continuations, "continuation_max": auto_continue})
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			stats["requests"] += 1
 			var streamed = {"text": false}
@@ -104,14 +124,38 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		message.merge(metadata, true)
 		message["role"] = "assistant"
 		message["id"] = Common.uid()
-		_messages.append(message)
+		var continuation_round = not continuation_hint.is_empty()
+		var merged = false
+		var previous: Dictionary = _messages[-1] if not _messages.is_empty() else {}
+		if continuation_round and previous.get("role") == "assistant" and previous.get("tool_calls", []).is_empty():
+			previous["content"] = str(previous.get("content", "")) + str(message.get("content", ""))
+			if not str(message.get("reasoning_content", "")).is_empty(): previous["reasoning_content"] = str(previous.get("reasoning_content", "")) + str(message["reasoning_content"])
+			for key in ["provider_items", "provider_blocks"]:
+				var addition: Variant = message.get(key)
+				if not addition is Array or addition.is_empty(): continue
+				var combined: Array = previous.get(key, []) if previous.get(key, []) is Array else []
+				combined.append_array(addition)
+				previous[key] = combined
+			if not calls.is_empty(): previous["tool_calls"] = calls
+			# A truncated answer keeps one assistant record and one chat bubble.
+			message = previous
+			merged = true
+		else:
+			_messages.append(message)
 		last_text = str(message.get("content", ""))
-		event.emit({"kind": "message", "message": message, "usage": response.get("usage", {}), "finish": response.get("finish", ""), "duration_ms": response_msec})
+		event.emit({"kind": "message", "message": message, "usage": response.get("usage", {}), "finish": response.get("finish", ""), "duration_ms": response_msec, "continuation": continuation_round, "merged": merged})
 		_checkpoint()
 		if calls.is_empty():
 			var finish = str(response.get("finish", ""))
 			if finish in ["length", "MAX_TOKENS", "max_tokens"]:
-				return _finish("limited", "Răspuns oprit la limita modelului.", "output_limit", last_text)
+				if _continuations < auto_continue:
+					_continuations += 1
+					stats["continuations"] = _continuations
+					_continuation_hint = "The previous answer stopped at the output token limit. Continue exactly where it stopped, without repeating anything already written and without a preamble. Complete any unfinished sentence, code block, list or tool call."
+					event.emit({"kind": "auto_continue", "attempt": _continuations, "maximum": auto_continue})
+					continue
+				var limit_message = "Răspuns oprit la limita modelului." if _continuations == 0 else "Răspuns oprit la limita modelului după %d continuări." % _continuations
+				return _finish("limited", limit_message, "output_limit", last_text)
 			if _hooks.get("needs_continuation", Callable()).is_valid() and _hooks["needs_continuation"].call():
 				empty_rounds += 1
 				if empty_rounds >= 3: return _finish("limited", "Agentul nu a făcut progrese în ultimele trei încercări. Verifică pașii rămași înainte de reluare.", "no_progress", last_text)
@@ -120,9 +164,18 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			if _hooks.get("blocked_reason", Callable()).is_valid():
 				var reason = str(_hooks["blocked_reason"].call())
 				if not reason.is_empty(): return _finish("blocked", "Sarcină blocată. " + reason, "task_blocked", last_text)
+			if _hooks.get("completion_problem", Callable()).is_valid():
+				var problem = str(_hooks["completion_problem"].call())
+				if not problem.is_empty():
+					empty_rounds += 1
+					if empty_rounds >= 3: return _finish("blocked", problem, "verification_required", last_text)
+					_repair_hint = "Completion has not been verified. " + problem + " Continue with the required checks or report the concrete blocker; do not repeat a success claim."
+					event.emit({"kind": "verification_required", "message": problem})
+					continue
 			return _finish("completed", "Finalizat.", "", last_text)
 		empty_rounds = 0
 		var stalled = false
+		var remaining_calls = calls.size()
 		for call in calls:
 			var call_started_msec = Time.get_ticks_msec()
 			var result: Dictionary
@@ -165,8 +218,22 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				else:
 					executed = true
 					stats["tool_calls"] += 1
-					result = await _hooks["execute"].call(name, call["arguments"])
-			var tool_message = _tool_message(call, result, metadata)
+					# Review may narrow a write, but must never change the provider call's identity.
+					result = await _hooks["execute"].call(name, call["arguments"].duplicate(true))
+			var recovery = _recovery_guidance(name, result)
+			if not recovery.is_empty(): result = result.merged({"recovery": recovery}, true)
+			if executed and registry.catalog.get(name, {}).get("risk") != "read" and result.get("ok", false) and name not in ["task_update", "plan_ask"]:
+				_inspection_repeats.clear()
+			if executed and name in ["godot_files", "godot_read_file", "godot_read_range", "godot_describe", "godot_project_map", "godot_symbols", "godot_search_code"] and result.get("ok", false):
+				var fingerprint = _signature(call) + JSON.stringify(result.get("result")).sha256_text()
+				if _inspection_repeats.size() >= 100 and not _inspection_repeats.has(fingerprint): _inspection_repeats.erase(_inspection_repeats.keys()[0])
+				_inspection_repeats[fingerprint] = int(_inspection_repeats.get(fingerprint, 0)) + 1
+				if _inspection_repeats[fingerprint] >= 3:
+					_repair_hint = "The same inspection returned the same facts at least three times without a project change. Change the query or tool, use godot_diagnostics/project_map, test a concrete hypothesis, revise the plan or report a blocker. Further identical reads do not establish progress."
+					event.emit({"kind": "recovery", "tool": name, "reason": "unchanged_inspection", "count": _inspection_repeats[fingerprint]})
+					if _inspection_repeats[fingerprint] >= 6: stalled = true
+			var tool_message = _tool_message(call, result, metadata, remaining_calls)
+			remaining_calls -= 1
 			tool_message["execution_started"] = executed
 			_messages.append(tool_message)
 			_ledger[id] = {"signature": _signature(call), "result": _result_from_message(tool_message)}
@@ -202,39 +269,97 @@ func _validate_response(response: Dictionary) -> String:
 		if _ledger.has(id) and _ledger[id]["signature"] != _signature(call): return "Un identificator de apel a fost reutilizat pentru altă operație."
 	return ""
 
-func _tool_message(call: Dictionary, result: Dictionary, metadata: Dictionary) -> Dictionary:
+static func _recovery_guidance(name: String, result: Dictionary) -> Dictionary:
+	var code = str(result.get("code", ""))
+	if result.get("result") is Dictionary and result["result"].get("syntax") is Dictionary and not result["result"]["syntax"].get("valid", true):
+		return {"category": "syntax", "next": ["godot_script_diagnostics", "godot_read_range"], "action": "Inspect the reported source and apply a minimal repair, then validate again. The file write alone did not verify syntax."}
+	if result.get("ok", false): return {}
+	var recovery = {"category": "inspect_failure", "retry_tool_automatically": false, "action": "Inspect the concrete error and choose a different hypothesis before repeating the operation."}
+	match code:
+		"tool_not_loaded", "tool_unavailable", "unknown_tool": recovery.merge({"category": "capability", "next": ["tool_describe", "tool_search"], "action": "Discover the actual permitted tool/schema; do not invent an unavailable capability."}, true)
+		"stale_handle": recovery.merge({"category": "stale_reference", "next": ["godot_project", "godot_scene_tree"], "action": "Obtain fresh handles; never reuse the stale object reference."}, true)
+		"patch_conflict", "unsaved_changes": recovery.merge({"category": "version_conflict", "next": ["godot_read_range"], "action": "Re-read the current source and hash. Preserve user edits; do not overwrite or force an old patch."}, true)
+		"restore_conflict", "recovery_required", "recovery_failed", "journal_failed": recovery.merge({"category": "recovery", "next": ["godot_changes_status"], "action": "Inspect actual file hashes and the existing recovery journal. Preserve later edits. Recover the existing set, never blindly reapply it or claim rollback succeeded without checking the result."}, true)
+		"invalid_path", "invalid_file", "scene_not_found", "directory_create_failed": recovery.merge({"category": "project_structure", "next": ["godot_project_map", "godot_files"], "action": "Inspect existing paths and dependencies; reuse the actual scene/file path instead of creating another project tree."}, true)
+		"permission_denied", "cancelled": recovery.merge({"category": "user_boundary", "action": "Respect the refusal or Stop. Do not bypass it through another tool or repeat the same approval."}, true)
+		"submission_unknown", "conversion_unknown": recovery.merge({"category": "uncertain_side_effect", "next": ["asset_status", "asset_wait"], "action": "Recover the existing job and provider ID. Do not submit or charge again."}, true)
+		"invalid_arguments", "invalid_method", "invalid_property": recovery.merge({"category": "schema", "next": ["tool_describe", "godot_describe"], "action": "Inspect the real schema/member type before correcting the arguments."}, true)
+		"criterion_failed", "evidence_stale", "evidence_scope", "verification_required": recovery.merge({"category": "verification", "action": "Keep the original criterion; gather fresh scoped evidence, repair a failed check and verify again."}, true)
+	return recovery.merged({"tool": name})
+
+func _tool_message(call: Dictionary, result: Dictionary, metadata: Dictionary, remaining_calls: int = 1) -> Dictionary:
 	var body = result.duplicate()
 	body.erase("images")
 	var serialized = _redact(JSON.stringify(Common.json_safe(body)))
-	if serialized.length() > TOOL_RESULT_LIMIT: serialized = _bounded_result(serialized)
+	var limit = mini(TOOL_RESULT_LIMIT, _tool_budget - TOOL_RESULT_RESERVE * maxi(0, remaining_calls - 1))
+	if serialized.length() > limit: serialized = _bounded_result(serialized, limit)
+	_tool_budget = maxi(0, _tool_budget - serialized.length())
 	return {"id": Common.uid(), "role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": serialized, "attachments": _safe(result.get("images", [])), "turn_id": metadata.get("turn_id", stats["id"])}
 
-static func _bounded_result(serialized: String) -> String:
+static func _bounded_result(serialized: String, limit: int = TOOL_RESULT_LIMIT) -> String:
 	# Keep the executor contract when only the model's text view needs shortening.
 	# The panel's detailed journal retains the complete, separately sanitized result.
+	var details_limit = mini(8000, maxi(mini(limit - 32, 1024), limit / 3))
 	var body: Dictionary = Common.parse_json(serialized)
-	var summary = {"truncated": true, "original_characters": serialized.length(), "next": "Only a summary is shown. Request a narrower inspection, a reflection page or a file range; omitted fields do not prove absence."}
+	var summary = {"truncated": true, "original_characters": serialized.length()}
 	for key in ["ok", "code", "error", "files"]:
 		if not body.has(key): continue
 		var value: Variant = body[key]
-		if value is String: value = value.left(1200)
+		if value is String:
+			value = value.left(mini(1200, limit / 4))
+			while not value.is_empty() and JSON.stringify(summary.merged({key: value})).length() > details_limit: value = value.left(value.length() / 2)
 		elif value is Array: value = value.filter(func(item: Variant) -> bool: return item is String and item.length() <= 256).slice(0, 6)
 		var candidate = summary.merged({key: value})
-		if JSON.stringify(candidate).length() <= 8000: summary = candidate
+		if JSON.stringify(candidate).length() <= details_limit: summary = candidate
+	if body.get("approval") is Dictionary:
+		var candidate = summary.merged({"approval": body["approval"]})
+		# Leave room for the tool's status, artifact identity and syntax verdict too.
+		if JSON.stringify(candidate).length() > details_limit / 2:
+			var compact = {"partial": body["approval"].get("partial", false), "truncated": true}
+			for key in ["selected_hunks", "rejected_hunks"]:
+				if body["approval"].get(key) is Array: compact[key + "_count"] = body["approval"][key].size()
+			candidate = summary.merged({"approval": compact})
+		if JSON.stringify(candidate).length() <= details_limit: summary = candidate
 	if body.get("result") is Dictionary:
 		var details = {}
-		for key in ["id", "job", "task_id", "external_id", "status", "exit_code", "file", "imported_path", "path", "name", "class", "handle", "reference", "quality", "progress", "cost_usd", "format", "directory", "scene", "saved", "offset", "next_offset", "total"]:
+		var syntax: Variant = body["result"].get("syntax")
+		if syntax is Dictionary:
+			var compact = {"valid": syntax.get("valid"), "truncated": true}
+			for key in ["errors", "warnings"]:
+				if syntax.get(key) is Array: compact[key + "_count"] = syntax[key].size()
+			if JSON.stringify(summary.merged({"result": {"syntax": compact}})).length() <= details_limit: details["syntax"] = compact
+		for key in ["id", "job", "task_id", "external_id", "status", "exit_code", "file", "imported_path", "path", "name", "class", "handle", "reference", "quality", "progress", "cost_usd", "format", "directory", "scene", "saved", "offset", "next_offset", "total", "truncated", "total_lines", "next_line", "syntax"]:
 			if not body["result"].has(key): continue
 			var value: Variant = body["result"][key]
 			if JSON.stringify(value).length() > 2048: continue
-			var candidate = details.merged({key: value})
-			if JSON.stringify(summary.merged({"result": candidate})).length() <= 8000: details = candidate
+			var candidate = details.merged({key: value}, true)
+			if JSON.stringify(summary.merged({"result": candidate})).length() <= details_limit: details = candidate
+		for key in ["matches", "symbols", "diagnostics"]:
+			var items: Variant = body["result"].get(key)
+			if not items is Array: continue
+			var kept = []
+			for item in items:
+				if JSON.stringify(item).length() > 512: continue
+				kept.append(item)
+				if kept.size() >= 3: break
+			var candidate = details.merged({key + "_count": items.size()})
+			if not kept.is_empty(): candidate[key] = kept
+			if JSON.stringify(summary.merged({"result": candidate})).length() <= details_limit: details = candidate
 		if not details.is_empty(): summary["result"] = details
-	var preview_length = mini(serialized.length(), 12000)
+	for key in ["verification_evidence", "recovery"]:
+		if not body.get(key) is Dictionary: continue
+		var candidate = summary.merged({key: body[key]})
+		if JSON.stringify(candidate).length() <= details_limit: summary = candidate
+	for key in ["tail", "next"]:
+		var value = serialized.right(mini(2000, limit / 6)) if key == "tail" else "Request a narrower inspection, a reflection page or a file range; omitted fields do not prove absence."
+		var candidate = summary.merged({key: value})
+		if JSON.stringify(candidate).length() <= details_limit: summary = candidate
+	var preview_length = mini(serialized.length(), mini(12000, maxi(0, limit - 4000)))
 	while true:
 		summary["preview"] = serialized.left(preview_length)
 		var encoded = JSON.stringify(summary)
-		if encoded.length() <= TOOL_RESULT_LIMIT: return encoded
+		if encoded.length() <= limit: return encoded
+		if preview_length == 0: return JSON.stringify(summary) # Summary itself already fits details_limit.
 		preview_length /= 2
 	return ""
 

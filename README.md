@@ -31,6 +31,10 @@ Godot without Termux, a console, or an external agent runtime. The linked APK
 includes Auto / Default / Plan, structured task progress and the compact composer selector;
 its tested source is identified above.
 
+The next source iteration adds [project knowledge, unified diagnostics, adaptive
+recovery and acceptance evidence](docs/AI_HARNESS_INTELLIGENCE.md). These changes
+are separate from the linked APK; native diagnostic capture needs a rebuilt editor.
+
 The harness now [compacts long sessions automatically](docs/AI_HARNESS.md):
 when the sent context nears the model limit or an overflow occurs, it summarizes
 the older range, keeps the newest turn verbatim and persists the summary while
@@ -52,6 +56,16 @@ linked APK.
 
 The queue scrolls within a bounded height so the conversation and composer stay
 visible when many messages are pending.
+
+The harness now continues a response that the provider stopped at its output
+limit, merging the continuation and any tool calls into one assistant turn
+without inserting a user message. The new `godot_symbols` tool maps top-level
+GDScript declarations for bounded, content-hash-cached code navigation. Write
+approvals for an existing file now show per-hunk checkboxes over a unified diff,
+so only the selected changes are applied. Writes over `.gd` files also return an
+automatic syntax verdict from the native parser, code search accepts surrounding
+context lines, and the tool results of one step share a bounded batch budget with
+a tail preview. These changes are in source only; the linked APK predates them.
 
 Playtest children now probe the running game directly: `playtest_act` measures
 probe expressions before and after held inputs, `playtest_watch` tracks

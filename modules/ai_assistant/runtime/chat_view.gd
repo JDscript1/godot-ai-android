@@ -27,6 +27,7 @@ var mode_picker: OptionButton
 var effort_picker: OptionButton
 var mode_buttons: Array = []
 var plan_cards: Dictionary = {}
+var live_plan_card = ""
 var question_cards: Dictionary = {}
 var playtest_cards: Dictionary = {}
 var question_touch_targets: Array = []
@@ -101,7 +102,6 @@ var work_notice_running = false
 var activity_clock = 0.0
 var activity_dirty = true
 var running_tools: Label
-var touch_text_controls: Array = []
 var touch_scroll: Dictionary = {}
 var touch_suppress_until = 0
 var queue_panel: VBoxContainer
@@ -218,8 +218,11 @@ func _ready() -> void:
 	thread.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center.add_child(thread)
 	scroll.get_v_scroll_bar().value_changed.connect(func(value: float) -> void: follow_bottom = value >= scroll.get_v_scroll_bar().max_value - scroll.get_v_scroll_bar().page - 60)
+	scroll.get_v_scroll_bar().changed.connect(func() -> void:
+		if follow_bottom: _follow.call_deferred())
 	_build_activity_panel()
-	running_tools = label(root_column, "Running Tools · —")
+	running_tools = label(root_column, "")
+	running_tools.hide()
 	root_column.move_child(running_tools, activity_panel.get_index())
 	running_tools.name = "RunningTools"
 	running_tools.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -478,6 +481,7 @@ func _toggle_activity() -> void:
 
 func reset_work() -> void:
 	show_running_tool()
+	live_plan_card = ""
 	status_revision += 1
 	work_turn = ""
 	work_plan = {}
@@ -500,6 +504,8 @@ func begin_work(turn: String, snapshot: Dictionary = {}, resuming: bool = false)
 
 func finish_work(turn: String, outcome: String) -> void:
 	if work_turn != turn: return
+	show_running_tool()
+	if live_plan_card == turn: live_plan_card = ""
 	work_live = false
 	work_notice_running = false
 	work_outcome = outcome
@@ -1087,7 +1093,6 @@ func clear_messages() -> void:
 	find_index = -1
 	if find_count != null: find_count.text = "0/0"
 	streaming_dirty.clear()
-	touch_text_controls.clear()
 	touch_scroll.clear()
 	for child in thread.get_children():
 		thread.remove_child(child)
@@ -1293,6 +1298,9 @@ func show_plan(snapshot: Dictionary) -> void:
 	card["summary"].text = active_step
 	card["summary"].tooltip_text = active_step
 	card["summary"].visible = not card["rows"].visible and phase != "completed" and not active_step.is_empty()
+	if not restoring:
+		if phase in ["planning", "executing", "verifying"]: live_plan_card = id
+		elif live_plan_card == id: live_plan_card = ""
 	_follow.call_deferred()
 	_size_messages.call_deferred()
 
@@ -1314,7 +1322,6 @@ func playtest_note(turn: String, markdown: String, verdict: String = "") -> void
 		entry.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
 		entry.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
 		card["rows"].add_child(entry)
-		touch_text_controls.append(weakref(entry))
 		Markdown.render(entry, markdown, EditorInterface.get_editor_scale())
 		card["entries"] += 1
 		if card["rows"].get_child_count() > 30:
@@ -1472,7 +1479,6 @@ func _render_content(record: Dictionary) -> void:
 				var copy = icon_button(header, "Copy", "Copiază codul", func() -> void: DisplayServer.clipboard_set(editor.text))
 				_compact_button(copy)
 				box.add_child(editor)
-				touch_text_controls.append(weakref(editor))
 				blocks.append({"node": panel, "editor": editor, "language": language, "copy": copy})
 			else:
 				var text = RichTextLabel.new()
@@ -1486,7 +1492,6 @@ func _render_content(record: Dictionary) -> void:
 				text.meta_clicked.connect(func(value: Variant) -> void:
 					if Common.parse_url(str(value), true).get("ok", false): OS.shell_open(str(value)))
 				record["body"].add_child(text)
-				touch_text_controls.append(weakref(text))
 				blocks.append({"node": text})
 		var block: Dictionary = blocks[index]
 		if code_block:
@@ -1801,17 +1806,45 @@ func _show_find_match(index: int) -> void:
 		record["card"].self_modulate = Color("d7c6ff")
 		create_tween().tween_property(record["card"], "self_modulate", Color.WHITE, 0.7)
 
-func show_running_tool(name: String = "") -> void:
+func show_running_tool(name: String = "", description: String = "") -> void:
 	if running_tools == null: return
-	running_tools.text = "Running Tools · " + (name if not name.is_empty() else "—")
+	running_tools.visible = not name.is_empty()
+	running_tools.text = (description if not description.is_empty() else "Running " + name.replace("_", " ").capitalize() + " Tool") if not name.is_empty() else ""
 	running_tools.tooltip_text = name
 
+func _chat_control_at(control: Control, point: Vector2) -> Control:
+	if not control.is_visible_in_tree() or not control.get_global_rect().has_point(point): return null
+	var children = control.get_children()
+	children.reverse()
+	for child in children:
+		if child is Control:
+			var found = _chat_control_at(child, point)
+			if found != null: return found
+	return control if control.mouse_filter != Control.MOUSE_FILTER_IGNORE else null
+
+func _native_touch_control(control: Control) -> bool:
+	while control != null and control != scroll:
+		if control is BaseButton or control is LineEdit or control is ScrollBar or control is Slider or (control is TextEdit and control.editable): return true
+		control = control.get_parent_control()
+	return false
+
 func _chat_touch(event: InputEvent) -> bool:
-	if event is InputEventMouse and event.device == -1 and Time.get_ticks_msec() < touch_suppress_until: return true
-	if not (event is InputEventScreenTouch or event is InputEventScreenDrag): return false
 	if not is_visible_in_tree() or scroll == null or (picker != null and picker.visible): return false
+	if event is InputEventMouse and event.device == -1:
+		# Android dispatches the emulated mouse press BEFORE its native touch.
+		# Block that first press over messages too, before text selection begins.
+		if scroll.get_global_rect().has_point(event.position): return not _native_touch_control(_chat_control_at(scroll, event.position))
+		return Time.get_ticks_msec() < touch_suppress_until
+	if event is InputEventPanGesture:
+		if not scroll.get_global_rect().has_point(event.position): return false
+		if touch_scroll.is_empty():
+			follow_bottom = false
+			scroll.scroll_vertical += int(event.delta.y * 40 * EditorInterface.get_editor_scale())
+		return true
+	if not (event is InputEventScreenTouch or event is InputEventScreenDrag): return false
 	if event is InputEventScreenTouch and event.pressed:
 		if not scroll.get_global_rect().has_point(event.position): return false
+		if not touch_scroll.is_empty(): return true
 		question_touch_targets = question_touch_targets.filter(func(target: Dictionary) -> bool: return target["row"].get_ref() != null and target["check"].get_ref() != null)
 		for target in question_touch_targets:
 			var row = target["row"].get_ref()
@@ -1820,35 +1853,51 @@ func _chat_touch(event: InputEvent) -> bool:
 				touch_scroll = {"index": event.index, "start": event.position, "last": event.position, "scroll": scroll.scroll_vertical, "moved": false, "tap_check": target["check"]}
 				touch_suppress_until = Time.get_ticks_msec() + 1000
 				return true
-		for ref in touch_text_controls:
-			var control = ref.get_ref()
-			if control != null and control.is_visible_in_tree() and control.get_global_rect().has_point(event.position):
-				touch_scroll = {"index": event.index, "start": event.position, "last": event.position, "scroll": scroll.scroll_vertical, "moved": false, "target": ref, "token": Time.get_ticks_usec()}
-				touch_suppress_until = Time.get_ticks_msec() + 1000
-				_touch_selection_after(int(touch_scroll["token"]))
-				return true
-		return false
+		var control = _chat_control_at(scroll, event.position)
+		if _native_touch_control(control): return false
+		touch_scroll = {"index": event.index, "start": event.position, "last": event.position, "scroll": scroll.scroll_vertical, "moved": false, "token": Time.get_ticks_usec()}
+		while control != null and control != scroll:
+			if control.has_meta("chat_file_id"): touch_scroll["file"] = str(control.get_meta("chat_file_id")); break
+			if control is RichTextLabel or control is TextEdit: touch_scroll["target"] = weakref(control)
+			control = control.get_parent_control()
+		touch_suppress_until = Time.get_ticks_msec() + 1000
+		if touch_scroll.has("target") or touch_scroll.has("file"): _touch_selection_after(int(touch_scroll["token"]))
+		return true
 	if touch_scroll.is_empty() or event.index != touch_scroll.get("index"): return false
 	touch_suppress_until = Time.get_ticks_msec() + 300
 	if event is InputEventScreenDrag:
 		touch_scroll["last"] = event.position
 		var delta = event.position - Vector2(touch_scroll["start"])
 		if delta.length() > 8 * EditorInterface.get_editor_scale(): touch_scroll["moved"] = true
-		if touch_scroll["moved"]:
+		if touch_scroll.has("file") and not touch_scroll.get("vertical", false) and delta.x > 48 * EditorInterface.get_editor_scale() and delta.x > absf(delta.y) * 2:
+			if not touch_scroll.get("mentioned", false): action.emit("file_mention", {"id": touch_scroll["file"]})
+			touch_scroll["mentioned"] = true
+		if not touch_scroll.get("mentioned", false) and absf(delta.y) > 8 * EditorInterface.get_editor_scale() and absf(delta.y) >= absf(delta.x): touch_scroll["vertical"] = true
+		if touch_scroll.get("vertical", false):
 			follow_bottom = false
 			scroll.scroll_vertical = int(touch_scroll["scroll"]) - int(delta.y)
 	elif not event.pressed:
-		if touch_scroll.has("tap_check") and not touch_scroll["moved"] and event.position.distance_to(touch_scroll["start"]) <= 8 * EditorInterface.get_editor_scale():
-			var check = touch_scroll["tap_check"].get_ref()
-			if check != null and not check.disabled and not event.canceled: check.button_pressed = not check.button_pressed
+		if not event.canceled and not touch_scroll["moved"] and event.position.distance_to(touch_scroll["start"]) <= 8 * EditorInterface.get_editor_scale():
+			if touch_scroll.has("tap_check"):
+				var check = touch_scroll["tap_check"].get_ref()
+				if check != null and not check.disabled: check.button_pressed = not check.button_pressed
+			elif touch_scroll.has("file"): action.emit("file_open", {"id": touch_scroll["file"]})
 		touch_scroll.clear()
 	return true
 
 func _touch_selection_after(token: int) -> void:
 	await get_tree().create_timer(0.55).timeout
 	if touch_scroll.is_empty() or touch_scroll.get("token") != token or touch_scroll.get("moved", true): return
+	if touch_scroll.has("file"):
+		var id = str(touch_scroll["file"])
+		var point = Vector2(touch_scroll["last"])
+		touch_scroll.clear()
+		_file_menu(id, point)
+		return
 	var control = touch_scroll["target"].get_ref()
 	if control == null: return
+	var point = Vector2(touch_scroll["last"])
+	touch_scroll.clear()
 	control.select_all()
 	var menu = PopupMenu.new()
 	add_child(menu)
@@ -1856,11 +1905,14 @@ func _touch_selection_after(token: int) -> void:
 	menu.id_pressed.connect(func(_id: int) -> void:
 		if is_instance_valid(control): DisplayServer.clipboard_set(control.get_selected_text()))
 	menu.popup_hide.connect(menu.queue_free)
-	menu.position = get_window().position + Vector2i(touch_scroll["last"])
+	menu.position = get_window().position + Vector2i(point)
 	menu.popup()
-	touch_scroll["moved"] = true
 
 func _follow() -> void:
+	if not restoring and not live_plan_card.is_empty():
+		var card = plan_cards.get(live_plan_card, {})
+		if is_instance_valid(card.get("node")) and card["node"].get_index() != thread.get_child_count() - 1:
+			thread.move_child(card["node"], thread.get_child_count() - 1)
 	if follow_bottom and is_instance_valid(scroll): scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
 
 func _draw() -> void:
@@ -2001,6 +2053,7 @@ func _file_card(parent: Node, id: String) -> Control:
 	if item.is_empty(): return null
 	var card = PanelContainer.new()
 	card.name = "File_" + id
+	card.set_meta("chat_file_id", id)
 	card.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	card.custom_maximum_size.x = 280 * EditorInterface.get_editor_scale()
 	card.add_theme_stylebox_override("panel", style(Color("202638"), 10))
@@ -2088,6 +2141,7 @@ func show_changes(turn: String, changes: Array) -> void:
 		row.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	for record in message_records:
 		if record["metadata"].get("turn_id") == turn: _refresh_message_controls(record)
+	_follow.call_deferred()
 
 func show_store(items: Array) -> void:
 	for item in items:
@@ -2105,11 +2159,15 @@ func show_store(items: Array) -> void:
 			var version = str(release.get("version", ""))
 			var install = button(actions, "Instalează " + version, func() -> void: action.emit("store_request", {"text": "Instalează addonul Store cu ID " + JSON.stringify(id) + " versiunea " + JSON.stringify(version) + ". Verifică rezultatul înainte de activare."}))
 			_compact_button(install)
+	_follow.call_deferred()
 
 func _file_long_press(card: Control, id: String, gesture: Dictionary, started: int) -> void:
 	await get_tree().create_timer(0.55).timeout
 	if not is_instance_valid(card) or not gesture["pressed"] or gesture["started"] != started or Vector2(gesture["delta"]).length() > 10 or gesture["mentioned"]: return
 	gesture["mentioned"] = true
+	_file_menu(id, card.get_global_rect().position)
+
+func _file_menu(id: String, point: Vector2) -> void:
 	var popup = PopupMenu.new()
 	popup.theme = theme
 	add_child(popup)
@@ -2117,7 +2175,7 @@ func _file_long_press(card: Control, id: String, gesture: Dictionary, started: i
 	for entry in entries: popup.add_item(entry[0])
 	popup.id_pressed.connect(func(index: int) -> void: action.emit(entries[index][1], {"id": id}))
 	popup.popup_hide.connect(popup.queue_free)
-	var origin = card.get_global_rect().position + Vector2(get_window().position)
+	var origin = point + Vector2(get_window().position)
 	popup.position = Vector2i(origin)
 	popup.popup()
 

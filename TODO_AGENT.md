@@ -10,6 +10,41 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
+## Corecții ulterioare — în surse
+
+| ID | Schimbare | Verificare și livrare |
+| --- | --- | --- |
+| AG-34 | Running Tools rămâne ascuns când nu rulează o unealtă; afișează numele apelului curent și dispare la rezultat, refuz, Stop, finalizare sau schimbarea conversației. | QA phone_compact 94/0 și regresie completă narrow 641/0, cu tranzițiile reale din evenimentele harness-ului și capturi inspectate. Dovezi în `.ai-qa/running-tools-20261028/`. Nu este încă în APK-ul 1c7c777 din Download; acceptarea fizică rămâne deschisă. |
+| AG-35 | Cardul Plan activ urmărește ultimele mesaje și carduri, fără duplicare sau trunchiere după layout și fără a forța citirea la final; planurile încheiate rămân în istoric. | Navigare phone_compact 115/0, cu poziție, identitate, limita de jos și păstrarea derulării; captura finală inspectată. Dovezi în `.ai-qa/navigation-20261028/`; în surse, fără APK nou. |
+| AG-36 | Nume specifice pentru operații: generator de imagini sau 3D determinat din profil/job, inclusiv la așteptare; identificatorul tehnic rămâne în tooltip și Jurnal. | Inclus în proba de 115/0, cu ambele tipuri și job necunoscut; în surse, fără consum de credite. |
+| AG-37 | Zoom 3D prin magnify nativ Android, pan, butoane Zoom + / − și taste; limite de distanță păstrate. | Preview phone_landscape 79/0 și regresie narrow 649/0, prin fereastra viewer-ului, cu cameră și geometrie reale; verificarea fizică Android rămâne deschisă. |
+| AG-38 | Glisare verticală peste text, cod, media și margini; mouse emulat interceptat înaintea selecției, pan nativ, mențiuni orizontale, tap-uri și meniul apăsării lungi pe carduri păstrate. | Navigare phone_compact 115/0 prin viewport cu secvența mouse emulat + touch; meniul nu blochează gestul următor. Acceptarea pe APK instalat rămâne deschisă. |
+| AG-39 | Continuare automată la limita de ieșire, până la două reluări; Responses și adaptorul de abonament traduc `response.incomplete/max_output_tokens` în `length`, păstrând textul, consumul și elementele native. Apelurile de funcție incomplete nu se execută; alte motive rămân erori. | Runtime 600/0, inclusiv adaptorul real cu evenimente simulate pentru ambele tipuri, continuare reușită, lipsa deltelor, apel trunchiat și motive de eșec. Dovezi în `.ai-qa/fixes-20261028/`; modelul real și APK-ul nou rămân deschise. |
+| AG-40 | `godot_symbols`: declarații top-level GDScript cu cale, linie, semnătură, filtre și cache după hash. Stringurile și comentariile sunt mascate, inclusiv ambele stiluri triple, delimitatori escapați și stringuri din corpul funcțiilor. | Runtime 600/0: scanare multi-fișier, filtre, cache și trei regresii lexicale; proba inițială mai întoarce numai `help` și `real`, fără declarațiile false. În surse. |
+| AG-41 | Review pe hunk-uri pentru fișiere existente. Execuția folosește o copie a argumentelor; istoricul și identitatea apelului rămân originale. Rezultatul raportează selecția și hash-uri separate; replay-ul nu repetă scrierea. Hash-ul de versiune, recuperarea și jurnalul rămân active. | Runtime 600/0 cu replay, deduplicare și istoric restaurat; editor narrow complet 662/0, cu scriere și patch reale aprobate parțial. Detaliile aprobării sunt păstrate și în rezumate. În surse, fără APK nou sau acceptare tactilă. |
+| AG-42 | Verdict automat de sintaxă după `godot_write_file`/`godot_apply_patch` pe `.gd`, prin puntea nativă: `valid`, până la 20 de erori cu linie, coloană și mesaj, plus `truncated`; preview-ul patch-ului validează textul propus. Fără punte, câmpul `syntax` lipsește. | Runtime 569/0 cu punte simulată; fixture stock verifică ramura fără verdict inventat; parserul real rulează în editorul recompilat. APK nou deschis. |
+| AG-43 | `godot_search_code` cu `context` 0–4, linii vecine fără repetiție între potriviri apropiate, limite 24.000 de caractere pe rezultat și sărirea legăturilor simbolice. | Runtime 569/0 pe fișiere temporare reale: context, margini de fișier, suprapunere suprimată și forma compactă fără context. |
+| AG-44 | Maximum 48.000 de caractere pentru rezultatele tuturor apelurilor unui pas; se rezervă 512 caractere pentru fiecare apel rămas, fără minim suplimentar după epuizare. JSON valid, contract de succes/eroare, identitate și verdict de sintaxă compact; detaliile aprobării pot deveni numere de hunk-uri. | Runtime 600/0: 64 de rezultate mari, cu succes/eșec, escape-uri, aprobare și diagnostice lungi. Proba auditului: 78.291 → 46.587 caractere pentru 64 de rezultate, sub plafon. Dovezi în `.ai-qa/fixes-20261028/`. |
+
+| AG-45 | Hartă persistentă a proiectului, cu scanare pe scop, dependențe literale/inverse, simboluri, hash-uri, UID-uri rezolvate dinamic și acoperire explicită. Lexer cu căutări native pe fragmente. | În surse; verificări pentru cache, invalidare, anulare, scopuri înguste și rezolvarea UID-ului după import. Fără execuția scripturilor proiectului. |
+| AG-46 | Diagnostic unificat: parser nativ, referințe lipsă, observații din editor și joc, shader/avertismente, gruparea repetițiilor și invalidarea surselor învechite. | Puntea C++ trece verificarea de sintaxă/tipuri; collectorul și cache-ul sunt probate automat. Captura nativă cere editor recompilat; lipsa parserului/runtime-ului este raportată explicit. |
+| AG-47 | Recuperare adaptivă după conflicte, referințe învechite, erori de tip/cale și joburi neconfirmate; schimbarea strategiei după citiri identice fără progres. | Runtime probează indicațiile, refuzul retry-ului automat pentru scrieri/generări și protecția refuzurilor. Fără plafon global de pași. |
+| AG-48 | Criterii în `task_update.criteria`, dovezi emise de executor și `task_check`: condiții măsurate, scop, revizie și hash-uri. Finalizarea nu poate ocoli verificarea printr-un răspuns fără apeluri. | Probe pentru fișier salvat, Undo/Redo, editări externe, draft/preview neaplicat, dovezi inventate/învechite și condiție de gameplay nereușită. Criteriile modelului încă trebuie evaluate pe sarcini reale. |
+| AG-49 | Pregătire de loturi UTF-8 dependente: hash-uri/absență explicită, copii private, diff-uri, limite per operație fără limită nouă de pași. | În surse; probele și limitele sunt în [AI_CHANGE_SETS.md](docs/AI_CHANGE_SETS.md). |
+| AG-50 | Aplicare cu verificarea tuturor membrilor și rollback compensatoriu la Stop/eroare; editările ulterioare sunt conflicte păstrate. | Teste cu fișiere reale temporare și eroare de I/O; tranzacția nu este atomică global. |
+| AG-51 | Manifest persistent, status după întrerupere și rollback fără reaplicare automată; integrare în jurnal și Restore turn. | Checkpoint de crash simulat cu un coordonator nou; crash Android real rămâne de probat. |
+| AG-52 | Aprobări cu diff-urile lotului, Plan doar pregătire/citire, protejarea bufferelor nesalvate și invalidarea dovezilor la scrieri parțiale. | QA în editor; puntea nativă pentru starea scenei are verificare C++, necesită editor recompilat. |
+
+Verificat AG-49–AG-52: **703/0 runtime**, **716/0 editor narrow**,
+**60/0 changesets phone_compact**, C++ fără erori de sintaxă/tipuri și 34 de
+scripturi încorporate identice cu sursele. Dovezi: `.ai-qa/changesets-20261028/`.
+AG-45–AG-48 au avut anterior 654/0, 697/0 și 52/0. APK-ul rămâne neschimbat.
+
+[Contracte și limite AG-45–AG-48](docs/AI_HARNESS_INTELLIGENCE.md). Dovezi:
+`.ai-qa/intelligence-20261028/`. Prima etapă este în surse; APK-ul livrat rămâne
+`1c7c777`. Modificările coordonate între fișiere, verificatorul independent,
+alegerea modelelor și evaluarea cu API-uri reale rămân etapele următoare.
+
 ## Stabilizare după probele reale — inclusă în APK 1c7c777
 
 Toate schimbările de mai jos sunt compilate și livrate. CI: **537 aserțiuni
@@ -52,7 +87,15 @@ APK-ul 1c7c777. AG-33 adaugă validarea și salvarea tranzacțională a rezumate
 adaptate modelului și coada cu înălțime limitată: compact narrow **82/0**, suita
 completă narrow **638/0**, chat phone_compact **68/0**. Dovezi în
 `.ai-qa/fix-review-20261028/`. Compilarea și livrarea AG-21–AG-33 sunt documentate
-în `.ai-qa/recompile-20261028/`. Pragurile ST-01–ST-12 din raport
+în `.ai-qa/recompile-20261028/`. AG-39–AG-41 adaugă continuarea automată,
+`godot_symbols` și review-ul pe hunk-uri: runtime **558/0**, approval narrow
+**92/0 × 5**, chat narrow **68/0**, todo narrow **115/0**, suita completă narrow
+**657/0** și `--check-only` pe `diff.gd`, `editor_tools.gd`, `harness.gd` și
+`panel.gd`. Dovezi în `.ai-qa/continuare-simboluri-hunks-20261028/`. AG-42–AG-44
+adaugă verdictul de sintaxă după scriere, contextul căutării și bugetul pe rundă:
+runtime **569/0** și suita completă narrow **658/0**, dovezi în
+`.ai-qa/harness-20261028/`. Sunt în surse; APK-ul 1c7c777 nu le include.
+Pragurile ST-01–ST-12 din raport
 păstrează distincte stabilitatea sesiunii, gameplay-ul, generarea și producția 3D.
 
 ## Aplicare în APK 7576033 — 27.10.2026

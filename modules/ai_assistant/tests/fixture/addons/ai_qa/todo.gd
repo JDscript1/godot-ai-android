@@ -40,7 +40,7 @@ func run(host: Node, panel: Control) -> void:
 	panel._track_verification("playtest_input")
 	host._check(not panel._verification_problem({"verification": "pressed", "verification_kind": "interaction"}).is_empty(), "Input alone does not verify the resulting state")
 	panel._track_verification("playtest_state")
-	host._check(panel._verification_problem({"verification": "pressed +1, state count=1", "verification_kind": "interaction"}).is_empty(), "Interaction completion accepts actual input plus runtime inspection")
+	host._check(not panel._verification_problem({"verification": "pressed +1, state count=1", "verification_kind": "interaction"}).is_empty(), "Tool names without declared criteria and measured evidence cannot verify an interaction")
 	panel._track_verification("godot_write_file")
 	host._check(panel.verification_tools.is_empty(), "New mutations invalidate previous verification evidence")
 	var before = tools.external_snapshot()
@@ -97,11 +97,45 @@ func run(host: Node, panel: Control) -> void:
 	var previous_part = panel.journal_part
 	panel._append_detailed_log({"after_rotation": true})
 	host._check(panel.journal_part == previous_part + 1 and FileAccess.file_exists(log_path), "Full logs rotate into successive files while preserving older events")
+	host._check(not panel.chat.running_tools.visible, "Running Tools stays hidden while the agent is idle")
+	panel._harness_event({"kind": "tool_started", "name": "godot_save_scene"})
+	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Scene Save Tool" and panel.chat.running_tools.tooltip_text == "godot_save_scene" and panel.chat.running_tools.get_child_count() == 0, "Running Tools describes the active operation without a dropdown")
+	panel._harness_event({"kind": "tool_started", "name": "godot_script_diagnostics"})
+	host._check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Script Diagnostics Tool", "Running Tools follows the next active tool")
+	var saved_profiles = panel.config["generation"].duplicate(true)
+	var saved_jobs = panel.assets.jobs
+	panel.config["generation"] = [{"id": "qa-image", "asset_kind": "image"}, {"id": "qa-mesh", "asset_kind": "mesh"}]
+	panel.assets.jobs = [{"id": "qa-image-job", "kind": "image"}, {"id": "qa-mesh-job", "kind": "mesh"}]
+	for kind in ["image", "mesh"]:
+		var expected = "Running " + ("Image" if kind == "image" else "3D") + " Generator Tool"
+		panel._harness_event({"kind": "tool_started", "name": "asset_generate", "arguments": {"profile": "qa-" + kind}})
+		host._check(panel.chat.running_tools.text == expected, "Generation status uses the selected " + kind + " profile")
+		panel._harness_event({"kind": "tool_started", "name": "asset_wait", "arguments": {"job": "qa-" + kind + "-job"}})
+		host._check(panel.chat.running_tools.text == expected + " · Waiting for result", "Waiting retains the actual " + kind + " generator identity")
+	host._check(panel._running_tool_label("asset_status", {"job": "missing"}) == "Running Asset Generator Tool · Checking result", "An unknown job never invents a generator type")
+	panel.config["generation"] = saved_profiles
+	panel.assets.jobs = saved_jobs
+	panel._harness_event({"kind": "tool_result", "name": "godot_script_diagnostics", "id": "qa-running-tool", "result": {"ok": true}})
+	host._check(not panel.chat.running_tools.visible and panel.chat.running_tools.text.is_empty(), "Running Tools disappears when the operation ends")
+	panel._harness_event({"kind": "tool_started", "name": "godot_save_scene"})
+	panel._harness_event({"kind": "tool_result", "name": "godot_save_scene", "id": "qa-running-tool-denied", "result": {"ok": false, "code": "permission_denied"}})
+	host._check(not panel.chat.running_tools.visible, "A refused tool leaves no persistent Running Tools row")
+	var previous_cancel = panel.cancel
+	var previous_queue_paused = panel.queue_paused
+	panel.cancel = {}
+	panel.chat.show_running_tool("asset_wait")
+	panel._stop()
+	host._check(not panel.chat.running_tools.visible, "Stop hides Running Tools immediately")
+	panel.cancel = previous_cancel
+	panel.queue_paused = previous_queue_paused
+	panel._sync_queue()
+	panel.chat.begin_work("qa-running-tool")
 	panel.chat.show_running_tool("godot_save_scene")
-	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.text == "Running Tools · godot_save_scene" and panel.chat.running_tools.get_child_count() == 0, "Running Tools is a live non-dropdown row")
-	panel.chat.show_running_tool()
-	host._check(panel.chat.running_tools.text == "Running Tools · —", "Running Tools clears when the operation ends")
+	panel.chat.finish_work("qa-running-tool", "completed")
+	host._check(not panel.chat.running_tools.visible, "Finishing a turn clears an active Running Tools row")
+	panel.chat.show_running_tool("godot_files")
 	panel.chat.clear_messages()
+	host._check(not panel.chat.running_tools.visible, "Changing the conversation clears Running Tools")
 	panel.chat.append_message("assistant", "Scroll probe\n".repeat(120), {"id": "qa-scroll"})
 	panel.chat.show_plan({"turn": "qa-todo-plan", "phase": "executing", "steps": [{"step": "Verifică o scenă fără să lărgești conversația", "status": "in_progress"}]})
 	await host.get_tree().create_timer(0.2).timeout
@@ -149,6 +183,7 @@ func run(host: Node, panel: Control) -> void:
 	for child in panel.chat.get_children():
 		if child is PopupMenu: child.hide()
 	anchor.deselect()
+	await _navigation_tests(host, panel)
 	panel.chat.clear_messages()
 	panel.chat.append_message("user", "Verifică scena și lasă rezultatul aici.", {"id": "qa-demo-user"})
 	panel.chat.show_plan({"turn": "qa-demo", "phase": "executing", "steps": [{"step": "Salvează scena", "status": "completed"}, {"step": "Verifică interacțiunea", "status": "in_progress"}, {"step": "Raportează rezultatul", "status": "pending"}]})
@@ -166,6 +201,8 @@ func run(host: Node, panel: Control) -> void:
 	panel.chat.follow_bottom = true
 	panel.chat._follow()
 	await host.get_tree().create_timer(0.15).timeout
+	var live_plan = panel.chat.plan_cards["qa-demo"]["node"]
+	host._check(live_plan.get_global_rect().end.y <= panel.chat.scroll.get_global_rect().end.y + 1, "Following the conversation keeps the entire current plan above the composer after layout")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty():
 		host._workspace_capture(output, "todo-chat")
@@ -178,3 +215,139 @@ func run(host: Node, panel: Control) -> void:
 			host._check(card.size.x <= panel.chat.scroll.size.x + 1, "Plan stays within dock placement " + str(placement))
 			host._workspace_capture(output, "todo-dock-" + str(placement))
 		panel.plugin.set_chat_placement(0)
+
+func _swipe(panel: Control, point: Vector2, delta: Vector2) -> void:
+	var window = panel.chat.get_viewport()
+	var mouse = InputEventMouseButton.new()
+	mouse.device = -1
+	mouse.button_index = MOUSE_BUTTON_LEFT
+	mouse.position = point
+	mouse.pressed = true
+	window.push_input(mouse, true)
+	var touch = InputEventScreenTouch.new()
+	touch.index = 8
+	touch.position = point
+	touch.pressed = true
+	window.push_input(touch, true)
+	var motion = InputEventMouseMotion.new()
+	motion.device = -1
+	motion.position = point + delta
+	motion.relative = delta
+	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+	window.push_input(motion, true)
+	var drag = InputEventScreenDrag.new()
+	drag.index = 8
+	drag.position = point + delta
+	drag.relative = delta
+	window.push_input(drag, true)
+	mouse.position = point + delta
+	mouse.pressed = false
+	window.push_input(mouse, true)
+	touch.position = point + delta
+	touch.pressed = false
+	window.push_input(touch, true)
+
+func _navigation_tests(host: Node, panel: Control) -> void:
+	var chat = panel.chat
+	chat.clear_messages()
+	chat.begin_work("qa-follow-plan")
+	var snapshot = {"turn": "qa-follow-plan", "phase": "executing", "steps": [{"step": "Generează resursa", "status": "in_progress"}]}
+	chat.show_plan(snapshot)
+	var plan = chat.plan_cards["qa-follow-plan"]["node"]
+	chat.append_message("assistant", "Generez imaginea de referință.", {"id": "qa-progress"})
+	await host.get_tree().process_frame
+	host._check(plan.get_index() == chat.thread.get_child_count() - 1, "The active plan follows new conversation messages")
+	chat.append_message("assistant", "Aștept mesh-ul 3D.\n".repeat(40), {"id": "qa-progress-2"})
+	await host.get_tree().create_timer(0.15).timeout
+	host._check(chat.plan_cards.size() == 1 and chat.plan_cards["qa-follow-plan"]["node"] == plan and plan.get_index() == chat.thread.get_child_count() - 1, "One live plan stays at the conversation tail without duplicating its card")
+	chat.show_changes("qa-follow-plan", [{"path": "res://example.gd", "state": "Modificat", "exact": true, "added": 1, "removed": 0}])
+	chat.show_store([{"id": "qa/example", "name": "Exemplu", "publisher": "Fixture", "license": "MIT"}])
+	await host.get_tree().process_frame
+	host._check(plan.get_index() == chat.thread.get_child_count() - 1, "The active plan also follows change previews and Store result cards")
+	chat.follow_bottom = false
+	chat.scroll.scroll_vertical = 70
+	chat.append_message("assistant", "Verific rezultatul existent.", {"id": "qa-progress-3"})
+	await host.get_tree().process_frame
+	host._check(chat.scroll.scroll_vertical == 70, "Keeping the plan current does not pull an older conversation view to the bottom")
+	snapshot["phase"] = "completed"
+	snapshot["steps"][0]["status"] = "completed"
+	chat.show_plan(snapshot)
+	chat.append_message("assistant", "Resursa a fost verificată.", {"id": "qa-final"})
+	await host.get_tree().process_frame
+	host._check(plan.get_index() < chat.message_records.back()["row"].get_index(), "A completed plan stays in history before later messages")
+	chat.clear_messages()
+	var prose = chat.append_message("assistant", "Mesaj pentru derulare tactilă.\n".repeat(35), {"id": "qa-touch-prose"})
+	var code = chat.append_message("assistant", "```gdscript\n" + "print(\"scroll\")\n".repeat(30) + "```", {"id": "qa-touch-code"})
+	await host.get_tree().create_timer(0.15).timeout
+	chat.follow_bottom = false
+	chat.scroll.scroll_vertical = 180
+	await host.get_tree().process_frame
+	var before = chat.scroll.scroll_vertical
+	_swipe(panel, chat.scroll.global_position + Vector2(4, chat.scroll.size.y * 0.5), Vector2(0, 70))
+	host._check(chat.scroll.scroll_vertical < before, "A real window touch scrolls from empty chat margins")
+	for anchor in [prose, code]:
+		var record: Dictionary = anchor.get_meta("message")
+		var control = record["blocks"][0]["node"] if anchor == prose else record["blocks"][1]["editor"]
+		chat.scroll.ensure_control_visible(control)
+		await host.get_tree().process_frame
+		var region = control.get_global_rect().intersection(chat.scroll.get_global_rect())
+		before = chat.scroll.scroll_vertical
+		_swipe(panel, region.get_center(), Vector2(0, -70 if before == 0 else 70))
+		host._check(chat.scroll.scroll_vertical != before and control.get_selected_text().is_empty(), "Native touch with Android mouse emulation scrolls " + ("text" if anchor == prose else "code") + " without selecting it")
+	chat.scroll.scroll_vertical = 180
+	await host.get_tree().process_frame
+	before = chat.scroll.scroll_vertical
+	var pan = InputEventPanGesture.new()
+	pan.position = chat.scroll.get_global_rect().get_center()
+	pan.delta = Vector2(0, -1)
+	chat.get_viewport().push_input(pan, true)
+	host._check(chat.scroll.scroll_vertical < before, "Android pan gestures scroll the conversation through the actual window")
+	var image = Image.create(64, 64, false, Image.FORMAT_RGB8)
+	image.fill(Color("638fa5"))
+	var path = panel.project_directory.path_join("qa-touch-image.png")
+	image.save_png(path)
+	panel.file_registry.permit(path)
+	var scope = str(panel.conversations.index["active"])
+	var registered = panel.file_registry.register_file(path, scope)
+	var id = str(registered["result"]["id"])
+	chat.append_message("assistant", "Imagine găsită", {"id": "qa-touch-image", "files": [id]})
+	var card = chat.thread.find_child("File_" + id, true, false)
+	await host.get_tree().process_frame
+	await host.get_tree().process_frame
+	chat.scroll.ensure_control_visible(card)
+	await host.get_tree().create_timer(0.15).timeout
+	var picture = card.find_children("*", "TextureRect", true, false)[0]
+	var visible_image = picture.get_global_rect().intersection(chat.scroll.get_global_rect())
+	host._check(visible_image.has_area(), "The image swipe targets a visible laid-out thumbnail")
+	var point = visible_image.get_center()
+	var pending = panel.pending_files.duplicate()
+	before = chat.scroll.scroll_vertical
+	_swipe(panel, point, Vector2(0, 70))
+	print("Image swipe QA: ", JSON.stringify({"image": str(picture.get_global_rect()), "scroll_rect": str(chat.scroll.get_global_rect()), "point": str(point), "before": before, "after": chat.scroll.scroll_vertical, "mentioned": panel.pending_files, "viewer": panel.media_view != null and panel.media_view.visible}))
+	host._check(chat.scroll.scroll_vertical < before and panel.pending_files == pending and (panel.media_view == null or not panel.media_view.visible), "Vertical swipes over image cards scroll without opening or mentioning them")
+	chat.scroll.ensure_control_visible(card)
+	await host.get_tree().process_frame
+	point = picture.get_global_rect().intersection(chat.scroll.get_global_rect()).get_center()
+	_swipe(panel, point, Vector2(70 * EditorInterface.get_editor_scale(), 0))
+	host._check(id in panel.pending_files, "A horizontal swipe still mentions the exact image through the real window")
+	_swipe(panel, point, Vector2.ZERO)
+	host._check(panel.media_view != null and panel.media_view.visible, "A stationary image tap still opens its preview")
+	if panel.media_view != null: panel.media_view.hide()
+	await host.get_tree().process_frame
+	var hold = InputEventScreenTouch.new()
+	hold.index = 9
+	hold.position = point
+	hold.pressed = true
+	chat.get_viewport().push_input(hold, true)
+	await host.get_tree().create_timer(0.65).timeout
+	var menus = chat.get_children().filter(func(child: Node) -> bool: return child is PopupMenu and child.visible)
+	host._check(menus.size() == 1 and menus[0].item_count == 5 and chat.touch_scroll.is_empty(), "Holding an image opens its action menu and releases the captured gesture")
+	for menu in menus: menu.hide()
+	hold.pressed = false
+	chat.get_viewport().push_input(hold, true)
+	await host.get_tree().process_frame
+	before = chat.scroll.scroll_vertical
+	_swipe(panel, point, Vector2(0, 70))
+	host._check(chat.scroll.scroll_vertical < before, "Closing a long-press menu leaves chat touch scrolling usable")
+	panel.pending_files = pending
+	panel._composer_hints()

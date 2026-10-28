@@ -18,6 +18,12 @@ Large tool responses retain their root success/error contract and compact artifa
 identity when the model-facing JSON is shortened. The complete sanitized journal
 is separate. The serialized summary, including escaped text, stays within 24,000
 characters; omitted fields are not evidence that a class or artifact is absent.
+Within one step, all tool results share a strict 48,000-character batch budget,
+including batches of 64 calls. Before shortening each result, the harness reserves
+512 characters for every remaining call. Every result remains valid JSON; compact
+status/error and artifact identity take priority over previews and `tail`.
+Long parser diagnostics retain a structured `syntax.valid` verdict and error
+count. The full journal remains separate from the model-facing summary.
 `godot_describe` returns stable alphabetical pages, 16 entries per category by
 default (maximum 50), with totals and `next_offset`. Literal case-insensitive
 filters support alternatives separated by `|`.
@@ -45,6 +51,12 @@ passed; permanent APK acceptance and the default behavior under the new guidance
 remain separate checks.
 
 ## Execution boundaries
+
+The next source iteration adds a persistent scoped project map, unified native
+diagnostics, recovery guidance and executor-issued acceptance evidence.
+See [project intelligence and evidence contracts](AI_HARNESS_INTELLIGENCE.md)
+for tool schemas, invalidation rules, bounded coverage and verification limits.
+These features are separate from the delivered APK.
 
 ```text
 Native chat / latest user request
@@ -94,7 +106,8 @@ Each harness instance accepts one active turn. Different instances have separate
 messages, cancellation tokens, statistics, and tool-result ledgers.
 
 Options include `id`, `messages`, `tools`, `cancel`, `metadata`, `max_steps`,
-`max_retries`, `retry_delay_ms`, `deferred_tools`, and `deduplicate_tools`.
+`max_retries`, `retry_delay_ms`, `deferred_tools`, `deduplicate_tools`, and
+`auto_continue`.
 The supplied messages array receives the
 finalized assistant and tool messages. Hooks are:
 
@@ -121,6 +134,16 @@ Response, tool and total durations are reported without exposing reasoning.
 The panel journals call IDs, arguments, executed/replayed state and errors, as
 well as model requests, retries, usage and settlement. An explicitly blocked
 plan preserves that state in checkpoints and chat, leaving Resume available.
+
+`auto_continue` (clamped to 0–5, default 0; the panel passes 2) continues a
+response that the provider stopped at its output limit (`length`, `MAX_TOKENS`,
+`max_tokens`). The continuation instruction is appended only to that request's
+context, never to the stored history. The truncated text and its continuation
+are merged into one assistant record and one chat bubble, including tool calls
+produced during the continuation. Each attempt emits an `auto_continue` event
+and increments `continuations`; when the budget is exhausted the turn settles as
+`limited`/`output_limit` and keeps the complete generated text. No continuation
+instruction appears as a user message, and the attempt budget is per turn.
 
 ## Chat experience (source, 2026-10-28)
 
@@ -165,6 +188,55 @@ The dedicated QA scenario `chat` exercises these paths in the real editor:
 latest-turn-only Undo/Resend gating, file restoration and history truncation,
 queue restore/remove/resume, measured and estimated metrics, Thinking expansion,
 find wrapping and the stall warning.
+
+## Symbol map and reviewed writes (source, 2026-10-28)
+
+`godot_symbols` maps top-level GDScript declarations under a project directory:
+`class`, `class_name`, `function` (including `static func`), `signal`,
+`constant`, `enum`, `export`, and plain `var`. Each entry carries the project
+path, one-based line and a bounded signature. Results can be filtered by
+case-insensitive name substring, by kind, and by result limit (1–200, default
+80). Scanning is bounded to 2000 filesystem entries, 4 MB of source and 600
+cached files; parsing is content-hash cached, so an edited file is re-read while
+unchanged files are reused. Indented locals, comments and quoted literal contents
+are ignored, including both triple-quoted styles, escaped quotes and multiline
+strings inside function bodies. Line numbers and the original signatures remain
+unchanged; declarations inside literal text cannot become symbols.
+The scan reports `files_scanned`, `scanned_bytes` and `truncated` rather than
+claiming a complete index.
+
+Write approvals for an existing file now review hunks. The panel computes the
+same diff that would be written, lists one checkbox per hunk with its added /
+removed counts and line location, and shows the unified diff. Every hunk starts
+checked; unchecked hunks are reverted to their original lines, and both approval
+actions are blocked while none is selected (a session grant cannot be recorded
+without an approved hunk). For `godot_write_file` the checked subset
+replaces `text`. For `godot_apply_patch` the subset is applied as one exact
+replacement over the original file before dispatch, so the tool still enforces
+its version hash, unsaved-script check, recovery copy and journal; a full
+selection keeps the original edits. A file that does not exist or a diff that
+exceeds the bounded comparator falls back to the previous raw preview. If the
+native dialog hides despite the disabled OK button, the pending approval is
+re-shown instead of being silently settled.
+
+The executor reviews a private argument copy. The original provider call,
+transcript and replay signature retain the requested operation. Results carry
+`approval.partial`, one-based selected/rejected hunk indices and separate
+`requested_sha256` / `approved_sha256` values. Replay and restored history reuse
+that recorded result without another write. A tightly bounded result may shorten
+approval details to the partial flag and hunk counts.
+
+For Responses and subscription sessions using that adapter, a terminal
+`response.incomplete` with reason `max_output_tokens` becomes `finish=length`,
+allowing the configured continuation policy to run. Partial text, usage and
+native text/reasoning items are retained. Function-call items from an incomplete
+response are withheld from execution and from subsequent provider input; other
+incomplete reasons and provider failures remain errors.
+
+The QA scenario `approval` exercises the per-hunk controls, the disabled
+approval state and a real `godot_apply_patch` execution in which one hunk is
+rejected; the runtime suite exercises hunk grouping, partial reconstruction and
+trailing-newline behavior.
 
 ## Auto, Default and Plan
 
@@ -468,8 +540,11 @@ support.
 
 `godot_read_range` returns one-based line excerpts and a hash of the exact file
 bytes read. `godot_search_code` performs bounded literal project searches with
-file, line, column, and excerpt data. Hidden folders, symlinks and private project
-paths retain the existing restrictions.
+file, line, column, and excerpt data; an optional `context` of 0–4 adds the
+surrounding lines without repeating lines already shown for an adjacent match,
+and one search result is capped at 24,000 excerpt characters. `godot_symbols`
+adds the bounded, content-hash-cached declaration map described above. Hidden
+folders, symlinks and private project paths retain the existing restrictions.
 
 `godot_apply_patch` takes a project path, `expected_sha256`, and up to twenty
 sequential `{old_text, new_text}` edits. Each anchor must occur exactly once,
@@ -493,9 +568,19 @@ An upstream editor without the bridge reports `native_bridge_unavailable`; it
 does not substitute a guessed validation result. Native execution tests for valid
 and invalid drafts are included in the fixture for a rebuilt fork.
 
+Writes over `.gd` files now carry that parser verdict automatically.
+`godot_write_file` and `godot_apply_patch` add a bounded `syntax` object with
+`valid`, up to twenty line/column/message errors and `truncated`; a dry-run patch
+validates the proposed text rather than the disk copy. A missing bridge leaves
+the field absent instead of inventing a result, and warnings stay in
+`godot_script_diagnostics`. The fixture covers the native verdict, an unparseable
+write and the upstream no-bridge branch.
+
 MCP tool results now preserve text and `structuredContent`, validate supported
 output schemas, and propagate `isError` as `mcp_tool_error`. Up to four bounded
 PNG/JPEG/WebP images are decoded and passed as model attachments, separate from
 the JSON text transcript. Resource links and embedded text resources retain
 their data; audio and unsupported binary resources report an explicit unsupported
 content error. No remote operation is automatically retried on such an error.
+
+Coordinated source edits use [file change sets and compensating rollback](AI_CHANGE_SETS.md). Preparation remains available in Plan mode; applying and restoring require write permission. These source changes are separate from the delivered APK.
