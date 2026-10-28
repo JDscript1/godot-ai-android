@@ -27,6 +27,9 @@ func _wait(predicate: Callable, label: String) -> bool:
 	return ready
 
 func _click(control: Control) -> void:
+	# Browsing to an older option is an explicit user scroll. Programmatic
+	# ensure_control_visible must not race the active streaming follow mode.
+	panel.chat.follow_bottom = false
 	await host.get_tree().process_frame
 	await host.get_tree().process_frame
 	panel.chat.scroll.ensure_control_visible(control)
@@ -42,6 +45,7 @@ func _click(control: Control) -> void:
 	await host.get_tree().process_frame
 
 func _touch(control: Control, drag: bool = false) -> void:
+	panel.chat.follow_bottom = false
 	panel.chat.scroll.ensure_control_visible(control)
 	await host.get_tree().process_frame
 	var point = control.get_global_rect().get_center()
