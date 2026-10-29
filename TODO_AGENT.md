@@ -10,6 +10,22 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
+## AG-56 — Ziva independent, preview în surse / APK separat ulterior
+
+- [x] Secțiune Ziva separată, instalare opțională verificată, proces propriu și fereastră cu UI-ul original.
+- [x] Configurație `ziva-preview`: `com.jdscript.godotai.ziva.debug`, nume Godot AI Ziva și livrare care păstrează instalatorul standard.
+- [x] Verificări Kotlin, arhive, Godot și identitate Gradle; starea procesului nu este prezentată drept conectare la editor.
+- [x] Punte nativă MCP separată de harness: scene/fișiere/panouri, autentificare locală, anulare, recuperare și refuzul modificărilor simultane.
+- [x] `.mcp.json` temporar cu restaurarea configurației utilizatorului; copiere de Config fără token real pentru conectare manuală în Ziva.
+- [x] Dialog WebView în aceeași activitate, pentru a evita pauza editorului produsă de o activitate separată; comportamentul Android rămâne de testat.
+- [ ] Conectare reală Ziva → editorul Android prin protocol/SDK suportat.
+- [ ] Confirmă discovery-ul din clientul Ziva sau fallback-ul Settings → MCP servers; proba standalone fără chat nu s-a conectat automat în 35 s.
+- [ ] Probă WebView, autentificare și prompt → tool → rezultat pe dispozitiv.
+- [ ] Compilare și livrare **Godot-AI-Ziva-arm64-debug.apk**, păstrând APK-ul actual conform cererii utilizatorului.
+
+[Contract, limite și compilare separată](docs/AI_ZIVA.md). Dovezi de dezvoltare:
+`.ai-qa/ziva-native/`, `.ai-qa/ziva-rendered/`, `.ai-qa/ziva-full-render-final/`.
+
 ## AG-55 — playtest și conversație, în APK 090b939
 
 - [x] Refolosirea sesiunii și închiderea testelor agentului la final/Stop; protecția sesiunilor manuale, inclusiv aceeași scenă repornită.

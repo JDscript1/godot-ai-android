@@ -2,6 +2,12 @@ name: Godot AI Android
 
 on:
   workflow_dispatch:
+    inputs:
+      distribution:
+        description: Android package to build
+        type: choice
+        default: standard
+        options: [standard, ziva-preview]
   push:
     branches: ["ai/android-assistant"]
     paths:
@@ -20,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: godot-ai-${{ github.ref }}
+  group: godot-ai-${{ github.ref }}-${{ inputs.distribution || 'standard' }}
   cancel-in-progress: true
 
 jobs:
@@ -50,6 +56,7 @@ jobs:
           python modules/ai_assistant/tests/start.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --only narrow --output .ai-qa/rendered/start
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario generation --only narrow --output .ai-qa/rendered/generation
           python modules/ai_assistant/tests/render.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --scenario chat_lifecycle --only phone_compact --output .ai-qa/rendered/chat-lifecycle
+          python modules/ai_assistant/tests/test_editor_mcp.py --godot /tmp/godot-ai/Godot_v4.7.2-stable_linux.x86_64 --output .ai-qa/rendered/editor-mcp
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -71,6 +78,7 @@ jobs:
     timeout-minutes: 180
     env:
       SCONS_CACHE: ${{ github.workspace }}/.ai-scons-cache
+      ORG_GRADLE_PROJECT_godotAiDistribution: ${{ inputs.distribution || 'standard' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -130,7 +138,9 @@ jobs:
           import zipfile
           apk = Path('bin/android_editor_builds/android_editor-android-debug.apk')
           metadata = Path(str(apk) + '.badging.txt').read_text()
-          assert "package: name='com.jdscript.godotai.debug'" in metadata
+          distribution = os.environ.get('ORG_GRADLE_PROJECT_godotAiDistribution', 'standard')
+          expected_package = 'com.jdscript.godotai.ziva.debug' if distribution == 'ziva-preview' else 'com.jdscript.godotai.debug'
+          assert f"package: name='{expected_package}'" in metadata
           with zipfile.ZipFile(apk) as archive:
               abis = {name.split('/')[1] for name in archive.namelist() if name.startswith('lib/') and name.endswith('.so')}
               assert abis == {'arm64-v8a'}, abis
@@ -153,7 +163,7 @@ jobs:
               lock = json.loads(Path('tools/embedded-runtime/rootfs.json').read_text())
               assert package['source_sha256'] == lock['sha256'], 'Unexpected Debian base'
               dex = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.dex'))
-              for component in ['AILinuxRuntime', 'AILinuxRuntimeService', 'AILinuxRuntimeFiles']:
+              for component in ['AILinuxRuntime', 'AILinuxRuntimeService', 'AILinuxRuntimeFiles', 'AIZivaRuntime', 'AIZivaService', 'AIZivaWindow', 'AIZivaMcpConfig']:
                   assert ('Lorg/godotengine/editor/' + component + ';').encode() in dex, component
               library = archive.read('lib/arm64-v8a/libgodot_android.so')
               assert b'AIAssistantEditorPlugin' in library, 'AI editor module missing'
@@ -172,7 +182,7 @@ jobs:
           sha256sum "$APK" > "$APK.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: Godot-AI-Android-arm64-${{ github.sha }}
+          name: Godot-AI-${{ inputs.distribution == 'ziva-preview' && 'Ziva' || 'Android' }}-arm64-${{ github.sha }}
           path: |
             bin/android_editor_builds/android_editor-android-debug.apk
             bin/android_editor_builds/android_editor-android-debug.apk.sha256
@@ -221,6 +231,7 @@ jobs:
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario generation --only phone_landscape --output .ai-qa/native-rendered/generation
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario panel_access --only narrow --output .ai-qa/native-rendered/panel-access
           python modules/ai_assistant/tests/render.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --scenario chat_lifecycle --only phone_compact --output .ai-qa/native-rendered/chat-lifecycle
+          python modules/ai_assistant/tests/test_editor_mcp.py --godot "$PWD/bin/godot.linuxbsd.editor.x86_64" --output .ai-qa/native-rendered/editor-mcp
       - uses: actions/upload-artifact@v4
         if: always()
         with:

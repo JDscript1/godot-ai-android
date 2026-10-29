@@ -130,7 +130,11 @@ func _run() -> void:
 	root.get_texture().get_image().save_png(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("start-chat.png"))
 	panel.open_settings("providers")
 	await create_timer(0.2).timeout
-	check(panel.settings_navigation.item_count == 5, "Start settings only show global sections")
+	check(panel.settings_navigation.item_count == 6, "Start settings show global sections including independent Ziva setup")
+	panel.open_settings("ziva")
+	check(panel.settings_tabs.current_tab == panel.section_tabs["ziva"], "Independent Ziva setup is accessible before selecting a project")
+	check(panel.forms["ziva"]["primary"].disabled and not panel.forms["ziva"]["open"].visible, "An unavailable Ziva backend cannot be started from the project manager")
+	panel.open_settings("providers")
 	panel.settings_window.get_texture().get_image().save_png(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("start-providers.png"))
 	panel.settings_window.hide()
 	_finish()

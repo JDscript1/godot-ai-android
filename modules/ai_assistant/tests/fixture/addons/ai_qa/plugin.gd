@@ -274,7 +274,7 @@ func _enter_tree() -> void:
 
 func _check(condition: bool, label: String) -> void:
 	checks += 1
-	if checks % 25 == 0: print("AI editor verification progress: ", checks)
+	if checks % 25 == 0: print("AI editor verification progress: ", checks, " · ", label)
 	if not condition:
 		failures.append(label)
 		push_error("AI editor verification: " + label)
@@ -284,8 +284,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "editor_mcp": "EditorMCP", "ziva": "Ziva", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "editor_mcp", "ziva", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -304,7 +304,7 @@ func _run() -> void:
 	panel.model_pricing.transport = AgentPricingTransport.new()
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
-	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 13, "Build all settings forms")
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "planning":
 		var planning = load(get_script().resource_path.get_base_dir().path_join("interactive_plan.gd")).new()
 		await planning.run(self, panel)
@@ -363,6 +363,10 @@ func _run() -> void:
 		await _linux_runtime_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "ziva":
+		await _ziva_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "panels":
 		await _workspace_panel_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -416,6 +420,7 @@ func _run() -> void:
 	await _generation_catalog_tests("")
 	await _provider_discovery_tests("")
 	await _linux_runtime_tests("")
+	await _ziva_tests("")
 	await _workspace_panel_tests("")
 	await _handoff_tests()
 	await _generated_preview_tests()
@@ -1794,7 +1799,7 @@ func _layout_tests() -> void:
 		for index in range(panel.settings_navigation.item_count): longest = maxf(longest, font.get_string_size(panel.settings_navigation.get_item_text(index), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
 		_check(panel.settings_navigation.size.x >= longest + 12, "Settings categories fit the actual font metrics")
 	else:
-		_check(panel.settings_category.visible and panel.settings_category.item_count == 12, "Compact settings expose every main category through a full-width selector")
+		_check(panel.settings_category.visible and panel.settings_category.item_count == panel.settings_tabs.get_tab_count(), "Compact settings expose every main category through a full-width selector")
 	_check(not panel.lists["accounts"].visible and not panel.lists["general"].visible, "Empty saved lists do not create blank sections")
 	var initial_size = panel.settings_window.size
 	panel.settings_window.size = Vector2i(420 * EditorInterface.get_editor_scale(), initial_size.y)
@@ -3511,6 +3516,81 @@ class FixtureLinuxBridge:
 		pending = {"action": action, "args": args.duplicate(true)}
 		state["active_job"] = "fixture-linux-job"
 		return {"ok": true, "id": "fixture-linux-job"}
+
+class FixtureZivaBridge:
+	extends Node
+	var state = {"ok": true, "enabled": true, "installed": false, "running": false, "ready": false, "editor_connected": false, "busy": false, "version": "v3.3.2", "same_project": true}
+	var requests: Array = []
+	func linux_runtime_request(action: String, args: Dictionary) -> Dictionary:
+		if action == "ziva_status": return state.duplicate(true)
+		requests.append({"action": action, "arguments": args.duplicate(true)})
+		if action == "ziva_install": state.merge({"status": "installing", "message": "Descarc Ziva…", "busy": true}, true)
+		elif action == "ziva_stop": state.merge({"status": "stopped", "busy": false, "running": false}, true)
+		return {"ok": true}
+
+func _ziva_tests(output: String) -> void:
+	var backend = panel.ziva
+	var old_bridge = backend.bridge
+	var old_linux = panel.integrations.linux.bridge
+	var old_settings = panel.integration_settings.duplicate(true)
+	var history = panel.history.duplicate(true)
+	var profiles = panel.config["providers"].duplicate(true)
+	var bridge = FixtureZivaBridge.new()
+	var linux = FixtureLinuxBridge.new()
+	add_child(bridge); add_child(linux)
+	linux.state.merge({"ready": true, "installed": true}, true)
+	panel.integrations.linux.bridge = linux
+	panel.integrations.linux.refresh()
+	backend.bridge = bridge
+	backend.refresh()
+	panel.open_settings("ziva")
+	await get_tree().create_timer(0.2).timeout
+	var form: Dictionary = panel.forms["ziva"]
+	_check(panel.settings_tabs.current_tab == panel.section_tabs["ziva"], "Ziva has an independent settings entry")
+	_check(not form["primary"].disabled and not form["open"].visible, "Ziva offers installation only when its own package and Linux are available")
+	panel._ziva_action("install")
+	_check(bridge.requests.back()["action"] == "ziva_install" and form["stop"].visible and not form["primary"].visible, "Ziva installation has independent cancellation controls")
+	bridge.state.merge({"installed": true, "running": true, "status": "running"}, true)
+	backend.refresh()
+	_check(form["open"].visible and not form["open"].disabled and "editor neconectat" in form["status"].text, "Running Ziva UI is explicitly distinguished from editor connectivity")
+	panel._ziva_action("open")
+	_check(bridge.requests.back()["action"] == "ziva_open" and bridge.requests.back()["arguments"].has("project_directory"), "Ziva opens its own UI using the selected project")
+	bridge.state["same_project"] = false
+	backend.refresh()
+	_check(form["open"].disabled and "alt proiect" in form["hint"].text, "A Ziva session belonging to a different project cannot be opened silently")
+	bridge.state["same_project"] = true
+	backend.refresh()
+	var connection: Dictionary = backend._start_editor()
+	_check(connection.get("ok", false), "Independent native MCP endpoint starts for the Ziva panel")
+	backend.refresh()
+	var configuration: Dictionary = backend.editor_configuration()
+	_check(not configuration.is_empty() and not form["connect"].disabled, "Running Ziva offers a supported MCP configuration fallback")
+	form["connect"].pressed.emit()
+	var copied = DisplayServer.clipboard_get()
+	_check("${GODOT_AI_EDITOR_MCP_TOKEN}" in copied and not str(connection.get("result", {}).get("token", "missing")) in copied, "Copied MCP configuration uses environment reference, never the private token")
+	_check(form["connection_help"].visible and "Test connection" in form["connection_help"].text, "MCP connection instructions stay visible inside the settings window")
+	backend.editor_mcp.initialized_clients = 1
+	backend.editor_mcp.completed_calls = 2
+	backend.refresh()
+	_check("editor conectat" in form["status"].text and "2 apeluri" in form["status"].text and not form["connect"].visible, "Measured MCP state drives connection status and tool count")
+	backend.editor_mcp.initialized_clients = 0
+	backend.refresh()
+	if not output.is_empty():
+		await get_tree().create_timer(0.2).timeout
+		panel.settings_window.get_texture().get_image().save_png(output.path_join("ziva-settings.png"))
+	panel._ziva_action("stop")
+	_check(not form["stop"].visible and form["primary"].text == "Pornește Ziva", "Stopping Ziva restores its own start control")
+	_check(panel.history == history and panel.config["providers"] == profiles, "Ziva controls do not alter our agent's chat or provider profiles")
+	bridge.state.merge({"status": "error", "message": "Pachet corupt"}, true)
+	backend.refresh()
+	_check(form["repair"].visible, "An installed Ziva package can be repaired without removing its history")
+	backend.bridge = old_bridge
+	backend.refresh()
+	panel.integrations.linux.bridge = old_linux
+	panel.integration_settings = old_settings
+	panel.integrations.linux.refresh()
+	bridge.queue_free(); linux.queue_free()
+	panel.settings_window.hide()
 
 func _linux_runtime_tests(output: String) -> void:
 	var backend = panel.integrations.linux

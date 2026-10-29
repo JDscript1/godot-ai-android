@@ -432,7 +432,7 @@ func execute(name: String, args: Dictionary, mode: int = 0, full_control: bool =
 	return Common.failure("Operație neimplementată.")
 
 func _instantiate_node(type: String) -> Node:
-	if not ClassDB.can_instantiate(type) or not ClassDB.is_parent_class(type, "Node"): return null
+	if not ClassDB.class_exists(type) or not ClassDB.can_instantiate(type) or not ClassDB.is_parent_class(type, "Node"): return null
 	return ClassDB.instantiate(type) as Node
 
 func _inside_scene(node: Node, root: Node) -> bool:

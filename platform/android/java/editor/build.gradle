@@ -69,6 +69,13 @@ def generateVersionName() {
     return buildNumber == 0 ? libraryVersionName : libraryVersionName + ".$buildNumber"
 }
 
+// Explicit opt-in distribution: installs alongside the existing editor with private app data.
+def aiDistribution = providers.gradleProperty("godotAiDistribution").getOrElse("standard")
+if (!(aiDistribution in ["standard", "ziva-preview"])) {
+    throw new GradleException("Unknown godotAiDistribution: " + aiDistribution)
+}
+def zivaPreview = aiDistribution == "ziva-preview"
+
 android {
     compileSdkVersion versions.compileSdk
     buildToolsVersion versions.buildTools
@@ -83,7 +90,8 @@ android {
 
     defaultConfig {
         // The 'applicationId' suffix allows to install Godot 3.x(v3) and 4.x(v4) on the same device
-        applicationId "com.jdscript.godotai"
+        applicationId zivaPreview ? "com.jdscript.godotai.ziva" : "com.jdscript.godotai"
+        buildConfigField "boolean", "GODOT_AI_ZIVA", zivaPreview.toString()
         versionCode generateVersionCode()
         versionName generateVersionName()
         minSdkVersion versions.minSdk
@@ -91,7 +99,7 @@ android {
 
         missingDimensionStrategy 'products', 'editor'
         manifestPlaceholders += [
-            editorAppName: "Godot AI",
+            editorAppName: zivaPreview ? "Godot AI Ziva" : "Godot AI",
             editorBuildSuffix: ""
         ]
 
@@ -251,6 +259,12 @@ tasks.configureEach {
     if (name.startsWith('merge') && (name.endsWith('JniLibFolders') || name.endsWith('Assets'))) {
         dependsOn 'buildAiEmbeddedRuntime'
     }
+}
+
+// The preview alone permits the original UI over loopback HTTP.
+if (zivaPreview) {
+    android.sourceSets.maybeCreate("androidDebug").manifest.srcFile("src/zivaPreview/AndroidManifest.xml")
+    android.sourceSets.maybeCreate("androidRelease").manifest.srcFile("src/zivaPreview/AndroidManifest.xml")
 }
 
 dependencies {

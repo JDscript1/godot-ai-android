@@ -221,7 +221,8 @@ class AILinuxRuntimeFiles(
 
     private fun stopCheck() { check(!cancelled()) { "Operație anulată." } }
 
-    fun launch(command: List<String>, project: File?, seconds: Int): JSONObject {
+    /** A managed service owns the lifetime when no command timeout is appropriate. */
+    fun startProcess(command: List<String>, project: File?, extraEnvironment: Map<String, String> = emptyMap()): Process {
         stopCheck()
         check(root.isDirectory && !Files.isSymbolicLink(root.toPath())) { "Filesystem Linux invalid. Dezinstalează și reinstalează Linux." }
         val proot = File(nativeDirectory, "libai_proot.so"); val loader = File(nativeDirectory, "libai_proot_loader.so")
@@ -231,12 +232,17 @@ class AILinuxRuntimeFiles(
             "-b", "/dev", "-b", "/proc", "-b", "/sys")
         if (project != null) args.addAll(listOf("-b", project.absolutePath + ":/workspace"))
         args.addAll(listOf("-w", if (project != null) "/workspace" else "/root")); args.addAll(command)
-        val child = ProcessBuilder(args).redirectErrorStream(true).apply {
+        return ProcessBuilder(args).redirectErrorStream(true).apply {
             environment().clear()
             environment().putAll(mapOf("PATH" to "/usr/local/bin:/usr/bin:/bin", "HOME" to "/root", "USER" to "root", "LANG" to "C.UTF-8",
                 "TMPDIR" to "/tmp", "ANDROID_ROOT" to "/system", "ANDROID_DATA" to "/data", "PROOT_LOADER" to loader.absolutePath,
                 "PROOT_TMP_DIR" to scratch.absolutePath, "DEBIAN_FRONTEND" to "noninteractive"))
+            environment().putAll(extraEnvironment)
         }.start()
+    }
+
+    fun launch(command: List<String>, project: File?, seconds: Int): JSONObject {
+        val child = startProcess(command, project)
         val output = StringBuilder(); var truncated = false
         val reader = Thread({
             try { child.inputStream.bufferedReader().use { input ->

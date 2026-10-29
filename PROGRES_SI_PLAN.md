@@ -8,6 +8,101 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-56 — Ziva independent, preview în surse — 29.10.2026
+
+Compilarea și livrarea unui **APK separat** au fost solicitate explicit la
+29.10.2026. Fluxul pornește pe o ramură izolată, cu distribuția `ziva-preview`.
+Până la verificarea artefactului final, instalatorul standard `090b939` din
+Download rămâne păstrat; acest paragraf nu confirmă încă o livrare nouă.
+
+Prima etapă Ziva are secțiune, control de instalare/pornire/oprire și fereastră
+Android cu interfața originală servită local de ZivaCode. Procesul, datele pe
+proiect și autentificarea sunt separate de harness-ul nostru; nu se transferă
+prompturi sau chei între agenți. Descărcarea opțională v3.3.2 are hash fix,
+verificări de dimensiune/executabil, instalare cu staging și păstrarea datelor
+la reparare. Binarul proprietar nu este inclus în APK.
+
+Puntea proprie MCP spre instrumentele native este acum implementată și testată
+printr-un client TCP într-un editor real. **Conectarea efectivă din Ziva nu este
+încă confirmată.** UI-ul spune «server pornit · editor neconectat» până la
+inițializarea unui client autentificat; procesul sau proba HTTP nu sunt suficiente.
+Browserul Chromium din
+mediul PRoot se oprește cu SIGTRAP inclusiv pe `about:blank`; acest test nu
+validează UI-ul original. Nu s-au folosit chei API sau un model real.
+
+La cererea utilizatorului, viitoarea compilare se face separat:
+`-PgodotAiDistribution=ziva-preview`, pachet `com.jdscript.godotai.ziva.debug`,
+nume **Godot AI Ziva**, instalator **Godot-AI-Ziva-arm64-debug.apk**. Identitatea
+standard `com.jdscript.godotai.debug` este păstrată. Selectorul workflow-ului și
+scriptul de livrare cunosc ambele distribuții, fără curățare între ele.
+Profilul preview permite HTTP doar pentru loopback în interfața Android.
+
+Verificat local: runtime Godot **750/0**, regresie editor îngust **754/0**,
+panou Ziva **53/0** (captură inspectată), manager de proiecte **61/0**, compilare
+Kotlin cu SDK Android, arhivă Ziva **13/0**, arhivă Linux **6/0**, rootfs **4/0**
+și livrare **5/0**. Gradle a generat BuildConfig pentru ambele identificatoare.
+Configurația Gradle locală a necesitat override doar pentru aceste probe către
+NDK-ul 27 existent; NDK 29 din configurația normală este incomplet local.
+Instalatorul Kotlin a descărcat arhiva oficială completă, i-a verificat SHA-256
+și a extras/verificat executabilul de 116.771.624 bytes în directorul de test.
+Executabilul rezultat a răspuns `v3.3.2` în PRoot. Fuziunea manifestelor preview
+a trecut prin Gradle: identificator, nume, politică loopback și componente
+private verificate, cu păstrarea manifestului Android/XR existent.
+Nu s-a compilat APK și nu s-a făcut push pentru această etapă.
+
+Prima regresie a găsit două așteptări UI vechi pentru numărul/ordinea
+categoriilor. Ziva este acum după Skills/Sarcini, păstrând succesiunea cerută
+sub Integrări, iar selectorul verifică toate categoriile prezente. Runda finală
+a trecut 754/0.
+
+Dovezi: `.ai-qa/ziva-review-20261029T063750Z/` (ZivaCode real și HTTP/MCP),
+`.ai-qa/ziva-native/`, `.ai-qa/ziva-rendered/narrow/`,
+`.ai-qa/ziva-full-render-final/narrow/`, `.ai-qa/ziva-start/narrow/` și logurile
+`ziva-*.log`. Detalii și pașii rămași în [AI_ZIVA.md](docs/AI_ZIVA.md).
+
+Jurnal: **29.10.2026 — AG-56, Ziva preview independent și distribuție separată
+pregătite în surse; puntea MCP nativă este testată separat, iar integrarea
+completă din clientul Ziva și APK-ul rămân de verificat.**
+
+Continuarea AG-56 adaugă `editor_mcp.gd`: transport Streamable HTTP local cu
+autentificare, sesiuni și discovery paginat, validare de argumente, cache de
+cereri, anulare și serializarea instrumentelor. `ziva.gd` are instanță proprie
+de Tools și jurnal privat; nu intră în harnesul nostru. Loturile de fișiere,
+scenele și recuperarea folosesc implementările native existente. Accesul la
+Debugger/panouri în Android depinde de bridge-ul C++ existent; proba locală
+upstream nu reprezintă o nouă probă a Debuggerului Android.
+
+`AIZivaMcpConfig` gestionează numai intrarea proprie din `.mcp.json`, cu
+recuperare și păstrarea serverelor/editărilor utilizatorului. Tokenul local este
+doar în mediul procesului, nu în proiect sau clipboard. WebView-ul este un Dialog
+în activitatea editorului, pentru a evita suspendarea executorului nativ.
+Comportamentul fizic al ferestrei rămâne de testat. Starea și numărul apelurilor
+MCP sunt măsurate separat de serviciul Ziva.
+
+Proba cu ZivaCode real a confirmat un proces viu și HTML la portul 7012, dar
+**nu a observat discovery automat în 35 s**, fără chat/model. Documentația Ziva
+descrie `.mcp.json` și antete din mediu; panoul oferă și copierea configurației
+pentru Settings → MCP servers. Acest fallback nu a fost încă folosit în UI-ul
+original. Dovezi: `.ai-qa/editor-mcp-live-final/ziva-probe.json`,
+`.ai-qa/editor-mcp-final/`, `.ai-qa/ziva-native/`.
+
+Verificarea continuării: **38/0** probe TCP/MCP în editor real (inclusiv lot
+asincron, recuperare și redactarea secretelor), **15/0** teste Kotlin de
+configurare/restaurare, **751/0** runtime, **759/0** regresie editor îngust și
+**59/0** panou Ziva. Ultimul ajutor de conectare din fereastra de setări are
+verificarea focalizată 59/0; runda completă 759/0 a pornit înaintea acestei
+ajustări de text/afișare. Captura finală a panoului a fost inspectată.
+Compilarea Kotlin și fuziunea reală a manifestelor preview au trecut din nou;
+fereastra Ziva nu mai este o Activity separată. CI include acum proba MCP fără
+descărcarea executabilului proprietar. Runda CI nu a fost lansată.
+
+Dovezi suplimentare: `.ai-qa/ziva-native/runtime-mcp-final.log`,
+`full-rendered-mcp-final/narrow/editor-report.json`,
+`rendered-mcp-final/narrow/ziva-settings.png`, `kotlin-mcp.log`,
+`manifest-mcp.log` și `.ai-qa/editor-mcp-final/report.json`.
+APK-ul din Download rămâne versiunea `090b939`; nu s-a compilat, publicat sau
+înlocuit un instalator în această continuare.
+
 ## Publicare GitHub — 29.10.2026
 
 Ramura principală `ai/android-assistant` primește istoricul surselor compilate și validate `090b939`, plus documentația finală de livrare. Cele 35 de surse runtime și fișierele native/testele coincid cu snapshot-ul verificat; diferențele ulterioare sunt numai documentare. Validarea asociată rămâne runda CI 40764656531, trecută integral. APK-ul din Download rămâne `090b939`; publicarea documentației nu reprezintă o nouă compilare sau instalare.

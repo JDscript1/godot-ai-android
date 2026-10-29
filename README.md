@@ -131,6 +131,14 @@ No separate Termux app or pasted setup commands are required for this backend.
 The direct-provider harness remains in Godot; third-party CLI harness adapters
 and full Blender operation still need separate integration and device validation.
 
+An optional [independent Ziva preview](docs/AI_ZIVA.md) is implemented in source.
+Its `ziva-preview` Android distribution has a separate application ID and installer;
+the current editor stays installed. The preview manages an upstream ZivaCode
+download and its original local UI. A project-scoped MCP adapter to native editor
+tools is implemented and tested with a TCP client. Automatic Ziva client discovery,
+the original Android WebView and a live agent workflow remain unverified; no new
+APK has been delivered for it.
+
 The signed APK's complete Linux package, native service, agent, Asset Store and
 30 embedded scripts were verified before replacing the Download installer.
 Python/Node/Git/ripgrep passed real development controls; execution inside the

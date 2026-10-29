@@ -36,6 +36,28 @@ class DeliveryTests(unittest.TestCase):
         for name in ['Godot_v4.7.2.apk', 'Gallery.apk', 'Godot-AI-notes.txt', 'Godot-AI-arm64-debug.apk.sha256']:
             self.assertIsNone(delivery.OLD_NAME.fullmatch(name))
 
+    def test_distribution_cleanup_never_crosses_packages(self):
+        package, name, pattern = delivery.DISTRIBUTIONS['ziva-preview']
+        self.assertEqual(package, 'com.jdscript.godotai.ziva.debug')
+        self.assertTrue(pattern.fullmatch(name))
+        self.assertIsNone(pattern.fullmatch(delivery.NAME))
+        self.assertIsNone(delivery.OLD_NAME.fullmatch(name))
+
+    def test_ziva_delivery_preserves_the_standard_installer_and_checksum(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            standard = root / delivery.NAME
+            checksum = root / (delivery.NAME + '.sha256')
+            standard.write_bytes(b'existing-standard')
+            checksum.write_text('existing-checksum')
+            source = root / 'incoming.apk'
+            source.write_bytes(b'new-ziva')
+            target = root / delivery.DISTRIBUTIONS['ziva-preview'][1]
+            delivery.atomic_copy(source, target, hashlib.sha256(b'new-ziva').hexdigest())
+            self.assertEqual(standard.read_bytes(), b'existing-standard')
+            self.assertEqual(checksum.read_text(), 'existing-checksum')
+            self.assertEqual(target.read_bytes(), b'new-ziva')
+
 
 if __name__ == '__main__':
     unittest.main()

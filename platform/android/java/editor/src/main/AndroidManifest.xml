@@ -65,6 +65,8 @@
             tools:targetApi="29" />
 
         <receiver android:name=".AITermuxBlenderResult" android:exported="false" />
+        <service android:name=".AIZivaService" android:exported="false"
+            android:foregroundServiceType="dataSync" android:process=":ai_ziva" />
         <service android:name=".AILinuxRuntimeService" android:exported="false"
             android:foregroundServiceType="dataSync" android:process=":ai_runtime" />
         <receiver android:name=".AIEmbeddedRuntimeResult" android:exported="false" />
