@@ -10,6 +10,21 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
+## AG-56 — Ziva independent, preview în surse / APK separat ulterior
+
+- [x] Secțiune Ziva separată, instalare opțională verificată (plugin oficial complet + Godot 4.7.2 Linux ARM64), proces propriu în editor headless și fereastră cu UI-ul oficial.
+- [x] Configurație `ziva-preview`: `com.jdscript.godotai.ziva.debug`, nume Godot AI Ziva și livrare care păstrează instalatorul standard.
+- [x] Instalatoare cu hash/dimensiune, staging atomic, limite de dimensiune/număr, refuzul căilor nesigure și păstrarea instalării anterioare; arhivele oficiale reale au trecut probele.
+- [x] Serviciu separat care montează addon-ul, pornește Godot headless sub PRoot și publică portul numai după HTML 200 + identitatea MCP `ziva-godot` v3.3.2 + `get_project_info`.
+- [x] Dialog WebView în aceeași activitate, pentru a evita pauza editorului; comportamentul Android rămâne de testat.
+- [x] Eliminată puntea proprie `editor_mcp`/`.mcp.json`, împreună cu tokenul și fallback-ul de conectare.
+- [ ] Compilare și livrare **Godot-AI-Ziva-arm64-debug.apk**, păstrând APK-ul actual conform cererii utilizatorului.
+- [ ] Probă pe dispozitiv: descărcare prin serviciu, primul import, WebView/autentificare și prompt → unealtă → rezultat cu un furnizor real.
+- [ ] Supraviețuirea serviciului `dataSync` sub politicile Android.
+
+[Contract, limite și compilare separată](docs/AI_ZIVA.md). Dovezi de dezvoltare:
+`.ai-qa/ziva-native/`, `.ai-qa/ziva-final/`, `.ai-qa/full-final/`.
+
 ## AG-55 — playtest și conversație, în APK 090b939
 
 - [x] Refolosirea sesiunii și închiderea testelor agentului la final/Stop; protecția sesiunilor manuale, inclusiv aceeași scenă repornită.

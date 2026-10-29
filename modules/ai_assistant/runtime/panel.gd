@@ -24,6 +24,7 @@ static var AgentJobs: GDScript
 static var Speech: GDScript
 static var Workspace: GDScript
 static var Integrations: GDScript
+static var Ziva: GDScript
 static var FileRegistry: GDScript
 static var MediaView: GDScript
 static var ModelPreview: GDScript
@@ -140,6 +141,7 @@ var provider_connections: VBoxContainer
 var active_mode = 2
 var workspace: RefCounted
 var integrations: RefCounted
+var ziva: RefCounted
 var journal_console: CodeEdit
 var journal_filter: LineEdit
 var journal_follow: CheckBox
@@ -245,6 +247,8 @@ func _ready() -> void:
 	if not project_manager_mode: _receive_project_handoff()
 	workspace = Workspace.new(self, project_directory)
 	integrations = Integrations.new(self, vault)
+	ziva = Ziva.new(plugin, "" if project_manager_mode else ProjectSettings.globalize_path("res://").trim_suffix("/"))
+	ziva.changed.connect(_refresh_ziva_card)
 	integrations.linux.changed.connect(_refresh_linux_card)
 	integrations.linux.diagnostic.connect(_linux_diagnostic)
 	if integrations.termux != null and not project_manager_mode:
@@ -280,6 +284,7 @@ func _ready() -> void:
 	_refresh_all_prices.call_deferred()
 
 func _exit_tree() -> void:
+	if ziva != null: ziva.close()
 	if tools != null: tools.finish_playtest(current_turn)
 	_restore_workspace_bottom_panel()
 	_restore_dock_groups()
@@ -732,6 +737,7 @@ func _build_settings() -> void:
 	_build_integrations(integration_tab)
 	_build_skills(_tab("Skills", "skills"))
 	_build_tasks(_tab("Sarcini", "automations"))
+	_build_ziva(_tab("Ziva", "ziva"))
 	var journal_tab = _tab("Jurnal", "journal")
 	var log_toolbar = _row(journal_tab)
 	journal_filter = LineEdit.new()
@@ -3611,6 +3617,7 @@ func _process(_delta: float) -> void:
 			backend.last_check = Time.get_ticks_msec()
 			backend.refresh.call_deferred()
 	if integrations != null and integrations.linux != null and not project_manager_mode and settings_window != null and settings_window.visible and not integrations.linux.working and Time.get_ticks_msec() - integrations.linux.last_refresh > 5000: integrations.linux.refresh()
+	if ziva != null and Time.get_ticks_msec() - ziva.last_refresh > 1500 and (ziva.state.get("busy", false) or (settings_window != null and settings_window.visible and settings_tabs.current_tab == section_tabs.get("ziva", -1))): ziva.refresh()
 	if speech != null: speech.poll(config.get("preferences", {}))
 
 func _selection() -> Dictionary:
@@ -4155,7 +4162,7 @@ func _search_settings(query: String) -> void:
 	_layout_settings.call_deferred()
 
 func _select_settings(tab: int) -> void:
-	if project_manager_mode and not tab in [section_tabs["general"], section_tabs["providers"], section_tabs["accounts"], section_tabs["journal"], section_tabs["voice"]]: tab = section_tabs["general"]
+	if project_manager_mode and not tab in [section_tabs["general"], section_tabs["providers"], section_tabs["accounts"], section_tabs["journal"], section_tabs["voice"], section_tabs["ziva"]]: tab = section_tabs["general"]
 	settings_tabs.current_tab = tab
 	if tab == section_tabs.get("journal", -1): _refresh_journal(true)
 	for index in range(settings_navigation.item_count):
@@ -5315,6 +5322,54 @@ func _refresh_linux_card() -> void:
 	if runtime.available() and not integration_settings.get("linux_enabled", false):
 		integration_settings["linux_enabled"] = true
 		Common.atomic_json(project_directory.path_join("integrations.json"), integration_settings)
+	_refresh_ziva_card()
+
+func _build_ziva(parent: Node) -> void:
+	var form = _form(parent, "ziva")
+	_label(parent, "Plugin oficial · Experimental")
+	_label(parent, "Ziva folosește interfața, autentificarea și istoricul propriu. Pluginul oficial rulează într-un editor Godot separat, pe același proiect.")
+	form["status"] = _label(parent, "Verific Ziva…")
+	_label(parent, "Editorul Android rămâne activ. Ambele editoare lucrează pe aceleași fișiere; evită modificările simultane.")
+	var actions = _row(parent)
+	form["primary"] = _button(actions, "Instalează Ziva", func() -> void: _ziva_action("start" if ziva.state.get("installed", false) else "install"))
+	form["open"] = _button(actions, "Deschide Ziva", func() -> void: _ziva_action("open"))
+	form["stop"] = _button(actions, "Oprește", func() -> void: _ziva_action("stop"))
+	form["repair"] = _button(parent, "Repară instalarea Ziva", func() -> void: _ziva_action("install"))
+	_button(parent, "Verifică starea", func() -> void: ziva.refresh())
+	form["hint"] = _label(parent, "")
+	_button(parent, "Instalare și condiții Ziva ↗", func() -> void: OS.shell_open("https://ziva.sh/docs/installation"))
+	ziva.refresh()
+
+func _refresh_ziva_card() -> void:
+	if ziva == null or not forms.has("ziva") or integrations == null: return
+	var form: Dictionary = forms["ziva"]
+	var state: Dictionary = ziva.state
+	var enabled = bool(state.get("ok", false)) and bool(state.get("enabled", false))
+	var installed = bool(state.get("installed", false))
+	var working = bool(state.get("busy", false))
+	var running = bool(state.get("running", false))
+	var same_project = not project_manager_mode and bool(state.get("same_project", false))
+	form["status"].text = ziva.caption()
+	form["primary"].text = "Pornește Ziva" if installed else "Instalează Ziva + Godot · ~295 MB"
+	form["primary"].visible = not working
+	form["primary"].disabled = not enabled or busy or working or integrations.linux.working or not integrations.linux.available() or (installed and project_manager_mode)
+	form["open"].visible = running
+	form["open"].disabled = not same_project or int(state.get("ui_port", 0)) <= 0
+	form["stop"].visible = working
+	form["stop"].disabled = not enabled
+	form["repair"].visible = enabled and installed and str(state.get("status", "")) == "error" and not working
+	form["repair"].disabled = busy or integrations.linux.working or not integrations.linux.available()
+	form["hint"].text = "Deschide un proiect pentru a porni Ziva." if project_manager_mode else ("Ziva rulează pentru alt proiect. Oprește sesiunea înainte de schimbare." if running and not same_project else "")
+	if not enabled: form["hint"].text = "Se livrează în APK-ul separat Godot AI Ziva."
+	elif not integrations.linux.available(): form["hint"].text = "Pregătește Runtime Linux din Integrări, apoi revino aici."
+	elif not installed: form["hint"].text = "Descarcă pluginul oficial Ziva și Godot 4.7.2 Linux ARM64; aproximativ 1 GB necesari la instalare."
+
+func _ziva_action(action: String) -> void:
+	if ziva == null or (busy and action in ["install", "start"]): return
+	var project = "" if project_manager_mode else ProjectSettings.globalize_path("res://").trim_suffix("/")
+	var result = ziva.request(action, project)
+	_record_event("ziva_runtime", {"action": action}, {"ok": result.get("ok", false), "code": result.get("code", ""), "error": result.get("error", "")})
+	if not result.get("ok", false): _status(str(result.get("error", "Operația Ziva nu a pornit.")))
 
 func _linux_setup(action: String, tool: String = "") -> void:
 	if busy or integrations.linux.working: return

@@ -62,5 +62,8 @@ security sandbox and cannot grant kernel features absent from Android.
 reproducible packaging. `tests/RuntimeArchiveTest.kt` exercises the actual Kotlin
 unpacker with malicious manifests. `tests/RuntimeSmoke.kt` runs an installation,
 optional tool installs and command/cancellation checks using supplied native
-files. These development controls are distinct from the installed Godot service.
+files. `tests/ZivaPackageTest.kt` and `tests/ZivaGodotTest.kt` exercise the
+optional Ziva addon and official Godot installers with fixtures: archive and
+binary hashes, unsafe paths, cancellation and preservation of the previous
+install. These development controls are distinct from the installed Godot service.
 See [the runtime document](../../docs/AI_LINUX_RUNTIME.md) for current evidence.

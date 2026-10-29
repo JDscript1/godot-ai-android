@@ -221,7 +221,9 @@ class AILinuxRuntimeFiles(
 
     private fun stopCheck() { check(!cancelled()) { "Operație anulată." } }
 
-    fun launch(command: List<String>, project: File?, seconds: Int): JSONObject {
+    /** A managed service owns the lifetime when no command timeout is appropriate. */
+    fun startProcess(command: List<String>, project: File?, extraEnvironment: Map<String, String> = emptyMap(),
+        binds: List<Pair<String, String>> = emptyList()): Process {
         stopCheck()
         check(root.isDirectory && !Files.isSymbolicLink(root.toPath())) { "Filesystem Linux invalid. Dezinstalează și reinstalează Linux." }
         val proot = File(nativeDirectory, "libai_proot.so"); val loader = File(nativeDirectory, "libai_proot_loader.so")
@@ -230,13 +232,25 @@ class AILinuxRuntimeFiles(
         val args = mutableListOf(proot.absolutePath, "--kill-on-exit", "--link2symlink", "--sysvipc", "-L", "-0", "-r", root.absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys")
         if (project != null) args.addAll(listOf("-b", project.absolutePath + ":/workspace"))
+        for ((source, destination) in binds) {
+            val host = File(source).absoluteFile
+            check(host.exists() && !Files.isSymbolicLink(host.toPath())) { "Legătură privată invalidă." }
+            require(destination.startsWith("/") && !destination.contains(':') && !destination.contains('\u0000') &&
+                destination.split('/').none { it == ".." || it == "." }) { "Destinație Ziva invalidă." }
+            args.addAll(listOf("-b", host.path + ":" + destination))
+        }
         args.addAll(listOf("-w", if (project != null) "/workspace" else "/root")); args.addAll(command)
-        val child = ProcessBuilder(args).redirectErrorStream(true).apply {
+        return ProcessBuilder(args).redirectErrorStream(true).apply {
             environment().clear()
             environment().putAll(mapOf("PATH" to "/usr/local/bin:/usr/bin:/bin", "HOME" to "/root", "USER" to "root", "LANG" to "C.UTF-8",
                 "TMPDIR" to "/tmp", "ANDROID_ROOT" to "/system", "ANDROID_DATA" to "/data", "PROOT_LOADER" to loader.absolutePath,
                 "PROOT_TMP_DIR" to scratch.absolutePath, "DEBIAN_FRONTEND" to "noninteractive"))
+            environment().putAll(extraEnvironment)
         }.start()
+    }
+
+    fun launch(command: List<String>, project: File?, seconds: Int): JSONObject {
+        val child = startProcess(command, project)
         val output = StringBuilder(); var truncated = false
         val reader = Thread({
             try { child.inputStream.bufferedReader().use { input ->

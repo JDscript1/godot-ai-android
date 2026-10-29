@@ -8,6 +8,69 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-56 — Ziva independent, preview în surse — 29.10.2026
+
+Compilarea și livrarea unui **APK separat** au fost solicitate explicit la
+29.10.2026. Fluxul pornește pe o ramură izolată, cu distribuția `ziva-preview`.
+Până la verificarea artefactului final, instalatorul standard `090b939` din
+Download rămâne păstrat; acest paragraf nu confirmă încă o livrare nouă.
+
+La cererea utilizatorului, integrarea nu mai folosește o punte proprie: se
+folosesc **pluginul și interfața oficială Ziva** într-un editor Godot Linux
+separat, headless, în paralel cu editorul Android și agentul nostru. Pluginul
+oficial este GDExtension Linux ARM64 (glibc), deci nu poate fi încărcat în
+editorul Android (Bionic); arhitectura aprobată descarcă arhiva oficială
+completă v3.3.2 și Godot 4.7.2 Linux ARM64 și rulează ambele sub PRoot, cu
+addon-ul montat în `/workspace/addons/ziva_agent`. Interfața oficială rămâne
+în WebView-ul Android, pe `127.0.0.1`, portul descoperit în 7012–7041.
+
+Instalatoarele (`AIZivaPackage`, `AIZivaGodot`) descarcă de la furnizor, verifică
+dimensiunea și SHA-256 ale arhivelor, extrag numai conținutul necesar (addon-ul
+complet de aproximativ 503 MB, respectiv executabilul Godot), refuză căile
+nesigure, duplicatele, legăturile simbolice și depășirile de dimensiune/număr,
+acordă drept de execuție și activează atomic, păstrând instalarea anterioară
+până la validarea înlocuitorului. APK-ul nu redistribuie binare proprietare;
+licența Ziva rămâne a furnizorului.
+
+`AIZivaService` rulează într-un proces separat, verifică ambele pachete și
+proiectul, refuză o sesiune deja activă, montează datele XDG și `.godot` privat
+pe proiect, lansează Godot-ul oficial cu `--headless --editor` și declară
+pornirea reușită numai după HTML 200, identitatea MCP `ziva-godot` v3.3.2 și un
+apel `get_project_info` cu rezultat nevid. Portul este publicat abia atunci;
+heartbeat-ul verifică interfața și oprește sesiunea după 30 de eșecuri.
+`AIZivaWindow` păstrează fereastra ca Dialog în activitatea editorului, fără
+bridge JavaScript privilegiat, și permite numai navigarea către același host și
+port. `ziva.gd` face numai control de proces (install/start/stop/open), iar
+`open` cere proiectul curent și un port valid.
+
+Puntea anterioară `editor_mcp.gd` și configurația `AIZivaMcpConfig` cu token în
+`.mcp.json` au fost eliminate, împreună cu testele, starea `editor_connected` și
+fallback-ul «Copiază conexiunea»: interfața oficială își folosește propriile
+unelte în editorul ei, deci un al doilea traseu de control nu era necesar.
+
+Verificat local: runtime Godot **750/0**, regresie editor îngust
+**756/0**, panou Ziva focalizat **55/0** (captură inspectată), pachet Ziva
+**33/0**, Godot pentru Ziva **19/0**, arhivă Linux **6/0**, rootfs **4/0** și
+livrare **5/0**. Instalatoarele au extras arhivele oficiale reale din cache:
+`zivacode` 116.771.624 bytes și Godot 137.953.888 bytes, cu drept de execuție.
+Proba separată în Debian/PRoot, cu aceleași montări, a confirmat interfața HTML
+la `127.0.0.1:7012`, identitatea MCP `ziva-godot` v3.3.2 și `get_project_info`;
+proiectul gazdă a rămas nemodificat. Gradle generase anterior BuildConfig pentru
+ambele identificatoare, iar fuziunea manifestelor preview trecuse cu
+identitatea, numele și politica loopback păstrate.
+
+Jurnal: **29.10.2026 — AG-56, Ziva preview folosește pluginul și interfața
+oficială într-un editor Godot Linux separat; instalatoarele, serviciul și
+panoul sunt implementate și verificate în surse, fără APK, dispozitiv sau model
+real.**
+
+Dovezi: `.ai-qa/ziva-native/` (loguri Kotlin, `ZivaLiveInstallTest.kt`,
+`runtime-final.log`), `.ai-qa/full-final/narrow/` (raport complet
+`editor-report.json` și jurnal), `.ai-qa/ziva-final/narrow/` (raport și
+captură focalizate) și `.ai-qa/ziva-native/full-final.log`. Instalatorul standard `090b939` din
+Download rămâne păstrat; nu s-a compilat, publicat sau înlocuit un instalator
+în această continuare. Detalii și pașii rămași în [AI_ZIVA.md](docs/AI_ZIVA.md).
+
 ## Publicare GitHub — 29.10.2026
 
 Ramura principală `ai/android-assistant` primește istoricul surselor compilate și validate `090b939`, plus documentația finală de livrare. Cele 35 de surse runtime și fișierele native/testele coincid cu snapshot-ul verificat; diferențele ulterioare sunt numai documentare. Validarea asociată rămâne runda CI 40764656531, trecută integral. APK-ul din Download rămâne `090b939`; publicarea documentației nu reprezintă o nouă compilare sau instalare.

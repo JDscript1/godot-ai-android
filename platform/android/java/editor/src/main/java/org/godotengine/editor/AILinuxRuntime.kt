@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Native bridge for a persistent, app-owned Linux filesystem. Termux is not consulted. */
 object AILinuxRuntime {
     private var context: Context? = null
-    fun initialize(activity: Activity) { context = activity.applicationContext }
+    fun initialize(activity: Activity) { context = activity.applicationContext; AIZivaWindow.register(activity) }
     internal fun directory(context: Context) = File(context.noBackupFilesDir, "ai-linux")
     internal fun jobFile(context: Context, id: String) = File(directory(context), "jobs/$id.json")
     internal fun core(context: Context, cancel: () -> Boolean = { false }, log: (String) -> Unit = {}) =
@@ -35,6 +35,7 @@ object AILinuxRuntime {
         if (Build.VERSION.SDK_INT < 29 || !Build.SUPPORTED_ABIS.contains("arm64-v8a")) return failure("Runtime Linux necesită Android 10+ ARM64.", "unsupported_platform").toString()
         return try {
             val arguments = JSONObject(text)
+            if (action.startsWith("ziva_")) return AIZivaRuntime.command(current, action, arguments).toString()
             when (action) {
                 "status" -> {
                     val result = core(current).state().put("ok", true).put("supported", true)
@@ -52,6 +53,7 @@ object AILinuxRuntime {
                     job.put("ok", true).toString()
                 }
                 "prepare", "install", "verify", "tool_install", "execute", "uninstall" -> {
+                    if (action in listOf("install", "tool_install", "uninstall")) check(!AIZivaRuntime.isBusy(current)) { "Oprește Ziva înainte de modificarea runtime-ului Linux." }
                     val active = active(current)
                     if (action == "prepare" && active.isNotEmpty()) return JSONObject().put("ok", true).put("id", active).put("status", "running").toString()
                     check(active.isEmpty()) { "O sarcină Linux este deja în lucru." }
