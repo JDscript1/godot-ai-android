@@ -12,7 +12,7 @@ drept funcție validată cu un serviciu real.
 
 Pe APK-ul instalat `0fc625a9`, ADB a confirmat eroarea veche „O altă sesiune
 Ziva răspunde deja”, salvată după reboot, deși nu exista niciun proces Ziva.
-Starea nouă verifică o închidere de fișier deținută de serviciu, identificatorul
+Starea nouă verifică blocarea fișierului sesiunii de către serviciu, identificatorul
 boot-ului și identitatea procesului; un JSON vechi nu mai poate bloca sesiunea.
 Închiderea procesului editorului este observată prin Binder, iar închiderea
 activității sau eliminarea aplicației oprește backend-ul și procesele proprii.
@@ -45,12 +45,50 @@ cu un UUID citit prin instrumentul public MCP `read`. Astfel nu adoptă un alt
 server Ziva sau un proces vechi al aceluiași proiect. Apelul public de citire a
 fost verificat pe serverul real, fără model și fără modificarea proiectului.
 Fișierele temporare de identificare sunt șterse după oprire.
-Compilarea finală cu această corecție și proba fizică sunt încă în lucru;
-APK-ul precedent nu este folosit ca dovadă pentru această implementare.
-Dovezi: `.ai-qa/ziva-lifecycle-20261029T174727Z/`.
+Compilarea finală pentru sursa **`571ad569843b741710c45e515457cda532defcb8`**
+a trecut integral în [CI 40933392621](https://github.com/JDscript1/godot-ai-android/actions/runs/40933392621):
+toate cele trei joburi, **801/0 × 5** editor nativ, **125/0** TODO/gesturi,
+**67/0** manager nativ și probele pentru panouri, generare, acces la panouri
+și ciclul conversației. Cele 9 teste companion și build-ul lui au trecut.
+
+Pe telefon, APK-ul final a pornit automat Ziva la deschiderea proiectului,
+a afișat **„Ziva · Activ”** și frontend-ul oficial. Revenirea în AI Assistant
+și trecerea aplicației în fundal au păstrat aceeași sesiune, același PID și
+același port. Proba a terminat doar procesul Android principal al editorului:
+serviciul a detectat moartea lui, a trecut în `stopped`, iar toate cele trei
+procese native urmărite au dispărut. Redeschiderea completă a pornit automat
+o sesiune nouă. Identitatea instalării Ziva și configurația proiectului
+utilizatorului au rămas identice. Panoul propriu de instalare și actualizări
+a fost inspectat pe telefon.
+
+Limite ale probei fizice: primul intent VIEW după terminarea forțată a adus
+înapoi activitatea Android păstrată în cache, fără să redeschidă proiectul.
+O pornire completă cu task nou a reluat corect proiectul și Ziva; restaurarea
+acelui task vechi nu este declarată validată. Nu s-a efectuat reboot fizic,
+autentificare nouă sau sarcină plătită cu un model. Verificarea live a
+actualizărilor din buton nu este declarată reușită: proba finală de apăsare
+a fost întreruptă de o suprapunere a introducerii de text Android, fără
+rezultat nou salvat. Metadatele și activarea versiunilor rămân acoperite de
+testele automate descrise mai sus.
+
+APK-ul final a fost verificat, instalat peste Ziva existent și livrat în
+Download la **29.10.2026, 20:07:53 CET**: `Godot-AI-Ziva-arm64-debug.apk`,
+**112.484.884 bytes**, pachet separat `com.jdscript.godotai.ziva.debug`, ARM64.
+SHA-256: `51526eba2af3d44799355b8505e1f90bab98fb44dcb6f5fa6215d0581c8ccf77`.
+Semnătura persistentă este păstrată; **37 de scripturi** coincid cu sursele,
+iar agentul, Asset Store, managerul de proiecte și cele **2.678 fișiere Linux**
+sunt prezente. Instalatorul Ziva și checksum-ul au fost înlocuite atomic.
+APK-ul standard și checksum-ul lui sunt identice înainte și după livrare,
+inclusiv data modificării.
+
+Dovezi: `.ai-qa/ziva-lifecycle-20261029T174727Z/`,
+`.ai-qa/compile-ziva-lifecycle-20261029T180532Z/physical-lifecycle.json`,
+`native-reports.json`, `apk-verification.json`, `standard-after-delivery.json`
+din același director și `.ai-qa/delivery-ziva-571ad56.json`.
 
 Jurnal: 29.10.2026 — AG-60: înlocuirea controlului manual al sesiunii,
-separarea tabului de asistent și administrarea versiunilor oficiale din Ziva.
+separarea tabului de asistent și administrarea versiunilor oficiale din Ziva;
+APK final instalat și livrat, pornire/opriere și reluare completă probate pe telefon.
 
 ## AG-59 — Ziva adaptat la spațiul dispozitivului — 29.10.2026
 
