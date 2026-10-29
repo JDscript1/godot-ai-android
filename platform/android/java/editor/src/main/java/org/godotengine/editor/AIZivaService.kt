@@ -205,7 +205,7 @@ class AIZivaService : Service() {
                 child = runtime.startProcess(
                     listOf("/bin/sh", "-c", "printf '%s\\n' \"\$\$\" > /root/.cache/godot-ai-ziva.pid; exec \"\$@\"",
                         "godot-ai-ziva", godot.guestBinary, "--headless", "--editor", "--path", "/workspace"), project,
-                    mapOf("ZIVA_ENABLE_HEADLESS" to "1", "GODOT_SILENCE_ROOT_WARNING" to "1"), binds)
+                    AIZivaSession.startupEnvironment(), binds)
                 val reader = drain(child!!, output, logFile)
                 try {
                     val deadline = System.nanoTime() + READY_TIMEOUT_MS * 1_000_000L

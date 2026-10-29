@@ -22,14 +22,39 @@ Compatibilitatea binarelor native Android și Linux rămâne o cerință a plugi
 această corecție nu transformă un binar Android într-unul Linux.
 
 Kotlin Android compilează; testele locale trec **13/0** dependențe,
-**38/0** pachet, **24/0** sesiuni și **13/0** metadate. Cele opt probe noi acoperă
+**38/0** pachet, **26/0** sesiuni și **13/0** metadate. Cele opt probe de încărcare acoperă
 jurnalul real Terrain3D, erori mixte și eșecuri reale ale bibliotecii Ziva.
-Compilarea APK-ului corectat și proba fizică sunt în lucru. Instalatorul existent
-nu este declarat corectat înainte de livrarea noii versiuni.
+Sursa `8260efed` a trecut integral [CI 40949454959](https://github.com/JDscript1/godot-ai-android/actions/runs/40949454959):
+**801/0 × 5** editor nativ și probele focalizate. APK-ul a fost verificat,
+instalat și livrat separat în Download; Ziva a pornit efectiv în proiectul cu
+Terrain3D, inclusiv după redeschidere, cu HTTP 200 și identitate MCP oficială.
+
+Inspecția interfeței a expus și blocajul cererilor: istoricul Git local avea
+legături PRoot către `tmp_objdir-bulk-fsync-*` deja mutat. Android a refuzat
+proba de hardlink nativ; Git folosește acum `core.createObject=rename`, opțiunea
+standard descrisă în [documentația Git](https://git-scm.com/docs/git-config.html#Documentation/git-config.txt-corecreateObject).
+Pe telefon a fost configurată în runtime și în repository-ul privat de
+checkpoint-uri. Copia originală a fost arhivată înainte de intervenție.
+Toate cele **233 de bloburi** din index au fost recuperate din fișierele actuale,
+cu SHA-1 identic; arborele rezultat este exact `464d283de16ae383ece05b42327ed77c32038cf6`.
+S-a înlocuit numai depozitul privat de obiecte Git, păstrând originalul alături;
+`git fsck --full` a trecut local și pe telefon. Un repository nou, cinci fișiere,
+`git add` în modul bulk-fsync și `git commit` au trecut în PRoot cu setarea nouă.
+Cererea „Continuă” lansată de utilizator a ajuns apoi la Beam Free și la rulare
+de instrumente, cu un plan de opt sarcini. Acesta este un progres observat live,
+nu dovada finalizării jocului sau a întregului plan al agentului.
+
+Protecția este adăugată și mediului procesului Ziva, prin variabilele standard
+`GIT_CONFIG_*`, pentru sesiuni și instalări noi fără modificarea configurației
+Git a proiectului. Cele două probe suplimentare folosesc Git real și verifică
+atât aplicarea setării în procesul copil, cât și păstrarea valorii existente în
+repository. Kotlin compilează; recompilarea APK-ului cu această protecție
+automată este în curs. Sesiunea activă a utilizatorului este păstrată.
 Dovezi: `.ai-qa/ziva-restart-failure-20261029T202612Z/`.
 
 Jurnal: 29.10.2026 — AG-61: separarea erorilor de încărcare a pluginurilor
-la pornirea backend-ului Ziva, după identificarea problemei pe telefon.
+la pornirea backend-ului Ziva, recuperare checkpoint Git și probă live după
+reluarea cererii utilizatorului.
 
 ## AG-60 — Ziva independent și sesiuni automate — 29.10.2026
 

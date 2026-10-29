@@ -34,6 +34,12 @@ class AIZivaSession(private val directory: File) {
     companion object {
         private val held = HashSet<String>()
         const val OWNER_FILE = "/run/godot-ai-ziva/owner"
+        fun startupEnvironment(): Map<String, String> = mapOf(
+            "ZIVA_ENABLE_HEADLESS" to "1", "GODOT_SILENCE_ROOT_WARNING" to "1",
+            // Android denies real hardlinks. PRoot's emulated links become stale
+            // when Git promotes a bulk-fsync temporary object directory.
+            "GIT_CONFIG_COUNT" to "1", "GIT_CONFIG_KEY_0" to "core.createObject", "GIT_CONFIG_VALUE_0" to "rename"
+        )
         /** Project extensions may lack Linux builds without preventing Ziva from starting. */
         fun officialExtensionFailed(output: CharSequence): Boolean = output.lineSequence().any { raw ->
             val line = raw.replace('\\', '/')

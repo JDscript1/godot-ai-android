@@ -68,6 +68,20 @@ fun main(args: Array<String>) {
         check(AIZivaSession.officialExtensionFailed(terrainFailure + "\nERROR: Error loading extension: 'res://addons/ziva_agent/ziva_agent.gdextension'.")); checks++
         check(!AIZivaSession.officialExtensionFailed("ERROR: Error loading extension: 'res://addons/ziva_agent_backup/other.gdextension'.")); checks++
         check(!AIZivaSession.officialExtensionFailed("")); checks++
+        val gitDirectory = File(scratch, "git-environment").apply { mkdirs() }
+        fun git(vararg command: String, startup: Boolean = false): String {
+            val process = ProcessBuilder(listOf("git", "-C", gitDirectory.path) + command).redirectErrorStream(true)
+            // Keep host/global Git configuration outside this development fixture.
+            process.environment()["GIT_CONFIG_NOSYSTEM"] = "1"
+            process.environment()["GIT_CONFIG_GLOBAL"] = File(scratch, "absent-config").path
+            if (startup) process.environment().putAll(AIZivaSession.startupEnvironment())
+            val child = process.start(); val text = child.inputStream.bufferedReader().readText()
+            check(child.waitFor() == 0) { text }; return text.trim()
+        }
+        git("init")
+        git("config", "core.createObject", "link")
+        check(git("config", "--get", "core.createObject", startup = true) == "rename"); checks++
+        check(git("config", "--get", "core.createObject") == "link"); checks++ // existing configuration is preserved
         println("Ziva session lifecycle: $checks checks, 0 failures")
     } finally { child?.destroyForcibly(); scratch.deleteRecursively() }
 }
