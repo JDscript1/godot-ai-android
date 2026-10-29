@@ -38,7 +38,11 @@ Verificări locale: Kotlin Android compilează; rețea/dependențe **13/0**;
 runtime **751/0**; randare focalizată finală îngustă și telefon landscape
 **72/0**, inclusiv meniul și reîncărcarea după închiderea lui. Configurația
 telefon compact a trecut **70/0** înainte de proba suplimentară de meniu.
-Compilarea APK și proba fizică a noii dispuneri sunt în curs. Capturile primite dovedesc frontend-ul oficial la autentificare,
+Prima regresie nativă (`797f4a71`) a expus un conflict: chatul lateral păstra
+Ziva drept ultimul tab de lucru și revenea în el, unde panourile sunt ascunse.
+Memoria chatului lateral exclude acum Ziva și păstrează ultimul editor normal.
+Nu s-a livrat APK-ul rundei eșuate. Compilarea corectată și proba fizică sunt
+în curs. Capturile primite dovedesc frontend-ul oficial la autentificare,
 nu autentificarea efectivă sau executarea unei sarcini cu model real.
 Dovezi: `.ai-qa/ziva-responsive-20261029/` și
 `.ai-qa/ziva-device-review-20261029T122722Z/`.

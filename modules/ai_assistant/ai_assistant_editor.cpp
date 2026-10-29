@@ -555,7 +555,9 @@ void AIAssistantEditorPlugin::make_visible(bool p_visible) {
 }
 
 void AIAssistantEditorPlugin::_main_screen_changed(const String &p_name) {
-	if (p_name != get_plugin_name()) {
+	// A side chat returns to an editing workspace. Ziva owns the full central
+	// area and hides docks, so it must not become the side chat's fallback.
+	if (p_name != get_plugin_name() && p_name != "Ziva") {
 		dock_workspace = p_name;
 	}
 }
