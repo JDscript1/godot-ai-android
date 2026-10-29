@@ -8,7 +8,7 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
-## AG-61 — erorile altor pluginuri nu opresc Ziva — 29.10.2026
+## AG-61 — pluginuri independente și recuperare Git Ziva — 29.10.2026
 
 Jurnalul telefonului a identificat cauza noii opriri: Terrain3D nu livrează
 `libterrain.linux.debug.arm64.so` în proiectul deschis. Verificarea de startup
@@ -48,13 +48,31 @@ Protecția este adăugată și mediului procesului Ziva, prin variabilele standa
 `GIT_CONFIG_*`, pentru sesiuni și instalări noi fără modificarea configurației
 Git a proiectului. Cele două probe suplimentare folosesc Git real și verifică
 atât aplicarea setării în procesul copil, cât și păstrarea valorii existente în
-repository. Kotlin compilează; recompilarea APK-ului cu această protecție
-automată este în curs. Sesiunea activă a utilizatorului este păstrată.
-Dovezi: `.ai-qa/ziva-restart-failure-20261029T202612Z/`.
+repository. Kotlin compilează. Sursa finală **`947a7c64e8fa9def8eb1a15abc886e63a10ad52d`**
+a trecut toate cele trei joburi în [CI 40955200110](https://github.com/JDscript1/godot-ai-android/actions/runs/40955200110).
+
+APK-ul final a fost verificat și livrat în Download la **29.10.2026,
+22:20:09 CET**: `Godot-AI-Ziva-arm64-debug.apk`, **112.485.144 bytes**,
+SHA-256 `de839cddc8220ce186ffb518daf1e06f99fb86bf82915bdef761f6eed61ca57c`.
+Pachet separat `com.jdscript.godotai.ziva.debug`, aceeași semnătură persistentă,
+ARM64; **37 de scripturi** și **2.678 fișiere Linux** verificate. DEX conține
+ambele verificări noi și variabilele Git de startup. Instalatorul standard și
+checksum-ul lui au rămas identice, inclusiv data modificării.
+
+Separarea dovezilor: pe telefon este instalat APK-ul `8260efed`, cu reparația
+Git aplicată în datele runtime-ului și cu proba live descrisă mai sus. APK-ul
+final `947a7c64` include și presetul Git automat pentru sesiuni/instalări noi,
+dar **nu a fost instalat peste cererea activă a utilizatorului**. Nu se declară
+proba fizică a acestui ultim binar sau finalizarea planului de opt sarcini.
+Instalarea lui se poate face după încheierea lucrului agentului.
+
+Dovezi: `.ai-qa/ziva-restart-failure-20261029T202612Z/physical-regression.json`,
+`checkpoint-original.tar`, `checkpoint-device-fsck.log`, `git-bulk-probe.log`,
+subdirectorul `git-compat-final/` și `.ai-qa/delivery-ziva-947a7c6.json`.
 
 Jurnal: 29.10.2026 — AG-61: separarea erorilor de încărcare a pluginurilor
 la pornirea backend-ului Ziva, recuperare checkpoint Git și probă live după
-reluarea cererii utilizatorului.
+reluarea cererii utilizatorului; APK final livrat fără întreruperea cererii active.
 
 ## AG-60 — Ziva independent și sesiuni automate — 29.10.2026
 

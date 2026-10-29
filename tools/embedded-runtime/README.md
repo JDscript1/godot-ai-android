@@ -74,3 +74,5 @@ hints) and `tests/ZivaUpdatesTest.kt` (official stable ARM64 metadata, digest,
 URL and version ordering). Run their JVM entry points with the portable runtime
 classes, Kotlin standard library and org.json; compiling the update bridge also
 requires Android SDK stubs. These do not replace Android Activity/Binder tests.
+The session entry point also uses a development Git CLI to verify the startup
+environment override without modifying an existing repository's configuration.
