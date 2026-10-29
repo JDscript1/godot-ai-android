@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **28.10.2026**. APK livrat în Download: **47cc26e**, cu AG-01–AG-52.
+Actualizat: **29.10.2026**. APK livrat în Download: **090b939**, cu AG-01–AG-55.
 Ultima instalare verificată prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
 Bifele de acceptare nu se închid numai
 din compilare: gesturile fizice, aprobările și probele reale de workflow se
@@ -10,18 +10,19 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
-## AG-55 — playtest și conversație, în surse
+## AG-55 — playtest și conversație, în APK 090b939
 
 - [x] Refolosirea sesiunii și închiderea testelor agentului la final/Stop; protecția sesiunilor manuale, inclusiv aceeași scenă repornită.
 - [x] Capturi automate noi deduplicate, cu limite de număr, spațiu și vârstă; pin și expirare vizibilă; fără copii permanente suplimentare.
 - [x] Săgeată către ultimul mesaj și urmărire controlată de derularea utilizatorului.
 - [x] Composer deasupra zonei tastaturii, cu derularea drafturilor lungi.
 - [x] Verificări runtime, editor, randări și probe cu sesiuni reale; tastatură simulată.
-- [ ] Recompilare APK și acceptare pe Android cu tastatură reală și agent prin API.
+- [x] APK recompilat, semnat, verificat și livrat; probe native chat/playtest 68/0.
+- [ ] Acceptare pe Android cu tastatură reală și agent prin API.
 
 [Comportament și retenție](docs/AI_CHAT_AND_PLAYTEST.md). Fișierele vechi și asseturile utilizatorului sunt păstrate.
 
-## AG-54 — acces extins la panouri, în surse
+## AG-54 — acces extins la panouri, în APK 090b939
 
 - [x] Inventar de controale vizibile/ascunse/interne, cu handle și acoperire.
 - [x] Citire paginată Tree/listă/meniuri/file/text/cod/tooltip/valori/grafuri.
@@ -31,13 +32,14 @@ repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă
 - [x] Date necolectate, variabile încărcate parțial și generații vechi declarate
   explicit; compactarea păstrează cursorii fără a omite rânduri.
 - [x] Probe cu controale reale upstream și verificare C++ de sintaxă/tipuri.
-- [ ] Execuție a noilor cititoare native în editor recompilat și acceptare Android.
+- [x] Execuție în editor recompilat: panouri 64/0 și regresie nativă 772/0 × 5.
+- [ ] Acceptare fizică Android.
 
 [Acoperire și limite](docs/AI_PANEL_ACCESS.md); dovezi în `.ai-qa/panels-20261028/`.
 Panourile custom opace rămân marcate ca atare și necesită adaptor sau captură;
 nu există o promisiune de decodare universală a datelor private din orice plugin.
 
-## AG-53 — citirea nativă a Debuggerului, în surse
+## AG-53 — citirea nativă a Debuggerului, în APK 090b939
 
 - [x] Înregistrare structurată a mesajelor primite de Debugger, inclusiv sursă,
   linie, stack, erori/avertismente și proveniență pe sesiune; panoul poate fi ascuns.
@@ -47,10 +49,9 @@ nu există o promisiune de decodare universală a datelor private din orice plug
   `godot_run_state`; instrucțiuni pentru verificare după remediere.
 - [x] Rezultatul gol al consolei și diagnosticul incomplet nu devin dovezi
   de rulare fără erori; observațiile reținute rămân dovezi de inspecție.
-- [ ] Recompilare și probă nativă/Android: erori reale cu Debugger ascuns,
-  joc oprit, reluare curată și proveniență distinctă. Scenariul automat nativ
-  `--scenario debugger` este adăugat; rezultatele locale sunt în
-  `.ai-qa/debugger-20261028/`. APK-ul livrat anterior nu include această corecție.
+- [x] Recompilare și probă nativă: erori reale cu Debugger ascuns,
+  joc oprit, reluare curată și proveniență distinctă, în cele cinci configurații.
+- [ ] Acceptare fizică pe Android. Dovezi în raportul buildului 090b939.
 
 ## Corecții AG-34–AG-52 — incluse în APK 47cc26e
 

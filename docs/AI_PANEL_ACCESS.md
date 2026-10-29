@@ -96,3 +96,7 @@ este raportat explicit. Verificarea C++ acoperă sintaxa și tipurile, nu execu�
 native de bază și măsurători reale din Monitors/istoric/Profiler, inclusiv pagini
 ale aceluiași cadru. Aceste probe și acceptarea pe Android necesită recompilare.
 În această etapă APK-ul instalat și cel din Download nu sunt înlocuite.
+
+## Compilare și livrare ulterioară — 28.10.2026
+
+APK `090b939` livrat în Download, cu 35 de surse încorporate verificate. Cititoarele au rulat în editorul nativ recompilat: panouri 64/0 și regresie 772/0 × 5. Probele native includ sursele de bază, Monitors/istoric/Profiler și erori reale în Debugger. Acceptarea fizică Android rămâne separată. [Runda completă](https://github.com/JDscript1/godot-ai-android/actions/runs/40764656531).

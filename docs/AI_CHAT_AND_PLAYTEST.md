@@ -1,6 +1,6 @@
 # Chat, capturi și ciclul playtestului — AG-55
 
-Implementat în surse la 28.10.2026. APK-ul instalat și cel din Download nu au fost schimbate în această etapă.
+Inclus în APK `090b939`, compilat și livrat în Download la 28.10.2026. Aplicația nu a fost instalată automat. Probe chat/playtest finale: 68/0 în editorul nativ compilat; tastatura Android reală rămâne de acceptat.
 
 ## Jocul pornit pentru verificare
 

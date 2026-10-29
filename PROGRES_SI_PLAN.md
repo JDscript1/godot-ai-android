@@ -1,12 +1,30 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **28 octombrie 2026**.
+Ultima actualizare: **29 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
 în surse”, „testat în editor”, „compilat în APK” și „verificat pe dispozitiv”
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
+
+## Publicare GitHub — 29.10.2026
+
+Ramura principală `ai/android-assistant` primește istoricul surselor compilate și validate `090b939`, plus documentația finală de livrare. Cele 35 de surse runtime și fișierele native/testele coincid cu snapshot-ul verificat; diferențele ulterioare sunt numai documentare. Validarea asociată rămâne runda CI 40764656531, trecută integral. APK-ul din Download rămâne `090b939`; publicarea documentației nu reprezintă o nouă compilare sau instalare.
+
+## APK recompilat și livrat — AG-53–AG-55, 28.10.2026
+
+Versiunea **`090b939`** a înlocuit instalatorul anterior din Download, după toate verificările. Runda [CI 40764656531](https://github.com/JDscript1/godot-ai-android/actions/runs/40764656531) a trecut integral: runtime, editor nativ recompilat și Android ARM64. Snapshot-ul este pe ramura izolată `build/panels-chat-20261028T202655Z`; modificările locale și ramura de lucru a utilizatorului sunt păstrate.
+
+Rezultate: **749 aserțiuni runtime**, **744 verificări × 5** în editorul upstream și **772 × 5** în editorul nativ, fără eșecuri. Probe native dedicate: todo **122/0**, panouri **63/0**, pornire **60/0**, generare **59/0**, acces panouri **64/0**, chat/playtest/capturi **68/0**. Cele 9 teste companion și build-ul lui au trecut, precum și testele de livrare și Linux/Blender. Citirea erorilor reale, cu Debugger ascuns, după Stop și într-o sesiune nouă, a rulat în editorul compilat.
+
+Prima rundă a găsit o incompatibilitate a fixture-ului Plan cu noul contract de urmărire a chatului: navigarea programatică către o opțiune mai veche nu suspenda urmărirea. Fixture-ul declară acum explicit această navigare înainte de click/touch; proba focalizată peisaj a trecut **72/0**, iar regresia locală completă **744/0**. Toate cele cinci configurații au trecut apoi în runda finală upstream și nativă.
+
+APK-ul are **112.416.402 bytes**, pachet `com.jdscript.godotai.debug`, ABI `arm64-v8a`, aceeași semnătură persistentă și SHA-256 `50fe77a2beae9c48fa9f5a0544826b77bd0fff918ecaf2009ca83f26a3edb728`. S-au verificat byte cu byte toate cele **35 de surse runtime**, prezența agentului, Asset Store-ului și managerului de proiecte, precum și cele **2.678 fișiere** ale bazei Linux și binarele ARM64 PRoot/loader.
+
+Instalator: `/storage/emulated/0/Download/Godot-AI-Android-arm64-debug.apk`, cu checksum alăturat. Copia înlocuită este păstrată în `.ai-qa/compile-panels-chat-20261028T202655Z/previous-installer.apk`. Nu s-a instalat automat aplicația. Tastatura fizică Android, gesturile pe dispozitiv și comportamentul modelelor prin API rămân de acceptat; testele de furnizori sunt simulate.
+
+Dovezi: `.ai-qa/compile-panels-chat-20261028T202655Z/` — `context.json`, `snapshot-files.json`, `ci-all.log`, `ci-test-summary.txt`, `apk-verification.json` și `report.md`; livrare: `.ai-qa/delivery-090b939.json`. Notele «în surse / fără APK nou» din etapele AG-53–AG-55 descriu starea anterioară acestei livrări.
 
 ## AG-55 — playtest temporar, capturi și navigare în chat, în surse
 
@@ -3034,6 +3052,10 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **29.10.2026:** sincronizat istoricul validat AG-53–AG-55 și raportul final de livrare pe ramura GitHub principală `ai/android-assistant`; sursele aplicației coincid cu APK-ul `090b939`. Fără modificări ale APK-ului sau instalare automată.
+
+- **28.10.2026:** recompilat și livrat `090b939` cu AG-53–AG-55; runtime 749/0, upstream 744/0 × 5, nativ 772/0 × 5 și 35 de surse exacte. Semnătura și Linux verificate; APK și checksum înlocuite atomic în Download, fără instalare automată.
 
 - **28.10.2026:** AG-55 în surse: închiderea testelor temporare, cache de capturi cu retenție și pin, tastatură și revenire la finalul chatului. Runtime 749/0, regresie editor 744/0, probe finale 68/0 × 2; probele focalizate și randările sunt în `.ai-qa/chat-lifecycle-20261028/`. Fără recompilare APK.
 

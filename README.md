@@ -6,8 +6,8 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40715736021/artifacts/12828926543)
-(GitHub Actions artifact, source `47cc26e`, delivered 28 October 2026).
+[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40764656531/artifacts/12850107387)
+(GitHub Actions artifact, source `090b939`, delivered 28 October 2026).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
