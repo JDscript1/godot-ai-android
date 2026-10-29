@@ -15,6 +15,7 @@ import java.net.URL
 import java.nio.file.Files
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Runs the official addon in its own headless Godot Linux editor, beside the Android editor. */
@@ -115,10 +116,12 @@ class AIZivaService : Service() {
         var finalMessage = "Ziva oprit"
         var logFile: File? = null
         val output = StringBuilder()
-        val heartbeat = timer.scheduleAtFixedRate({ synchronized(lock) {
-            try { AIZivaRuntime.save(this, state) } catch (_: Exception) { }
-        } }, 0, 2, TimeUnit.SECONDS)
+        var heartbeat: ScheduledFuture<*>? = null
         try {
+            check(!cancelled()) { "Operație anulată." }
+            heartbeat = timer.scheduleAtFixedRate({ synchronized(lock) {
+                try { AIZivaRuntime.save(this, state) } catch (_: Exception) { }
+            } }, 0, 2, TimeUnit.SECONDS)
             // A service may have been killed while PRoot tracees survived. Recover only
             // our recorded PID from this boot, with the exact process start time.
             if (AIZivaSession.bootId().isNotEmpty() && state.optString("boot_id") == AIZivaSession.bootId()) {
@@ -239,15 +242,14 @@ class AIZivaService : Service() {
                 val log = logFile
                 if (log != null && output.isNotEmpty()) log.writeText(output.toString())
             } catch (_: Exception) { }
-            heartbeat.cancel(false)
+            heartbeat?.cancel(false)
             main.post {
-                synchronized(lock) {
+                try { synchronized(lock) {
                     state.remove("ui_port"); state.remove("guest_pid"); state.remove("guest_start")
                     state.put("status", finalStatus).put("message", finalMessage)
                     AIZivaRuntime.save(this, state)
-                }
-                lease?.close(); lease = null
-                running = false
+                } } catch (_: Exception) { /* Ownership must still be released if storage is full. */ }
+                finally { try { lease?.close() } catch (_: Exception) { }; lease = null; running = false }
                 val next = pending; pending = null
                 if (next != null && !executor.isShutdown) launch(next)
                 else { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(lastStartId) }

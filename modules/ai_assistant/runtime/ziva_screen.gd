@@ -157,7 +157,7 @@ func _refresh() -> void:
 	var updates: Dictionary = state.get("updates", {})
 	updates_label.text = str(updates.get("message", "Poți verifica versiunea oficială disponibilă aici."))
 	update_button.visible = bool(updates.get("available", false))
-	update_button.disabled = working or not enabled
+	update_button.disabled = (working and not state.get("running", false)) or not enabled
 	hint.tooltip_text = hint.text
 	hint.visible = not hint.text.is_empty()
 

@@ -3570,7 +3570,7 @@ func _ziva_tests(output: String) -> void:
 	await get_tree().process_frame
 	_check(screen.management.visible and not panel.settings_window.visible and not screen.embedded, "Ziva management opens inside its own tab and hides the WebView")
 	screen._action("check_updates")
-	_check(bridge.requests.back()["action"] == "ziva_check_updates" and screen.update_button.visible, "Official update checks and upgrade actions belong to Ziva")
+	_check(bridge.requests.back()["action"] == "ziva_check_updates" and screen.update_button.visible and not screen.update_button.disabled, "Official update checks and upgrade actions belong to Ziva")
 	_check("v3.3.3" in screen.updates_label.text, "Available upstream version is visible in Ziva management")
 	screen.management.hide()
 	screen._sync_embed()
