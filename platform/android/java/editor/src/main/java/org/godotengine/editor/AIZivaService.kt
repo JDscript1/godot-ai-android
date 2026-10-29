@@ -213,7 +213,7 @@ class AIZivaService : Service() {
                     var tools = false
                     while (!cancelled() && child!!.isAlive && System.nanoTime() < deadline) {
                         synchronized(output) {
-                            check(!output.contains("Can't open GDExtension dynamic library") && !output.contains("Error loading extension:")) {
+                            check(!AIZivaSession.officialExtensionFailed(output)) {
                                 "Pluginul oficial Ziva nu s-a încărcat. Reia instalarea și verifică jurnalul sesiunii."
                             }
                         }

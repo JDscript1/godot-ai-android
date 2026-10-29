@@ -53,6 +53,21 @@ fun main(args: Array<String>) {
         check(!AIZivaSession.ownerMatches(proof("1: prefix GODOT_AI_ZIVA_OWNER=$nonce suffix"), nonce)); checks++
         check(!AIZivaSession.ownerMatches(null, nonce)); checks++
         check(!AIZivaSession.ownerMatches(proof("1: GODOT_AI_ZIVA_OWNER=anything"), "anything")); checks++
+        val terrainFailure = """
+            ERROR: Can't open dynamic library, file not found: '/workspace/addons/terrain_3d/bin/libterrain.linux.debug.arm64.so'.
+               at: open_dynamic_library (drivers/unix/os_unix.cpp:1063)
+            ERROR: GDExtension dynamic library not found: 'res://addons/terrain_3d/terrain.gdextension'.
+            ERROR: Error loading extension: 'res://addons/terrain_3d/terrain.gdextension'.
+            Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+        """.trimIndent()
+        check(!AIZivaSession.officialExtensionFailed(terrainFailure)); checks++
+        check(!AIZivaSession.officialExtensionFailed(terrainFailure + "\nZiva ready at res://addons/ziva_agent/")); checks++
+        check(AIZivaSession.officialExtensionFailed("ERROR: Error loading extension: 'res://addons/ziva_agent/ziva_agent.gdextension'.")); checks++
+        check(AIZivaSession.officialExtensionFailed("ERROR: Can't open GDExtension dynamic library: /workspace/addons/ziva_agent/bin/linux_arm64/libziva_agent.so")); checks++
+        check(AIZivaSession.officialExtensionFailed("ERROR: Can't open dynamic library, file not found: '/opt/godot-tools/ziva/v3.3.2/addons/ziva_agent/bin/linux_arm64/libziva_agent.so'.")); checks++
+        check(AIZivaSession.officialExtensionFailed(terrainFailure + "\nERROR: Error loading extension: 'res://addons/ziva_agent/ziva_agent.gdextension'.")); checks++
+        check(!AIZivaSession.officialExtensionFailed("ERROR: Error loading extension: 'res://addons/ziva_agent_backup/other.gdextension'.")); checks++
+        check(!AIZivaSession.officialExtensionFailed("")); checks++
         println("Ziva session lifecycle: $checks checks, 0 failures")
     } finally { child?.destroyForcibly(); scratch.deleteRecursively() }
 }

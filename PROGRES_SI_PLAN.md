@@ -8,6 +8,29 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-61 — erorile altor pluginuri nu opresc Ziva — 29.10.2026
+
+Jurnalul telefonului a identificat cauza noii opriri: Terrain3D nu livrează
+`libterrain.linux.debug.arm64.so` în proiectul deschis. Verificarea de startup
+trata orice `Error loading extension` drept eșec al pluginului Ziva și termina
+editorul Linux înainte de încărcarea lui. Acum oprirea imediată se aplică doar
+erorilor de încărcare care identifică explicit directorul oficial Ziva, pe
+aceeași linie a erorii. Erorile altor pluginuri rămân în jurnal, iar verificările
+reale de proprietate MCP și disponibilitate a interfeței continuă normal.
+Nu se modifică pluginurile, bibliotecile sau setările proiectului utilizatorului.
+Compatibilitatea binarelor native Android și Linux rămâne o cerință a pluginului;
+această corecție nu transformă un binar Android într-unul Linux.
+
+Kotlin Android compilează; testele locale trec **13/0** dependențe,
+**38/0** pachet, **24/0** sesiuni și **13/0** metadate. Cele opt probe noi acoperă
+jurnalul real Terrain3D, erori mixte și eșecuri reale ale bibliotecii Ziva.
+Compilarea APK-ului corectat și proba fizică sunt în lucru. Instalatorul existent
+nu este declarat corectat înainte de livrarea noii versiuni.
+Dovezi: `.ai-qa/ziva-restart-failure-20261029T202612Z/`.
+
+Jurnal: 29.10.2026 — AG-61: separarea erorilor de încărcare a pluginurilor
+la pornirea backend-ului Ziva, după identificarea problemei pe telefon.
+
 ## AG-60 — Ziva independent și sesiuni automate — 29.10.2026
 
 Pe APK-ul instalat `0fc625a9`, ADB a confirmat eroarea veche „O altă sesiune

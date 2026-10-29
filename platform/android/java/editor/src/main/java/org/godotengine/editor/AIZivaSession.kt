@@ -34,6 +34,14 @@ class AIZivaSession(private val directory: File) {
     companion object {
         private val held = HashSet<String>()
         const val OWNER_FILE = "/run/godot-ai-ziva/owner"
+        /** Project extensions may lack Linux builds without preventing Ziva from starting. */
+        fun officialExtensionFailed(output: CharSequence): Boolean = output.lineSequence().any { raw ->
+            val line = raw.replace('\\', '/')
+            val loaderFailure = line.contains("Error loading extension:") ||
+                line.contains("Can't open GDExtension dynamic library") || line.contains("Can't open dynamic library")
+            loaderFailure && (line.contains("res://addons/ziva_agent/") ||
+                line.contains("/workspace/addons/ziva_agent/") || line.contains("/opt/godot-tools/ziva/"))
+        }
         fun ownerMatches(reply: JSONObject?, nonce: String): Boolean {
             if (!nonce.matches(Regex("[a-f0-9-]{36}"))) return false
             val result = reply?.optJSONObject("result") ?: return false
