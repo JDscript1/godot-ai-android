@@ -3624,7 +3624,9 @@ func _ziva_tests(output: String) -> void:
 	screen._sync_embed()
 	_check(screen.embedded, "The frontend resumes after closing Godot settings")
 	screen.hide()
-	if temporary: screen.queue_free()
+	if temporary:
+		screen.queue_free()
+		panel.show()
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	_check(panel.history == history and panel.config["providers"] == profiles, "The Ziva main tab preserves assistant chat and provider settings")
 	backend.bridge = old_bridge
