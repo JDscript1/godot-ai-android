@@ -1,5 +1,22 @@
 # Ziva independent în Godot AI — preview
 
+## Adaptarea la telefon și la redimensionare — 29.10.2026
+
+Tabul Ziva folosește automat zona de lucru extinsă, cu panourile Godot
+restaurate la ieșire. Bara compactă păstrează numai starea, pornirea și meniul
+`⋮` (Reîncarcă interfața, Configurare, Verifică starea, Oprește Ziva).
+Instrucțiunile de instalare nu ocupă spațiul frontend-ului după pornire.
+Meniurile native ascund temporar WebView-ul; o reîncărcare cerută din meniu
+se aplică după închiderea lui. Interfața oficială nu este rescrisă. WebView-ul respectă viewport-ul mobil,
+permite zoom prin gest fără controale suprapuse și păstrează navigările interne
+în aceeași interfață. Dialogurile, istoricul și setările sunt cele oficiale,
+nu replici native; verificarea fizică a tuturor fluxurilor rămâne separată.
+
+Capturile fizice primite arată pagina oficială de autentificare în APK-ul
+anterior, după instalarea bibliotecilor lipsă. Dispunerea nouă și oprirea
+completă a proceselor necesită proba noului APK. Nu s-a efectuat autentificarea
+și nu s-a trimis niciun prompt către un furnizor plătit.
+
 ## Corecția runtime-ului minimal — 29.10.2026
 
 Prima probă pe telefon a găsit biblioteci lipsă (`libxcb`, fontconfig și
@@ -8,7 +25,9 @@ Corecția verifică `ldd` pe extensia oficială și fontconfig, instalează pach
 Debian necesare și verifică din nou încărcarea. Se aplică și la pornirea unei
 instalări existente. Descărcarea suplimentară măsurată pe baza livrată este de
 aproximativ 56 MB, cu aproximativ 245 MB ocupați după instalare.
-Configurația DNS este actualizată când rețeaua Android se schimbă.
+Configurația DNS este actualizată când rețeaua Android se schimbă. Depozitul
+Debian este rezolvat prin Android înainte de instalări; blocul administrat din
+`/etc/hosts` se actualizează și păstrează celelalte intrări.
 Proba din Debian-ul de dezvoltare nu înlocuiește verificarea acestei baze minimale.
 
 ## Tab principal Ziva — 29.10.2026
@@ -153,7 +172,8 @@ consecutive sau când editorul se închide. Ultimele 128 KB din ieșirea editoru
 rămân în `ai-ziva/projects/<project-id>/godot.log`.
 
 Oprirea din notificare sau din panou scrie un fișier privat de anulare, termină
-procesul și păstrează datele proiectului. Android poate opri serviciul
+întâi procesul Godot identificat din cache-ul privat al sesiunii; PRoot poate
+închide apoi procesele secundare, iar datele proiectului se păstrează. Android poate opri serviciul
 `dataSync`, inclusiv la limitele platformei; aplicația nu promite execuție
 nelimitată și afișează starea întreruptă la următoarea citire.
 

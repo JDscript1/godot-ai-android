@@ -91,6 +91,13 @@ object AIZivaWindow {
         val browser = WebView(activity).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // Honor the upstream mobile viewport and let every official page
+            // remain reachable when its content exceeds a compact window.
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.setSupportMultipleWindows(true)
@@ -115,7 +122,11 @@ object AIZivaWindow {
                     val popup = WebView(activity)
                     popup.webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                            external(activity, request.url); view.destroy(); return true
+                            val url = request.url
+                            if (url.scheme == "http" && url.host == "127.0.0.1" && url.port == uiPort && url.userInfo == null) {
+                                this@apply.loadUrl(url.toString())
+                            } else external(activity, url)
+                            view.destroy(); return true
                         }
                     }
                     (result.obj as WebView.WebViewTransport).webView = popup

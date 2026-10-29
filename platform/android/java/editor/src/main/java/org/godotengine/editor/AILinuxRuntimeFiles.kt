@@ -185,6 +185,28 @@ class AILinuxRuntimeFiles(
         writeDns(root, dns)
     }
 
+    /** Use Android-resolved repository addresses when raw guest DNS is restricted. */
+    fun synchronizePackageHosts(addresses: List<String>) {
+        check(root.isDirectory && !Files.isSymbolicLink(root.toPath())) { "Linux indisponibil." }
+        val etc = File(root, "etc")
+        check(etc.isDirectory && !Files.isSymbolicLink(etc.toPath()))
+        val safe = addresses.filter { it.matches(Regex("[a-fA-F0-9:.]+")) }.distinct().take(8)
+        check(safe.isNotEmpty()) { "Adresa serverului Debian nu poate fi rezolvată." }
+        val target = File(etc, "hosts")
+        val original = if (target.isFile && !Files.isSymbolicLink(target.toPath())) target.readText() else "127.0.0.1 localhost\n::1 localhost\n"
+        val start = "# Godot managed package repository"
+        val end = "# End Godot managed package repository"
+        val old = Regex("(?ms)^" + Regex.escape(start) + "\\n.*?^" + Regex.escape(end) + "(?:\\n|$)")
+        val text = original.replace(old, "").trimEnd() + "\n" + start + "\n" +
+            safe.joinToString("\n") { "$it deb.debian.org" } + "\n" + end + "\n"
+        if (text == original) return
+        val temporary = File(etc, "hosts.godot-${UUID.randomUUID()}.tmp")
+        try {
+            temporary.writeText(text)
+            check(temporary.renameTo(target)) { "Rețeaua pachetelor Linux nu poate fi pregătită." }
+        } finally { temporary.delete() }
+    }
+
     private fun writeDns(directory: File, dns: List<String>) {
         val etc = File(directory, "etc")
         check(!Files.isSymbolicLink(etc.toPath()) && etc.isDirectory) { "Directorul de rețea Linux este invalid." }

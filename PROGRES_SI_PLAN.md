@@ -8,6 +8,44 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-59 — Ziva adaptat la spațiul dispozitivului — 29.10.2026
+
+Capturile utilizatorului arată acum autentificarea oficială Ziva pe telefon,
+dar panourile laterale Godot consumau aproape jumătate din ecran. Tabul Ziva
+intră automat în zona de lucru extinsă și restaurează configurația anterioară
+la revenirea la alt tab, fără schimbarea preferințelor salvate scene/script.
+WebView-ul respectă viewport-ul oficial și permite zoom prin gest, fără
+controale suprapuse. Navigările interne rămân în interfață; linkurile externe
+HTTPS se deschid în browser. Bara ocupă un singur rând: starea scurtă, pornirea când este necesară și meniul
+`⋮` pentru reîncărcare, configurare, verificare și oprire. Instrucțiunile dispar
+când interfața este disponibilă. Frontend-ul oficial rămâne nemodificat.
+
+Rezolvarea depozitului Debian folosește rețeaua Android activă; adresele sunt
+reînnoite într-un bloc propriu din `/etc/hosts`, păstrând intrările existente.
+Aceasta recuperează instalarea pachetelor când DNS-ul brut din guest e refuzat.
+Pe telefon, instalarea reală a celor 81 de pachete tranzitive a trecut (exit 0),
+iar `ldd` nu mai raportează biblioteci lipsă. Proba de rețea nativă lansată prin
+serviciu a expirat anterior; succesul instalării este proba separată din același
+runtime al aplicației, cu rezolvarea gazdei Debian pregătită explicit.
+
+Oprirea serviciului semnalizează întâi procesul Godot al sesiunii, verificat
+prin PID-ul din cache-ul privat și executabilul exact, astfel încât PRoot să
+poată închide și procesele secundare înainte de terminarea tracer-ului.
+Proba fizică a expus un proces rămas în urma pornirilor vechi; nu se declară
+corectarea lui validată pe telefon înainte de instalarea noului APK.
+
+Verificări locale: Kotlin Android compilează; rețea/dependențe **13/0**;
+runtime **751/0**; randare focalizată finală îngustă și telefon landscape
+**72/0**, inclusiv meniul și reîncărcarea după închiderea lui. Configurația
+telefon compact a trecut **70/0** înainte de proba suplimentară de meniu.
+Compilarea APK și proba fizică a noii dispuneri sunt în curs. Capturile primite dovedesc frontend-ul oficial la autentificare,
+nu autentificarea efectivă sau executarea unei sarcini cu model real.
+Dovezi: `.ai-qa/ziva-responsive-20261029/` și
+`.ai-qa/ziva-device-review-20261029T122722Z/`.
+
+Jurnal: 29.10.2026 — AG-59: aspect compact, spațiu extins pentru Ziva,
+rezolvare Debian prin Android și oprire explicită a procesului headless.
+
 ## AG-58 — corecție Ziva pe runtime-ul instalat — 29.10.2026
 
 Proba ADB pe telefon a infirmat pornirea funcțională a preview-ului `234893bf`:

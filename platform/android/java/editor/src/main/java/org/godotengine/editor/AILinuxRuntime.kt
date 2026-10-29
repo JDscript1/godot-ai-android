@@ -31,6 +31,14 @@ object AILinuxRuntime {
             val network = context.getSystemService(ConnectivityManager::class.java)
             synchronizeDns(network.getLinkProperties(network.activeNetwork)?.dnsServers?.mapNotNull { it.hostAddress }.orEmpty())
         }
+    internal fun preparePackageNetwork(context: Context, runtime: AILinuxRuntimeFiles) {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val network = connectivity.activeNetwork
+        val addresses = if (network != null) network.getAllByName("deb.debian.org").toList()
+            else java.net.InetAddress.getAllByName("deb.debian.org").toList()
+        val ipv4 = addresses.filterIsInstance<java.net.Inet4Address>()
+        runtime.synchronizePackageHosts((if (ipv4.isNotEmpty()) ipv4 else addresses).mapNotNull { it.hostAddress })
+    }
     private fun failure(message: String, code: String = "runtime_error") = JSONObject().put("ok", false).put("error", message).put("code", code)
 
     @JvmStatic @Synchronized fun command(action: String, text: String): String {
@@ -173,7 +181,7 @@ class AILinuxRuntimeService : Service() {
                     else { runtime.install(dns); runtime.state() }
                 }
                 "verify" -> runtime.verify()
-                "tool_install" -> runtime.installTool(args.getString("tool"))
+                "tool_install" -> { AILinuxRuntime.preparePackageNetwork(this, runtime); runtime.installTool(args.getString("tool")) }
                 "execute" -> runtime.execute(args.getString("command"), File(args.getString("project_directory")), args.optInt("seconds", 120))
                 "uninstall" -> { runtime.uninstall(); runtime.state() }
                 else -> error("Operație Linux necunoscută.")

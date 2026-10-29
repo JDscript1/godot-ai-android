@@ -7,6 +7,7 @@ import java.io.File
 class AIZivaDependencies(
     private val root: File,
     private val execute: (List<String>, Int) -> JSONObject,
+    private val prepareNetwork: () -> Unit = {},
     private val progress: (String) -> Unit = {},
 ) {
     companion object {
@@ -34,6 +35,7 @@ class AIZivaDependencies(
     fun ensure() {
         if (missing().isEmpty()) return
         progress("Pregătesc bibliotecile Linux necesare interfeței oficiale Ziva…")
+        prepareNetwork()
         val update = execute(listOf("/usr/bin/apt-get", "-o", "APT::Update::Error-Mode=any", "update"), 300)
         check(update.optInt("exit_code", -1) == 0) {
             "Nu pot descărca bibliotecile Ziva. Verifică rețeaua, revino în aplicație și reia instalarea."

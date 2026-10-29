@@ -89,9 +89,12 @@ public:
 class AIZivaEditorPlugin : public EditorPlugin {
 	GDCLASS(AIZivaEditorPlugin, EditorPlugin);
 	Control *screen = nullptr;
+	bool workspace_active = false;
+	bool previous_workspace_expanded = false;
+	void _expand_workspace();
 
 protected:
-	static void _bind_methods() {}
+	static void _bind_methods();
 
 public:
 	bool has_main_screen() const override { return true; }

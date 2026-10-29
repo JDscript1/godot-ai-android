@@ -669,14 +669,33 @@ AIZivaEditorPlugin::AIZivaEditorPlugin(Control *p_screen) {
 		EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(screen);
 	}
 }
-void AIZivaEditorPlugin::make_visible(bool p_visible) {
-	if (screen) {
-		screen->set_visible(p_visible);
+void AIZivaEditorPlugin::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("_expand_workspace"), &AIZivaEditorPlugin::_expand_workspace);
+}
+void AIZivaEditorPlugin::_expand_workspace() {
+	// Main-screen selection restores the scene/script layout after make_visible().
+	// Apply the tab's layout afterwards, without changing those saved preferences.
+	if (workspace_active && screen && screen->is_visible_in_tree()) {
+		EditorNode::get_singleton()->set_distraction_free_mode(true);
 	}
+}
+void AIZivaEditorPlugin::make_visible(bool p_visible) {
+	if (!screen) {
+		return;
+	}
+	if (p_visible && !workspace_active) {
+		previous_workspace_expanded = EditorNode::get_singleton()->is_distraction_free_mode_enabled();
+		workspace_active = true;
+		call_deferred(SNAME("_expand_workspace"));
+	} else if (!p_visible && workspace_active) {
+		workspace_active = false;
+		EditorNode::get_singleton()->set_distraction_free_mode(previous_workspace_expanded);
+	}
+	screen->set_visible(p_visible);
 }
 AIZivaEditorPlugin::~AIZivaEditorPlugin() {
 	if (screen) {
-		screen->hide();
+		make_visible(false);
 		if (screen->get_parent()) {
 			screen->get_parent()->remove_child(screen);
 		}

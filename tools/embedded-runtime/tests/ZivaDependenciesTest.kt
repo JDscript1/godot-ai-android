@@ -56,6 +56,14 @@ fun main() {
         dns.delete(); Files.createSymbolicLink(dns.toPath(), keep.toPath())
         core.synchronizeDns(listOf("malformed\nserver"))
         check(keep.readText() == "KEEP" && !Files.isSymbolicLink(dns.toPath()) && "1.1.1.1" in dns.readText()); checks++
+        File(core.root, "etc/hosts").writeText("127.0.0.1 localhost\n10.1.2.3 keep.local\n")
+        core.synchronizePackageHosts(listOf("151.101.2.132"))
+        core.synchronizePackageHosts(listOf("151.101.66.132"))
+        val hosts = File(core.root, "etc/hosts").readText()
+        check("keep.local" in hosts && "151.101.66.132 deb.debian.org" in hosts && "151.101.2.132" !in hosts); checks++
+        val hostStamp = File(core.root, "etc/hosts").lastModified()
+        core.synchronizePackageHosts(listOf("151.101.66.132"))
+        check(File(core.root, "etc/hosts").lastModified() == hostStamp); checks++
         println("Ziva dependencies and network: $checks checks, 0 failures")
     } finally { AILinuxRuntimeFiles.deleteTree(scratch) }
 }

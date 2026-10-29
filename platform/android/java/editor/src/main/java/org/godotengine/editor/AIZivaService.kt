@@ -33,6 +33,7 @@ class AIZivaService : Service() {
     private var state = JSONObject()
     @Volatile private var running = false
     @Volatile private var child: Process? = null
+    @Volatile private var guestPidFile: File? = null
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -96,7 +97,8 @@ class AIZivaService : Service() {
                 val godotValid = try { godot.verify(); true } catch (_: Exception) { false }
                 if (!godotValid) godot.install(install, ::cancelled) { update("installing", it) }
                 godot.verify()
-                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) }) {
+                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) },
+                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }) {
                     update("installing", it)
                 }.ensure()
                 check(!cancelled()) { "Operație anulată." }
@@ -113,7 +115,8 @@ class AIZivaService : Service() {
             } else {
                 ziva.verify()
                 godot.verify()
-                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) }) {
+                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) },
+                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }) {
                     update("starting", it)
                 }.ensure()
                 val project = File(projectPath ?: error("Proiect absent.")).canonicalFile
@@ -131,8 +134,10 @@ class AIZivaService : Service() {
                     privateDirectory("projects/$projectId/godot").absolutePath to "/workspace/.godot"
                 )
                 logFile = File(data, "godot.log")
+                guestPidFile = File(privateDirectory("projects/$projectId/cache"), "godot-ai-ziva.pid").also { it.delete() }
                 child = runtime.startProcess(
-                    listOf(godot.guestBinary, "--headless", "--editor", "--path", "/workspace"), project,
+                    listOf("/bin/sh", "-c", "printf '%s\\n' \"\$\$\" > /root/.cache/godot-ai-ziva.pid; exec \"\$@\"",
+                        "godot-ai-ziva", godot.guestBinary, "--headless", "--editor", "--path", "/workspace"), project,
                     mapOf("ZIVA_ENABLE_HEADLESS" to "1", "GODOT_SILENCE_ROOT_WARNING" to "1"), binds)
                 val reader = drain(child!!, output, logFile)
                 try {
@@ -271,15 +276,37 @@ class AIZivaService : Service() {
         } catch (_: Exception) { false } finally { connection.disconnect() }
     }
 
+    private fun signalGuest(pid: Int?, signal: Int) {
+        if (pid == null || pid <= 0) return
+        try {
+            val args = File("/proc/$pid/cmdline").readText().split('\u0000')
+            // The PID comes from our private session mount. Verify the exact host
+            // executable as well, so a reused PID can never target another app task.
+            if (args.firstOrNull() == "/opt/godot-tools/godot/${AIZivaGodot.RELEASE.version}/godot" &&
+                "--headless" in args && "--editor" in args) android.os.Process.sendSignal(pid, signal)
+        } catch (_: Exception) { }
+    }
+
     @Synchronized private fun terminate() {
         val process = child ?: return
+        val pid = try { guestPidFile?.readText()?.trim()?.toIntOrNull() } catch (_: Exception) { null }
         try {
-            process.destroy()
-            if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly()
+            // Stop the main tracee first. PRoot's --kill-on-exit then reaps its
+            // sidecars; terminating only the tracer can leave a listening server.
+            signalGuest(pid, 15)
+            if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                signalGuest(pid, 9)
+                process.destroy()
+                if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly()
+            }
         } catch (_: InterruptedException) {
+            signalGuest(pid, 9)
             process.destroyForcibly()
             Thread.currentThread().interrupt()
-        } finally { child = null }
+        } finally {
+            guestPidFile?.delete(); guestPidFile = null
+            child = null
+        }
     }
     override fun onTimeout(startId: Int, fgsType: Int) { stopping.set(true); terminate(); stopSelf(startId) }
     override fun onDestroy() { stopping.set(true); terminate(); executor.shutdownNow(); timer.shutdownNow(); super.onDestroy() }
