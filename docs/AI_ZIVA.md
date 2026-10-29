@@ -12,9 +12,13 @@ permite zoom prin gest fără controale suprapuse și păstrează navigările in
 în aceeași interfață. Dialogurile, istoricul și setările sunt cele oficiale,
 nu replici native; verificarea fizică a tuturor fluxurilor rămâne separată.
 
+Sursa `0fc625a9` a trecut CI 40884020493: 751/0 runtime, 773/0 × 5 upstream,
+803/0 × 5 nativ, 72/0 Ziva focalizat, 68/0 manager nativ și cele 9 teste companion.
+APK-ul separat verificat (112.467.916 bytes) este în Download; instalatorul standard
+a rămas intact. Noua versiune nu s-a instalat automat.
 Capturile fizice primite arată pagina oficială de autentificare în APK-ul
-anterior, după instalarea bibliotecilor lipsă. Dispunerea nouă și oprirea
-completă a proceselor necesită proba noului APK. Nu s-a efectuat autentificarea
+anterior, după instalarea bibliotecilor lipsă. ADB a fost deconectat de utilizator;
+dispunerea nouă și oprirea completă a proceselor necesită proba noului APK. Nu s-a efectuat autentificarea
 și nu s-a trimis niciun prompt către un furnizor plătit.
 
 ## Corecția runtime-ului minimal — 29.10.2026
@@ -243,10 +247,14 @@ nativ 792/0 × 5, Ziva focalizat 67/0 și manager nativ 68/0. S-au verificat
 semnătura, identificatorul separat, toate cele 37 de scripturi și pachetul
 Linux. Dovezi: `.ai-qa/compile-ziva-tab-20261029T115729Z/`.
 
-Rămân de verificat pe dispozitiv: instalarea APK-ului, descărcarea completă
-prin serviciu, durata primului import, WebView, autentificare, selectorul
-fișierelor, tastatura, descărcări, un tur complet prompt → răspuns → unealtă
-cu un furnizor real și supraviețuirea serviciului sub politicile Android.
+Proba fizică din 29.10.2026 a găsit lipsuri în Debian slim. După instalarea
+bibliotecilor, `ldd` nu mai raportează lipsuri, iar capturile utilizatorului arată
+pagina oficială de autentificare. Instalarea prin serviciu a expirat la descărcare;
+pachetele au fost finalizate în același runtime al aplicației cu rezolvarea
+depozitului pregătită explicit. Sursele finale automatizează această rezolvare.
+Rămân de verificat pe noul APK: toate ecranele și gesturile interfeței, autentificarea,
+selectorul fișierelor, tastatura, descărcările, un tur complet prompt → răspuns →
+unealtă cu un furnizor real și comportamentul serviciului sub politicile Android.
 Ziva nu accesează imaginile sau mesh-urile private din chatul agentului nostru.
 
 Limitări de proiectare: cele două editoare partajează fișierele proiectului,

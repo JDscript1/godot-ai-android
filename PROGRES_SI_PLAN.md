@@ -46,9 +46,29 @@ panourilor, dar proba îngustă a expus o lățime moștenită prea mare. Tabul 
 limitat acum independent la suprafața vizibilă, inclusiv meniul; coordonatele
 WebView sunt intersectate cu viewport-ul și în timpul relayout-ului. ADB a fost
 deconectat de utilizator; proba fizică a noii versiuni rămâne pentru după
-instalare. Compilarea finală este în curs. Capturile primite dovedesc frontend-ul oficial la autentificare,
+instalare. Compilarea finală a trecut verificările descrise mai jos. Capturile primite dovedesc frontend-ul oficial la autentificare,
 nu autentificarea efectivă sau executarea unei sarcini cu model real.
-Dovezi: `.ai-qa/ziva-responsive-20261029/` și
+Runda finală [CI 40884020493](https://github.com/JDscript1/godot-ai-android/actions/runs/40884020493)
+a trecut integral pentru sursa **`0fc625a9044624a277ec85aecc30192191e8ba02`**:
+**751/0** runtime, **773/0 × 5** randări upstream, **803/0 × 5** editor nativ,
+**72/0** Ziva focalizat, **68/0** manager nativ și probele native pentru TODO,
+panouri, generare, acces la panouri și ciclul conversației. Cele 9 teste companion
+și build-ul lui au trecut. Au fost inspectate și capturile native după revenirea
+la chat. Rămâne verificarea noii versiuni pe telefon, inclusiv toate ecranele
+Ziva, autentificarea, tastatura și zoomul; ADB este deconectat la cererea utilizatorului.
+
+APK-ul **`0fc625a9`** este livrat în Download la **29.10.2026, 14:58 CET**:
+`Godot-AI-Ziva-arm64-debug.apk`, **112.467.916 bytes**, pachet separat
+`com.jdscript.godotai.ziva.debug`, ARM64. Semnătura persistentă și toate cele
+**37 de scripturi** au fost verificate; pachetul include agentul, Asset Store,
+managerul de proiecte, serviciile Ziva și cele **2.678 fișiere Linux** validate.
+SHA-256: `61f76bb8c7d03d93a1c665471b0d3c2fce845aafce1808b26f86bac45b9a84d3`.
+Instalatorul Ziva anterior a fost înlocuit atomic, cu checksum alăturat.
+APK-ul standard și checksum-ul lui au rămas identice, inclusiv data modificării.
+Noua versiune nu a fost instalată automat; ADB este deconectat.
+
+Dovezi: `.ai-qa/compile-ziva-responsive-20261029T133949Z/`,
+`.ai-qa/ziva-responsive-final-20261029/` și
 `.ai-qa/ziva-device-review-20261029T122722Z/`.
 
 Jurnal: 29.10.2026 — AG-59: aspect compact, spațiu extins pentru Ziva,

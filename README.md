@@ -139,14 +139,17 @@ Ziva plugin and an official Godot 4.7.2 Linux ARM64 editor, runs the latter head
 under PRoot beside the Android editor, and shows the official Ziva UI in a WebView
 on a discovered loopback port. The two agents keep separate prompts, keys, provider
 settings and state; Ziva cannot call our native editor tools. The separate APK
-`234893bf` has been compiled, verified and delivered alongside the standard APK.
-Physical-device WebView/login behavior, the first project import and a live model
-workflow remain unverified.
+`0fc625a9` passed the Android build and the full runtime/native-editor checks,
+and its verified Ziva installer is available in Android Download alongside the standard APK.
+The Ziva tab expands the workspace, restores the previous editor layout on exit,
+and keeps its compact actions within narrow windows. The official login page
+has been observed on Android after repairing the shipped Debian dependencies;
+the new layout, authentication and a live model workflow still need device QA.
 
 The Ziva preview APK's complete Linux package, native service, agent, Asset Store
 and 37 embedded scripts were verified before replacing the Ziva Download installer.
 Python/Node/Git/ripgrep passed real development controls; execution inside the
-installed Godot APK has not yet been physically verified.
+installed Godot APK for these optional tools still needs device verification.
 The [older Termux backend](docs/AI_TERMUX_BLENDER.md) remains in source for
 compatibility, and the [runtime history](docs/AI_EMBEDDED_BLENDER_RUNTIME.md)
 records the earlier experimental stages.
