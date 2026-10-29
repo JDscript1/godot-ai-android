@@ -47,18 +47,26 @@ object AIZivaRuntime {
             return state.put("same_project", same)
         }
         check(BuildConfig.GODOT_AI_ZIVA) { "Ziva este disponibil în pachetul separat Godot AI Ziva." }
+        if (action == "ziva_embed" && !args.optBoolean("visible")) {
+            AIZivaWindow.hide()
+            return JSONObject().put("ok", true)
+        }
         if (action == "ziva_stop") {
+            AIZivaWindow.hide()
             if (isBusy(context)) cancelFile(context).writeText("stop")
             return JSONObject().put("ok", true)
         }
-        if (action == "ziva_open") {
+        if (action == "ziva_embed") {
             val state = status(context)
             check(state.optBoolean("running")) { "Pornește mai întâi Ziva." }
             val project = File(args.getString("project_directory")).canonicalFile
             check(projectId(project) == state.optString("project_id")) { "Ziva rulează pentru alt proiect. Oprește-l înainte de schimbare." }
             val port = state.optInt("ui_port", 0)
             check(port in 1..65535) { "Interfața Ziva nu este disponibilă. Reia pornirea." }
-            AIZivaWindow.open(port)
+            val bounds = args.getJSONArray("bounds")
+            require(bounds.length() == 4) { "Dimensiuni Ziva invalide." }
+            val coordinates = DoubleArray(4) { bounds.getDouble(it) }
+            AIZivaWindow.embed(port, coordinates, args.optBoolean("reload"))
             return JSONObject().put("ok", true)
         }
         check(action in listOf("ziva_install", "ziva_start")) { "Operație Ziva necunoscută." }

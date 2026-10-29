@@ -67,7 +67,17 @@ func _run() -> void:
 		for button in manager.find_children("*", "Button", true, false):
 			if button.text == "AI Assistant": matching_buttons.append(button)
 		check(matching_buttons.size() == 1, "The native start tab uses the same AI Assistant name as the project editor")
+		var ziva_buttons = []
+		for button in manager.find_children("*", "Button", true, false):
+			if button.text == "Ziva": ziva_buttons.append(button)
+		check(ziva_buttons.size() == 1, "Ziva has its own native top tab before project selection")
+		var ziva_screen = manager.find_child("ZivaMainScreen", true, false)
+		check(ziva_screen != null and ziva_screen.backend == panel.ziva, "The start-screen Ziva tab shares only its independent process model")
+		native_host.open_ziva()
+		await process_frame
+		check(ziva_screen != null and ziva_screen.is_visible_in_tree() and ziva_screen.backend.project_directory.is_empty() and ziva_screen.primary.disabled, "Ziva can be configured before opening a project but cannot start an arbitrary project")
 		if matching_buttons.size() == 1: matching_buttons[0].pressed.emit()
+		check(ziva_screen != null and not ziva_screen.is_visible_in_tree(), "Returning to AI Assistant hides the independent Ziva tab")
 	else:
 		panel = scripts["panel"].new()
 		panel.configure(host, vault, true)

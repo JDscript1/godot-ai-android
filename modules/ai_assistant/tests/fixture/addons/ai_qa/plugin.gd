@@ -284,8 +284,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "ziva": "Ziva", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "ziva", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "ziva": "Ziva", "ziva_screen": "ZivaScreen", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "ziva", "ziva_screen", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -3519,6 +3519,8 @@ class FixtureLinuxBridge:
 
 class FixtureZivaBridge:
 	extends Node
+	var opens = 0
+	func open_ziva() -> void: opens += 1
 	var state = {"ok": true, "enabled": true, "installed": false, "running": false, "ready": false, "ui_port": 0, "busy": false, "version": "v3.3.2", "same_project": true}
 	var requests: Array = []
 	func linux_runtime_request(action: String, args: Dictionary) -> Dictionary:
@@ -3554,8 +3556,11 @@ func _ziva_tests(output: String) -> void:
 	bridge.state.merge({"installed": true, "running": true, "status": "running", "ui_port": 7013}, true)
 	backend.refresh()
 	_check(form["open"].visible and not form["open"].disabled and "editor separat" in form["status"].text and "7013" in form["status"].text, "Running Ziva reports its discovered local UI port")
+	var previous_plugin = panel.plugin
+	panel.plugin = bridge
 	panel._ziva_action("open")
-	_check(bridge.requests.back()["action"] == "ziva_open" and bridge.requests.back()["arguments"].has("project_directory"), "Ziva opens its own UI using the selected project")
+	_check(bridge.opens == 1 and bridge.requests.back()["action"] != "ziva_open", "Ziva settings opens the main tab instead of a modal window")
+	panel.plugin = previous_plugin
 	bridge.state["same_project"] = false
 	backend.refresh()
 	_check(form["open"].disabled and "alt proiect" in form["hint"].text, "A Ziva session belonging to a different project cannot be opened silently")
@@ -3575,6 +3580,53 @@ func _ziva_tests(output: String) -> void:
 	bridge.state.merge({"status": "error", "message": "Pachet corupt", "running": false, "ui_port": 0}, true)
 	backend.refresh()
 	_check(form["repair"].visible, "An installed Ziva package can be repaired without removing its history")
+	panel.settings_window.hide()
+	bridge.state.merge({"installed": true, "running": true, "ready": true, "status": "running", "busy": true, "same_project": true, "ui_port": 7013}, true)
+	backend.refresh()
+	var screen = EditorInterface.get_editor_main_screen().find_child("ZivaMainScreen", true, false)
+	var temporary = screen == null
+	if temporary:
+		screen = embedded["ziva_screen"].new()
+		screen.configure(bridge, backend, panel)
+		screen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		screen.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		panel.hide()
+		EditorInterface.get_editor_main_screen().add_child(screen)
+		screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	else:
+		EditorInterface.set_main_screen_editor("Ziva")
+	screen.show()
+	await get_tree().create_timer(0.2).timeout
+	_check(screen.backend == backend and screen.body != null, "The Ziva main tab shares the independent process model")
+	_check(screen.embedded and bridge.requests.back()["action"] == "ziva_embed" and bridge.requests.back()["arguments"].get("visible", false), "The active Ziva tab attaches the official frontend to its body")
+	var rect: Rect2 = screen._bounds()
+	_check(rect.position.x >= 0 and rect.position.y > 0 and rect.end.x <= 1.001 and rect.end.y <= 1.001, "The official frontend stays below the toolbar and within the editor surface")
+	var count = bridge.requests.size()
+	screen._sync_embed()
+	_check(bridge.requests.size() == count, "Stable tab bounds do not issue a JNI request each frame")
+	screen.reload_ui.pressed.emit()
+	_check(bridge.requests.back()["arguments"].get("reload", false), "Reload explicitly refreshes the official frontend")
+	if not output.is_empty():
+		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("ziva-main-tab.png"))
+	screen.hide()
+	_check(not screen.embedded and not bridge.requests.back()["arguments"].get("visible", true) and backend.state.get("running", false), "Changing tabs hides the WebView without stopping the independent backend")
+	bridge.state["same_project"] = false
+	backend.refresh(); screen.show()
+	await get_tree().process_frame
+	_check(not screen.embedded, "A main tab never embeds a session belonging to a different project")
+	bridge.state["same_project"] = true
+	backend.refresh()
+	_check(screen.embedded, "Returning to the matching project reattaches the same frontend")
+	panel.settings_window.show()
+	screen._sync_embed()
+	_check(not screen.embedded, "Godot settings cannot be obscured by the native frontend")
+	panel.settings_window.hide()
+	screen._sync_embed()
+	_check(screen.embedded, "The frontend resumes after closing Godot settings")
+	screen.hide()
+	if temporary: screen.queue_free()
+	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
+	_check(panel.history == history and panel.config["providers"] == profiles, "The Ziva main tab preserves assistant chat and provider settings")
 	backend.bridge = old_bridge
 	backend.refresh()
 	panel.integrations.linux.bridge = old_linux

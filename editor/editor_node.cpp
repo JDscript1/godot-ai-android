@@ -9411,7 +9411,9 @@ EditorNode::EditorNode() {
 		print_verbose("Asset Store not available (due to using Web editor, or SSL support disabled).");
 	}
 #ifdef MODULE_AI_ASSISTANT_ENABLED
-	add_editor_plugin(memnew(AIAssistantEditorPlugin));
+	AIAssistantEditorPlugin *ai_assistant_plugin = memnew(AIAssistantEditorPlugin);
+	add_editor_plugin(ai_assistant_plugin);
+	add_editor_plugin(memnew(AIZivaEditorPlugin(ai_assistant_plugin->create_ziva_screen())));
 #endif
 
 	// More visually meaningful to have this later.

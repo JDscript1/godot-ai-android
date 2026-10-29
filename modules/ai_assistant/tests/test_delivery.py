@@ -77,6 +77,7 @@ class DeliveryTests(unittest.TestCase):
         package, name, pattern = delivery.DISTRIBUTIONS['ziva-preview']
         self.assertEqual(package, 'com.jdscript.godotai.ziva.debug')
         self.assertTrue(pattern.fullmatch(name))
+        self.assertTrue(pattern.fullmatch("Godot-AI-Ziva-arm64-debug-77bd5c0.apk"))
         self.assertIsNone(pattern.fullmatch(delivery.NAME))
         self.assertIsNone(delivery.OLD_NAME.fullmatch(name))
 

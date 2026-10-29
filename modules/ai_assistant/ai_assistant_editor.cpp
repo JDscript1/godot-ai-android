@@ -15,9 +15,9 @@
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_interface.h"
+#include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
-#include "editor/editor_log.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
@@ -164,6 +164,7 @@ bool AIAssistantSettingsInspector::parse_property(Object *p_object, const Varian
 }
 
 void AIAssistantEditorPlugin::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("open_ziva"), &AIAssistantEditorPlugin::open_ziva);
 	ClassDB::bind_method(D_METHOD("set_chat_placement", "placement"), &AIAssistantEditorPlugin::set_chat_placement);
 	ClassDB::bind_method(D_METHOD("get_chat_placement"), &AIAssistantEditorPlugin::get_chat_placement);
 	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
@@ -524,7 +525,7 @@ static Dictionary ai_linux_runtime_request(const String &p_action, const Diction
 
 Dictionary AIAssistantEditorPlugin::linux_runtime_request(const String &p_action, const Dictionary &p_args) {
 	Dictionary args = p_args.duplicate(true);
-	if (p_action == "execute") {
+	if (p_action == "execute" || p_action.begins_with("ziva_")) {
 		args["project_directory"] = ProjectSettings::get_singleton()->globalize_path("res://");
 	}
 	return ai_linux_runtime_request(p_action, args);
@@ -594,6 +595,16 @@ void AIAssistantEditorPlugin::set_chat_placement(int p_placement) {
 	panel->show();
 }
 
+void AIAssistantEditorPlugin::open_ziva() {
+	if (panel) {
+		Window *settings = Object::cast_to<Window>(panel->get("settings_window"));
+		if (settings) {
+			settings->hide();
+		}
+	}
+	EditorNode::get_singleton()->get_editor_main_screen()->select_by_name("Ziva");
+}
+
 void AIAssistantEditorPlugin::open_settings(const String &p_section) {
 	if (!panel) {
 		return;
@@ -624,6 +635,53 @@ static bool ai_load_scripts(Vector<Ref<GDScript>> &scripts) {
 		scripts.push_back(script);
 	}
 	return true;
+}
+
+static Control *ai_create_ziva_screen(const Vector<Ref<GDScript>> &scripts, Node *p_bridge, Control *p_panel) {
+	if (!p_panel) {
+		return nullptr;
+	}
+	for (int i = 0; i < scripts.size(); i++) {
+		if (String(ai_script_sources[i].name) != "ziva_screen") {
+			continue;
+		}
+		Control *screen = memnew(VBoxContainer);
+		screen->set_name("ZivaMainScreen");
+		screen->set_script(scripts[i]);
+		screen->call("configure", p_bridge, p_panel->get("ziva"), p_panel);
+		screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		return screen;
+	}
+	return nullptr;
+}
+
+Control *AIAssistantEditorPlugin::create_ziva_screen() {
+	return ai_create_ziva_screen(scripts, this, panel);
+}
+Control *AIAssistantProjectManager::create_ziva_screen() {
+	return ai_create_ziva_screen(scripts, this, panel);
+}
+AIZivaEditorPlugin::AIZivaEditorPlugin(Control *p_screen) {
+	screen = p_screen;
+	if (screen) {
+		screen->hide();
+		EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(screen);
+	}
+}
+void AIZivaEditorPlugin::make_visible(bool p_visible) {
+	if (screen) {
+		screen->set_visible(p_visible);
+	}
+}
+AIZivaEditorPlugin::~AIZivaEditorPlugin() {
+	if (screen) {
+		screen->hide();
+		if (screen->get_parent()) {
+			screen->get_parent()->remove_child(screen);
+		}
+		memdelete(screen);
+	}
 }
 
 AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
@@ -714,14 +772,32 @@ void AIAssistantEditorPlugin::prepare_script_removal(const PackedStringArray &p_
 }
 
 void AIAssistantProjectManager::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("open_ziva"), &AIAssistantProjectManager::open_ziva);
+	ClassDB::bind_method(D_METHOD("open_settings", "section"), &AIAssistantProjectManager::open_settings, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("project_action", "action"), &AIAssistantProjectManager::project_action);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantProjectManager::speech_request);
 	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantProjectManager::linux_runtime_request);
 	ADD_SIGNAL(MethodInfo("project_action_requested", PropertyInfo(Variant::STRING, "action")));
 }
 
+void AIAssistantProjectManager::open_ziva() {
+	if (panel) {
+		Window *settings = Object::cast_to<Window>(panel->get("settings_window"));
+		if (settings) {
+			settings->hide();
+		}
+	}
+	project_action("ziva");
+}
+void AIAssistantProjectManager::open_settings(const String &p_section) {
+	project_action("assistant");
+	if (panel) {
+		panel->call("open_settings", p_section);
+	}
+}
+
 void AIAssistantProjectManager::project_action(const String &p_action) {
-	if (p_action == "create" || p_action == "import" || p_action == "projects") {
+	if (p_action == "create" || p_action == "import" || p_action == "projects" || p_action == "ziva" || p_action == "assistant") {
 		emit_signal("project_action_requested", p_action);
 	}
 }

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "ai_runtime_bridge.h"
+
 #include "core/error/error_macros.h"
 #include "core/os/mutex.h"
-
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
 #include "scene/gui/box_container.h"
@@ -80,8 +80,25 @@ public:
 	void push_editor_input(Viewport *p_viewport, const Ref<InputEvent> &p_event);
 	void install_asset_archive(const String &p_path, const String &p_title);
 	void open_settings(const String &p_section = String());
+	void open_ziva();
+	Control *create_ziva_screen();
 	AIAssistantEditorPlugin();
 	~AIAssistantEditorPlugin();
+};
+
+class AIZivaEditorPlugin : public EditorPlugin {
+	GDCLASS(AIZivaEditorPlugin, EditorPlugin);
+	Control *screen = nullptr;
+
+protected:
+	static void _bind_methods() {}
+
+public:
+	bool has_main_screen() const override { return true; }
+	String get_plugin_name() const override { return "Ziva"; }
+	void make_visible(bool p_visible) override;
+	AIZivaEditorPlugin(Control *p_screen = nullptr);
+	~AIZivaEditorPlugin();
 };
 
 // A host for the shared chat that does not construct an EditorPlugin or EditorNode.
@@ -96,6 +113,9 @@ protected:
 
 public:
 	void project_action(const String &p_action);
+	void open_ziva();
+	void open_settings(const String &p_section = String());
+	Control *create_ziva_screen();
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
 	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
 	bool prepare_project(const String &p_path);

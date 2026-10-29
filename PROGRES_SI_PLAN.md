@@ -8,6 +8,29 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-57 — tab principal Ziva și interfață oficială — 29.10.2026
+
+La cererea utilizatorului, Ziva primește un tab principal lângă AI Assistant,
+în editor și în managerul de proiecte. Sunt păstrate modificările celuilalt
+agent din `77bd5c0`: plugin oficial complet, Godot Linux ARM64 separat și
+verificarea reală a backend-ului. Nu se reintroduce puntea MCP înlocuită.
+
+Frontend-ul oficial se afișează într-un WebView ancorat în corpul tabului,
+fără Dialog separat sau bridge JavaScript privilegiat. Ascunderea tabului
+păstrează pagina și procesul; oprirea este explicită. Coordonatele normalizate
+sunt raportate la suprafața Godot, se recalculează la schimbarea dimensiunilor
+și se limitează la zona vizibilă a ferestrei Android. Ferestrele Godot ascund
+temporar WebView-ul. Selectorul de fișiere este al sistemului Android.
+
+Proba locală Ziva: **67 verificări, 0 eșecuri**, cu stări simulate și captură
+inspectată. Runtime: **751/0**; livrare: **6/0**. Pornirea, Kotlin, compilarea
+nativă și APK-ul sunt în verificare; această etapă nu confirmă încă folosirea
+pe telefon, autentificarea oficială sau o generare reală cu Ziva.
+Dovezi: `.ai-qa/compile-ziva-tab-20261029T115729Z/`.
+
+Jurnal: **29.10.2026 — AG-57, Ziva trece din Dialog în tab principal, cu
+frontend oficial păstrat și backend independent; APK separat în pregătire.**
+
 ## AG-56 — Ziva independent, preview în surse — 29.10.2026
 
 Compilarea și livrarea unui **APK separat** au fost solicitate explicit la
@@ -38,7 +61,7 @@ pe proiect, lansează Godot-ul oficial cu `--headless --editor` și declară
 pornirea reușită numai după HTML 200, identitatea MCP `ziva-godot` v3.3.2 și un
 apel `get_project_info` cu rezultat nevid. Portul este publicat abia atunci;
 heartbeat-ul verifică interfața și oprește sesiunea după 30 de eșecuri.
-`AIZivaWindow` păstrează fereastra ca Dialog în activitatea editorului, fără
+La etapa AG-56, `AIZivaWindow` păstra fereastra ca Dialog în activitatea editorului (înlocuit în AG-57 cu tab principal), fără
 bridge JavaScript privilegiat, și permite numai navigarea către același host și
 port. `ziva.gd` face numai control de proces (install/start/stop/open), iar
 `open` cere proiectul curent și un port valid.
@@ -3115,6 +3138,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **29.10.2026:** AG-57, tab principal Ziva în editor și manager, WebView în corpul tabului, frontend/backend oficial păstrat; verificări și APK separat în curs.
 
 - **29.10.2026:** sincronizat istoricul validat AG-53–AG-55 și raportul final de livrare pe ramura GitHub principală `ai/android-assistant`; sursele aplicației coincid cu APK-ul `090b939`. Fără modificări ale APK-ului sau instalare automată.
 

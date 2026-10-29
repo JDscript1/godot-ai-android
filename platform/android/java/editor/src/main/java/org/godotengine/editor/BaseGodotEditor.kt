@@ -290,6 +290,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 	}
 
 	override fun onDestroy() {
+		AIZivaWindow.release(this)
 		gradleBuildProvider.buildEnvDisconnect()
 		super.onDestroy()
 	}
@@ -458,6 +459,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 		val hapticEnabled = enableHapticOnLongPress()
 
 		runOnUiThread {
+			AIZivaWindow.register(this, godotFragment?.godot?.renderView?.view)
 			// Enable long press, panning and scaling gestures
 			godotFragment?.godot?.renderView?.inputHandler?.apply {
 				enableLongPress(longPressEnabled)
@@ -796,6 +798,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 	}
 
 	override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+		if (AIZivaWindow.onActivityResult(requestCode, resultCode, data)) return
 		super.onActivityResult(requestCode, resultCode, data)
 		// Check if we got the MANAGE_EXTERNAL_STORAGE permission
 		when (requestCode) {

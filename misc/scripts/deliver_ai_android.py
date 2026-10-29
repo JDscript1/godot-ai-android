@@ -21,7 +21,7 @@ OLD_NAME = re.compile(r'Godot-AI-(?:Android-)?(?:[0-9.]+-)?arm64-(?:[a-f0-9]{7,4
 DISTRIBUTIONS = {
     'standard': (PACKAGE, NAME, OLD_NAME),
     'ziva-preview': ('com.jdscript.godotai.ziva.debug', 'Godot-AI-Ziva-arm64-debug.apk',
-                     re.compile(r'Godot-AI-Ziva-(?:[0-9.]+-)?arm64-(?:[a-f0-9]{7,40}-)?debug\.apk')),
+                     re.compile(r'Godot-AI-Ziva-(?:[0-9.]+-)?arm64-(?:[a-f0-9]{7,40}-)?debug(?:-[a-f0-9]{7,40})?\.apk')),
 }
 
 

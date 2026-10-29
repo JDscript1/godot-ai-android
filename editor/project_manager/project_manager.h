@@ -99,6 +99,7 @@ class ProjectManager : public Control {
 		MAIN_VIEW_PROJECTS,
 		MAIN_VIEW_ASSETLIB,
 		MAIN_VIEW_AI,
+		MAIN_VIEW_ZIVA,
 		MAIN_VIEW_MAX
 	};
 

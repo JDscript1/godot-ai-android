@@ -5366,6 +5366,10 @@ func _refresh_ziva_card() -> void:
 
 func _ziva_action(action: String) -> void:
 	if ziva == null or (busy and action in ["install", "start"]): return
+	if action == "open":
+		if plugin != null and plugin.has_method("open_ziva"): plugin.call("open_ziva")
+		else: _status("Tabul Ziva este disponibil în aplicația Godot AI Ziva.")
+		return
 	var project = "" if project_manager_mode else ProjectSettings.globalize_path("res://").trim_suffix("/")
 	var result = ziva.request(action, project)
 	_record_event("ziva_runtime", {"action": action}, {"ok": result.get("ok", false), "code": result.get("code", ""), "error": result.get("error", "")})

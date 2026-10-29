@@ -1,11 +1,37 @@
 # Ziva independent în Godot AI — preview
 
+## Tab principal Ziva — 29.10.2026
+
+Ziva are propriul tab de sus, lângă **AI Assistant**, atât în editor, cât și
+în managerul de proiecte. Tabul folosește interfața web oficială integrală,
+fără rescrierea frontend-ului și fără acces la cheile, mesajele sau uneltele
+agentului nostru. Backend-ul rămâne pluginul oficial într-un editor Godot Linux
+ARM64 separat, sub PRoot, pe fișierele proiectului ales.
+
+WebView-ul este atașat în interiorul tabului și se ascunde când tabul devine
+invizibil sau apare o fereastră Godot. Starea frontend-ului se păstrează între
+schimbările de tab; doar **Reîncarcă** reîncarcă pagina. Încadrarea se raportează
+la suprafața Godot și se actualizează la redimensionare, rotație și tastatură.
+Autentificarea HTTPS se deschide în browserul Android; selecția fișierelor
+folosește selectorul sistemului. Nu se injectează un bridge JavaScript nativ.
+
+**Configurare** deschide setările de instalare, reparare și Runtime Linux.
+În lista de proiecte se poate instala Ziva; pornirea cere un proiect deschis.
+Un backend asociat altui proiect nu poate fi afișat în tabul curent. Închiderea
+tabului nu oprește backend-ul; **Oprește** îl oprește explicit.
+
+Validarea Android a WebView-ului, autentificării, selectorului de fișiere,
+tastaturii și unei sarcini Ziva reale rămâne necesară pe dispozitiv. Testele
+Godot cu backend simulat verifică plasarea, ascunderea, reluarea și separarea
+stării, nu frontend-ul proprietar sau un furnizor real.
+
 Ziva are propria secțiune în setări, propria interfață web oficială, proces,
 autentificare și date. Mesajele, cheile și modelul Ziva nu trec prin harness-ul
 nostru. Varianta curentă rulează **pluginul oficial Ziva v3.3.2 într-un editor
 Godot Linux separat, headless**, iar editorul Android și agentul nostru continuă
-în paralel. Integrarea rămâne experimentală: nu există APK nou, probă pe
-dispozitiv sau tur complet cu model real.
+în paralel. Integrarea rămâne experimentală: verificarea pe dispozitiv și un tur complet
+cu model real sunt încă necesare. Livrarea APK-ului este consemnată în
+`PROGRES_SI_PLAN.md`.
 
 ## De ce un editor separat
 

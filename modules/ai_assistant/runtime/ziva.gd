@@ -19,15 +19,15 @@ func refresh() -> Dictionary:
 	return state
 
 func _request(action: String, args: Dictionary = {}) -> Dictionary:
-	if bridge == null or not bridge.has_method("linux_runtime_request"):
+	if not is_instance_valid(bridge) or not bridge.has_method("linux_runtime_request"):
 		return Common.failure("Disponibil în pachetul Android Godot AI Ziva.", "ziva_unavailable")
 	var result: Variant = bridge.call("linux_runtime_request", "ziva_" + action, args)
 	return result if result is Dictionary else Common.failure("Răspuns Ziva invalid.", "ziva_protocol_error")
 
 func request(action: String, project: String = "") -> Dictionary:
-	if not action in ["install", "start", "stop", "open"]: return Common.failure("Operație Ziva necunoscută.")
-	if action in ["start", "open"] and project.is_empty(): return Common.failure("Deschide un proiect pentru Ziva.", "project_required")
-	var args = {"project_directory": project} if action in ["start", "open"] else {}
+	if not action in ["install", "start", "stop"]: return Common.failure("Operație Ziva necunoscută.")
+	if action == "start" and project.is_empty(): return Common.failure("Deschide un proiect pentru Ziva.", "project_required")
+	var args = {"project_directory": project} if action == "start" else {}
 	if action == "start":
 		var status = refresh()
 		if not status.get("enabled", false): return Common.failure("Disponibil în pachetul separat Godot AI Ziva.", "ziva_unavailable")
@@ -35,6 +35,9 @@ func request(action: String, project: String = "") -> Dictionary:
 	var result = _request(action, args)
 	refresh()
 	return result
+
+func embed(rect: Rect2, visible_ui: bool, reload_ui: bool = false) -> Dictionary:
+	return _request("embed", {"visible": visible_ui, "bounds": [rect.position.x, rect.position.y, rect.size.x, rect.size.y], "project_directory": project_directory, "reload": reload_ui})
 
 func close() -> void:
 	pass # The Android service owns the companion editor lifetime; closing the panel must not stop it.
