@@ -1,7 +1,6 @@
 @tool
 extends RefCounted
 ## Independent upstream UI/process. No prompts or credentials enter our agent harness.
-static var Common: GDScript
 signal changed()
 var bridge: Node
 var state: Dictionary = {}
@@ -20,18 +19,13 @@ func refresh() -> Dictionary:
 
 func _request(action: String, args: Dictionary = {}) -> Dictionary:
 	if not is_instance_valid(bridge) or not bridge.has_method("linux_runtime_request"):
-		return Common.failure("Disponibil în pachetul Android Godot AI Ziva.", "ziva_unavailable")
+		return _failure("Disponibil în pachetul Android Godot AI Ziva.", "ziva_unavailable")
 	var result: Variant = bridge.call("linux_runtime_request", "ziva_" + action, args)
-	return result if result is Dictionary else Common.failure("Răspuns Ziva invalid.", "ziva_protocol_error")
+	return result if result is Dictionary else _failure("Răspuns Ziva invalid.", "ziva_protocol_error")
 
-func request(action: String, project: String = "") -> Dictionary:
-	if not action in ["install", "start", "stop"]: return Common.failure("Operație Ziva necunoscută.")
-	if action == "start" and project.is_empty(): return Common.failure("Deschide un proiect pentru Ziva.", "project_required")
-	var args = {"project_directory": project} if action == "start" else {}
-	if action == "start":
-		var status = refresh()
-		if not status.get("enabled", false): return Common.failure("Disponibil în pachetul separat Godot AI Ziva.", "ziva_unavailable")
-		if status.get("busy", false): return Common.failure("Ziva este deja în lucru.", "already_running")
+func request(action: String, _project: String = "") -> Dictionary:
+	if not action in ["install", "restart", "check_updates", "update", "attach"]: return _failure("Operație Ziva necunoscută.")
+	var args = {"project_directory": project_directory}
 	var result = _request(action, args)
 	refresh()
 	return result
@@ -40,7 +34,10 @@ func embed(rect: Rect2, visible_ui: bool, reload_ui: bool = false) -> Dictionary
 	return _request("embed", {"visible": visible_ui, "bounds": [rect.position.x, rect.position.y, rect.size.x, rect.size.y], "project_directory": project_directory, "reload": reload_ui})
 
 func close() -> void:
-	pass # The Android service owns the companion editor lifetime; closing the panel must not stop it.
+	pass # Activity ownership controls lifetime, not tab visibility.
+
+func _failure(message: String, code: String = "ziva_error") -> Dictionary:
+	return {"ok": false, "error": message, "code": code}
 
 func caption() -> String:
 	if not state.get("ok", false) or not state.get("enabled", false): return "Disponibil în pachetul separat Godot AI Ziva"

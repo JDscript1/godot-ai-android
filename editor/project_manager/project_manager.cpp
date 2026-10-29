@@ -1778,9 +1778,7 @@ ProjectManager::ProjectManager() {
 #ifdef MODULE_AI_ASSISTANT_ENABLED
 	ai_assistant = memnew(AIAssistantProjectManager);
 	_add_main_view(MAIN_VIEW_AI, TTRC("AI Assistant"), Ref<Texture2D>(), ai_assistant);
-	if (Control *ziva = ai_assistant->create_ziva_screen()) {
-		_add_main_view(MAIN_VIEW_ZIVA, "Ziva", Ref<Texture2D>(), ziva);
-	}
+	_add_main_view(MAIN_VIEW_ZIVA, "Ziva", Ref<Texture2D>(), memnew(AIZivaPanel));
 	ai_assistant->connect("project_action_requested", callable_mp(this, &ProjectManager::_ai_project_action));
 #endif
 

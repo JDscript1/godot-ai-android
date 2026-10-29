@@ -121,6 +121,24 @@ fun main() {
         File(installed.addon, "manifest.json").delete()
         check(!installed.installed()); checks++
 
+        val versionsRoot = File(scratch, "versions").apply { mkdirs() }
+        val official = spec.copy(url = AIZivaPackage.RELEASE.url)
+        val first = AIZivaPackage(versionsRoot, official)
+        first.extract(good); first.activate()
+        check(AIZivaPackage(versionsRoot).version == "v3.3.2"); checks++
+        val next = release(upgrade, "upgrade ELF".toByteArray()).copy(version = "v3.3.3",
+            url = AIZivaPackage.RELEASE.url.replace("v3.3.2", "v3.3.3"), binarySize = 0, binaryHash = "")
+        val replacement = AIZivaPackage(versionsRoot, next)
+        replacement.extract(upgrade); replacement.verify()
+        check(AIZivaPackage(versionsRoot).version == "v3.3.2"); checks++ // extraction never activates a failed runtime
+        replacement.activate()
+        val active = AIZivaPackage(versionsRoot)
+        active.verify()
+        check(active.version == "v3.3.3" && active.binary.readText() == "upgrade ELF"); checks++
+        check(first.binary.readText() == "fixture ELF" && history.readText() == "KEEP"); checks++
+        active.binary.appendText("tampered")
+        reject { active.verify() }
+
         println("Ziva package: $checks checks, 0 failures")
     } finally { AILinuxRuntimeFiles.deleteTree(scratch) }
 }

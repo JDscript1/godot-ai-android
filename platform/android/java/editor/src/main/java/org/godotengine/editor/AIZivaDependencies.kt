@@ -8,6 +8,7 @@ class AIZivaDependencies(
     private val root: File,
     private val execute: (List<String>, Int) -> JSONObject,
     private val prepareNetwork: () -> Unit = {},
+    private val extension: String = EXTENSION,
     private val progress: (String) -> Unit = {},
 ) {
     companion object {
@@ -20,7 +21,7 @@ class AIZivaDependencies(
 
     fun missing(): List<String> {
         val missing = linkedSetOf<String>()
-        val paths = mutableListOf(EXTENSION)
+        val paths = mutableListOf(extension)
         if (File(root, FONTCONFIG.removePrefix("/")).isFile) paths.add(FONTCONFIG)
         else missing.add("libfontconfig.so.1")
         for (path in paths) {

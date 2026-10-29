@@ -1,14 +1,18 @@
 package org.godotengine.editor
 
+import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
 import java.util.zip.ZipFile
 
 /** Optional upstream download. No Ziva binaries or proprietary UI are redistributed in the APK. */
-class AIZivaPackage(private val root: File, private val spec: Release = RELEASE) {
+class AIZivaPackage(private val root: File, private var spec: Release = activeRelease(root)) {
     data class Release(val version: String, val url: String, val archiveSize: Long, val archiveHash: String,
-        val member: String, val binarySize: Long, val binaryHash: String)
+        val member: String, val binarySize: Long, val binaryHash: String) {
+        fun json() = JSONObject().put("version", version).put("url", url).put("archive_size", archiveSize)
+            .put("archive_hash", archiveHash).put("member", member).put("binary_size", binarySize).put("binary_hash", binaryHash)
+    }
     companion object {
         private const val ADDON = "addons/ziva_agent"
         private const val PREFIX = "$ADDON/"
@@ -20,7 +24,33 @@ class AIZivaPackage(private val root: File, private val spec: Release = RELEASE)
             217601938, "0a852ea62028d6fa1dce10693b20a66ce208b338b778eaecf09ee55e00fd5d66",
             "$ADDON/zivacode/linux_arm64/zivacode", 116771624,
             "7797be07153d515fb0a96a8438f811d633610e4e39caa582334e87cc5ef6c200")
+        fun fromJson(json: JSONObject): Release {
+            val version = json.getString("version")
+            require(version.matches(Regex("v[0-9]+\\.[0-9]+\\.[0-9]+"))) { "Versiune Ziva invalidă." }
+            val expected = "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/$version/ziva-ai-agent-$version-godot-v4.2.0-linux-arm64.zip"
+            require(json.getString("url") == expected) { "Sursă Ziva neoficială sau arhitectură incompatibilă." }
+            val hash = json.getString("archive_hash")
+            val size = json.getLong("archive_size")
+            require(hash.matches(Regex("[a-f0-9]{64}")) && size in 1..(512L * 1024 * 1024)) { "Integritate Ziva absentă." }
+            val member = "$ADDON/zivacode/linux_arm64/zivacode"
+            require(json.optString("member", member) == member)
+            val binarySize = json.optLong("binary_size", 0)
+            val binaryHash = json.optString("binary_hash")
+            require((binarySize == 0L && binaryHash.isEmpty()) ||
+                (binarySize in 1..MAX_FILE && binaryHash.matches(Regex("[a-f0-9]{64}"))))
+            return Release(version, expected, size, hash, member, binarySize, binaryHash)
+        }
+        fun activeRelease(root: File): Release {
+            val file = File(root, "opt/godot-tools/ziva/active.json")
+            if (!file.isFile) return RELEASE
+            check(!Files.isSymbolicLink(file.toPath()))
+            return fromJson(AILinuxRuntimeFiles.readJson(file)).also { require(it.binarySize > 0) }
+        }
+
     }
+    val version get() = spec.version
+    val extension get() = "/opt/godot-tools/ziva/$version/$ADDON/bin/linux_arm64/libziva_agent.linux.release.arm64.so"
+    fun activate() { verify(); AILinuxRuntimeFiles.writeJson(safe("opt/godot-tools/ziva/active.json"), spec.json()) }
     private val directory get() = safe("opt/godot-tools/ziva/${spec.version}")
     val addon get() = File(directory, ADDON)
     val binary get() = File(directory, spec.member)
@@ -41,11 +71,18 @@ class AIZivaPackage(private val root: File, private val spec: Release = RELEASE)
 
     fun installed(): Boolean = try {
         addon.isDirectory && File(addon, "ziva_agent.gdextension").isFile && File(addon, "manifest.json").isFile &&
-            binary.isFile && binary.length() == spec.binarySize
+            binary.isFile && binary.length() == effective().binarySize
     } catch (_: Exception) { false }
 
+    private fun effective(): Release {
+        if (spec.binarySize > 0) return spec
+        val saved = fromJson(AILinuxRuntimeFiles.readJson(File(directory, "release.json")))
+        check(saved.version == spec.version && saved.archiveHash == spec.archiveHash && saved.binarySize > 0)
+        return saved
+    }
+
     fun verify() {
-        check(installed() && AILinuxRuntimeFiles.sha(binary) == spec.binaryHash) { "Pachet Ziva absent sau corupt. Reinstalează Ziva." }
+        check(installed() && AILinuxRuntimeFiles.sha(binary) == effective().binaryHash) { "Pachet Ziva absent sau corupt. Reinstalează Ziva." }
     }
 
     fun install(cache: File, cancelled: () -> Boolean, progress: (String) -> Unit) {
@@ -102,9 +139,13 @@ class AIZivaPackage(private val root: File, private val spec: Release = RELEASE)
             check(count > 0) { "Arhiva Ziva nu conține pluginul." }
             check(spec.member.startsWith(PREFIX)) { "Executabil Ziva invalid." }
             val executable = File(staging, spec.member)
-            check(executable.isFile && executable.length() == spec.binarySize && AILinuxRuntimeFiles.sha(executable) == spec.binaryHash) {
+            check(executable.isFile && executable.length() in 1..MAX_FILE) { "Executabil Ziva absent." }
+            val binaryHash = AILinuxRuntimeFiles.sha(executable)
+            check(spec.binarySize == 0L || (executable.length() == spec.binarySize && binaryHash == spec.binaryHash)) {
                 "Executabil Ziva corupt."
             }
+            val verified = spec.copy(binarySize = executable.length(), binaryHash = binaryHash)
+            AILinuxRuntimeFiles.writeJson(File(staging, "release.json"), verified.json())
             check(File(staging, "$ADDON/ziva_agent.gdextension").isFile && File(staging, "$ADDON/manifest.json").isFile &&
                 File(staging, "$ADDON/LICENSE.md").isFile) { "Structură Ziva invalidă." }
             check(!cancelled()) { "Operație anulată." }
@@ -116,6 +157,7 @@ class AIZivaPackage(private val root: File, private val spec: Release = RELEASE)
                 if (hadPrevious) check(previous.renameTo(target)) { "Instalarea Ziva trebuie reparată." }
                 error("Pachetul Ziva nu a putut fi activat.")
             }
+            spec = verified
             if (hadPrevious) AILinuxRuntimeFiles.deleteTree(previous)
         } finally { AILinuxRuntimeFiles.deleteTree(staging) }
     }

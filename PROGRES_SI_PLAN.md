@@ -8,6 +8,37 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-60 — Ziva independent și sesiuni automate — 29.10.2026
+
+Pe APK-ul instalat `0fc625a9`, ADB a confirmat eroarea veche „O altă sesiune
+Ziva răspunde deja”, salvată după reboot, deși nu exista niciun proces Ziva.
+Starea nouă verifică o închidere de fișier deținută de serviciu, identificatorul
+boot-ului și identitatea procesului; un JSON vechi nu mai poate bloca sesiunea.
+Închiderea procesului editorului este observată prin Binder, iar închiderea
+activității sau eliminarea aplicației oprește backend-ul și procesele proprii.
+Trecerea în fundal și schimbarea tabului păstrează sesiunea. Schimbarea
+proiectului înlocuiește sesiunea în ordine, fără cerere manuală de oprire.
+Autopornirea folosește doar proiectul deschis și are trei încercări de recuperare
+pentru o eroare repetată; nu limitează pașii agentului sau generările.
+
+Tabul are propriul host nativ, model și panou de instalare/reparare/actualizare;
+setările și construcția panoului asistentului nu mai inițializează Ziva.
+Frontend-ul oficial este găzduit nemodificat. Verificarea actualizărilor citește
+metadatele publice GitHub și acceptă doar arhiva oficială stabilă ARM64 cu
+SHA-256. Actualizarea devine activă după verificarea executabilului și a
+bibliotecilor; versiunea anterioară și istoricul rămân păstrate.
+
+Verificat local: **751/0** aserțiuni runtime, Kotlin Android compilat,
+**13/0** dependențe, **38/0** pachet/activare, **10/0** proprietate de sesiune
+inclusiv moartea unui proces separat, **13/0** metadate de actualizare;
+**69/0** randare Ziva îngustă, **61/0** manager upstream.
+Compilarea nativă, APK-ul și proba fizică a noilor surse sunt încă în lucru;
+APK-ul precedent nu este folosit ca dovadă pentru această implementare.
+Dovezi: `.ai-qa/ziva-lifecycle-20261029T174727Z/`.
+
+Jurnal: 29.10.2026 — AG-60: înlocuirea controlului manual al sesiunii,
+separarea tabului de asistent și administrarea versiunilor oficiale din Ziva.
+
 ## AG-59 — Ziva adaptat la spațiul dispozitivului — 29.10.2026
 
 Capturile utilizatorului arată acum autentificarea oficială Ziva pe telefon,

@@ -1,94 +1,187 @@
 package org.godotengine.editor
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.os.Binder
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import org.json.JSONObject
 import java.io.File
+import java.lang.ref.WeakReference
 import java.security.MessageDigest
+import java.util.UUID
+import java.util.WeakHashMap
 
-/** Independent Ziva control plane. Never forwards prompts, tokens or settings to our harness. */
+/** Independent lifecycle. The assistant panel is not involved in Ziva ownership or setup. */
 object AIZivaRuntime {
+    private var host = WeakReference<Activity>(null)
+    private val owners = WeakHashMap<Activity, String>()
+    private val owner = Binder()
+    private val handler = Handler(Looper.getMainLooper())
+    private var scheduled = false
+    private var project = ""
+    private var attempts = 0
+    @Volatile private var pending = 0L
+    private var prepareJob = ""
+    private var prepareAttempts = 0
     internal fun directory(context: Context) = File(context.noBackupFilesDir, "ai-ziva").apply { mkdirs() }
     internal fun stateFile(context: Context) = File(directory(context), "state.json")
     internal fun cancelFile(context: Context) = File(directory(context), "cancel")
     internal fun read(context: Context) = AILinuxRuntimeFiles.readJson(stateFile(context))
     internal fun save(context: Context, state: JSONObject) {
-        state.put("heartbeat", System.currentTimeMillis())
+        state.put("heartbeat", System.currentTimeMillis()).put("boot_id", AIZivaSession.bootId())
         AILinuxRuntimeFiles.writeJson(stateFile(context), state)
     }
     internal fun projectId(project: File): String = MessageDigest.getInstance("SHA-256").digest(project.canonicalPath.toByteArray())
         .joinToString("") { "%02x".format(it.toInt() and 255) }.take(24)
 
-    fun isBusy(context: Context): Boolean {
-        val state = read(context)
-        return state.optString("status") in listOf("queued", "installing", "starting", "running", "stopping") &&
-            System.currentTimeMillis() - state.optLong("heartbeat") < 45000
+    @Synchronized fun register(activity: Activity) { host = WeakReference(activity) }
+    @Synchronized fun resume(activity: Activity) {
+        register(activity)
+        if (owners.containsKey(activity)) { attempts = 0; schedule() }
     }
+    @Synchronized fun release(activity: Activity) {
+        owners.remove(activity)
+        handler.postDelayed({ synchronized(this) {
+            if (owners.isEmpty()) {
+                project = ""; pending = 0
+                try { stop(activity.applicationContext) } catch (_: Exception) { }
+            } else schedule()
+        } }, 1200)
+    }
+    private fun stop(context: Context) {
+        AIZivaWindow.hide()
+        if (!isBusy(context)) return
+        // A closing project manager must never stop a newer editor's session.
+        val extras = Bundle().apply { putBinder("owner", owner) }
+        context.startService(Intent(context, AIZivaService::class.java).putExtra("action", "ziva_detach").putExtra("ownership", extras))
+    }
+
+    fun isBusy(context: Context): Boolean = AIZivaSession(directory(context)).active()
 
     fun status(context: Context): JSONObject {
+        val store = AIZivaSession(directory(context))
         val state = read(context)
-        val root = AILinuxRuntime.core(context).root
-        val installed = AIZivaPackage(root).installed() && AIZivaGodot(root).installed()
-        if (!isBusy(context) && state.optString("status") in listOf("queued", "installing", "starting", "running", "stopping")) {
-            state.put("status", "interrupted").put("message", "Ziva s-a întrerupt. Poți relua pornirea.")
+        val active = store.active()
+        if (!active && (state.optString("boot_id") != AIZivaSession.bootId() ||
+                state.optString("status") in listOf("queued", "starting", "running", "installing", "stopping"))) {
+            // Reconcile only while holding ownership, so a late poll cannot overwrite a new worker.
+            store.acquire()?.use {
+                val clean = read(context)
+                clean.remove("ui_port")
+                clean.put("status", "idle").put("message", "Sesiunea anterioară este închisă.")
+                save(context, clean)
+            }
+            return status(context)
         }
-        if (isBusy(context) && cancelFile(context).exists()) state.put("status", "stopping").put("message", "Opresc Ziva…")
+        val root = AILinuxRuntime.core(context).root
+        val ziva = AIZivaPackage(root)
+        val installed = ziva.installed() && AIZivaGodot(root).installed()
+        val queued = pending > 0 && SystemClock.elapsedRealtime() - pending < 10000
+        if (queued && !active) state.put("status", "starting").put("message", "Pregătesc automat Ziva…")
+        val running = active && state.optString("status") == "running"
         return state.put("ok", true).put("enabled", BuildConfig.GODOT_AI_ZIVA).put("installed", installed)
-            .put("version", AIZivaPackage.RELEASE.version).put("running", state.optString("status") == "running")
-            .put("ready", state.optString("status") == "running").put("ui_port", state.optInt("ui_port", 0))
-            .put("busy", isBusy(context))
+            .put("version", ziva.version).put("running", running).put("ready", running)
+            .put("ui_port", if (running) state.optInt("ui_port", 0) else 0).put("busy", active || queued)
+            .put("linux_ready", AILinuxRuntime.core(context).state().optBoolean("ready"))
+            .put("updates", AIZivaUpdates.status(context))
     }
 
-    @Synchronized fun command(context: Context, action: String, args: JSONObject): JSONObject {
+    @Synchronized private fun schedule() {
+        if (scheduled || owners.isEmpty() || !BuildConfig.GODOT_AI_ZIVA) return
+        scheduled = true
+        handler.postDelayed({ synchronized(this) {
+            scheduled = false
+            val activity = host.get()
+            if (activity != null && owners.isNotEmpty()) {
+                try { reconcile(activity) } catch (_: Exception) { }
+                schedule()
+            }
+        } }, 2000)
+    }
+    private fun reconcile(activity: Activity) {
+        if (owners.isEmpty()) return
+        val target = owners[activity]?.takeIf { it.isNotEmpty() } ?: owners.values.firstOrNull { it.isNotEmpty() }.orEmpty()
+        if (target != project) { project = target; attempts = 0; pending = 0 }
+        val runtime = AILinuxRuntime.core(activity)
+        if (!runtime.state().optBoolean("ready")) {
+            if (prepareJob.isNotEmpty()) {
+                val job = JSONObject(AILinuxRuntime.command("poll", JSONObject().put("id", prepareJob).toString()))
+                if (job.optString("status") in listOf("queued", "running")) return
+                prepareJob = ""
+            }
+            if (prepareAttempts < 3) {
+                prepareAttempts++
+                val job = JSONObject(AILinuxRuntime.command("prepare", "{}"))
+                prepareJob = job.optString("id")
+            }
+            return
+        }
+        prepareJob = ""; prepareAttempts = 0
+        val state = status(activity)
+        if (target.isEmpty()) {
+            if (state.optBoolean("running")) stop(activity)
+            return
+        }
+        if (!state.optBoolean("installed") || state.optString("status") == "installing") return
+        if (state.optBoolean("busy") && state.optString("project_id") == projectId(File(target))) { pending = 0; return }
+        if (pending > 0 && SystemClock.elapsedRealtime() - pending < 10000) return
+        if (attempts >= 3) return
+        attempts++
+        send(activity, "ziva_start", target, automatic = true)
+    }
+    private fun send(context: Context, action: String, target: String, release: JSONObject? = null, automatic: Boolean = false) {
+        val extras = Bundle().apply { putBinder("owner", owner) }
+        val intent = Intent(context, AIZivaService::class.java).putExtra("action", action)
+            .putExtra("project_directory", target).putExtra("ownership", extras)
+            .putExtra("request_id", UUID.randomUUID().toString()).putExtra("automatic", automatic)
+        if (release != null) intent.putExtra("release", release.toString())
+        pending = SystemClock.elapsedRealtime()
+        try { context.startForegroundService(intent) }
+        catch (error: Exception) { pending = 0; throw error }
+    }
+
+    fun command(context: Context, action: String, args: JSONObject): JSONObject {
         if (action == "ziva_status") {
             val state = status(context)
-            val project = args.optString("project_directory")
-            val same = project.isNotBlank() && projectId(File(project)) == state.optString("project_id")
-            return state.put("same_project", same)
+            val target = args.optString("project_directory")
+            return state.put("same_project", target.isNotEmpty() && projectId(File(target)) == state.optString("project_id"))
         }
-        check(BuildConfig.GODOT_AI_ZIVA) { "Ziva este disponibil în pachetul separat Godot AI Ziva." }
-        if (action == "ziva_embed" && !args.optBoolean("visible")) {
-            AIZivaWindow.hide()
-            return JSONObject().put("ok", true)
-        }
-        if (action == "ziva_stop") {
-            AIZivaWindow.hide()
-            if (isBusy(context)) cancelFile(context).writeText("stop")
-            return JSONObject().put("ok", true)
-        }
+        check(BuildConfig.GODOT_AI_ZIVA) { "Disponibil în aplicația separată Godot AI Ziva." }
+        if (action == "ziva_embed" && !args.optBoolean("visible")) { AIZivaWindow.hide(); return JSONObject().put("ok", true) }
         if (action == "ziva_embed") {
             val state = status(context)
-            check(state.optBoolean("running")) { "Pornește mai întâi Ziva." }
-            val project = File(args.getString("project_directory")).canonicalFile
-            check(projectId(project) == state.optString("project_id")) { "Ziva rulează pentru alt proiect. Oprește-l înainte de schimbare." }
-            val port = state.optInt("ui_port", 0)
-            check(port in 1..65535) { "Interfața Ziva nu este disponibilă. Reia pornirea." }
-            val bounds = args.getJSONArray("bounds")
-            require(bounds.length() == 4) { "Dimensiuni Ziva invalide." }
-            val coordinates = DoubleArray(4) { bounds.getDouble(it) }
-            AIZivaWindow.embed(port, coordinates, args.optBoolean("reload"))
-            return JSONObject().put("ok", true)
-        }
-        check(action in listOf("ziva_install", "ziva_start")) { "Operație Ziva necunoscută." }
-        check(!isBusy(context)) { "Ziva este deja în lucru. Oprește sesiunea curentă înainte de reluare." }
-        check(AILinuxRuntime.core(context).state().optBoolean("ready")) { "Pregătește mai întâi Runtime Linux din Integrări." }
-        val linux = JSONObject(AILinuxRuntime.command("status", "{}"))
-        check(linux.optString("active_job").isEmpty()) { "Așteaptă încheierea sarcinii Linux." }
-        val intent = Intent(context, AIZivaService::class.java).putExtra("action", action)
-        val state = JSONObject().put("status", "queued").put("message", "Pregătesc Ziva…")
-        if (action == "ziva_start") {
-            val project = File(args.getString("project_directory")).canonicalFile
-            check(project.isAbsolute && File(project, "project.godot").isFile && !project.path.contains(':')) { "Deschide un proiect Godot pentru Ziva." }
-            state.put("project_id", projectId(project))
-            intent.putExtra("project_directory", project.path)
-        }
-        cancelFile(context).delete()
-        save(context, state)
-        try { context.startForegroundService(intent) }
-        catch (error: Exception) {
-            save(context, state.put("status", "error").put("message", "Serviciul Ziva nu a pornit."))
-            throw error
-        }
-        return JSONObject().put("ok", true).put("status", "queued")
+            check(state.optBoolean("running")) { "Sesiunea Ziva se pregătește automat." }
+            check(projectId(File(args.getString("project_directory"))) == state.optString("project_id")) { "Schimb proiectul Ziva…" }
+            val bounds = args.getJSONArray("bounds"); require(bounds.length() == 4)
+            AIZivaWindow.embed(state.getInt("ui_port"), DoubleArray(4) { bounds.getDouble(it) }, args.optBoolean("reload"))
+        } else if (action == "ziva_attach") {
+            val activity = host.get() ?: error("Editorul Android se pregătește.")
+            val target = args.optString("project_directory")
+            if (target.isNotEmpty()) check(File(target, "project.godot").isFile && !target.contains(':')) { "Proiect Godot invalid." }
+            handler.post { synchronized(this) {
+                owners[activity] = target
+                attempts = 0
+                try { reconcile(activity) } catch (_: Exception) { }
+                schedule()
+            } }
+        } else if (action == "ziva_check_updates") {
+            AIZivaUpdates.check(context)
+        } else if (action in listOf("ziva_install", "ziva_update", "ziva_restart")) {
+            val target = args.optString("project_directory")
+            val release = if (action == "ziva_update") AIZivaUpdates.available(context) else null
+            handler.post { synchronized(this) {
+                attempts = 0; prepareAttempts = 0
+                try { send(context, if (action == "ziva_restart") "ziva_start" else "ziva_install", target, release) }
+                catch (error: Exception) {
+                    val failed = read(context).put("status", "error").put("message", error.message?.take(240))
+                    save(context, failed)
+                }
+            } }
+        } else error("Operație Ziva necunoscută.")
+        return JSONObject().put("ok", true)
     }
 }

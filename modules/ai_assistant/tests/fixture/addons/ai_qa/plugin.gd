@@ -304,7 +304,7 @@ func _run() -> void:
 	panel.model_pricing.transport = AgentPricingTransport.new()
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
-	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 13, "Build all settings forms")
+	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "planning":
 		var planning = load(get_script().resource_path.get_base_dir().path_join("interactive_plan.gd")).new()
 		await planning.run(self, panel)
@@ -3519,87 +3519,62 @@ class FixtureLinuxBridge:
 
 class FixtureZivaBridge:
 	extends Node
-	var opens = 0
-	func open_ziva() -> void: opens += 1
-	var state = {"ok": true, "enabled": true, "installed": false, "running": false, "ready": false, "ui_port": 0, "busy": false, "version": "v3.3.2", "same_project": true}
+	var state = {"ok": true, "enabled": true, "installed": false, "running": false, "ready": false, "ui_port": 0, "busy": false, "version": "v3.3.2", "same_project": true, "linux_ready": true}
 	var requests: Array = []
 	func linux_runtime_request(action: String, args: Dictionary) -> Dictionary:
 		if action == "ziva_status": return state.duplicate(true)
 		requests.append({"action": action, "arguments": args.duplicate(true)})
 		if action == "ziva_install": state.merge({"status": "installing", "message": "Descarc Ziva…", "busy": true}, true)
-		elif action == "ziva_stop": state.merge({"status": "stopped", "busy": false, "running": false, "ui_port": 0}, true)
+		elif action == "ziva_check_updates": state["updates"] = {"available": true, "message": "Versiune oficială disponibilă: v3.3.3"}
 		return {"ok": true}
 
 func _ziva_tests(output: String) -> void:
-	var backend = panel.ziva
-	var old_bridge = backend.bridge
-	var old_linux = panel.integrations.linux.bridge
-	var old_settings = panel.integration_settings.duplicate(true)
 	var history = panel.history.duplicate(true)
 	var profiles = panel.config["providers"].duplicate(true)
+	_check(not panel.forms.has("ziva") and not panel.section_tabs.has("ziva"), "Assistant settings contain no Ziva installation or session controls")
 	var bridge = FixtureZivaBridge.new()
-	var linux = FixtureLinuxBridge.new()
-	add_child(bridge); add_child(linux)
-	linux.state.merge({"ready": true, "installed": true}, true)
-	panel.integrations.linux.bridge = linux
-	panel.integrations.linux.refresh()
-	backend.bridge = bridge
-	backend.refresh()
-	panel.open_settings("ziva")
-	await get_tree().create_timer(0.2).timeout
-	var form: Dictionary = panel.forms["ziva"]
-	_check(panel.settings_tabs.current_tab == panel.section_tabs["ziva"], "Ziva has an independent settings entry")
-	_check(not form["primary"].disabled and not form["open"].visible and "1 GB" in form["hint"].text, "Ziva installs its own plugin and separate Godot editor only when Linux is available")
-	_check(not form.has("connect") and not form.has("connection_help"), "The obsolete editor MCP fallback is not offered")
-	panel._ziva_action("install")
-	_check(bridge.requests.back()["action"] == "ziva_install" and bridge.requests.back()["arguments"].is_empty() and form["stop"].visible and not form["primary"].visible, "Ziva installation has independent cancellation controls and carries no editor credential")
-	bridge.state.merge({"installed": true, "running": true, "status": "running", "ui_port": 7013}, true)
-	backend.refresh()
-	_check(form["open"].visible and not form["open"].disabled and "editor separat" in form["status"].text and "7013" in form["status"].text, "Running Ziva reports its discovered local UI port")
-	var previous_plugin = panel.plugin
-	panel.plugin = bridge
-	panel._ziva_action("open")
-	_check(bridge.opens == 1 and bridge.requests.back()["action"] != "ziva_open", "Ziva settings opens the main tab instead of a modal window")
-	panel.plugin = previous_plugin
-	bridge.state["same_project"] = false
-	backend.refresh()
-	_check(form["open"].disabled and "alt proiect" in form["hint"].text, "A Ziva session belonging to a different project cannot be opened silently")
-	bridge.state["same_project"] = true
-	backend.refresh()
-	bridge.state["ui_port"] = 0
-	backend.refresh()
-	_check(form["open"].visible and form["open"].disabled, "Ziva cannot open a window before the official UI port is ready")
-	bridge.state["ui_port"] = 7013
-	backend.refresh()
-	if not output.is_empty():
-		await get_tree().create_timer(0.2).timeout
-		panel.settings_window.get_texture().get_image().save_png(output.path_join("ziva-settings.png"))
-	panel._ziva_action("stop")
-	_check(not form["stop"].visible and form["primary"].text == "Pornește Ziva", "Stopping Ziva restores its own start control")
-	_check(panel.history == history and panel.config["providers"] == profiles, "Ziva controls do not alter our agent's chat or provider profiles")
-	bridge.state.merge({"status": "error", "message": "Pachet corupt", "running": false, "ui_port": 0}, true)
-	backend.refresh()
-	_check(form["repair"].visible, "An installed Ziva package can be repaired without removing its history")
-	panel.settings_window.hide()
-	bridge.state.merge({"installed": true, "running": true, "ready": true, "status": "running", "busy": true, "same_project": true, "ui_port": 7013}, true)
-	backend.refresh()
+	add_child(bridge)
+	var backend = embedded["ziva"].new(bridge, ProjectSettings.globalize_path("res://").trim_suffix("/"))
 	var was_expanded = EditorInterface.is_distraction_free_mode_enabled()
 	var screen = EditorInterface.get_editor_main_screen().find_child("ZivaMainScreen", true, false)
 	var temporary = screen == null
+	var old_model: RefCounted
+	var old_bridge: Node
 	if temporary:
 		screen = embedded["ziva_screen"].new()
-		screen.configure(bridge, backend, panel)
+		screen.configure(bridge, backend)
 		screen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		screen.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		panel.hide()
 		EditorInterface.get_editor_main_screen().add_child(screen)
 		screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	else:
+		old_model = screen.backend
+		old_bridge = screen.bridge
+		if old_model.changed.is_connected(screen._refresh): old_model.changed.disconnect(screen._refresh)
+		screen.configure(bridge, backend)
+		screen._bind_backend()
 		EditorInterface.set_main_screen_editor("Ziva")
 	screen.show()
 	await get_tree().create_timer(0.2).timeout
-	_check(screen.backend == backend and screen.body != null, "The Ziva main tab shares the independent process model")
-	_check(screen.embedded and bridge.requests.back()["action"] == "ziva_embed" and bridge.requests.back()["arguments"].get("visible", false), "The active Ziva tab attaches the official frontend to its body")
+	_check(screen.backend == backend and screen.management != null, "Ziva owns its model and management window independently of the assistant")
+	_check(not screen.primary.disabled and screen.primary.text == "Instalează Ziva", "Ziva installs using its own measured Linux readiness")
+	backend.request("attach")
+	_check(bridge.requests.back()["action"] == "ziva_attach", "Ziva attaches the project for automatic lifecycle management")
+	screen.primary.pressed.emit()
+	_check(bridge.requests.back()["action"] == "ziva_install" and bridge.requests.back()["arguments"].get("project_directory") == backend.project_directory, "Installation carries only its own project and no assistant credential")
+	_check(not screen.primary.visible, "Installation does not expose manual session start controls")
+	bridge.state.merge({"installed": true, "running": true, "ready": true, "status": "running", "ui_port": 7013}, true)
+	backend.refresh()
+	screen._settings()
+	await get_tree().process_frame
+	_check(screen.management.visible and not panel.settings_window.visible and not screen.embedded, "Ziva management opens inside its own tab and hides the WebView")
+	screen._action("check_updates")
+	_check(bridge.requests.back()["action"] == "ziva_check_updates" and screen.update_button.visible, "Official update checks and upgrade actions belong to Ziva")
+	_check("v3.3.3" in screen.updates_label.text, "Available upstream version is visible in Ziva management")
+	screen.management.hide()
+	screen._sync_embed()
+	_check(screen.embedded and bridge.requests.back()["action"] == "ziva_embed", "Closing Ziva management resumes the official frontend")
 	var rect: Rect2 = screen._bounds()
 	_check(rect.position.x >= 0 and rect.position.y > 0 and rect.end.x <= 1.001 and rect.end.y <= 1.001, "The official frontend stays below the toolbar and within the editor surface")
 	_check(not screen.hint.visible and screen.status.text == "Ziva · Activ", "Ready Ziva uses one compact status row without repeated instructions")
@@ -3620,6 +3595,11 @@ func _ziva_tests(output: String) -> void:
 	_check(screen.embedded and bridge.requests.back()["arguments"].get("reload", false), "A menu reload is retained until its popup closes")
 	if not output.is_empty():
 		EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("ziva-main-tab.png"))
+	screen._settings()
+	await get_tree().process_frame
+	if not output.is_empty(): screen.management.get_texture().get_image().save_png(output.path_join("ziva-management.png"))
+	screen.management.hide()
+	screen._sync_embed()
 	screen.hide()
 	_check(not screen.embedded and not bridge.requests.back()["arguments"].get("visible", true) and backend.state.get("running", false), "Changing tabs hides the WebView without stopping the independent backend")
 	bridge.state["same_project"] = false
@@ -3639,15 +3619,14 @@ func _ziva_tests(output: String) -> void:
 	if temporary:
 		screen.queue_free()
 		panel.show()
+	else:
+		if backend.changed.is_connected(screen._refresh): backend.changed.disconnect(screen._refresh)
+		screen.configure(old_bridge, old_model)
+		screen._bind_backend()
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	if not temporary: _check(EditorInterface.is_distraction_free_mode_enabled() == was_expanded, "Leaving Ziva restores the previous editor workspace")
 	_check(panel.history == history and panel.config["providers"] == profiles, "The Ziva main tab preserves assistant chat and provider settings")
-	backend.bridge = old_bridge
-	backend.refresh()
-	panel.integrations.linux.bridge = old_linux
-	panel.integration_settings = old_settings
-	panel.integrations.linux.refresh()
-	bridge.queue_free(); linux.queue_free()
+	bridge.queue_free()
 	panel.settings_window.hide()
 
 func _linux_runtime_tests(output: String) -> void:

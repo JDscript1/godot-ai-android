@@ -3,7 +3,6 @@ package org.godotengine.editor
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.Handler
@@ -21,8 +20,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Runs the official addon in its own headless Godot Linux editor, beside the Android editor. */
 class AIZivaService : Service() {
     companion object {
-        const val FIRST_PORT = 7012
-        const val LAST_PORT = 7041
         const val READY_TIMEOUT_MS = 180_000L
         const val MAX_LOG = 131072
     }
@@ -34,6 +31,14 @@ class AIZivaService : Service() {
     @Volatile private var running = false
     @Volatile private var child: Process? = null
     @Volatile private var guestPidFile: File? = null
+    @Volatile private var owner: IBinder? = null
+    private var death: IBinder.DeathRecipient? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var pending: Intent? = null
+    private var currentProject = ""
+    private var lastStartId = 0
+    private var lease: AIZivaSession.Lease? = null
+    private var version = AIZivaPackage.RELEASE.version
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -43,13 +48,10 @@ class AIZivaService : Service() {
         startForeground(7343, notification("Pregătesc Ziva…"))
     }
     private fun notification(message: String): Notification {
-        val stop = PendingIntent.getService(this, 7343, Intent(this, AIZivaService::class.java).putExtra("cancel", true),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, "godot_ai_ziva").setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("Godot AI · Ziva").setContentText(message.take(120)).setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "Oprește Ziva", stop).build()).build()
+            .setContentTitle("Godot AI · Ziva").setContentText(message.take(120)).setOngoing(true).build()
     }
-    private fun cancelled() = stopping.get() || AIZivaRuntime.cancelFile(this).exists()
+    private fun cancelled() = stopping.get() || owner?.isBinderAlive != true || AIZivaRuntime.cancelFile(this).exists()
     private fun update(status: String, message: String) = synchronized(lock) {
         state.put("status", status).put("message", message)
         AIZivaRuntime.save(this, state)
@@ -57,24 +59,58 @@ class AIZivaService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (intent?.getBooleanExtra("cancel", false) == true) {
-            stopping.set(true)
+            pending = null; stopping.set(true)
             if (!running) stopSelf(startId)
             return START_NOT_STICKY
         }
         val action = intent?.getStringExtra("action")
-        if (!BuildConfig.GODOT_AI_ZIVA || action !in listOf("ziva_install", "ziva_start")) {
+        val newOwner = intent?.getBundleExtra("ownership")?.getBinder("owner")
+        if (action == "ziva_detach") {
+            if (newOwner == owner) { pending = null; stopping.set(true); stopSelf(startId) }
+            else if (!running) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        if (!BuildConfig.GODOT_AI_ZIVA || action !in listOf("ziva_install", "ziva_start") || newOwner?.isBinderAlive != true) {
             if (!running) stopSelf(startId)
             return START_NOT_STICKY
         }
-        if (running) return START_NOT_STICKY
-        running = true
-        state = AIZivaRuntime.read(this)
-        executor.execute { work(action!!, intent.getStringExtra("project_directory"), startId) }
+        if (running) {
+            // Duplicate automatic attach is idempotent. Explicit restart has a new request.
+            if (intent.getBooleanExtra("automatic", false) && action == "ziva_start" &&
+                currentProject == intent.getStringExtra("project_directory") && !stopping.get()) return START_NOT_STICKY
+            pending = intent
+            stopping.set(true)
+        } else launch(intent)
         return START_NOT_STICKY
     }
 
-    private fun work(action: String, projectPath: String?, startId: Int) {
+    private fun launch(intent: Intent) {
+        val token = intent.getBundleExtra("ownership")?.getBinder("owner") ?: return
+        if (!token.isBinderAlive) { stopSelf(lastStartId); return }
+        lease = AIZivaSession(AIZivaRuntime.directory(this)).acquire()
+        if (lease == null) { stopSelf(lastStartId); return }
+        owner?.let { old -> death?.let { try { old.unlinkToDeath(it, 0) } catch (_: Exception) { } } }
+        owner = token
+        val recipient = IBinder.DeathRecipient {
+            if (owner === token) { stopping.set(true); main.post { pending = null; stopSelf() } }
+        }
+        death = recipient
+        try { token.linkToDeath(recipient, 0) } catch (_: Exception) {
+            lease?.close(); lease = null; stopSelf(lastStartId); return
+        }
+        currentProject = intent.getStringExtra("project_directory").orEmpty()
+        running = true; stopping.set(false)
+        AIZivaRuntime.cancelFile(this).delete()
+        state = AIZivaRuntime.read(this)
+        state.put("request_id", intent.getStringExtra("request_id"))
+        executor.execute { work(intent) }
+    }
+
+    private fun work(intent: Intent) {
+        val action = intent.getStringExtra("action")
+        val projectPath = intent.getStringExtra("project_directory")
         var finalStatus = "stopped"
         var finalMessage = "Ziva oprit"
         var logFile: File? = null
@@ -83,10 +119,22 @@ class AIZivaService : Service() {
             try { AIZivaRuntime.save(this, state) } catch (_: Exception) { }
         } }, 0, 2, TimeUnit.SECONDS)
         try {
-            synchronized(lock) { state.remove("ui_port"); AIZivaRuntime.save(this, state) }
+            // A service may have been killed while PRoot tracees survived. Recover only
+            // our recorded PID from this boot, with the exact process start time.
+            if (AIZivaSession.bootId().isNotEmpty() && state.optString("boot_id") == AIZivaSession.bootId()) {
+                val pid = state.optInt("guest_pid")
+                val start = state.optString("guest_start")
+                if (pid > 0 && start.isNotEmpty() && AIZivaSession.processStart(pid) == start) {
+                    signalGuest(pid, 15); Thread.sleep(300)
+                    if (AIZivaSession.processStart(pid) == start) signalGuest(pid, 9)
+                }
+            }
+            synchronized(lock) { state.remove("ui_port"); state.remove("guest_pid"); state.remove("guest_start"); AIZivaRuntime.save(this, state) }
             val runtime = AILinuxRuntime.core(this, ::cancelled)
             check(runtime.state().optBoolean("ready")) { "Runtime Linux indisponibil." }
-            val ziva = AIZivaPackage(runtime.root)
+            val release = intent.getStringExtra("release")?.let { AIZivaPackage.fromJson(JSONObject(it)) }
+            val ziva = if (release == null) AIZivaPackage(runtime.root) else AIZivaPackage(runtime.root, release)
+            version = ziva.version
             val godot = AIZivaGodot(runtime.root)
             if (action == "ziva_install") {
                 val install = File(cacheDir, "ai-ziva")
@@ -98,32 +146,32 @@ class AIZivaService : Service() {
                 if (!godotValid) godot.install(install, ::cancelled) { update("installing", it) }
                 godot.verify()
                 AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) },
-                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }) {
+                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }, extension = ziva.extension) {
                     update("installing", it)
                 }.ensure()
                 check(!cancelled()) { "Operație anulată." }
                 val version = runtime.launch(listOf(ziva.guestBinary, "--version"), null, 30)
-                check(version.getInt("exit_code") == 0 && version.getString("output").lineSequence().any { it.trim() == AIZivaPackage.RELEASE.version }) {
+                check(version.getInt("exit_code") == 0 && version.getString("output").lineSequence().any { it.trim() == ziva.version }) {
                     "Ziva s-a descărcat, dar executabilul nu a trecut verificarea."
                 }
                 val engine = runtime.launch(listOf(godot.guestBinary, "--version"), null, 30)
                 check(engine.getInt("exit_code") == 0 && engine.getString("output").contains("4.7.2.stable")) {
                     "Godot s-a descărcat, dar executabilul nu a trecut verificarea."
                 }
+                ziva.activate()
                 finalStatus = "installed"
-                finalMessage = "Ziva instalat · ${AIZivaPackage.RELEASE.version}"
+                finalMessage = "Ziva instalat · ${ziva.version}"
             } else {
                 ziva.verify()
                 godot.verify()
                 AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) },
-                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }) {
+                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }, extension = ziva.extension) {
                     update("starting", it)
                 }.ensure()
                 val project = File(projectPath ?: error("Proiect absent.")).canonicalFile
                 check(File(project, "project.godot").isFile && !project.path.contains(':')) { "Proiect Godot invalid." }
                 val projectId = AIZivaRuntime.projectId(project)
                 val data = privateDirectory("projects/$projectId")
-                check(identityPort() == 0) { "O altă sesiune Ziva răspunde deja. Oprește-o înainte de pornire." }
                 synchronized(lock) { state.put("project_id", projectId) }
                 update("starting", "Pornesc editorul oficial Godot…")
                 val binds = listOf(
@@ -133,6 +181,9 @@ class AIZivaService : Service() {
                     privateDirectory("projects/$projectId/config").absolutePath to "/root/.config",
                     privateDirectory("projects/$projectId/godot").absolutePath to "/workspace/.godot"
                 )
+                // Discard endpoint hints only; account/session history stays intact.
+                val share = privateDirectory("projects/$projectId/local-share")
+                share.walkTopDown().maxDepth(10).filter { it.isFile && it.name.matches(Regex("sidecar-[0-9]+-.*\\.port")) }.forEach { it.delete() }
                 logFile = File(data, "godot.log")
                 guestPidFile = File(privateDirectory("projects/$projectId/cache"), "godot-ai-ziva.pid").also { it.delete() }
                 child = runtime.startProcess(
@@ -150,7 +201,13 @@ class AIZivaService : Service() {
                                 "Pluginul oficial Ziva nu s-a încărcat. Reia instalarea și verifică jurnalul sesiunii."
                             }
                         }
-                        if (port == 0) port = identityPort()
+                        if (port == 0) {
+                            val pid = try { guestPidFile?.readText()?.trim()?.toIntOrNull() } catch (_: Exception) { null }
+                            if (pid != null && pid > 0) {
+                                synchronized(lock) { state.put("guest_pid", pid).put("guest_start", AIZivaSession.processStart(pid)) }
+                                port = ownedPort(share, pid)
+                            }
+                        }
                         if (port > 0 && !tools) tools = editorToolReady(port)
                         if (tools && uiReady(port)) break
                         Thread.sleep(500)
@@ -183,18 +240,17 @@ class AIZivaService : Service() {
                 if (log != null && output.isNotEmpty()) log.writeText(output.toString())
             } catch (_: Exception) { }
             heartbeat.cancel(false)
-            // Publish an idle state only after cleanup. A quick Start after installation
-            // must not be lost while this service is still completing the previous operation.
-            Handler(Looper.getMainLooper()).post {
-                AIZivaRuntime.cancelFile(this).delete()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                running = false
+            main.post {
                 synchronized(lock) {
-                    state.remove("ui_port")
+                    state.remove("ui_port"); state.remove("guest_pid"); state.remove("guest_start")
                     state.put("status", finalStatus).put("message", finalMessage)
                     AIZivaRuntime.save(this, state)
                 }
-                stopSelf(startId)
+                lease?.close(); lease = null
+                running = false
+                val next = pending; pending = null
+                if (next != null && !executor.isShutdown) launch(next)
+                else { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(lastStartId) }
             }
         }
     }
@@ -252,11 +308,13 @@ class AIZivaService : Service() {
     private fun identity(port: Int): Boolean {
         val json = post(port, """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"godot-ai-ziva","version":"1"}}}""") ?: return false
         val info = json.optJSONObject("result")?.optJSONObject("serverInfo") ?: return false
-        return info.optString("name") == "ziva-godot" && info.optString("version") == AIZivaPackage.RELEASE.version
+        return info.optString("name") == "ziva-godot" && info.optString("version") == version
     }
 
-    private fun identityPort(): Int {
-        for (port in FIRST_PORT..LAST_PORT) { if (cancelled()) return 0; if (identity(port)) return port }
+    private fun ownedPort(share: File, pid: Int): Int {
+        for (port in AIZivaSession.ownedPorts(share, pid)) {
+            if (identity(port)) return port
+        }
         return 0
     }
 
@@ -309,5 +367,13 @@ class AIZivaService : Service() {
         }
     }
     override fun onTimeout(startId: Int, fgsType: Int) { stopping.set(true); terminate(); stopSelf(startId) }
-    override fun onDestroy() { stopping.set(true); terminate(); executor.shutdownNow(); timer.shutdownNow(); super.onDestroy() }
+    override fun onTaskRemoved(rootIntent: Intent?) { pending = null; stopping.set(true); stopSelf(); super.onTaskRemoved(rootIntent) }
+    override fun onDestroy() {
+        pending = null; stopping.set(true); terminate()
+        owner?.let { token -> death?.let { try { token.unlinkToDeath(it, 0) } catch (_: Exception) { } } }
+        owner = null
+        // Let the worker finish its state write and release the kernel lease.
+        executor.shutdown(); timer.shutdownNow()
+        super.onDestroy()
+    }
 }

@@ -80,10 +80,24 @@ public:
 	void push_editor_input(Viewport *p_viewport, const Ref<InputEvent> &p_event);
 	void install_asset_archive(const String &p_path, const String &p_title);
 	void open_settings(const String &p_section = String());
-	void open_ziva();
-	Control *create_ziva_screen();
 	AIAssistantEditorPlugin();
 	~AIAssistantEditorPlugin();
+};
+
+// Independent host: loads only Ziva's two scripts, never the assistant panel.
+class AIZivaPanel : public VBoxContainer {
+	GDCLASS(AIZivaPanel, VBoxContainer);
+	Ref<GDScript> model_script;
+	Ref<GDScript> screen_script;
+	Ref<RefCounted> model;
+
+protected:
+	static void _bind_methods();
+
+public:
+	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
+	void configure_project(const String &p_project);
+	AIZivaPanel();
 };
 
 class AIZivaEditorPlugin : public EditorPlugin {
@@ -100,7 +114,7 @@ public:
 	bool has_main_screen() const override { return true; }
 	String get_plugin_name() const override { return "Ziva"; }
 	void make_visible(bool p_visible) override;
-	AIZivaEditorPlugin(Control *p_screen = nullptr);
+	AIZivaEditorPlugin();
 	~AIZivaEditorPlugin();
 };
 
@@ -116,9 +130,7 @@ protected:
 
 public:
 	void project_action(const String &p_action);
-	void open_ziva();
 	void open_settings(const String &p_section = String());
-	Control *create_ziva_screen();
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
 	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
 	bool prepare_project(const String &p_path);

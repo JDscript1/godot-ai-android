@@ -72,8 +72,8 @@ func _run() -> void:
 			if button.text == "Ziva": ziva_buttons.append(button)
 		check(ziva_buttons.size() == 1, "Ziva has its own native top tab before project selection")
 		var ziva_screen = manager.find_child("ZivaMainScreen", true, false)
-		check(ziva_screen != null and ziva_screen.backend == panel.ziva, "The start-screen Ziva tab shares only its independent process model")
-		native_host.open_ziva()
+		check(ziva_screen != null and ziva_screen.backend != null and ziva_screen.backend.bridge == ziva_screen, "The start-screen Ziva owns its native bridge and process model")
+		if ziva_buttons.size() == 1: ziva_buttons[0].pressed.emit()
 		await process_frame
 		check(ziva_screen != null and ziva_screen.is_visible_in_tree() and ziva_screen.backend.project_directory.is_empty() and ziva_screen.primary.disabled, "Ziva can be configured before opening a project but cannot start an arbitrary project")
 		if matching_buttons.size() == 1: matching_buttons[0].pressed.emit()
@@ -140,10 +140,8 @@ func _run() -> void:
 	root.get_texture().get_image().save_png(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("start-chat.png"))
 	panel.open_settings("providers")
 	await create_timer(0.2).timeout
-	check(panel.settings_navigation.item_count == 6, "Start settings show global sections including independent Ziva setup")
-	panel.open_settings("ziva")
-	check(panel.settings_tabs.current_tab == panel.section_tabs["ziva"], "Independent Ziva setup is accessible before selecting a project")
-	check(panel.forms["ziva"]["primary"].disabled and not panel.forms["ziva"]["open"].visible, "An unavailable Ziva backend cannot be started from the project manager")
+	check(panel.settings_navigation.item_count == 5, "Start settings retain assistant sections without Ziva setup")
+	check(not panel.forms.has("ziva") and not panel.section_tabs.has("ziva"), "Independent Ziva management does not depend on assistant settings")
 	panel.open_settings("providers")
 	panel.settings_window.get_texture().get_image().save_png(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("start-providers.png"))
 	panel.settings_window.hide()

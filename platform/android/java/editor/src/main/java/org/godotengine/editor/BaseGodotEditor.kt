@@ -284,12 +284,14 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 		EditorUtils.toggleTitleBar(isLargeScreen || newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE)
 	}
 
+
 	override fun onStop() {
 		AIVoice.close()
 		super.onStop()
 	}
 
 	override fun onDestroy() {
+		AIZivaRuntime.release(this)
 		AIZivaWindow.release(this)
 		gradleBuildProvider.buildEnvDisconnect()
 		super.onDestroy()
@@ -492,6 +494,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 
 	override fun onResume() {
 		super.onResume()
+		AIZivaRuntime.resume(this)
 		updateWindowAppearance()
 
 		if (getEditorWindowInfo() == EDITOR_MAIN_INFO &&

@@ -67,3 +67,10 @@ optional Ziva addon and official Godot installers with fixtures: archive and
 binary hashes, unsafe paths, cancellation and preservation of the previous
 install. These development controls are distinct from the installed Godot service.
 See [the runtime document](../../docs/AI_LINUX_RUNTIME.md) for current evidence.
+
+Ziva lifecycle coverage now also includes `tests/ZivaSessionTest.kt` (kernel
+lease ownership, process death, stale saved status and PID-specific endpoint
+hints) and `tests/ZivaUpdatesTest.kt` (official stable ARM64 metadata, digest,
+URL and version ordering). Run their JVM entry points with the portable runtime
+classes, Kotlin standard library and org.json; compiling the update bridge also
+requires Android SDK stubs. These do not replace Android Activity/Binder tests.

@@ -9413,7 +9413,7 @@ EditorNode::EditorNode() {
 #ifdef MODULE_AI_ASSISTANT_ENABLED
 	AIAssistantEditorPlugin *ai_assistant_plugin = memnew(AIAssistantEditorPlugin);
 	add_editor_plugin(ai_assistant_plugin);
-	add_editor_plugin(memnew(AIZivaEditorPlugin(ai_assistant_plugin->create_ziva_screen())));
+	add_editor_plugin(memnew(AIZivaEditorPlugin));
 #endif
 
 	// More visually meaningful to have this later.

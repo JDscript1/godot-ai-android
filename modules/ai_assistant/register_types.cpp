@@ -14,6 +14,7 @@ void initialize_ai_assistant_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(AIAssistantSecretStore);
 		GDREGISTER_INTERNAL_CLASS(AIAssistantSettingsInspector);
 		GDREGISTER_INTERNAL_CLASS(AIAssistantEditorPlugin);
+		GDREGISTER_INTERNAL_CLASS(AIZivaPanel);
 		GDREGISTER_INTERNAL_CLASS(AIZivaEditorPlugin);
 		GDREGISTER_INTERNAL_CLASS(AIAssistantProjectManager);
 	}
