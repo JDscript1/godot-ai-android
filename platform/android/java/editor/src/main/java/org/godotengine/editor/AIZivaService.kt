@@ -96,6 +96,9 @@ class AIZivaService : Service() {
                 val godotValid = try { godot.verify(); true } catch (_: Exception) { false }
                 if (!godotValid) godot.install(install, ::cancelled) { update("installing", it) }
                 godot.verify()
+                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) }) {
+                    update("installing", it)
+                }.ensure()
                 check(!cancelled()) { "Operație anulată." }
                 val version = runtime.launch(listOf(ziva.guestBinary, "--version"), null, 30)
                 check(version.getInt("exit_code") == 0 && version.getString("output").lineSequence().any { it.trim() == AIZivaPackage.RELEASE.version }) {
@@ -110,6 +113,9 @@ class AIZivaService : Service() {
             } else {
                 ziva.verify()
                 godot.verify()
+                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) }) {
+                    update("starting", it)
+                }.ensure()
                 val project = File(projectPath ?: error("Proiect absent.")).canonicalFile
                 check(File(project, "project.godot").isFile && !project.path.contains(':')) { "Proiect Godot invalid." }
                 val projectId = AIZivaRuntime.projectId(project)
@@ -128,12 +134,17 @@ class AIZivaService : Service() {
                 child = runtime.startProcess(
                     listOf(godot.guestBinary, "--headless", "--editor", "--path", "/workspace"), project,
                     mapOf("ZIVA_ENABLE_HEADLESS" to "1", "GODOT_SILENCE_ROOT_WARNING" to "1"), binds)
-                val reader = drain(child!!, output)
+                val reader = drain(child!!, output, logFile)
                 try {
                     val deadline = System.nanoTime() + READY_TIMEOUT_MS * 1_000_000L
                     var port = 0
                     var tools = false
                     while (!cancelled() && child!!.isAlive && System.nanoTime() < deadline) {
+                        synchronized(output) {
+                            check(!output.contains("Can't open GDExtension dynamic library") && !output.contains("Error loading extension:")) {
+                                "Pluginul oficial Ziva nu s-a încărcat. Reia instalarea și verifică jurnalul sesiunii."
+                            }
+                        }
                         if (port == 0) port = identityPort()
                         if (port > 0 && !tools) tools = editorToolReady(port)
                         if (tools && uiReady(port)) break
@@ -194,7 +205,8 @@ class AIZivaService : Service() {
         return file
     }
 
-    private fun drain(process: Process, output: StringBuilder): Thread = Thread({
+    private fun drain(process: Process, output: StringBuilder, log: File?): Thread = Thread({
+        var lastWrite = 0L
         try { process.inputStream.use { input ->
             val buffer = ByteArray(8192)
             while (true) {
@@ -202,6 +214,9 @@ class AIZivaService : Service() {
                 synchronized(output) {
                     output.append(String(buffer, 0, read))
                     if (output.length > MAX_LOG) output.delete(0, output.length - MAX_LOG)
+                    if (log != null && System.currentTimeMillis() - lastWrite > 1000) {
+                        try { log.writeText(output.toString()); lastWrite = System.currentTimeMillis() } catch (_: Exception) { }
+                    }
                 }
             }
         } } catch (_: Exception) { }

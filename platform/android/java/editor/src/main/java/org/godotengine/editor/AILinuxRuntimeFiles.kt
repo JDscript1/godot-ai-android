@@ -172,11 +172,31 @@ class AILinuxRuntimeFiles(
 
     private fun configure(directory: File, dns: List<String>) {
         for (path in listOf("tmp", "root", "workspace", "dev", "proc", "sys", "opt/godot-tools", "etc/apt/apt.conf.d")) File(directory, path).mkdirs()
-        val servers = dns.filter { it.matches(Regex("[a-fA-F0-9:.]+")) }.take(4).ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
-        File(directory, "etc/resolv.conf").apply { if (Files.isSymbolicLink(toPath())) delete(); writeText(servers.joinToString("\n") { "nameserver $it" } + "\n") }
+        writeDns(directory, dns)
         File(directory, "etc/hosts").writeText("127.0.0.1 localhost\n::1 localhost\n")
         File(directory, "etc/apt/apt.conf.d/99godot").writeText("APT::Sandbox::User \"root\";\nAcquire::Retries \"2\";\nAcquire::http::Timeout \"30\";\n")
         File(directory, "usr/sbin/policy-rc.d").apply { writeText("#!/bin/sh\nexit 101\n"); setExecutable(true) }
+    }
+
+    /** Android can change networks after installation; do not retain the old carrier DNS. */
+    fun synchronizeDns(dns: List<String>) {
+        if (!root.isDirectory) return
+        check(!Files.isSymbolicLink(root.toPath())) { "Filesystem Linux invalid." }
+        writeDns(root, dns)
+    }
+
+    private fun writeDns(directory: File, dns: List<String>) {
+        val etc = File(directory, "etc")
+        check(!Files.isSymbolicLink(etc.toPath()) && etc.isDirectory) { "Directorul de rețea Linux este invalid." }
+        val servers = dns.filter { it.matches(Regex("[a-fA-F0-9:.]+")) }.distinct().take(4).ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
+        val text = servers.joinToString("\n") { "nameserver $it" } + "\noptions timeout:2 attempts:2\n"
+        val file = File(etc, "resolv.conf")
+        if (!Files.isSymbolicLink(file.toPath()) && file.isFile && file.readText() == text) return
+        val temporary = File(etc, "resolv.godot-${UUID.randomUUID()}.tmp")
+        try {
+            temporary.writeText(text)
+            check(temporary.renameTo(file)) { "DNS-ul Linux nu poate fi actualizat." }
+        } finally { temporary.delete() }
     }
 
     fun verify(): JSONObject {

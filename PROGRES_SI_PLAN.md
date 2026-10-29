@@ -8,6 +8,28 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-58 — corecție Ziva pe runtime-ul instalat — 29.10.2026
+
+Proba ADB pe telefon a infirmat pornirea funcțională a preview-ului `234893bf`:
+tabul exista, dar interfața oficială nu se încărca. În baza Debian slim din APK
+lipseau `libxcb`, fontconfig și alte biblioteci legate de extensia oficială/CEF.
+Proba anterioară din Debian-ul de dezvoltare, mai complet, nu acoperea baza
+livrată. Verificările CI și integritatea APK-ului nu dovedeau pornirea pe telefon.
+
+`AIZivaDependencies` verifică legăturile reale cu `ldd`, instalează bibliotecile
+Debian necesare, refuză actualizarea APT incompletă și reface proba după instalare.
+Rulează atât la instalare, cât și la pornire, pentru repararea instalărilor vechi.
+DNS-ul Linux urmărește conexiunea Android curentă și este actualizat atomic.
+Jurnalul editorului se scrie și în timpul pornirii; o eroare de încărcare a
+extensiei este raportată imediat, în locul așteptării complete de trei minute.
+
+Pe telefon, probele brute de rețea au fost refuzate când aplicația era în fundal;
+în prim-plan au funcționat. Instalarea bibliotecilor este testată prin serviciul
+Android real, cu runtime-ul și datele aplicației instalate, fără furnizori AI.
+Sursele Kotlin compilează, iar testele portabile noi trec **11/0**. Proba de
+interfață pe telefon și recompilarea preview-ului sunt în curs.
+Dovezi: `.ai-qa/ziva-device-review-20261029T122722Z/`.
+
 ## AG-57 — tab principal Ziva și interfață oficială — 29.10.2026
 
 La cererea utilizatorului, Ziva primește un tab principal lângă AI Assistant,
@@ -3164,6 +3186,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **29.10.2026:** AG-58, identificat pe telefon blocajul real al Ziva: biblioteci absente în Debian slim. Corecție de dependențe și DNS în surse, teste portabile 11/0; verificare pe dispozitiv în curs.
 
 - **29.10.2026:** AG-57 livrat: tab principal Ziva în editor și manager; APK separat `234893bf`, runtime 751/0, upstream 768/0 × 5 și nativ 792/0 × 5; 37 de surse exacte. Instalatorul standard și checksum-ul lui sunt păstrate.
 

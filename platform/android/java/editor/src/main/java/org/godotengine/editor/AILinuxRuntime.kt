@@ -27,7 +27,10 @@ object AILinuxRuntime {
     internal fun directory(context: Context) = File(context.noBackupFilesDir, "ai-linux")
     internal fun jobFile(context: Context, id: String) = File(directory(context), "jobs/$id.json")
     internal fun core(context: Context, cancel: () -> Boolean = { false }, log: (String) -> Unit = {}) =
-        AILinuxRuntimeFiles(directory(context), File(context.applicationInfo.nativeLibraryDir), { context.assets.open(it) }, cancel, log)
+        AILinuxRuntimeFiles(directory(context), File(context.applicationInfo.nativeLibraryDir), { context.assets.open(it) }, cancel, log).apply {
+            val network = context.getSystemService(ConnectivityManager::class.java)
+            synchronizeDns(network.getLinkProperties(network.activeNetwork)?.dnsServers?.mapNotNull { it.hostAddress }.orEmpty())
+        }
     private fun failure(message: String, code: String = "runtime_error") = JSONObject().put("ok", false).put("error", message).put("code", code)
 
     @JvmStatic @Synchronized fun command(action: String, text: String): String {

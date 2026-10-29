@@ -1,5 +1,16 @@
 # Ziva independent în Godot AI — preview
 
+## Corecția runtime-ului minimal — 29.10.2026
+
+Prima probă pe telefon a găsit biblioteci lipsă (`libxcb`, fontconfig și
+bibliotecile CEF) în Debian slim. Serverul nu pornea, deci tabul rămânea gol.
+Corecția verifică `ldd` pe extensia oficială și fontconfig, instalează pachetele
+Debian necesare și verifică din nou încărcarea. Se aplică și la pornirea unei
+instalări existente. Descărcarea suplimentară măsurată pe baza livrată este de
+aproximativ 56 MB, cu aproximativ 245 MB ocupați după instalare.
+Configurația DNS este actualizată când rețeaua Android se schimbă.
+Proba din Debian-ul de dezvoltare nu înlocuiește verificarea acestei baze minimale.
+
 ## Tab principal Ziva — 29.10.2026
 
 Ziva are propriul tab de sus, lângă **AI Assistant**, atât în editor, cât și

@@ -163,7 +163,7 @@ jobs:
               lock = json.loads(Path('tools/embedded-runtime/rootfs.json').read_text())
               assert package['source_sha256'] == lock['sha256'], 'Unexpected Debian base'
               dex = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.dex'))
-              for component in ['AILinuxRuntime', 'AILinuxRuntimeService', 'AILinuxRuntimeFiles', 'AIZivaRuntime', 'AIZivaService', 'AIZivaWindow', 'AIZivaPackage', 'AIZivaGodot']:
+              for component in ['AILinuxRuntime', 'AILinuxRuntimeService', 'AILinuxRuntimeFiles', 'AIZivaRuntime', 'AIZivaService', 'AIZivaWindow', 'AIZivaPackage', 'AIZivaGodot', 'AIZivaDependencies']:
                   assert ('Lorg/godotengine/editor/' + component + ';').encode() in dex, component
               library = archive.read('lib/arm64-v8a/libgodot_android.so')
               assert b'AIAssistantEditorPlugin' in library, 'AI editor module missing'
