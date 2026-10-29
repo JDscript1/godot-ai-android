@@ -96,6 +96,7 @@ func _action(action: String) -> void:
 
 func _build_management() -> void:
 	management = Window.new()
+	management.hide()
 	management.title = "Ziva · Instalare și actualizări"
 	management.transient = true
 	management.exclusive = true

@@ -32,7 +32,11 @@ Verificat local: **751/0** aserțiuni runtime, Kotlin Android compilat,
 **13/0** dependențe, **38/0** pachet/activare, **10/0** proprietate de sesiune
 inclusiv moartea unui proces separat, **13/0** metadate de actualizare;
 **69/0** randare Ziva îngustă, **61/0** manager upstream.
-Compilarea nativă, APK-ul și proba fizică a noilor surse sunt încă în lucru;
+Prima rundă nativă a trecut **800/0 × 5**, dar proba focalizată de gesturi a
+expus o fereastră Ziva exclusivă vizibilă la inițializare. Fereastra este ascunsă
+explicit înainte de adăugare, iar verificarea de startup rulează acum în fiecare
+scenariu nativ. APK-ul intermediar nu a fost livrat sau instalat.
+Compilarea finală, APK-ul și proba fizică a noilor surse sunt încă în lucru;
 APK-ul precedent nu este folosit ca dovadă pentru această implementare.
 Dovezi: `.ai-qa/ziva-lifecycle-20261029T174727Z/`.
 

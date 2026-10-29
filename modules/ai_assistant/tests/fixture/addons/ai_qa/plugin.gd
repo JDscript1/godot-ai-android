@@ -305,6 +305,9 @@ func _run() -> void:
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
 	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	var independent_ziva = EditorInterface.get_editor_main_screen().find_child("ZivaMainScreen", true, false)
+	if independent_ziva != null:
+		_check(not independent_ziva.management.visible, "The hidden Ziva tab never opens an exclusive management window at startup")
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "planning":
 		var planning = load(get_script().resource_path.get_base_dir().path_join("interactive_plan.gd")).new()
 		await planning.run(self, panel)
