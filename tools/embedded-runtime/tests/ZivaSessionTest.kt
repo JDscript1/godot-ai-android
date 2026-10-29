@@ -1,4 +1,6 @@
 import org.godotengine.editor.AIZivaSession
+import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.nio.file.Files
 
@@ -42,6 +44,15 @@ fun main(args: Array<String>) {
         var rejected = false
         try { session.acquire() } catch (_: IllegalStateException) { rejected = true }
         check(rejected && outside.readText() == "KEEP"); checks++
+        val nonce = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        fun proof(text: String, error: Boolean = false) = JSONObject().put("result", JSONObject()
+            .put("isError", error).put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text))))
+        check(AIZivaSession.ownerMatches(proof("1: GODOT_AI_ZIVA_OWNER=$nonce"), nonce)); checks++
+        check(!AIZivaSession.ownerMatches(proof("1: GODOT_AI_ZIVA_OWNER=foreign-session"), nonce)); checks++
+        check(!AIZivaSession.ownerMatches(proof("1: GODOT_AI_ZIVA_OWNER=$nonce", true), nonce)); checks++
+        check(!AIZivaSession.ownerMatches(proof("1: prefix GODOT_AI_ZIVA_OWNER=$nonce suffix"), nonce)); checks++
+        check(!AIZivaSession.ownerMatches(null, nonce)); checks++
+        check(!AIZivaSession.ownerMatches(proof("1: GODOT_AI_ZIVA_OWNER=anything"), "anything")); checks++
         println("Ziva session lifecycle: $checks checks, 0 failures")
     } finally { child?.destroyForcibly(); scratch.deleteRecursively() }
 }

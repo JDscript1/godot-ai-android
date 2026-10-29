@@ -1,5 +1,6 @@
 package org.godotengine.editor
 
+import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
@@ -32,6 +33,19 @@ class AIZivaSession(private val directory: File) {
     }
     companion object {
         private val held = HashSet<String>()
+        const val OWNER_FILE = "/run/godot-ai-ziva/owner"
+        fun ownerMatches(reply: JSONObject?, nonce: String): Boolean {
+            if (!nonce.matches(Regex("[a-f0-9-]{36}"))) return false
+            val result = reply?.optJSONObject("result") ?: return false
+            if (result.optBoolean("isError")) return false
+            val content = result.optJSONArray("content") ?: return false
+            val expected = "GODOT_AI_ZIVA_OWNER=$nonce"
+            return (0 until content.length()).any { index ->
+                content.optJSONObject(index)?.optString("text").orEmpty().lineSequence().any {
+                    it.trim().replaceFirst(Regex("^[0-9]+:\\s*"), "") == expected
+                }
+            }
+        }
         fun ownedPorts(share: File, pid: Int): List<Int> = share.walkTopDown().maxDepth(10).filter {
             it.isFile && !Files.isSymbolicLink(it.toPath()) && it.name.startsWith("sidecar-$pid-") && it.name.endsWith(".port") && it.length() < 16
         }.mapNotNull { it.readText().trim().toIntOrNull()?.takeIf { port -> port in 1024..65535 } }.distinct().toList()

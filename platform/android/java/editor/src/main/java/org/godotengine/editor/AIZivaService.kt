@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Runs the official addon in its own headless Godot Linux editor, beside the Android editor. */
 class AIZivaService : Service() {
     companion object {
+        const val FIRST_PORT = 7012
+        const val LAST_PORT = 7041
         const val READY_TIMEOUT_MS = 180_000L
         const val MAX_LOG = 131072
     }
@@ -40,6 +42,7 @@ class AIZivaService : Service() {
     private var lastStartId = 0
     private var lease: AIZivaSession.Lease? = null
     private var version = AIZivaPackage.RELEASE.version
+    private var sessionNonce = ""
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -132,6 +135,9 @@ class AIZivaService : Service() {
                     if (AIZivaSession.processStart(pid) == start) signalGuest(pid, 9)
                 }
             }
+            for (previous in privateDirectory("sessions").listFiles().orEmpty()) {
+                if (previous.name.matches(Regex("[a-f0-9-]{36}")) && !Files.isSymbolicLink(previous.toPath())) AILinuxRuntimeFiles.deleteTree(previous)
+            }
             synchronized(lock) { state.remove("ui_port"); state.remove("guest_pid"); state.remove("guest_start"); AIZivaRuntime.save(this, state) }
             val runtime = AILinuxRuntime.core(this, ::cancelled)
             check(runtime.state().optBoolean("ready")) { "Runtime Linux indisponibil." }
@@ -177,7 +183,14 @@ class AIZivaService : Service() {
                 val data = privateDirectory("projects/$projectId")
                 synchronized(lock) { state.put("project_id", projectId) }
                 update("starting", "Pornesc editorul oficial Godot…")
+                sessionNonce = java.util.UUID.randomUUID().toString()
+                val identity = privateDirectory("sessions/$sessionNonce")
+                File(identity, "owner").writeText("GODOT_AI_ZIVA_OWNER=$sessionNonce\n")
+                val guestIdentity = File(runtime.root, "run/godot-ai-ziva")
+                check(!Files.isSymbolicLink(File(runtime.root, "run").toPath()) && !Files.isSymbolicLink(guestIdentity.toPath()))
+                check(guestIdentity.isDirectory || guestIdentity.mkdirs()) { "Directorul de identificare Ziva nu poate fi creat." }
                 val binds = listOf(
+                    identity.absolutePath to "/run/godot-ai-ziva",
                     ziva.addon.absolutePath to "/workspace/addons/ziva_agent",
                     privateDirectory("projects/$projectId/local-share").absolutePath to "/root/.local/share",
                     privateDirectory("projects/$projectId/cache").absolutePath to "/root/.cache",
@@ -243,6 +256,9 @@ class AIZivaService : Service() {
                 if (log != null && output.isNotEmpty()) log.writeText(output.toString())
             } catch (_: Exception) { }
             heartbeat?.cancel(false)
+            if (sessionNonce.matches(Regex("[a-f0-9-]{36}"))) {
+                try { AILinuxRuntimeFiles.deleteTree(privateDirectory("sessions/$sessionNonce")) } catch (_: Exception) { }
+            }
             main.post {
                 try { synchronized(lock) {
                     state.remove("ui_port"); state.remove("guest_pid"); state.remove("guest_start")
@@ -314,8 +330,18 @@ class AIZivaService : Service() {
     }
 
     private fun ownedPort(share: File, pid: Int): Int {
-        for (port in AIZivaSession.ownedPorts(share, pid)) {
-            if (identity(port)) return port
+        // Upstream consumes its transient .port hint. Ownership is proved by a
+        // unique per-session mount read through the public MCP file tool.
+        // A different editor, including an orphan from this project, sees a
+        // different /run/godot-ai-ziva mount and cannot match this nonce.
+        for (port in (AIZivaSession.ownedPorts(share, pid) + (FIRST_PORT..LAST_PORT)).distinct()) {
+            if (cancelled()) return 0
+            if (!identity(port)) continue
+            val body = JSONObject().put("jsonrpc", "2.0").put("id", 3).put("method", "tools/call")
+                .put("params", JSONObject().put("name", "read").put("arguments", JSONObject()
+                    .put("reasoning", "Read-only ownership check for the app-managed Ziva session.")
+                    .put("file_path", AIZivaSession.OWNER_FILE).put("limit", 1)))
+            if (AIZivaSession.ownerMatches(post(port, body.toString()), sessionNonce)) return port
         }
         return 0
     }

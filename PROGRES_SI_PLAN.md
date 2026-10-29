@@ -29,14 +29,23 @@ SHA-256. Actualizarea devine activă după verificarea executabilului și a
 bibliotecilor; versiunea anterioară și istoricul rămân păstrate.
 
 Verificat local: **751/0** aserțiuni runtime, Kotlin Android compilat,
-**13/0** dependențe, **38/0** pachet/activare, **10/0** proprietate de sesiune
+**13/0** dependențe, **38/0** pachet/activare, **16/0** proprietate de sesiune
 inclusiv moartea unui proces separat, **13/0** metadate de actualizare;
 **69/0** randare Ziva îngustă, **61/0** manager upstream.
 Prima rundă nativă a trecut **800/0 × 5**, dar proba focalizată de gesturi a
 expus o fereastră Ziva exclusivă vizibilă la inițializare. Fereastra este ascunsă
 explicit înainte de adăugare, iar verificarea de startup rulează acum în fiecare
 scenariu nativ. APK-ul intermediar nu a fost livrat sau instalat.
-Compilarea finală, APK-ul și proba fizică a noilor surse sunt încă în lucru;
+Runda `f7eb9081` a trecut complet: **801/0 × 5** editor nativ și **125/0**
+proba de gesturi. Pe telefon, backend-ul a pornit automat și vechea eroare de
+sesiune a dispărut, dar fișierul temporar `.port` nu rămâne disponibil. Serverul
+local răspundea efectiv HTTP 200 și MCP înainte ca aplicația să-l detecteze.
+Identificarea folosește acum un director montat separat pentru fiecare proces,
+cu un UUID citit prin instrumentul public MCP `read`. Astfel nu adoptă un alt
+server Ziva sau un proces vechi al aceluiași proiect. Apelul public de citire a
+fost verificat pe serverul real, fără model și fără modificarea proiectului.
+Fișierele temporare de identificare sunt șterse după oprire.
+Compilarea finală cu această corecție și proba fizică sunt încă în lucru;
 APK-ul precedent nu este folosit ca dovadă pentru această implementare.
 Dovezi: `.ai-qa/ziva-lifecycle-20261029T174727Z/`.
 
