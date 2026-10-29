@@ -139,6 +139,10 @@ func _can_embed() -> bool:
 func _process(_delta: float) -> void:
 	if backend == null: _bind_backend()
 	if backend == null or not is_visible_in_tree(): return
+	# Other native editor toolbars can keep their column wider than a narrow
+	# window. Bound this tab independently, including its actions, to the surface.
+	var available = maxf(1, get_viewport().get_visible_rect().end.x - global_position.x)
+	if not is_equal_approx(custom_maximum_size.x, available): custom_maximum_size.x = available
 	if Time.get_ticks_msec() - backend.last_refresh > 1500: backend.refresh()
 	_sync_embed()
 
@@ -155,7 +159,7 @@ func _has_popup() -> bool:
 func _bounds() -> Rect2:
 	var viewport_rect = get_viewport().get_visible_rect()
 	if viewport_rect.size.x <= 0 or viewport_rect.size.y <= 0: return Rect2()
-	var rect = body.get_global_rect()
+	var rect = body.get_global_rect().intersection(viewport_rect)
 	return Rect2((rect.position - viewport_rect.position) / viewport_rect.size, rect.size / viewport_rect.size)
 
 func _sync_embed(force_reload: bool = false) -> void:

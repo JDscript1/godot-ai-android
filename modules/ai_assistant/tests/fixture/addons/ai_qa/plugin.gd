@@ -3604,7 +3604,7 @@ func _ziva_tests(output: String) -> void:
 	_check(rect.position.x >= 0 and rect.position.y > 0 and rect.end.x <= 1.001 and rect.end.y <= 1.001, "The official frontend stays below the toolbar and within the editor surface")
 	_check(not screen.hint.visible and screen.status.text == "Ziva · Activ", "Ready Ziva uses one compact status row without repeated instructions")
 	_check(screen.body.size.y > screen.size.y * 0.75, "The official frontend retains most of the main tab height")
-	_check(screen.actions.get_global_rect().end.x <= screen.get_global_rect().end.x + 1, "Ziva actions fit the available width at every editor scale")
+	_check(screen.actions.get_global_rect().end.x <= minf(screen.get_global_rect().end.x, screen.get_viewport().get_visible_rect().end.x) + 1, "Ziva actions fit the available width at every editor scale")
 	if not temporary: _check(EditorInterface.is_distraction_free_mode_enabled(), "The native Ziva tab gives the frontend the full editor workspace")
 	var count = bridge.requests.size()
 	screen._sync_embed()

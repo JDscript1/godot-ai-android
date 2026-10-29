@@ -41,8 +41,12 @@ telefon compact a trecut **70/0** înainte de proba suplimentară de meniu.
 Prima regresie nativă (`797f4a71`) a expus un conflict: chatul lateral păstra
 Ziva drept ultimul tab de lucru și revenea în el, unde panourile sunt ascunse.
 Memoria chatului lateral exclude acum Ziva și păstrează ultimul editor normal.
-Nu s-a livrat APK-ul rundei eșuate. Compilarea corectată și proba fizică sunt
-în curs. Capturile primite dovedesc frontend-ul oficial la autentificare,
+Nu s-a livrat APK-ul rundei eșuate. Runda `b13705e1` a trecut comportamentul
+panourilor, dar proba îngustă a expus o lățime moștenită prea mare. Tabul este
+limitat acum independent la suprafața vizibilă, inclusiv meniul; coordonatele
+WebView sunt intersectate cu viewport-ul și în timpul relayout-ului. ADB a fost
+deconectat de utilizator; proba fizică a noii versiuni rămâne pentru după
+instalare. Compilarea finală este în curs. Capturile primite dovedesc frontend-ul oficial la autentificare,
 nu autentificarea efectivă sau executarea unei sarcini cu model real.
 Dovezi: `.ai-qa/ziva-responsive-20261029/` și
 `.ai-qa/ziva-device-review-20261029T122722Z/`.
