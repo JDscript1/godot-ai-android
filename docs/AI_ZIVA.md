@@ -148,29 +148,29 @@ nelimitată și afișează starea întreruptă la următoarea citire.
 
 ## Interfața în WebView
 
-Fereastra este un Dialog în activitatea editorului, nu o Activity separată, ca
-să nu suspende editorul Android care execută cererile agentului. WebView-ul
-încarcă `http://127.0.0.1:<port>/` cu JavaScript și DOM storage; navigarea este
-permisă numai pentru același host și port, iar linkurile HTTPS externe se
-deschid în browser. Ferestrele popup sunt redirecționate către browser. Nu se
-injectează niciun bridge JavaScript privilegiat; protocolul privat CEF nu este
-reprodus. Închiderea dialogului distruge numai WebView-ul: serviciul și editorul
-Ziva rămân active, iar butonul «Oprește Ziva» este controlul explicit.
+WebView-ul este un copil nativ al activității Android, ancorat exclusiv în corpul
+tabului Ziva. Nu deschide o altă Activity și nu suspendă editorul Android.
+Încarcă `http://127.0.0.1:<port>/` cu JavaScript și DOM storage; navigarea rămâne
+pe același host și port, iar linkurile HTTPS externe și popup-urile cerute de
+utilizator se deschid în browser. Nu se injectează un bridge JavaScript
+privilegiat și nu se reproduce protocolul privat CEF. La schimbarea tabului,
+WebView-ul se ascunde și păstrează pagina; **Reîncarcă** este explicit. La
+schimbarea activității sau închiderea aplicației se eliberează vizualizarea.
 
-Interfața rulează în editorul headless, deci login-ul, comportamentul fizic al
-dialogului, tastatura, descărcările și eventualele cereri de permisiuni nu au
-fost încă verificate pe un dispozitiv Android.
+Selectorul de fișiere folosește `onShowFileChooser` și rezultatul Android.
+Încadrarea urmărește suprafața Godot și zona vizibilă, inclusiv tastatura;
+aceste comportamente sunt implementate și compilate, dar necesită test fizic.
 
 ## Controalele din panoul nostru
 
-`ziva.gd` face numai control de proces: `install`, `start`, `stop`, `open`.
-Panoul arată instalarea (`~295 MB`), avertizează că spațiul total este de
-aproximativ 1 GB și explică faptul că interfața rulează într-un editor separat.
-`open` este activ numai când serviciul raportează un port valid pentru proiectul
-curent; deschiderea unei sesiuni a altui proiect este refuzată. Oprirea readuce
-controlul de pornire, iar o eroare de pachet oferă repararea fără ștergerea
-istoricului. Controalele Ziva nu modifică istoricul de chat sau profilurile
-agentului nostru.
+`ziva.gd` face controlul `install`, `start`, `stop` și afișarea `embed`.
+Butonul din setări deschide tabul principal; nu mai lansează un Dialog.
+Panoul arată instalarea (`~295 MB`), spațiul total de aproximativ 1 GB și
+faptul că backend-ul rulează într-un editor separat. WebView-ul se afișează
+numai când serviciul raportează un port valid pentru proiectul curent.
+Oprirea readuce controlul de pornire, iar o eroare de pachet oferă repararea
+fără ștergerea istoricului. Controalele Ziva nu modifică istoricul sau
+profilurile agentului nostru.
 
 ## Ce s-a eliminat
 
@@ -206,12 +206,17 @@ Dovezi locale: `.ai-qa/full-final/narrow/` (raportul regresiei complete),
 `.ai-qa/ziva-native/` (loguri Kotlin, `ZivaLiveInstallTest.kt`) și
 `.ai-qa/ziva-native/runtime-final.log`.
 
-Rămân de verificat pe dispozitiv: compilarea și instalarea APK-ului
-`ziva-preview`, descărcarea completă prin serviciu, durata primului import,
-comportamentul WebView-ului și al autentificării Ziva, un tur complet
-prompt → răspuns → unealtă cu un furnizor real și supraviețuirea serviciului
-sub politicile Android. Nu sunt implementate upload-ul din WebView sau accesul
-Ziva la imaginile/mesh-urile din chatul nostru.
+Varianta separată `234893bf` a fost compilată și livrată în Download la
+29.10.2026, după CI 40870748187: runtime 751/0, upstream 768/0 × 5,
+nativ 792/0 × 5, Ziva focalizat 67/0 și manager nativ 68/0. S-au verificat
+semnătura, identificatorul separat, toate cele 37 de scripturi și pachetul
+Linux. Dovezi: `.ai-qa/compile-ziva-tab-20261029T115729Z/`.
+
+Rămân de verificat pe dispozitiv: instalarea APK-ului, descărcarea completă
+prin serviciu, durata primului import, WebView, autentificare, selectorul
+fișierelor, tastatura, descărcări, un tur complet prompt → răspuns → unealtă
+cu un furnizor real și supraviețuirea serviciului sub politicile Android.
+Ziva nu accesează imaginile sau mesh-urile private din chatul agentului nostru.
 
 Limitări de proiectare: cele două editoare partajează fișierele proiectului,
 deci editările simultane se pot suprascrie; Ziva vede propria stare de editor,

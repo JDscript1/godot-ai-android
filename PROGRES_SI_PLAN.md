@@ -22,14 +22,40 @@ sunt raportate la suprafața Godot, se recalculează la schimbarea dimensiunilor
 și se limitează la zona vizibilă a ferestrei Android. Ferestrele Godot ascund
 temporar WebView-ul. Selectorul de fișiere este al sistemului Android.
 
-Proba locală Ziva: **67 verificări, 0 eșecuri**, cu stări simulate și captură
-inspectată. Runtime: **751/0**; livrare: **6/0**. Pornirea, Kotlin, compilarea
-nativă și APK-ul sunt în verificare; această etapă nu confirmă încă folosirea
-pe telefon, autentificarea oficială sau o generare reală cu Ziva.
-Dovezi: `.ai-qa/compile-ziva-tab-20261029T115729Z/`.
+APK-ul separat **`234893bf`** este compilat și livrat în Download:
+`Godot-AI-Ziva-arm64-debug.apk`, **112.461.256 bytes**, pachet
+`com.jdscript.godotai.ziva.debug`, ABI `arm64-v8a`. Runda
+[CI 40870748187](https://github.com/JDscript1/godot-ai-android/actions/runs/40870748187)
+a trecut integral: **751/0** runtime, **768/0 × 5** editor upstream și
+**792/0 × 5** editorul nativ recompilat. Proba Ziva focalizată: **67/0**;
+pornirea nativă, inclusiv tabul Ziva din manager: **68/0**. Cele 9 teste
+companion și build-ul lui, livrarea 6/0 și controalele Linux/Blender au trecut.
+Compilarea Kotlin locală a trecut; Gradle a compilat apoi activitatea reală.
 
-Jurnal: **29.10.2026 — AG-57, Ziva trece din Dialog în tab principal, cu
-frontend oficial păstrat și backend independent; APK separat în pregătire.**
+Toate cele **37 de scripturi** coincid byte cu byte cu sursele compilate.
+S-au verificat agentul, noul plugin `AIZivaEditorPlugin`, Asset Store, managerul
+de proiecte, cele **2.678 fișiere Linux** și binarele ARM64 PRoot/loader.
+SHA-256: `e5f2646b525bbaf5568729bfcb0c7bf501cc3cd654b0346fb28f4c77d7fb448a`.
+Semnătura persistentă este păstrată. Copia Ziva `77bd5c0` a fost eliminată după
+verificarea identității; instalatorul standard și checksum-ul lui au rămas
+identice, inclusiv data modificării. Nu s-a instalat automat aplicația.
+
+Prima probă locală a expus o problemă a fixture-ului: după ascunderea manuală
+a chatului pentru tabul temporar, acesta nu era restaurat explicit. Fixture-ul
+a fost corectat; CI final a trecut toate cele cinci configurații upstream și
+native. O întrerupere de rețea la descărcarea artefactului a fost recuperată,
+fără modificarea artefactului sau relansarea compilării.
+
+Dovezi: `.ai-qa/compile-ziva-tab-20261029T115729Z/` — `context.json`,
+`ci-all.log`, `ci-test-summary.txt`, `apk-verification.json`, `signature.txt`,
+`standard-before-delivery.json`, `standard-after-delivery.json` și `report.md`.
+Livrare: `.ai-qa/delivery-ziva-234893b.json`. Captura locală a tabului este
+inspectată, cu backend simulat; frontend-ul proprietar nu a fost simulat.
+Autentificarea oficială, selectorul de fișiere, tastatura WebView și un flux
+Ziva real rămân de verificat pe telefon.
+
+Jurnal: **29.10.2026 — AG-57, tab principal Ziva, backend oficial independent;
+APK separat `234893bf` verificat și livrat, instalatorul standard păstrat.**
 
 ## AG-56 — Ziva independent, preview în surse — 29.10.2026
 
@@ -3139,7 +3165,7 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
-- **29.10.2026:** AG-57, tab principal Ziva în editor și manager, WebView în corpul tabului, frontend/backend oficial păstrat; verificări și APK separat în curs.
+- **29.10.2026:** AG-57 livrat: tab principal Ziva în editor și manager; APK separat `234893bf`, runtime 751/0, upstream 768/0 × 5 și nativ 792/0 × 5; 37 de surse exacte. Instalatorul standard și checksum-ul lui sunt păstrate.
 
 - **29.10.2026:** sincronizat istoricul validat AG-53–AG-55 și raportul final de livrare pe ramura GitHub principală `ai/android-assistant`; sursele aplicației coincid cu APK-ul `090b939`. Fără modificări ale APK-ului sau instalare automată.
 
