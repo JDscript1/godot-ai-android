@@ -36,6 +36,10 @@ class AIRuntimeInputGuard : public Node {
 	Array watch_signals;
 	Array watch_connections;
 	Array signal_events;
+	bool performance_recording = false;
+	uint64_t performance_last_usec = 0;
+	uint64_t performance_started_usec = 0;
+	Vector<double> performance_frames;
 
 	void _process_act();
 	void _finish_act(const String &p_error = String());
@@ -61,6 +65,7 @@ public:
 	Dictionary watch_command(const Dictionary &p_args);
 	void start_act(int64_t p_id, const Dictionary &p_args);
 	Dictionary status_command();
+	Dictionary performance_command(const Dictionary &p_args);
 	Variant _watch_signal(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
 };
 void initialize_ai_runtime_capture();

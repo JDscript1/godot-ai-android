@@ -83,11 +83,13 @@ func refresh(toolset: RefCounted, cancel: Dictionary = {}, requested_scope: Stri
 				entry["sha256"] = text.sha256_text()
 				entry["content_indexed"] = true
 				var cached: Dictionary = state.get("files", {}).get(path, {})
-				if cached.get("sha256") == entry["sha256"]:
+				if cached.get("sha256") == entry["sha256"] and cached.get("relation_version") == 1:
 					entry = cached.duplicate(true)
 					entry["modified"] = FileAccess.get_modified_time(path)
 				else:
 					entry["dependencies"] = _dependencies(text, extension, toolset)
+					entry["relations"] = _relations(text, extension, toolset)
+					entry["relation_version"] = 1
 					if extension == "gd":
 						for symbol in toolset._scan_symbols(path, text).slice(0, 80): entry["symbols"].append({"name": symbol["name"], "kind": symbol["kind"], "line": symbol["line"]})
 		else: entry["content_indexed"] = false
@@ -96,6 +98,7 @@ func refresh(toolset: RefCounted, cancel: Dictionary = {}, requested_scope: Stri
 		entry["symbols_limit_reached"] = entry["symbols"].size() >= 80
 		entry["dependencies_limit_reached"] = entry["dependencies"].size() >= 100
 		if entry["symbols_limit_reached"] or entry["dependencies_limit_reached"]: partial = true
+		if entry.get("relations", []).size() >= 100: partial = true
 		files[path] = entry
 		if files.size() % 16 == 0 and is_instance_valid(owner) and owner.is_inside_tree(): await owner.get_tree().process_frame
 	if cancel.get("cancelled", false):
@@ -113,6 +116,71 @@ func refresh(toolset: RefCounted, cancel: Dictionary = {}, requested_scope: Stri
 func mark_changed() -> void:
 	change_serial += 1
 	dirty = true
+
+static func _relations(text: String, extension: String, toolset: RefCounted) -> Array:
+	var rows = []
+	var lines = text.split("\n")
+	var attributes = RegEx.new()
+	attributes.compile('([A-Za-z_]+)="((?:\\\\.|[^"\\\\])*)"')
+	var reference = RegEx.new()
+	reference.compile('ExtResource\\("([^"]+)"\\)')
+	if extension in ["tscn", "tres"]:
+		var external = {}
+		for line in lines:
+			if not line.strip_edges().begins_with("[ext_resource"): continue
+			var values = {}
+			for found in attributes.search_all(line): values[found.get_string(1)] = found.get_string(2)
+			if values.has("id") and values.has("path"): external[values["id"]] = _resolve_reference(values["path"])
+		var current = "."
+		for index in range(lines.size()):
+			var line = str(lines[index]).strip_edges()
+			if line.begins_with("[node ") or line.begins_with("[connection "):
+				var values = {}
+				for found in attributes.search_all(line): values[found.get_string(1)] = found.get_string(2)
+				if line.begins_with("[node "):
+					current = str(values.get("parent", ".")).path_join(str(values.get("name", ""))).trim_prefix("./") if values.has("parent") else "."
+					var item = {"kind": "scene_node", "node": current, "name": values.get("name", ""), "class": values.get("type", ""), "line": index + 1}
+					var instance = reference.search(line)
+					if instance != null: item["instance"] = external.get(instance.get_string(1), "")
+					rows.append(item)
+				else: rows.append({"kind": "signal_connection", "signal": values.get("signal", ""), "from": values.get("from", "."), "to": values.get("to", "."), "method": values.get("method", ""), "line": index + 1})
+			elif line.begins_with("script = "):
+				var found = reference.search(line)
+				if found != null: rows.append({"kind": "attached_script", "node": current, "script": external.get(found.get_string(1), ""), "line": index + 1})
+			if rows.size() >= 100: break
+	elif extension == "gd":
+		var declaration = RegEx.new()
+		declaration.compile("^\\s*signal\\s+([A-Za-z_][A-Za-z0-9_]*)")
+		var node = RegEx.new()
+		node.compile('(?:\\$([A-Za-z_][A-Za-z0-9_/]*))|get_node(?:_or_null)?\\(\\s*"([^"]+)"\\s*\\)')
+		var masked = toolset._symbol_code_lines(lines)
+		for index in range(lines.size()):
+			var signal_name = declaration.search(masked[index])
+			if signal_name != null: rows.append({"kind": "signal_declaration", "name": signal_name.get_string(1), "line": index + 1})
+			for found in node.search_all(lines[index]):
+				if str(masked[index]).substr(found.get_start(), 1).strip_edges().is_empty(): continue
+				rows.append({"kind": "literal_node_reference", "node": found.get_string(1) if not found.get_string(1).is_empty() else found.get_string(2), "line": index + 1, "dynamic_runtime_nodes_possible": true})
+			if rows.size() >= 100: break
+	return rows.slice(0, 100)
+
+func impact(path: String, limit: int = 100) -> Dictionary:
+	path = Common.project_path(path)
+	if path.is_empty(): return Common.failure("Cale de impact invalidă.", "invalid_path")
+	var reverse = {}
+	for entry in state.get("files", {}).values():
+		for reference in entry.get("dependencies", []).map(_resolve_reference):
+			if not reverse.has(reference): reverse[reference] = []
+			reverse[reference].append(entry["path"])
+	var queue = [{"path": path, "depth": 0}]
+	var visited = {}
+	var rows = []
+	while not queue.is_empty() and rows.size() < clampi(limit, 1, 200):
+		var entry: Dictionary = queue.pop_front()
+		if visited.has(entry["path"]): continue
+		visited[entry["path"]] = true
+		rows.append(entry.merged({"relations": state.get("files", {}).get(entry["path"], {}).get("relations", [])}))
+		for dependent in reverse.get(entry["path"], []): queue.append({"path": dependent, "depth": int(entry["depth"]) + 1, "because": entry["path"]})
+	return Common.success(summary().merged({"root": path, "affected": rows, "truncated": not queue.is_empty(), "scope": "Literal resource dependencies and scene/script/signal relations; dynamic loading and runtime-created nodes require playtest probes."}))
 
 static func _dependencies(text: String, extension: String, toolset: RefCounted) -> Array:
 	var output = []
@@ -141,7 +209,7 @@ static func _resolve_reference(reference: String) -> String:
 	return reference
 
 func summary() -> Dictionary:
-	return {"revision": state.get("revision", 0), "coverage_scope": state.get("coverage_scope", "res://"), "indexed_files": state.get("files", {}).size(), "partial": state.get("partial", true), "stale": dirty, "scanned_bytes": state.get("scanned_bytes", 0), "symbols_per_file": 80, "dependencies_per_file": 100, "scope": "Literal resource references and top-level GDScript symbols. Dynamic paths, binary contents and dependents outside coverage_scope are not indexed."}
+	return {"revision": state.get("revision", 0), "coverage_scope": state.get("coverage_scope", "res://"), "indexed_files": state.get("files", {}).size(), "partial": state.get("partial", true), "stale": dirty, "scanned_bytes": state.get("scanned_bytes", 0), "symbols_per_file": 80, "dependencies_per_file": 100, "relations_per_file": 100, "scope": "Literal resource references, GDScript symbols and scene/node/script/signal relations. Dynamic paths, binary contents and dependents outside coverage_scope are not indexed."}
 
 func query(args: Dictionary = {}) -> Dictionary:
 	var rows = []
@@ -157,7 +225,7 @@ func query(args: Dictionary = {}) -> Dictionary:
 			reverse[dependency].append(entry["path"])
 	for entry in state.get("files", {}).values():
 		if not path.is_empty() and entry["path"] != path and not str(entry["path"]).begins_with(path.trim_suffix("/") + "/"): continue
-		if not needle.is_empty() and needle not in str(entry["path"]).to_lower() and not entry["symbols"].any(func(symbol: Dictionary) -> bool: return needle in str(symbol["name"]).to_lower()): continue
+		if not needle.is_empty() and needle not in str(entry["path"]).to_lower() and not entry["symbols"].any(func(symbol: Dictionary) -> bool: return needle in str(symbol["name"]).to_lower()) and needle not in JSON.stringify(entry.get("relations", [])).to_lower(): continue
 		total += 1
 		if rows.size() >= clampi(int(args.get("limit", 30)), 1, 80): continue
 		var item: Dictionary = entry.duplicate(true)

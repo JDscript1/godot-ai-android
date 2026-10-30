@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.view.View
@@ -72,6 +73,7 @@ object AIZivaWindow {
         host.get()?.runOnUiThread {
             shown = false
             web?.let { browser ->
+                browser.evaluateJavascript("window.__godotZivaDismissKeyboard && window.__godotZivaDismissKeyboard()", null)
                 if (browser.hasFocus()) (browser.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(browser.windowToken, 0)
                 browser.clearFocus()
             }
@@ -87,6 +89,7 @@ object AIZivaWindow {
 
     private fun create(activity: Activity, uiPort: Int) {
         val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        val mobileScript = activity.assets.open("ai/ziva-mobile.js").bufferedReader().use { it.readText() }
         val frame = FrameLayout(activity).apply { visibility = View.GONE; setBackgroundColor(Color.rgb(20, 23, 32)) }
         val browser = WebView(activity).apply {
             settings.javaScriptEnabled = true
@@ -102,6 +105,13 @@ object AIZivaWindow {
             settings.allowContentAccess = false
             settings.setSupportMultipleWindows(true)
             webViewClient = object : WebViewClient() {
+                private fun adapt(view: WebView, url: String?) {
+                    val uri = url?.let { Uri.parse(it) } ?: return
+                    if (uri.scheme == "http" && uri.host == "127.0.0.1" && uri.port == uiPort && uri.userInfo == null)
+                        view.evaluateJavascript(mobileScript, null)
+                }
+                override fun onPageCommitVisible(view: WebView, url: String?) { adapt(view, url) }
+                override fun onPageFinished(view: WebView, url: String?) { adapt(view, url) }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (!request.isForMainFrame) return false
                     val url = request.url
@@ -109,6 +119,16 @@ object AIZivaWindow {
                     external(activity, url)
                     return true
                 }
+            }
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_UP) postDelayed({
+                    if (web !== this || !shown) return@postDelayed
+                    evaluateJavascript("window.__godotZivaWantsKeyboard ? window.__godotZivaWantsKeyboard() : true") { wants ->
+                        if (wants == "false") (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                            ?.hideSoftInputFromWindow(windowToken, 0)
+                    }
+                }, 120)
+                false // Preserve the official page's clicks, selection and scrolling.
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {

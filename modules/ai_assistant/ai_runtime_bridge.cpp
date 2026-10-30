@@ -1,8 +1,8 @@
 #include "ai_runtime_bridge.h"
 
 #include "core/config/engine.h"
-#include "core/core_bind.h"
 #include "core/config/project_settings.h"
+#include "core/core_bind.h"
 #include "core/crypto/crypto_core.h"
 #include "core/debugger/engine_debugger.h"
 #include "core/error/error_macros.h"
@@ -17,6 +17,7 @@
 #include "core/os/time.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
+#include "main/performance.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 #include "scene/resources/texture.h"
@@ -35,7 +36,14 @@ bool AIAssistantDebugger::capture(const String &p_message, const Array &p_data, 
 	}
 	int64_t id = p_data[0];
 	if (pending.has(id) && int(Dictionary(pending[id])["session"]) == p_session) {
-		replies[id] = p_data[1];
+		Dictionary state = pending[id];
+		ScriptEditorDebugger *debugger = EditorDebuggerNode::get_singleton()->get_debugger(p_session);
+		if (debugger && int64_t(debugger->get_error_snapshot().get("generation", -1)) == int64_t(state["generation"])) {
+			Dictionary response = p_data[1];
+			response["runtime_session"] = p_session;
+			response["runtime_generation"] = state["generation"];
+			replies[id] = response;
+		}
 	}
 	return true;
 }
@@ -44,11 +52,32 @@ int64_t AIAssistantDebugger::request(const String &p_command, const Dictionary &
 	if (!node) {
 		return -1;
 	}
-	ScriptEditorDebugger *current = node->get_current_debugger();
+	Array sessions = get_sessions();
+	int pinned = int(p_arguments.get("__session", -1));
+	if (p_arguments.has("__session") && (pinned < 0 || pinned >= sessions.size())) {
+		return -1;
+	}
+	ScriptEditorDebugger *current = pinned >= 0 ? node->get_debugger(pinned) : node->get_current_debugger();
+	if (pinned < 0 && (!current || !current->is_session_active())) {
+		// A selected stopped tab must not hide the only live game peer.
+		current = nullptr;
+		for (int i = 0; i < sessions.size(); i++) {
+			ScriptEditorDebugger *candidate = node->get_debugger(i);
+			if (candidate && candidate->is_session_active()) {
+				if (current) {
+					return -1; // Ambiguous: the caller must pin a session.
+				}
+				current = candidate;
+			}
+		}
+	}
 	if (!current || !current->is_session_active()) {
 		return -1;
 	}
-	Array sessions = get_sessions();
+	int64_t generation = current->get_error_snapshot().get("generation", -1);
+	if (pinned >= 0 && generation != int64_t(p_arguments.get("__generation", -2))) {
+		return -1;
+	}
 	int index = -1;
 	for (int i = 0; i < sessions.size(); i++) {
 		if (node->get_debugger(i) == current) {
@@ -74,13 +103,17 @@ int64_t AIAssistantDebugger::request(const String &p_command, const Dictionary &
 	int64_t id = next_id++;
 	Dictionary state;
 	state["session"] = index;
+	state["generation"] = generation;
 	state["time"] = now;
 	state["ttl"] = p_command == "act" ? 90000 : 15000;
 	pending[id] = state;
 	Array data;
 	data.append(id);
 	data.append(p_command);
-	data.append(p_arguments);
+	Dictionary arguments = p_arguments.duplicate();
+	arguments.erase("__session");
+	arguments.erase("__generation");
+	data.append(arguments);
 	current->send_message("ai_assistant:request", data);
 	return id;
 }
@@ -898,6 +931,7 @@ Dictionary AIRuntimeInputGuard::status_command() {
 	Dictionary state;
 	state["running"] = scene != nullptr;
 	state["scene"] = scene ? scene->get_scene_file_path() : String();
+	state["project_root"] = ProjectSettings::get_singleton()->get_resource_path();
 	Array actions;
 	const HashMap<StringName, InputMap::Action> &map = InputMap::get_singleton()->get_action_map();
 	for (const KeyValue<StringName, InputMap::Action> &entry : map) {
@@ -922,11 +956,71 @@ Dictionary AIRuntimeInputGuard::status_command() {
 	state["watching"] = watching;
 	return ai_success(state);
 }
+Dictionary AIRuntimeInputGuard::performance_command(const Dictionary &p_args) {
+	String action = p_args.get("action", "read");
+	if (action == "reset") {
+		performance_frames.clear();
+		performance_recording = true;
+		performance_last_usec = OS::get_singleton()->get_ticks_usec();
+		performance_started_usec = performance_last_usec;
+	} else if (action == "stop") {
+		performance_recording = false;
+	} else if (action != "read") {
+		return ai_error("Performance action must be reset, read or stop.");
+	}
+	Dictionary state;
+	SceneTree *tree = SceneTree::get_singleton();
+	Node *scene = tree ? tree->get_current_scene() : nullptr;
+	state["scene"] = scene ? scene->get_scene_file_path() : String();
+	state["source"] = "running_game_native";
+	Array viewport;
+	if (tree && tree->get_root()) {
+		viewport.append(tree->get_root()->get_size().x);
+		viewport.append(tree->get_root()->get_size().y);
+	}
+	state["viewport"] = viewport;
+	state["samples"] = performance_frames.size();
+	state["recording"] = performance_recording;
+	state["sample_limit"] = 2048;
+	state["window_usec"] = performance_started_usec ? OS::get_singleton()->get_ticks_usec() - performance_started_usec : 0;
+	if (!performance_frames.is_empty()) {
+		Vector<double> sorted = performance_frames;
+		sorted.sort();
+		double sum = 0;
+		for (double frame : performance_frames) {
+			sum += frame;
+		}
+		state["average_frame_ms"] = sum / sorted.size();
+		state["p95_frame_ms"] = sorted[CLAMP(int(Math::ceil(sorted.size() * 0.95)) - 1, 0, sorted.size() - 1)];
+		state["max_frame_ms"] = sorted[sorted.size() - 1];
+	}
+	Performance *monitor = Performance::get_singleton();
+	if (monitor) {
+		state["fps"] = monitor->get_monitor(Performance::TIME_FPS);
+		state["process_ms"] = monitor->get_monitor(Performance::TIME_PROCESS) * 1000.0;
+		state["physics_ms"] = monitor->get_monitor(Performance::TIME_PHYSICS_PROCESS) * 1000.0;
+		state["engine_static_memory_bytes"] = monitor->get_monitor(Performance::MEMORY_STATIC);
+		state["draw_calls"] = monitor->get_monitor(Performance::RENDER_TOTAL_DRAW_CALLS_IN_FRAME);
+		state["primitives"] = monitor->get_monitor(Performance::RENDER_TOTAL_PRIMITIVES_IN_FRAME);
+		state["nodes"] = monitor->get_monitor(Performance::OBJECT_NODE_COUNT);
+	}
+	state["scope"] = "Native game frame intervals and engine monitors; not OS total RAM, GPU timing or a hardware-independent benchmark.";
+	return ai_success(state);
+}
 void AIRuntimeInputGuard::_bind_methods() {
 	ClassDB::bind_vararg_method(METHOD_FLAGS_DEFAULT, "_watch_signal", &AIRuntimeInputGuard::_watch_signal, MethodInfo("_watch_signal"));
 }
 void AIRuntimeInputGuard::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
+		if (performance_recording) {
+			uint64_t now = OS::get_singleton()->get_ticks_usec();
+			if (!EngineDebugger::is_active() || performance_frames.size() >= 2048 || now - performance_started_usec > 60000000) {
+				performance_recording = false;
+			} else if (performance_last_usec && now > performance_last_usec) {
+				performance_frames.push_back(double(now - performance_last_usec) / 1000.0);
+			}
+			performance_last_usec = now;
+		}
 		if (!pressed.is_empty() && (!EngineDebugger::is_active() || OS::get_singleton()->get_ticks_msec() >= expires)) {
 			release();
 		}
@@ -1007,6 +1101,8 @@ static Error ai_capture(void *p_user, const String &p_message, const Array &p_ar
 		response = ai_success(true);
 	} else if (command == "status") {
 		response = guard->status_command();
+	} else if (command == "performance") {
+		response = guard->performance_command(args);
 	} else if (command == "eval") {
 		response = guard->evaluate_command(args.get("expressions", Array()));
 	} else if (command == "watch") {

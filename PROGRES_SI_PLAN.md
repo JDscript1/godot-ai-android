@@ -1,12 +1,352 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **29 octombrie 2026**.
+Ultima actualizare: **30 octombrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
 în surse”, „testat în editor”, „compilat în APK” și „verificat pe dispozitiv”
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
+
+## AG-68 — compilarea ambelor distribuții — 30.10.2026
+
+Utilizatorul a cerut compilarea ambelor aplicații. Se pregătește un snapshot
+comun al surselor curente, pe ramura izolată `build/both-20261030T133124Z`,
+pentru două rulări ale workflow-ului Android: `standard` și `ziva-preview`.
+Sunt incluse modificările agentului nativ și adaptarea independentă Ziva.
+
+Stare inițială: pregătire/compilare; APK-urile existente rămân în Download
+până când înlocuitoarele trec verificarea semnăturii, identificatorului,
+ABI-ului, runtime-ului Linux și a celor 44 de scripturi încorporate. Cele două
+pachete și datele lor Android rămân separate. Compilarea nu reprezintă o
+validare fizică a interfeței, tastaturii sau furnizorilor reali.
+
+Dovezi: `.ai-qa/compile-both-20261030T133124Z/`. Rezultatul și livrarea se completează după
+terminarea verificărilor. Jurnal: 30.10.2026 — AG-68, compilare solicitată
+pentru Godot AI și Godot AI Ziva.
+
+## AG-67 — panoul Ziva: conversație, tastatură și addonuri — 30.10.2026
+
+Sunt implementate în surse trei corecții pentru **Ziva Preview**, independent
+de harness-ul agentului nativ. Adaptorul original al gazdei compactează bara
+și composerul pe ferestre mici, păstrează panourile suplimentare sub **Detalii**
+și limitează zona cu notificări/todo, pentru a lăsa loc conversației. Textul
+lung rămâne derulabil; controalele oficiale și paginile de setări sunt păstrate.
+Pachetul oficial Ziva nu a fost modificat sau copiat în sursele aplicației.
+
+Focusul programatic după Trimite, deschiderea/închiderea Setărilor sau
+schimbarea conversației nu mai autorizează singur tastatura. Atingerea unui
+câmp, activarea accesibilă și Tab permit editarea. Ascunderea tabului și
+setările native șterg intenția veche de editare; WebView transmite în continuare
+evenimentele paginii și gazda ascunde IME după atingeri fără câmp selectat.
+
+Backend-ul separat primește un inventar actualizat al addonurilor salvate,
+inclusiv cele dezactivate și extensiile native. **Instalarea**, **activarea**,
+**prezența bibliotecii Linux ARM64** și **încărcarea verificată** sunt distincte.
+Contextul global al gazdei cere citirea inventarului înainte de concluzii;
+nu înlocuiește `AGENTS.md` din proiect și nu repornește o conversație activă.
+Actualizarea fișierelor este atomică; o probă PRoot a confirmat vizibilitatea
+înlocuirii atomice prin legătura de fișier. Lipsa unei biblioteci Terrain3D
+pentru Linux nu este declarată addon absent și nu este reparată prin ștergerea
+instalării Android. Biblioteca lipsă nu este compilată automat de această etapă.
+
+Probe: `.ai-qa/ziva-mobile-20261030/`. Compilarea Kotlin focalizată a trecut,
+cu **111/0** verificări companion (21 noi pentru inventar), iar proba DOM are
+**20/0**, cu focusul și gesturile simulate. Backend-ul oficial Ziva v3.3.2 în
+Godot Linux a trecut **7/0** citiri MCP pe un proiect izolat, cu un addon fixture
+Terrain3D și bibliotecă lipsă: contextul și inventarul sunt accesibile, originalul
+proiectului este păstrat. Un addon adăugat în timpul sesiunii devine citibil
+în inventar și context prin același backend. Raport: `.ai-qa/ziva-mobile-20261030/verification.json`.
+Aceasta nu confirmă răspunsul unui model real.
+
+Randarea nu este validată: Chromium și headless-shell se închid cu SIGTRAP în
+PRoot, inclusiv după completarea datelor ICU. Testul browser pregătit rămâne
+local, neexecutat cu succes. ADB nu are dispozitive conectate. Tastatura,
+spațiul efectiv al conversației și fluxul Ziva cu model real necesită proba
+următorului APK pe telefon. Nu s-a recompilat/înlocuit/instalat APK-ul și nu
+s-a făcut push. Detalii: [docs/AI_ZIVA.md](docs/AI_ZIVA.md).
+
+Jurnal: 30.10.2026 — AG-67, adaptare Ziva în surse, inventar addonuri și probe
+Kotlin/DOM/MCP; randarea și WebView/IME Android rămân nevalidate.
+
+## AG-66 — dezvoltare verificată, recuperare și experimente — 30.10.2026
+
+Sunt implementate în surse toate cele opt direcții acceptate: reparații cu
+baseline și regresii, relații scene/noduri/scripturi/semnale și impact
+tranzitiv, jurnal durabil al efectelor și cozii, scenarii de gameplay salvate,
+copii independente cu integrare verificată, pregătirea asseturilor, metrici
+native din joc și memorie/specialiști configurabili. Instrumentele sunt
+înregistrate în harness-ul propriu Godot; nu cer Termux, PRoot sau Ziva.
+
+`engineering_store.gd` persistă intenția înaintea efectelor și rezultatul
+înaintea confirmării. Un apel plătit cu rezultat incert nu poate fi repetat
+prin simpla schimbare a ID-ului apelului. Reconcilierea verifică jobul original;
+fără ID confirmat nu inventează o asociere. Chitanțele finalizate sunt arhivate
+individual pentru a evita un plafon de pași productivi. Coada se restaurează
+pe pauză, iar copiii întrerupți nu se relansează automat.
+
+Scenariile au condiții măsurate, versiuni și amprente ale proiectului.
+Reparația cere un defect observat și reluarea nemodificată a scenariilor
+inițiale pe sursele curente. O ipoteză, absența observațiilor sau erorile
+istorice din sesiuni oprite nu devin dovadă de reparație. Datele native sunt
+legate de sesiunea/generația debuggerului și de directorul/scena jocului;
+un proces vechi în curs de oprire nu poate fi acceptat drept o probă nouă.
+Inputul este eliberat și numai procesul propriu este închis.
+
+Experimentele sunt copii de fișiere cu hash-uri, nu sandbox-uri de securitate.
+Lansatorul nativ evită autosalvarea proiectului original. Integrarea cere o
+probă trecută pe copia actuală, verifică editările manuale ulterioare și
+pregătește un lot recuperabil; un subset netestat nu este certificat implicit.
+`asset_prepare` produce un prefab nou cu scară/pivot, LOD-uri native și
+coliziuni, păstrează GLB-ul și înregistrează prefab-ul în jurnalul restaurării.
+
+Profilarea colectează intervalele reale ale cadrelor și monitoarele jocului,
+cu warmup și condiții comparabile. Nu reprezintă FPS-ul editorului, timing
+GPU sau RAM total Android. Memoria explicită poate fi inspectată/uitată în
+**Setări → Dezvoltare verificată**; specialiștii au allowlist verificat și în
+dispatcher, rămân fără drept de editare directă și folosesc profilele salvate.
+
+Dovezi: `.ai-qa/engineering-20261030/`. Suita runtime finală are **922/0**;
+fișierele, copia proiectului, GLB-ul și prefab-ul sunt reale, însă diagnosticul
+și peer-ul de gameplay din testele noi sunt simulate. Proba grafică completă
+`full-traced` a trecut **895/0**; secțiunea nouă la scară de telefon a trecut
+**65/0**, cu randarea inspectată. Cele două unități C++ modificate se compilează
+local ca obiecte ARM64 cu definițiile editorului și calea generică; aceasta
+nu este o legare a editorului, o compilare Android completă sau un APK. Sunt
+verificate **44 de scripturi încorporate**, identice octet cu octet cu sursele.
+Proba finală focalizată a harness-ului a trecut **78/0**, iar pagina nouă
+la scară de telefon **65/0**. Raport: `.ai-qa/engineering-20261030/verification.json`.
+
+A fost reprodusă și o cădere nativă intermitentă în rulările complete,
+însoțită de erori X11 și fără eroare GDScript. O rulare ulterioară trecută nu
+stabilește cauza și nu dovedește remedierea ei. Testele focalizate ale
+harness-ului au executat inclusiv 36 cereri părinte și 106 cereri copil.
+Lansarea copiilor, profilarea, oprirea/recuperarea proceselor pe Android și
+furnizorii reali cer următorul APK și probe pe dispozitiv. Nu s-a recompilat,
+înlocuit sau instalat APK-ul; nu s-a făcut push. Detalii și exemple:
+[docs/engineering-workflows.md](docs/engineering-workflows.md).
+
+Jurnal: 30.10.2026 — AG-66, toate cele opt direcții în surse, instrumente native
+și probe separate pentru stocare/asseturi, peer simulat și interfață.
+
+## AG-65 — citiri vizibile, navigare la sursă și diagrame native — 30.10.2026
+
+Cardurile de operații afișează acum rezultatul original al citirii/căutării,
+cu numerele liniilor, contextul potrivirilor și căi accesibile prin atingere.
+Restaurarea conversației asociază fiecare rezultat apelului precedent, inclusiv
+peste granița paginării și când furnizorul reutilizează ID-ul; nu citește din
+nou discul pentru a fabrica un rezultat vechi. Conținutul este construit la
+deschiderea operației, limitat și trecut prin redactorul existent înainte de
+trunchiere. Sunt marcate afișările parțiale. Payload-urile arbitrare nu intră
+în widgeturile fragmentelor.
+
+Linkurile `res://...:linie:coloană` / `#Llinie`, inclusiv Markdown și inline-code,
+folosesc navigarea nativă, cu verificarea căii la atingere. Scripturile se
+deschid la linia/coloana reală; scenele și resursele folosesc editorul lor.
+Textul UTF-8 uzual și shaderele au o fereastră nativă doar pentru citire, cu
+linii și cursor. Fișierele inexistente, traversările și căile interne sunt
+respinse. Publicarea cardurilor nu deschide automat fișiere sau viewer-e.
+
+Blocurile Mermaid încheiate au un renderer GDScript pentru flowchart și
+stateDiagram-v2 plat: noduri, ramuri, legături etichetate și cicluri. Are
+sursă/copiere, zoom, încadrare și deplasare explicită prin Explorează; glisarea
+normală continuă să deruleze conversația. Înălțimea cadrului se adaptează
+spațiului disponibil. Sursele incomplete sau nesuportate rămân vizibile cu
+explicație. Acesta este un subset documentat, nu compatibilitate Mermaid
+integrală. Nu necesită JavaScript, Termux, PRoot ori un serviciu extern pe
+dispozitiv. Instrucțiunile agentului descriu exact sintaxa disponibilă.
+
+Verificare efectuată cu Godot oficial 4.7.2 Linux ARM64 în Debian/PRoot:
+
+- **822 aserțiuni runtime, 0 eșecuri**, pe sursele finale; parser, limite,
+  mascarea datelor, adaptoare și regresiile existente.
+- **74 verificări ale widgeturilor reale, 0 eșecuri**, în scenariul `inspections`
+  la densitate de telefon: navigare script la linie/coloană, atingere nativă a
+  linkurilor proiectului, fereastră text cu scalare/evidențiere, istoric paginat,
+  diagrame, zoom/deplasare, fallback și încadrarea buclelor.
+- Proba pe ecran lat a trecut **72/0** înaintea ultimelor ajustări mici pentru
+  bucle și fontul ferestrei text; acele ajustări sunt acoperite de proba 74/0.
+- **116 verificări de regresie `presentation`, 0 eșecuri**, pe sursele finale:
+  gruparea mesajelor, streaming, operații, fișiere, cod lung, linkuri,
+  derulare/tastatură și ciclul conversației.
+- `git diff --check`, compilarea Python a builderului/runnerului și manifestul
+  celor 39 de scripturi native au trecut.
+
+Dovezi: `.ai-qa/chat-inspections-20261030/verified-runtime.log`,
+`verified-phone/phone_compact/editor-report.json`, capturile inspectate și
+`verification.json`. Evenimentele tactile sunt simulate în editorul real;
+nu reprezintă atingeri pe un telefon fizic.
+
+**Suita generală `all` nu este declarată trecută.** Două rulări au întâlnit
+crash-uri native Godot/X11 (semnal 11), în puncte diferite, fără eroare GDScript
+raportată. Sunt păstrate `full/narrow/editor.log` și
+`full-retry/narrow/editor.log`. Încercarea de diagnostic cu un singur fir
+llvmpipe a fost oprită după progres insuficient (`full-llvmpipe-single`), fără
+raport final. Cauza nu este stabilită și necesită investigare separată; nu o
+atribuim cu certitudine driverului sau codului aplicației.
+
+Nu a fost compilat/livrat un APK și nu a fost modificat instalatorul din
+Download. Nu sunt probe fizice Android sau cereri către furnizori reali.
+
+Documentație: [Inspecții și diagrame](docs/chat-inspections-and-diagrams.md).
+Memoria automată, subagenții configurabili și checkpoint-urile istorice ale
+proiectului rămân lucrări viitoare distincte.
+
+Jurnal: 30.10.2026 — AG-65: fragmente de citire/căutare, navigare la linie,
+restaurare fidelă a rezultatelor și diagrame native cu fallback la sursă.
+
+## AG-64 — prezentarea conversației și interacțiune tactilă — 30.10.2026
+
+Panoul agentului Godot AI grupează intervențiile consecutive ale aceleiași
+sarcini într-un răspuns cu un singur antet. Actualizările anterioare sunt în
+„Progres”, iar rezultatul curent, cardurile fișierelor și un singur set de
+acțiuni/metadate rămân la vedere. O intervenție a utilizatorului păstrează
+ordinea cronologică, chiar când este Steer în același task. Consumul cumulat
+nu se repetă pe segmentele vechi. Rezultat, întrerupere, blocaj, eșec și
+verificare necesară au stări distincte, fără a inventa dovada gameplay-ului.
+
+Streaming-ul păstrează widgeturile paragrafelor deja încheiate și actualizează
+doar blocurile schimbate. Fence-urile de cod sunt recunoscute pe linii,
+inclusiv cele parțiale și cele cu tilde; backtick-urile din cod nu mai rup
+blocul. Codul lung se poate extinde, iar copierea păstrează sursa completă.
+Căutarea deschide atât progresul restrâns, cât și codul care ascunde potrivirea.
+
+„Running Tools · Image Generator / 3D Generator / …” apare numai în timpul
+operației. Istoricul „Operații” păstrează rezultate, durate și erori, cu detalii
+copiabile și acces la jurnal. Rezultatele reutilizate și trimiterile neconfirmate
+sunt distincte. Datele arbitrare ale furnizorului nu sunt multiplicate în
+widgeturi. Lista restrânsă nu construiește rândurile tuturor apelurilor;
+deschiderea afișează ultimele 20, cu paginare pentru cele anterioare. Duratele
+noi sunt păstrate în istoricul nativ; pentru istoricul vechi nu se inventează.
+
+Fișierele au carduri compacte cu Deschide, fixare și meniu pentru restul
+acțiunilor. Nu se deschide automat viewer-ul. Reutilizarea unui ID de apel
+nu mai poate ascunde un fișier nou; republicarea aceluiași fișier rămâne
+deduplicată în grup. Planurile interactive și ciclul existent de playtest
+sunt păstrate. Tabul Ziva rămâne independent.
+
+Glisarea navighează în chat, apăsarea lungă copiază textul, iar atingerea unui
+link HTTP(S) folosește hit-testing-ul nativ fără selectare accidentală.
+Derularea manuală dezactivează urmărirea; săgeata revine la ultimul mesaj.
+Probele includ păstrarea poziției în timpul streaming-ului și un câmp de
+scriere cu cursor vizibil deasupra tastaturii simulate.
+
+Verificat pe sursele finale cu Godot 4.7.2 ARM64 în Debian/PRoot:
+**791/0 aserțiuni runtime**, **854/0 verificări în suita completă a editorului**
+și **114/0 verificări cu scalare de telefon**. Au fost inspectate capturile
+înguste, cele largi și cele cu scalare de telefon. `git diff --check` trece.
+Probele folosesc widgeturile reale, istoric restaurat, rezultate deterministe
+și input tactil injectat în viewport-ul Godot, fără control global Android.
+
+Dovezi: `.ai-qa/chat-presentation-20261030/runtime-verified.log`,
+`verified-all/narrow/editor-report.json`, `verified-phone/phone_compact/editor-report.json`,
+capturile asociate și `verification.json`. Scenariul nou `presentation` este
+inclus în suita `all`.
+[Comportamentul complet al chatului](docs/chat-presentation.md).
+
+Limite: teste deterministe și editor Linux în Debian/PRoot, fără apeluri live
+la furnizori și fără probă fizică Android. Nu s-a recompilat APK-ul, nu s-au
+înlocuit instalatoare în Download și nu s-a făcut push.
+
+Jurnal: 30.10.2026 — AG-64: răspunsuri grupate, streaming pe blocuri,
+operații persistente, carduri și interacțiune tactilă; 791/0 runtime,
+854/0 editor și 114/0 scalare de telefon, fără livrare APK.
+
+## AG-63 — workflow nativ, Ask, Queue/Steer și compactare în sarcină — 30.10.2026
+
+Workflow-ul descris după analiza Ziva este implementat în agentul propriu,
+în GDScript. Modurile existente Auto, Default și Plan sunt păstrate, iar Ask
+adaugă citire și explicații fără modificări, rulări, shell sau generări.
+Catalogul și dispatcher-ul verifică separat această limită; Ask exclude și
+polling-ul de asseturi care poate declanșa import automat. Se păstrează
+migrarea selecțiilor Plan vechi, întrebările interactive, verificarea criteriilor,
+permisiunile și separarea tabului Ziva.
+
+Mesajele trimise în timpul lucrului intră în Queue fără să oprească sarcina.
+`/steer`, Ctrl/Cmd+Enter și butonul „În task” livrează ajustări în sarcina
+curentă, la limita dintre operații. Apelurile încă neexecutate sunt închise cu
+`steered` înaintea mesajului nou; rezultatele deja confirmate sunt păstrate.
+Intervențiile au același `turn_id`, păstrează fișierele/referințele și sunt
+livrate în ordine. Sunt legate de task, model, mod și efort, ca să nu ajungă
+într-o altă sarcină. O coadă pusă pe pauză nu repornește automat la începerea
+sau terminarea altei sarcini. Pentru companion, Steer rămâne Queue.
+
+Harness-ul poate compacta semantic contextul în interiorul unei sarcini.
+Rezumatul este validat și salvat atomic; cererea inițială și intervențiile
+rămân mesaje exacte ale utilizatorului, inclusiv când fereastra mesajelor
+recente începe mai târziu. Tăierea păstrează perechile apel–rezultat și ultimul
+lot. Istoricul integral, planul, dovezile și registrul efectelor sunt păstrate;
+Stop, o eroare sau un context sursă schimbat nu pot confirma un rezumat parțial.
+Consumul compactărilor automate intră în totalul sarcinii, estimat explicit
+când furnizorul nu raportează tokenii. Schimbarea selecției de model nu mai
+elimină consumul raportat de sarcina aflată încă în lucru.
+
+Planurile neterminate primesc trei reamintiri cu starea reală înaintea opririi
+pentru lipsă de progres. Rulările normale nu au o limită globală nouă de pași.
+Implementarea nu instalează și nu copiază cod vendor Pi/Ziva și nu introduce
+o dependență Linux pentru harness-ul direct.
+
+Verificat pe sursele finale cu Godot 4.7.2 ARM64 în Debian/PRoot:
+**785/0 aserțiuni runtime**, **778/0 verificări ale panoului în editor** și
+**116/0 verificări workflow cu scalare de telefon**. Captura interfeței a fost
+inspectată vizual. Probele acoperă integrarea reală panou–harness, generarea
+simulată anulată înainte de execuție, Ask, persistența intervențiilor, ordinea
+cozii, izolarea sarcinilor, Stop, contextul și verificările existente.
+`git diff --check` trece.
+
+Dovezi: `.ai-qa/native-workflow-20261030/runtime-verified.log`,
+`all-final/narrow/editor-report.json`, `phone/phone_compact/editor-report.json`,
+`phone/phone_compact/workflow-queue-steer.png` și `verification.json`.
+[Documentația workflow-ului și comenzile disponibile](docs/agent-workflow.md).
+
+Limite: furnizori simulați, editor Linux, fără probă live DeepSeek/Runware sau
+Android fizic. Mesajele încă nelivrate din coadă sunt în memoria panoului și
+nu sunt garantate după închiderea procesului. Nu s-a recompilat APK-ul,
+nu s-au înlocuit instalatoarele din Download și nu s-a făcut push.
+
+Jurnal: 30.10.2026 — AG-63: workflow nativ cu Ask, Queue/Steer și compactare
+semantică în sarcină; 785/0 runtime, 778/0 editor și 116/0 layout de telefon;
+implementat și verificat în surse, fără livrare APK.
+
+## AG-62 — analiză statică Ziva și recuperarea harness-ului propriu — 30.10.2026
+
+La cererea utilizatorului a fost extras bundle-ul Bun din `zivacode` oficial
+v3.3.2 Linux ARM64: **194 de fișiere**, 26.450.119 bytes. Binarul original
+a rămas identic, SHA-256
+`7797be07153d515fb0a96a8438f811d633610e4e39caa582334e87cc5ef6c200`.
+Sunt identificate componente Pi (`pi-agent-core`, `pi-ai`, `pi-coding-agent`),
+sesiuni, compactare și recuperare overflow; acestea adaugă dovezi locale față
+de cercetarea publică anterioară. Nu se declară versiunea exactă Pi, reconstrucția
+proiectului original sau decompilarea bibliotecilor native. Codul vendor extras
+rămâne numai în `.ai-qa/`, ignorat de Git.
+
+Harness-ul nostru GDScript primește implementări originale: reducerea
+rezultatelor vechi din context înaintea cererilor, o singură recuperare după
+overflow confirmat, citiri proaspete la reutilizarea ID-urilor de apel și
+detectarea aceleiași erori chiar dacă este intercalată cu citiri reușite.
+Cererea, planul, ultimul lot de instrumente, istoricul integral și registrul
+operațiilor rămân păstrate. Scrierile și joburile plătite nu se reexecută prin
+recuperarea contextului. Stop, verificarea dovezilor și pașii nelimitați rămân
+active. Tabul Ziva este independent; agentul nostru nu capătă o dependență Linux.
+
+Verificat local cu Godot 4.7.2 ARM64 în Debian/PRoot: **770/0 aserțiuni runtime**
+și **91/0 verificări în editor**, scenariul de compactare îngust.
+Cele 19 probe noi includ overflow, Stop, autentificare, răspuns parțial,
+identitatea artefactelor, deduplicarea operațiilor plătite și erori intercalate.
+`git diff --check` trece. Estimarea de context rămâne euristică; compactarea
+semantică în interiorul unui singur task lung este încă o direcție de lucru.
+
+Nu s-au trimis cereri live către modele sau generatoare, nu s-a recompilat
+APK-ul și nu s-au înlocuit instalatoarele din Download. Aceasta este o etapă
+implementată și testată în surse, nu o probă fizică Android a noului cod.
+
+[Analiza și comparația detaliată](docs/ziva-harness-review-20261030.md).
+Dovezi: `.ai-qa/ziva-harness-analysis-20261030/`, în special `findings.json`,
+`runtime.log` și `rendered/narrow/editor-report.json`.
+
+Jurnal: 30.10.2026 — AG-62: componente Pi confirmate în bundle-ul Ziva;
+recuperare context, citiri actualizate și protecție la erori intercalate în
+harness-ul propriu, cu 770/0 runtime și 91/0 editor; fără livrare APK.
 
 ## AG-61 — pluginuri independente și recuperare Git Ziva — 29.10.2026
 
@@ -3400,6 +3740,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **30.10.2026:** AG-66 în surse: reparații cu dovezi, impact, recuperare, scenarii, experimente, asseturi, profilare și specialiști. Fără APK/push; verificări și limite în secțiunea AG-66.
 
 - **29.10.2026:** AG-58, identificat pe telefon blocajul real al Ziva: biblioteci absente în Debian slim. Corecție de dependențe și DNS în surse, teste portabile 11/0; verificare pe dispozitiv în curs.
 

@@ -11,6 +11,7 @@ const TOOL_RESULT_LIMIT = 24000
 const TOOL_BATCH_LIMIT = 48000
 # Reserve a compact JSON contract for every remaining call (at most 64 per batch).
 const TOOL_RESULT_RESERVE = 512
+const OLD_TOOL_CONTEXT_LIMIT = 2048
 
 var owner: Node
 var state = "idle"
@@ -30,6 +31,7 @@ var _continuations = 0
 var _continuation_hint = ""
 var _repair_hint = ""
 var _inspection_repeats = {}
+var _failure_repeats = {}
 
 func _init(node: Node = null) -> void:
 	owner = node
@@ -50,11 +52,12 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	_turn = str(options.get("metadata", {}).get("turn_id", options.get("id", "")))
 	_deduplicate_tools = options.get("deduplicate_tools", [])
 	_effects = _restore_effects(_messages)
-	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0, "reused_calls": 0, "continuations": 0}
+	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0, "reused_calls": 0, "continuations": 0, "context_pruned": 0, "context_recoveries": 0, "compactions": 0, "steering": 0}
 	_continuations = 0
 	_continuation_hint = ""
 	_repair_hint = ""
 	_inspection_repeats.clear()
+	_failure_repeats.clear()
 	var definitions: Array = options.get("tools", [])
 	var registry = ToolRegistry.new(definitions, bool(options.get("deferred_tools", false)))
 	if not registry.error.is_empty(): return _finish("failed", registry.error, "invalid_tools")
@@ -79,6 +82,11 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 		step += 1
 		stats["steps"] = step
+		if _deliver_steering(metadata) > 0:
+			empty_rounds = 0
+			repeated_count = 0
+			repeated_result = ""
+		if _checkpoint_failed: return _finish("failed", "Intervenția nu a putut fi salvată.", "checkpoint_failed", last_text)
 		_tool_budget = TOOL_BATCH_LIMIT
 		var continuation_hint = _continuation_hint
 		_continuation_hint = ""
@@ -86,13 +94,24 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		var declared = {}
 		for definition in definitions: declared[definition["name"]] = true
 		var context: Array = _hooks["context"].call() if _hooks.get("context", Callable()).is_valid() else _messages.duplicate(true)
+		var prepared_context = await _prepare_context(context, definitions, false)
+		if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
+		if not prepared_context.get("ok", false): return _finish("blocked", str(prepared_context.get("error", "Contextul nu poate fi pregătit.")), str(prepared_context.get("code", "compact_failed")), last_text)
+		var base_context: Array = prepared_context["result"]
+		context = base_context.duplicate(true)
+		var repair_hint = _repair_hint
 		if not continuation_hint.is_empty(): context.append({"role": "user", "content": continuation_hint})
 		if not _repair_hint.is_empty():
 			context.append({"role": "system", "content": _repair_hint})
 			_repair_hint = ""
+		var prepared = prepare_context(context, definitions, int(options.get("context_window", 0)))
+		context = prepared["messages"]
+		_context_pruned(prepared, "budget")
 		var response: Dictionary = {}
 		var response_msec = 0
-		for attempt in range(retries + 1):
+		var attempt = 0
+		var overflow_recovered = false
+		while attempt <= retries:
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			_transition("running")
 			if _checkpoint_failed: return _finish("failed", "Progresul agentului nu a putut fi salvat.", "checkpoint_failed", last_text)
@@ -109,6 +128,22 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			response_msec = Time.get_ticks_msec() - request_started_msec
 			if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 			if response.get("ok", false): break
+			# A rejected prompt has no tool effects. Reduce only the model's old
+			# tool-output view, once; never retry a visible partial response.
+			if not streamed["text"] and not overflow_recovered and _context_overflow(response):
+				prepared_context = await _prepare_context(base_context, definitions, true)
+				if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
+				if not prepared_context.get("ok", false): return _finish("blocked", str(prepared_context.get("error", "Compactarea a eșuat.")), str(prepared_context.get("code", "compact_failed")), last_text)
+				prepared = prepare_context(prepared_context["result"], definitions, 0, true)
+				var reduced: Array = prepared["messages"].duplicate(true)
+				if not continuation_hint.is_empty(): reduced.append({"role": "user", "content": continuation_hint})
+				if not repair_hint.is_empty(): reduced.append({"role": "system", "content": repair_hint})
+				if reduced != context:
+					context = reduced
+					overflow_recovered = true
+					stats["context_recoveries"] += 1
+					_context_pruned(prepared, "provider_overflow")
+					continue
 			# Retry only model requests, before visible text. Tools are never retried.
 			if streamed["text"] or attempt >= retries or not _transient(response):
 				return _finish("failed", str(response.get("error", "Cererea a eșuat.")), str(response.get("code", "provider_error")), last_text)
@@ -117,6 +152,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			event.emit({"kind": "retry", "attempt": attempt + 1})
 			if not await _backoff(_retry_delay(response, attempt, int(options.get("retry_delay_ms", 400)))):
 				return _finish("cancelled", "Oprit.", "cancelled", last_text)
+			attempt += 1
 		var validation = _validate_response(response)
 		if not validation.is_empty(): return _finish("failed", validation, "invalid_response", last_text)
 		var calls: Array = response.get("calls", [])
@@ -146,6 +182,9 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		event.emit({"kind": "message", "message": message, "usage": response.get("usage", {}), "finish": response.get("finish", ""), "duration_ms": response_msec, "continuation": continuation_round, "merged": merged})
 		_checkpoint()
 		if calls.is_empty():
+			if _deliver_steering(metadata) > 0:
+				empty_rounds = 0
+				continue
 			var finish = str(response.get("finish", ""))
 			if finish in ["length", "MAX_TOKENS", "max_tokens"]:
 				if _continuations < auto_continue:
@@ -158,7 +197,9 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				return _finish("limited", limit_message, "output_limit", last_text)
 			if _hooks.get("needs_continuation", Callable()).is_valid() and _hooks["needs_continuation"].call():
 				empty_rounds += 1
-				if empty_rounds >= 3: return _finish("limited", "Agentul nu a făcut progrese în ultimele trei încercări. Verifică pașii rămași înainte de reluare.", "no_progress", last_text)
+				if empty_rounds > 3: return _finish("limited", "Agentul nu a făcut progrese după trei reamintiri ale pașilor rămași.", "no_progress", last_text)
+				_repair_hint = "The execution task still has unfinished items. Check their actual results, update the plan and continue working. If a real blocker requires user input, report it explicitly instead of repeating a final answer."
+				if _hooks.get("continuation_prompt", Callable()).is_valid(): _repair_hint += "\n" + str(_hooks["continuation_prompt"].call())
 				event.emit({"kind": "plan_continuation", "step": step})
 				continue
 			if _hooks.get("blocked_reason", Callable()).is_valid():
@@ -189,13 +230,15 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				result = Common.failure("Operație amânată deoarece agentul repetă aceeași încercare fără progres.", "no_progress")
 			elif _checkpoint_failed:
 				result = Common.failure("Operația a fost oprită deoarece progresul nu poate fi salvat.", "checkpoint_failed")
+			elif _steering_pending():
+				result = Common.failure("Cerința a fost actualizată înaintea execuției. Reevaluează această operație după intervenția utilizatorului.", "steered")
 			elif not registry.catalog.has(name):
 				result = Common.failure("Instrument indisponibil în această sesiune.", "tool_unavailable")
 			elif not declared.has(name):
 				result = Common.failure("Folosește tool_search sau tool_describe pentru a încărca instrumentul înainte de apel.", "tool_not_loaded")
 			elif not ToolRegistry.validate(registry.catalog[name], call["arguments"]).get("ok", false):
 				result = ToolRegistry.validate(registry.catalog[name], call["arguments"])
-			elif _ledger.has(id) and str(_ledger[id]["result"].get("code", "")) not in ["plan_required", "plan_read_only", "tool_not_loaded"]:
+			elif _ledger.has(id) and registry.catalog[name].get("risk", "read") != "read" and str(_ledger[id]["result"].get("code", "")) not in ["plan_required", "plan_read_only", "tool_not_loaded", "steered"]:
 				# Replayed provider IDs receive their recorded result without repeating a write.
 				result = _ledger[id]["result"]
 				replayed = true
@@ -216,14 +259,37 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 				elif _checkpoint_failed:
 					result = Common.failure("Operația a fost oprită deoarece progresul nu poate fi salvat.", "checkpoint_failed")
 				else:
-					executed = true
-					stats["tool_calls"] += 1
-					# Review may narrow a write, but must never change the provider call's identity.
-					result = await _hooks["execute"].call(name, call["arguments"].duplicate(true))
+					var guarded = registry.catalog[name].get("risk", "read") != "read" and name not in ["task_update", "plan_ask"] and _hooks.get("effect_begin", Callable()).is_valid()
+					var permit: Dictionary = _hooks["effect_begin"].call(_turn, call) if guarded else {"ok": true}
+					if not permit.get("ok", false): result = permit
+					elif permit.get("replayed", false):
+						result = permit["result"]
+						replayed = true
+					else:
+						executed = true
+						stats["tool_calls"] += 1
+						# Persist intent before effects, outcome before acknowledging them.
+						result = await _hooks["execute"].call(name, call["arguments"].duplicate(true))
+						if guarded and _hooks.get("effect_finish", Callable()).is_valid() and not _hooks["effect_finish"].call(_turn, call, result):
+							_checkpoint_failed = true
+							result = result.merged({"ok": false, "code": "execution_unknown", "error": "Operația a răspuns, dar confirmarea durabilă nu a putut fi salvată. Inspectează rezultatul existent înainte de repetare."}, true)
+
 			var recovery = _recovery_guidance(name, result)
 			if not recovery.is_empty(): result = result.merged({"recovery": recovery}, true)
 			if executed and registry.catalog.get(name, {}).get("risk") != "read" and result.get("ok", false) and name not in ["task_update", "plan_ask"]:
 				_inspection_repeats.clear()
+				_failure_repeats.clear()
+			if not result.get("ok", false) and str(result.get("code", "")) not in ["plan_required", "plan_read_only", "tool_not_loaded", "cancelled", "no_progress", "steered"]:
+				var failure_key = _signature(call) + ":" + str(result.get("code", ""))
+				if _failure_repeats.size() >= 100 and not _failure_repeats.has(failure_key): _failure_repeats.erase(_failure_repeats.keys()[0])
+				_failure_repeats[failure_key] = int(_failure_repeats.get(failure_key, 0)) + 1
+				if _failure_repeats[failure_key] >= 3:
+					_repair_hint = "The same operation has failed at least three times without a successful project change, even if other reads were interleaved. Inspect the root cause, change the operation or report the concrete blocker. Do not repeat a refusal or an uncertain paid submission."
+					event.emit({"kind": "recovery", "tool": name, "reason": "repeated_failure", "count": _failure_repeats[failure_key]})
+					if _failure_repeats[failure_key] >= 6: stalled = true
+			elif result.get("ok", false):
+				for key in _failure_repeats.keys():
+					if str(key).begins_with(_signature(call) + ":"): _failure_repeats.erase(key)
 			if executed and name in ["godot_files", "godot_read_file", "godot_read_range", "godot_describe", "godot_project_map", "godot_symbols", "godot_search_code"] and result.get("ok", false):
 				var fingerprint = _signature(call) + JSON.stringify(result.get("result")).sha256_text()
 				if _inspection_repeats.size() >= 100 and not _inspection_repeats.has(fingerprint): _inspection_repeats.erase(_inspection_repeats.keys()[0])
@@ -235,6 +301,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			var tool_message = _tool_message(call, result, metadata, remaining_calls)
 			remaining_calls -= 1
 			tool_message["execution_started"] = executed
+			tool_message["activity"] = {"duration_ms": Time.get_ticks_msec() - call_started_msec, "executed": executed, "replayed": replayed}
 			_messages.append(tool_message)
 			_ledger[id] = {"signature": _signature(call), "result": _result_from_message(tool_message)}
 			if replayed: stats["reused_calls"] += 1
@@ -253,6 +320,103 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		if _stopped(): return _finish("cancelled", "Oprit.", "cancelled", last_text)
 		if stalled: return _finish("limited", "Aceeași operație se repetă fără progres. Rezultatele au fost păstrate; verifică eroarea înainte de reluare.", "no_progress", last_text)
 	return _finish("limited", "Limita explicită a probei a fost atinsă.", "step_limit", last_text)
+
+func _steering_pending() -> bool:
+	return _hooks.get("steering_pending", Callable()).is_valid() and bool(_hooks["steering_pending"].call())
+
+func _deliver_steering(metadata: Dictionary) -> int:
+	if _stopped() or not _hooks.get("steering", Callable()).is_valid(): return 0
+	var drafts: Array = _hooks["steering"].call()
+	var count = 0
+	for draft in drafts:
+		if not draft is Dictionary or str(draft.get("content", "")).strip_edges().is_empty(): continue
+		var message = metadata.merged({"id": Common.uid(), "role": "user", "content": _redact(str(draft["content"])), "delivery": "steer", "files": draft.get("files", []), "attachments": draft.get("attachments", []), "references": draft.get("references", [])}, true)
+		_messages.append(message)
+		count += 1
+		stats["steering"] += 1
+		event.emit({"kind": "steering", "message": message})
+	if count > 0:
+		_inspection_repeats.clear()
+		_failure_repeats.clear()
+		_repair_hint = "The user adjusted the current task. Apply the latest requirements, revise unfinished plan items where needed, and preserve confirmed work and existing paid jobs."
+		_checkpoint()
+	return count
+
+func _prepare_context(context: Array, definitions: Array, force: bool) -> Dictionary:
+	if not _hooks.get("prepare_context", Callable()).is_valid(): return Common.success(context)
+	var result: Dictionary = await _hooks["prepare_context"].call(context, definitions, force)
+	if result.get("ok", false) and not result.get("result") is Array: return Common.failure("Context de continuare invalid.", "invalid_context")
+	if result.get("compacted", false):
+		stats["compactions"] += 1
+		event.emit({"kind": "context_compacted", "through": result.get("through", 0), "forced": force})
+		_checkpoint()
+	return result
+
+static func prepare_context(messages: Array, definitions: Array, window: int = 0, force: bool = false) -> Dictionary:
+	# This is a disposable provider view. History, evidence, call IDs and the
+	# side-effect ledger remain authoritative and are never rewritten here.
+	var result = {"messages": messages, "trimmed": 0, "saved_bytes": 0}
+	if window <= 0 and not force: return result
+	var size = JSON.stringify(messages).to_utf8_buffer().size()
+	var schema_bytes = JSON.stringify(definitions).to_utf8_buffer().size()
+	# Heuristic only: no guessed token count is used to refuse a valid request.
+	var budget = maxi(0, window - mini(8192, maxi(512, window / 4))) * 2
+	if not force and size + schema_bytes <= budget: return result
+	var latest_batch = messages.size()
+	for index in range(messages.size() - 1, -1, -1):
+		if messages[index].get("role") == "assistant" and not messages[index].get("tool_calls", []).is_empty():
+			latest_batch = index
+			break
+	var view = messages.duplicate(true)
+	for index in range(latest_batch):
+		var message: Dictionary = view[index]
+		if message.get("role") != "tool": continue
+		var text = str(message.get("content", ""))
+		if text.length() <= OLD_TOOL_CONTEXT_LIMIT: continue
+		var parsed: Variant = Common.parse_json(text)
+		if not parsed is Dictionary: continue
+		var compact = _bounded_result(text, OLD_TOOL_CONTEXT_LIMIT)
+		var saved = text.to_utf8_buffer().size() - compact.to_utf8_buffer().size()
+		if saved <= 0: continue
+		message["content"] = compact
+		result["trimmed"] += 1
+		result["saved_bytes"] += saved
+		size -= saved
+		if not force and size + schema_bytes <= budget: break
+	result["messages"] = view
+	return result
+
+static func context_cut(messages: Array, desired: int, floor_index: int = 0) -> int:
+	# Keep the newest complete assistant/tool group and never orphan a result.
+	var tail = messages.size() - 1
+	while tail >= 0 and messages[tail].get("role") == "tool": tail -= 1
+	var pending = {}
+	var boundaries = []
+	for index in range(messages.size()):
+		var message: Dictionary = messages[index]
+		if index > floor_index and index <= tail and pending.is_empty() and message.get("role") in ["user", "assistant"]: boundaries.append(index)
+		for call in message.get("tool_calls", []): pending[str(call.get("id", ""))] = true
+		if message.get("role") == "tool": pending.erase(str(message.get("tool_call_id", "")))
+	if boundaries.is_empty(): return floor_index
+	var cut = int(boundaries[-1])
+	for boundary in boundaries:
+		if boundary >= desired:
+			cut = boundary
+			break
+	# Summarizing only a user request would add a summary beside its exact anchor.
+	if not messages.slice(floor_index, cut).any(func(message: Dictionary) -> bool: return message.get("role") in ["assistant", "tool"]): return floor_index
+	return cut
+
+func _context_pruned(prepared: Dictionary, reason: String) -> void:
+	if prepared["trimmed"] <= 0: return
+	stats["context_pruned"] += int(prepared["trimmed"])
+	event.emit({"kind": "context_pruned", "reason": reason, "trimmed": prepared["trimmed"], "saved_bytes": prepared["saved_bytes"]})
+
+static func _context_overflow(response: Dictionary) -> bool:
+	var text = (str(response.get("code", "")) + " " + str(response.get("error", ""))).to_lower()
+	for needle in ["context_length_exceeded", "context length", "maximum context", "prompt is too long", "input is too long", "too many tokens", "exceeds the context", "token limit exceeded"]:
+		if needle in text: return true
+	return false
 
 func _validate_response(response: Dictionary) -> String:
 	if not response.get("message") is Dictionary or response["message"].get("role") != "assistant": return "Răspuns de model invalid."
@@ -284,6 +448,7 @@ static func _recovery_guidance(name: String, result: Dictionary) -> Dictionary:
 		"restore_conflict", "recovery_required", "recovery_failed", "journal_failed": recovery.merge({"category": "recovery", "next": ["godot_changes_status"], "action": "Inspect actual file hashes and the existing recovery journal. Preserve later edits. Recover the existing set, never blindly reapply it or claim rollback succeeded without checking the result."}, true)
 		"invalid_path", "invalid_file", "scene_not_found", "directory_create_failed": recovery.merge({"category": "project_structure", "next": ["godot_project_map", "godot_files"], "action": "Inspect existing paths and dependencies; reuse the actual scene/file path instead of creating another project tree."}, true)
 		"permission_denied", "cancelled": recovery.merge({"category": "user_boundary", "action": "Respect the refusal or Stop. Do not bypass it through another tool or repeat the same approval."}, true)
+		"steered": recovery.merge({"category": "user_update", "action": "Read the delivered user adjustment and choose a fresh action. This call was not executed."}, true)
 		"submission_unknown", "conversion_unknown": recovery.merge({"category": "uncertain_side_effect", "next": ["asset_status", "asset_wait"], "action": "Recover the existing job and provider ID. Do not submit or charge again."}, true)
 		"invalid_arguments", "invalid_method", "invalid_property": recovery.merge({"category": "schema", "next": ["tool_describe", "godot_describe"], "action": "Inspect the real schema/member type before correcting the arguments."}, true)
 		"criterion_failed", "evidence_stale", "evidence_scope", "verification_required": recovery.merge({"category": "verification", "action": "Keep the original criterion; gather fresh scoped evidence, repair a failed check and verify again."}, true)
@@ -443,7 +608,7 @@ func _restore_effects(messages: Array) -> Dictionary:
 
 static func _remember_effect(result: Dictionary) -> bool:
 	# A plan or missing credential can be fixed before submission; a user refusal persists for this turn.
-	return str(result.get("code", "")) not in ["plan_required", "plan_read_only", "invalid_arguments", "missing_credentials", "tool_unavailable", "tool_not_loaded"]
+	return str(result.get("code", "")) not in ["plan_required", "plan_read_only", "invalid_arguments", "missing_credentials", "tool_unavailable", "tool_not_loaded", "steered"]
 
 static func repair_messages(messages: Array) -> Array:
 	var repaired = []

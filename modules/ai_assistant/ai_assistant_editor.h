@@ -6,6 +6,7 @@
 #include "core/os/mutex.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
+#include "editor/run/editor_run.h"
 #include "scene/gui/box_container.h"
 
 #include "modules/gdscript/gdscript.h"
@@ -47,6 +48,7 @@ class AIAssistantEditorPlugin : public EditorPlugin {
 	Ref<AIAssistantSettingsInspector> settings_inspector;
 	Ref<AIAssistantSecretStore> secrets;
 	Ref<AIAssistantDebugger> runtime_debugger;
+	EditorRun experiment_runner;
 	Vector<Ref<GDScript>> scripts;
 	ErrorHandlerList diagnostic_handler;
 	Mutex diagnostic_mutex;
@@ -66,6 +68,8 @@ public:
 	int get_chat_placement() const { return chat_placement; }
 	int64_t runtime_request(const String &p_command, const Dictionary &p_arguments);
 	Dictionary runtime_poll(int64_t p_id);
+	Dictionary experiment_launch(const String &p_project, const String &p_scene);
+	void experiment_stop();
 	Dictionary speech_request(const String &p_action, const Dictionary &p_args);
 	Dictionary linux_runtime_request(const String &p_action, const Dictionary &p_args);
 	Dictionary termux_blender_request(const String &p_action, const Dictionary &p_args);
