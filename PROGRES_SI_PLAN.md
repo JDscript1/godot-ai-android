@@ -32,6 +32,16 @@ composerului se compactează acum pe ferestre joase. Proba focalizată extinsă
 la 363 px, cu mesaje, selector și coadă, trece **106/0**. Se relansează ambele
 distribuții cu această corecție, păstrând pragurile verificărilor complete.
 
+Runda a patra trece cele cinci configurații complete (**895/0** fiecare),
+dar proba `todo` avea șase texte vechi pentru Running Tools și compara indici
+din părinți diferiți după gruparea mesajelor. Proba folosește acum textele
+actuale și ordinea globală a nodurilor. Selectează blocul de cod după tip,
+fără vechiul index fix care întrerupea restul gesturilor. Reexecutarea randată
+trece **129/0**, inclusiv derulare tactilă pe text/cod/imagine, preview doar
+la atingere și mențiune orizontală. Probe locale suplimentare: Blender **84/0**,
+generare **68/0**, ciclu chat/playtest **77/0**. Sursele aplicației rămân cele
+corectate în runda a patra; snapshot-ul final include și aceste teste actualizate.
+
 Stare inițială: pregătire/compilare; APK-urile existente rămân în Download
 până când înlocuitoarele trec verificarea semnăturii, identificatorului,
 ABI-ului, runtime-ului Linux și a celor 44 de scripturi încorporate. Cele două
