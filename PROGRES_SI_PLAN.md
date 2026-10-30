@@ -22,7 +22,9 @@ selectorului și s-a corectat calculul spațiului cozii (conversația se rezerv�
 singură dată, separatoarele se numără corect). Proba verifică derularea unui
 selector limitat de înălțime și încheie starea busy simulată înaintea măsurării
 cozii inactive. Reproducerea focalizată la înălțimea de 385 px trece **76/0**,
-cu capturi inspectate. Se recompilează ambele distribuții cu această corecție.
+cu capturi inspectate. Proba la 363 px a cerut și compactarea spațierilor
+verticale și a butoanelor selectorului; după corecție trece tot **76/0**. Runda
+intermediară este înlocuită de compilarea finală a ambelor distribuții.
 
 Stare inițială: pregătire/compilare; APK-urile existente rămân în Download
 până când înlocuitoarele trec verificarea semnăturii, identificatorului,

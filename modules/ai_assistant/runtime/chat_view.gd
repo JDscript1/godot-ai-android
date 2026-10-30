@@ -417,6 +417,12 @@ func close_mobile_history() -> void:
 
 func _layout_composer() -> void:
 	if selection_row == null: return
+	var scale = EditorInterface.get_editor_scale()
+	var compact_height = root_column.size.y < 360 * scale
+	var gap = int((3 if compact_height else 6) * scale)
+	if root_column.get_theme_constant("separation") != gap: root_column.add_theme_constant_override("separation", gap)
+	var queue_gap = int((4 if compact_height else 6) * scale)
+	if queue_panel.get_theme_constant("separation") != queue_gap: queue_panel.add_theme_constant_override("separation", queue_gap)
 	composer.placeholder_text = "Mesaj…" if root_column.size.x < 280 * EditorInterface.get_editor_scale() else "Scrie un mesaj…"
 	voice_button.visible = not stop_button.visible
 	_size_selection_chips()
@@ -852,7 +858,7 @@ func _build_drawer() -> void:
 	drawer_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	drawer_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	drawer_title.add_theme_font_size_override("font_size", int(18 * EditorInterface.get_editor_scale()))
-	icon_button(header, "Close", "Închide fără a schimba modelul", _close_drawer)
+	_compact_button(icon_button(header, "Close", "Închide fără a schimba modelul", _close_drawer))
 	drawer_step = label(body, "")
 	drawer_step.add_theme_color_override("font_color", Color("b5a4d9"))
 	picker_search = LineEdit.new()
@@ -910,6 +916,7 @@ func _build_drawer() -> void:
 		action.emit("settings", {"section": "providers"}))
 	manage.icon = _icon("Settings")
 	manage.tooltip_text = "Adaugă un furnizor sau actualizează modelele"
+	for control in [drawer_back, drawer_refresh, manage]: _compact_button(control)
 
 func _show_drawer(stage: String) -> void:
 	runtime_options.hide()
