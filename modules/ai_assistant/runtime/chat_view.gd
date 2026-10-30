@@ -423,6 +423,9 @@ func _layout_composer() -> void:
 	if root_column.get_theme_constant("separation") != gap: root_column.add_theme_constant_override("separation", gap)
 	var queue_gap = int((4 if compact_height else 6) * scale)
 	if queue_panel.get_theme_constant("separation") != queue_gap: queue_panel.add_theme_constant_override("separation", queue_gap)
+	var compose_surface = compose_panel.get_theme_stylebox("panel")
+	var compose_padding = (4 if compact_height else 8) * scale
+	if compose_surface.get_content_margin(SIDE_TOP) != compose_padding: compose_surface.set_content_margin_all(compose_padding)
 	composer.placeholder_text = "Mesaj…" if root_column.size.x < 280 * EditorInterface.get_editor_scale() else "Scrie un mesaj…"
 	voice_button.visible = not stop_button.visible
 	_size_selection_chips()

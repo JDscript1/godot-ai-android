@@ -26,6 +26,12 @@ cu capturi inspectate. Proba la 363 px a cerut și compactarea spațierilor
 verticale și a butoanelor selectorului; după corecție trece tot **76/0**. Runda
 intermediară este înlocuită de compilarea finală a ambelor distribuții.
 
+Runda a treia trece toate verificările `phone_landscape`; în `phone_compact`
+conversația avea 181 px din 363 px, sub jumătate cu 0,5 px. Marginile
+composerului se compactează acum pe ferestre joase. Proba focalizată extinsă
+la 363 px, cu mesaje, selector și coadă, trece **106/0**. Se relansează ambele
+distribuții cu această corecție, păstrând pragurile verificărilor complete.
+
 Stare inițială: pregătire/compilare; APK-urile existente rămân în Download
 până când înlocuitoarele trec verificarea semnăturii, identificatorului,
 ABI-ului, runtime-ului Linux și a celor 44 de scripturi încorporate. Cele două
