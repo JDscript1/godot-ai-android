@@ -16,6 +16,31 @@ spec.loader.exec_module(delivery)
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_pending_aggregate_requires_all_exact_source_jobs(self):
+        commit = 'a' * 40
+        run = {'head_sha': commit, 'status': 'in_progress', 'conclusion': None, 'run_attempt': 2}
+        jobs = [{'id': index, 'name': name, 'head_sha': commit, 'run_id': 7, 'run_attempt': 2,
+                 'status': 'completed', 'conclusion': 'success', 'completed_at': '2026-10-30T18:07:01Z'}
+                for index, name in enumerate(['runtime', 'android', 'native-editor'])]
+        def verify(items):
+            with mock.patch.object(delivery, 'command', return_value=json.dumps({'total_count': len(items), 'jobs': items}).encode()):
+                return delivery.verify_build(run, commit, 7)
+        self.assertEqual(verify(jobs)['evidence'], 'all_required_jobs_success')
+        with self.assertRaises(AssertionError): verify(jobs[:-1])
+        for field, value in [('head_sha', 'b' * 40), ('run_id', 8), ('run_attempt', 1),
+                             ('status', 'in_progress'), ('conclusion', 'failure'), ('name', 'unrelated')]:
+            with self.subTest(field=field):
+                changed = [dict(job) for job in jobs]
+                changed[0][field] = value
+                with self.assertRaises(AssertionError): verify(changed)
+
+    def test_failed_or_queued_workflow_cannot_use_completed_jobs(self):
+        for status, conclusion in [('completed', 'failure'), ('queued', None), ('completed', 'cancelled')]:
+            with self.subTest(status=status, conclusion=conclusion), mock.patch.object(delivery, 'command') as request:
+                with self.assertRaises(AssertionError):
+                    delivery.verify_build({'head_sha': 'a' * 40, 'status': status, 'conclusion': conclusion}, 'a' * 40, 7)
+                request.assert_not_called()
+
     def test_main_keeps_apk_filename_after_checking_embedded_script_names(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

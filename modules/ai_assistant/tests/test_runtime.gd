@@ -241,7 +241,7 @@ func _run() -> void:
 		push_error("Pass -- --source=/absolute/path/to/modules/ai_assistant")
 		quit(2)
 		return
-	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "ziva", "ziva_screen", "integrations", "store", "editor_control", "panel"]:
+	for name in ["common", "engineering_store", "qa_scenarios", "asset_audit", "experiments", "engineering", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "tool_preview", "diagram", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "ziva", "ziva_screen", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.take_over_path("res://__godot_ai_builtin__/" + name + ".gd")
 		script.source_code = FileAccess.get_file_as_string(source_directory.path_join("runtime/" + name + ".gd"))
@@ -250,7 +250,7 @@ func _run() -> void:
 		if error != OK:
 			quit(1)
 			return
-		var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "ziva": "Ziva", "ziva_screen": "ZivaScreen", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+		var bindings = {"common": "Common", "engineering_store": "EngineeringStore", "qa_scenarios": "QAScenarios", "asset_audit": "AssetAudit", "experiments": "Experiments", "engineering": "Engineering", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "tool_preview": "ToolPreview", "diagram": "Diagram", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "ziva": "Ziva", "ziva_screen": "ZivaScreen", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
 		for dependency in scripts: script.set(bindings[dependency], scripts[dependency])
 		scripts[name] = script
 	var common = scripts["common"]
@@ -332,6 +332,9 @@ func _run() -> void:
 	check(not scripts["providers"].vision_allowed(vision_profile, "vision"), "An explicit text-only choice takes precedence over catalog vision metadata")
 	var node = Node.new()
 	root.add_child(node)
+	var engineering_tests = load(source_directory.path_join("tests/test_engineering.gd"))
+	await engineering_tests.run(scripts, self, check)
+	await load(source_directory.path_join("tests/test_speech.gd")).new().run(self, scripts)
 	_panel_reader_tests(node)
 	await _model_pricing_tests(node)
 	await _blender_diagnostic_tests(node)
@@ -341,6 +344,8 @@ func _run() -> void:
 	await _intelligence_tests(node)
 	await _change_set_tests(node)
 	await _recovery_tests(node)
+	await _context_budget_tests(node)
+	await _workflow_tests(node)
 	await _harness_tests(node)
 	await _responses_continuation_tests(node)
 	await _behavior_tests(node)
@@ -481,6 +486,54 @@ func _planning_tests(node: Node) -> void:
 	check("Titlu" in rendered and "•  Element" in rendered and not "**Bold**" in rendered and "[b]literal[/b]" in rendered and "javascript:alert" in rendered, "Markdown formats text while keeping BBCode, HTML and unsupported links literal")
 	scripts["markdown"].render(rich, "| Nume | Valoare |\n| --- | --- |\n| Nod | 12 |")
 	check("Nume" in rich.get_parsed_text() and "12" in rich.get_parsed_text() and not "---" in rich.get_parsed_text(), "Markdown tables render as structured native cells")
+	var markdown = scripts["markdown"]
+	var pieces = markdown.blocks("Introducere.\n\n```gdscript\nvar marker = \"```\"\n```\n\nRezultat.")
+	check(pieces.size() == 3 and pieces[1]["text"] == "var marker = \"```\"" and pieces[1]["complete"], "Fenced code retains literal inline backticks")
+	check(markdown.blocks("Text\n\n``", true).size() == 1 and markdown.blocks("```gds", true).is_empty(), "Partial opening fences and language tags do not flash as streamed message text")
+	pieces = markdown.blocks("```gdscript\nprint(1)\n``", true)
+	check(pieces.size() == 1 and pieces[0]["text"] == "print(1)", "A partial closing fence never leaks into the streamed source")
+	pieces = markdown.blocks("~~~python\nprint(1)\n~~~")
+	check(pieces.size() == 1 and pieces[0]["language"] == "python" and pieces[0]["complete"], "Tilde code fences render as a complete code block")
+	pieces = markdown.blocks("Unu.\n\nDoi.\n\nTrei.")
+	check(pieces.size() == 3 and pieces[0]["text"] == "Unu.", "Separate paragraphs allow incremental rendering without changing earlier widgets")
+	markdown.render(rich, "## Titlu\nConținut")
+	check(rich.get_parsed_text() == "Titlu\nConținut", "Heading rendering avoids adding extra blank lines beyond the source")
+	var common = scripts["common"]
+	check(common.project_link("res://scripts/player.gd:42:7") == {"path": "res://scripts/player.gd", "line": 42, "column": 7}, "Project chat links preserve one-based line and column")
+	check(common.project_link("res://scripts/player.gd#L19").get("line") == 19, "Project links accept the documented line fragment syntax")
+	for invalid in ["file:///data/private", "res://../escape.gd:2", "res://.godot/cache:1", "res://a.gd:0", "res://a.gd:1000001", "res://a.gd?execute=yes", "res://a.gd\n"]:
+		check(common.project_link(invalid).is_empty(), "Invalid project navigation is rejected: " + invalid.strip_edges())
+	markdown.render(rich, "[Player](res://scripts/player.gd:42) și `res://scripts/player.gd#L19` și res://scripts/player.gd:3.")
+	check(rich.get_parsed_text() == "Player și res://scripts/player.gd#L19 și res://scripts/player.gd:3.", "Project links retain readable labels, inline code and sentence punctuation")
+	var preview_script = scripts["tool_preview"]
+	var redact = func(value: String) -> String: return common.redact(value, ["fixture-private-token"])
+	var preview = preview_script.build("godot_read_file", {"path": "res://player.gd"}, common.success("var x = 1\n# fixture-private-token"), redact)
+	check(preview.get("kind") == "read" and preview["items"][0]["rows"][1]["line"] == 2 and not JSON.stringify(preview).contains("fixture-private-token"), "Read cards preserve original line numbers and redact saved credentials")
+	preview = preview_script.build("godot_read_file", {"path": "res://player.gd"}, common.success("x".repeat(11990) + "fixture-private-token" + "tail"), redact)
+	check(not JSON.stringify(preview).contains("fixture-private") and preview.get("partial", false), "A secret crossing a preview budget boundary cannot leak its prefix")
+	preview = preview_script.build("godot_read_file", {"path": "res://player.gd"}, common.success("row\n".repeat(300)), redact)
+	check(preview["items"][0]["rows"].size() == 100 and preview["partial"], "Read snapshots have an explicit row limit and partial marker")
+	preview = preview_script.build("godot_read_range", {}, common.success({"path": "res://player.gd", "lines": [{"line": 73, "text": "pass"}], "next_line": 74}), redact)
+	check(preview["items"][0]["line"] == 73 and preview["partial"], "Range previews retain nonzero source offsets and report unread remainder")
+	check(preview_script.build("godot_read_file", {"path": "res://player.gd"}, common.failure("denied"), redact).is_empty(), "Failed reads never present invented source snapshots")
+	check(preview_script.build("godot_read_file", {"path": "res://../outside"}, common.success("private"), redact).is_empty(), "Tool preview paths use the same project boundary as navigation")
+	var hits = []
+	for index in range(20): hits.append({"path": "res://player.gd", "line": index + 4, "text": "func start():", "before": [{"line": index + 3, "text": "# context"}], "after": [{"line": index + 5, "text": "pass"}]})
+	preview = preview_script.build("godot_search_code", {"query": "start"}, common.success({"matches": hits}), redact)
+	check(preview["items"].size() == 12 and preview["partial"] and preview["items"][0]["rows"][0]["line"] == 3, "Search cards retain numbered context and bound the number of displayed hits")
+	check(preview_script.build("godot_search_code", {}, common.success({"matches": []}), redact).get("kind") == "search", "An empty search is represented explicitly")
+	var diagram = scripts["diagram"]
+	var graph = diagram.parse('flowchart TD; A["Intrare; joc"] --> B{Atac?}; B -->|Da| C((Luptă)); B -.->|Nu| D([Patrulare]); C --> A')
+	check(graph.get("ok", false) and graph["nodes"].size() == 4 and graph["edges"].size() == 4 and graph["nodes"]["A"]["label"] == "Intrare; joc", "Native flowchart parsing preserves quoted labels, decisions, branching, chains and cycles")
+	graph = diagram.parse('stateDiagram-v2\ndirection LR\nstate "În repaus" as Idle\n[*] --> Idle\nIdle --> Move: mișcare\nMove --> Idle: stop\nMove --> [*]')
+	check(graph.get("ok", false) and graph["nodes"].size() == 4 and graph["direction"] == "LR" and graph["nodes"]["Idle"]["label"] == "În repaus", "Flat state diagrams support aliases, transitions and distinct start/stop markers")
+	for invalid in ['sequenceDiagram\nA->>B: hello', 'flowchart TD\nA[broken', 'flowchart TD\nclick A "https://example.org"', 'flowchart TD\nsubgraph Group\nA --> B\nend', '%%{init: {}}%%\nflowchart TD\nA', 'flowchart TD\n' + 'A --> A\n'.repeat(81), 'flowchart TD\n' + 'x'.repeat(16000)]:
+		check(not diagram.parse(invalid).get("ok", false), "Unsupported, malformed or excessive diagrams fall back to their source")
+	check(diagram.parse("graph LR; A-->B-->C").get("edges", []).size() == 2, "Compact chained arrows do not become part of node identifiers")
+	var many = "flowchart TD\n"
+	for index in range(41): many += "N%d\n" % index
+	check(not diagram.parse(many).get("ok", false), "Native diagram node count is bounded")
+
 	rich.queue_free()
 
 func _tool_registry_tests() -> void:
@@ -647,6 +700,164 @@ func _recovery_tests(node: Node) -> void:
 	outcome = await core.run({}, hooks)
 	check(outcome.get("status") == "blocked" and outcome.get("code") == "verification_required" and host.contexts.size() == 3, "Tool-free completion claims cannot bypass the host's acceptance-evidence gate")
 	check(host.contexts[1].any(func(message: Dictionary) -> bool: return "Missing measured evidence" in str(message.get("content", ""))), "The completion gate asks for the concrete missing verification before settling blocked")
+
+func _context_budget_tests(node: Node) -> void:
+	var script = scripts["harness"]
+	var paid = scripts["common"].tool("asset_fixture", "Paid generation", {"prompt": {"type": "string"}}, ["prompt"], "external")
+	var poll = scripts["common"].tool("poll_fixture", "Read current job status", {}, [])
+	var paid_call = {"id": "paid-original", "name": "asset_fixture", "arguments": {"prompt": "one tree"}}
+	var poll_call = {"id": "poll", "name": "poll_fixture", "arguments": {}}
+	var artifact = {"ok": true, "files": ["tree-file"], "result": {"id": "existing-job", "external_id": "provider-job", "status": "completed", "file": "/generated/tree.glb", "imported_path": "res://trees/tree.glb", "quality": {"ready_for_use": true}, "output": "Old detailed output. 🌲 ".repeat(2000)}}
+	var history = [{"role": "system", "content": "Keep res://original.tscn. The plan and evidence are authoritative."}, {"role": "user", "content": "Build the forest; generate one tree only."}, {"role": "assistant", "content": "Generate once, then reuse it.", "tool_calls": [paid_call], "turn_id": "context-turn"}, {"role": "tool", "tool_call_id": "paid-original", "tool_name": "asset_fixture", "content": JSON.stringify(artifact), "execution_started": true}, {"role": "assistant", "content": "Inspect current state", "tool_calls": [poll_call]}, {"role": "tool", "tool_call_id": "poll", "tool_name": "poll_fixture", "content": JSON.stringify({"ok": true, "result": "Latest status. ".repeat(3000)})}]
+	var original = history.duplicate(true)
+	var prepared = script.prepare_context(history, [paid, poll], 8192)
+	check(prepared["trimmed"] == 1 and prepared["saved_bytes"] > 30000 and history == original, "Context budgeting reduces old tool output without changing the full transcript")
+	check(prepared["messages"].size() == history.size() and prepared["messages"][0] == history[0] and prepared["messages"][1] == history[1] and prepared["messages"][2] == history[2], "Pruning preserves the original user task, system constraints, assistant plan and tool-call identities")
+	check(prepared["messages"][4] == history[4] and prepared["messages"][5] == history[5], "The latest assistant/tool batch remains verbatim for the next decision")
+	var compact: Dictionary = JSON.parse_string(prepared["messages"][3]["content"])
+	check(compact.get("ok", false) and compact.get("truncated", false) and compact.get("files") == ["tree-file"] and compact.get("result", {}).get("id") == "existing-job" and compact["result"].get("status") == "completed", "A pruned paid result retains success, file cards and the existing job identity")
+	check(compact["result"].get("external_id") == "provider-job" and compact["result"].get("imported_path") == "res://trees/tree.glb" and compact["result"].get("quality", {}).get("ready_for_use", false), "Pruning retains provider IDs, imported paths and measured asset quality")
+	check(script.prepare_context(history, [], 1048576)["trimmed"] == 0 and script.prepare_context(history, [], 0)["trimmed"] == 0, "A sufficiently large or unknown context window leaves tool details intact")
+	var large_schema = paid.duplicate(true)
+	large_schema["description"] = "Schema metadata. ".repeat(3000)
+	check(script.prepare_context(history, [large_schema], 32768)["trimmed"] == 1, "The context estimate includes active tool schemas rather than messages alone")
+	var malformed = history.duplicate(true)
+	malformed[3]["content"] = "not JSON ".repeat(2000)
+	check(script.prepare_context(malformed, [], 8192)["trimmed"] == 0, "Unknown tool-result formats are preserved instead of being recast as success")
+	var core = script.new(node)
+	var events = []
+	core.event.connect(func(value: Dictionary) -> void: events.append(value))
+	var host = HarnessHost.new()
+	var repeated_paid = paid_call.duplicate(true)
+	repeated_paid["id"] = "paid-new-id"
+	host.replies = [{"ok": false, "status": 400, "code": "context_length_exceeded", "error": "Prompt is too long"}, _agent_response("", [repeated_paid]), _agent_response("Recovered existing result")]
+	var resumed = history.duplicate(true)
+	var outcome = await core.run({"tools": [paid, poll], "messages": resumed, "metadata": {"turn_id": "context-turn"}, "deduplicate_tools": ["asset_fixture"], "max_retries": 0}, host.hooks())
+	check(outcome.get("ok", false) and outcome.get("context_recoveries") == 1 and outcome.get("requests") == 3 and outcome.get("retries") == 0, "A rejected oversized prompt recovers once without consuming the connection-retry budget")
+	check(host.executed.is_empty() and outcome.get("reused_calls") == 1 and resumed.slice(0, original.size()) == original, "Context recovery preserves the side-effect ledger and never regenerates an existing paid job")
+	check(host.contexts[0][3] == original[3] and str(host.contexts[1][3]["content"]).length() <= 2048 and events.any(func(value: Dictionary) -> bool: return value.get("kind") == "context_pruned" and value.get("reason") == "provider_overflow"), "The retried request uses the reduced view and emits a payload-free recovery event")
+	for failure in [{"ok": false, "status": 400, "error": "maximum context length"}, {"ok": false, "status": 401, "error": "Invalid credentials"}, {"ok": false, "code": "context_length_exceeded", "error": "Too many tokens", "_delta": "Visible partial answer"}]:
+		host = HarnessHost.new()
+		host.replies = [failure, failure]
+		outcome = await core.run({"tools": [paid, poll], "messages": history.duplicate(true), "max_retries": 0}, host.hooks())
+		var expected = 2 if failure.get("status") == 400 else 1
+		check(not outcome.get("ok", true) and host.contexts.size() == expected, "Context recovery is bounded and never retries authentication or visible partial output: " + str(failure.get("status", "stream")))
+	host = HarnessHost.new()
+	host.replies = [{"ok": false, "code": "context_length_exceeded", "error": "Too many tokens"}]
+	outcome = await core.run({"tools": [poll], "messages": history.slice(4).duplicate(true)}, host.hooks())
+	check(host.contexts.size() == 1 and outcome.get("context_recoveries") == 0, "Overflow with no safely reducible old batch fails without an identical retry")
+	host = HarnessHost.new()
+	host.token = {"cancelled": false}
+	host.replies = [{"ok": false, "code": "context_length_exceeded", "error": "Too many tokens"}]
+	var stopping = host.token
+	var stop_recovery = func(value: Dictionary) -> void:
+		if value.get("kind") == "context_pruned": stopping["cancelled"] = true
+	core.event.connect(stop_recovery)
+	outcome = await core.run({"tools": [paid, poll], "messages": history.duplicate(true), "cancel": stopping}, host.hooks())
+	core.event.disconnect(stop_recovery)
+	check(outcome.get("status") == "cancelled" and host.contexts.size() == 1, "Stop during context recovery prevents another provider request")
+	host = HarnessHost.new()
+	host.replies = [_agent_response("", [poll_call]), _agent_response("Fresh status verified")]
+	host.tool_result = {"ok": true, "result": {"status": "completed"}}
+	var reads = history.slice(4).duplicate(true)
+	outcome = await core.run({"tools": [poll], "messages": reads}, host.hooks())
+	check(outcome.get("ok", false) and host.executed.size() == 1 and JSON.parse_string(reads[-2]["content"])["result"]["status"] == "completed", "Reused provider IDs cannot return stale cached status from a read-only tool")
+	var write = scripts["common"].tool("write_fixture", "Repair", {}, [], "write")
+	host = HarnessHost.new()
+	for index in range(6):
+		host.replies.append(_agent_response("", [{"id": "failed-%d" % index, "name": "write_fixture", "arguments": {}}, {"id": "read-%d" % index, "name": "poll_fixture", "arguments": {}}]))
+		host.tool_results.append_array([{"ok": false, "code": "invalid_method", "error": "Same unavailable method"}, {"ok": true, "result": {"status": "unchanged"}}])
+	events.clear()
+	outcome = await core.run({"tools": [write, poll]}, host.hooks())
+	check(outcome.get("code") == "no_progress" and host.contexts.size() == 6, "Unrelated successful reads cannot mask endless retries of the same failed operation")
+	check(events.any(func(value: Dictionary) -> bool: return value.get("kind") == "recovery" and value.get("reason") == "repeated_failure" and value.get("count") == 3), "Interleaved failures receive a change-of-strategy hint before settling")
+
+func _workflow_tests(node: Node) -> void:
+	var core = scripts["harness"].new(node)
+	var definition = scripts["common"].tool("paid_fixture", "One paid operation", {}, [], "external")
+	var a = {"id": "old-a", "name": "paid_fixture", "arguments": {}}
+	var b = {"id": "old-b", "name": "paid_fixture", "arguments": {}}
+	var incoming = []
+	var messages = [{"role": "user", "content": "Build one tree", "turn_id": "workflow"}]
+	var host = HarnessHost.new()
+	var hooks = host.hooks()
+	hooks["steering_pending"] = func() -> bool: return not incoming.is_empty()
+	hooks["steering"] = func() -> Array:
+		var result = incoming.duplicate(true)
+		incoming.clear()
+		return result
+	hooks["complete"] = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
+		if host.contexts.is_empty():
+			incoming.append({"content": "Inspect only; no generation. fixture-secret", "files": ["reference"], "references": ["res://original.gd"]})
+		return await host.complete(context, catalog, stopping, delta)
+	host.replies = [_agent_response("", [a, b]), _agent_response("Adjusted task verified")]
+	var outcome = await core.run({"messages": messages, "tools": [definition], "metadata": {"turn_id": "workflow"}, "deduplicate_tools": ["paid_fixture"]}, hooks)
+	check(outcome.get("ok", false) and outcome.get("requests") == 2 and outcome.get("steering") == 1 and host.executed.is_empty(), "A mid-request adjustment skips unstarted paid calls and continues the same task")
+	check(messages[2].get("role") == "tool" and messages[3].get("role") == "tool" and JSON.parse_string(messages[2]["content"]).get("code") == "steered" and messages[4].get("role") == "user", "Steering is delivered after complete tool-result pairs, without orphaning cancelled calls")
+	check(messages[4].get("turn_id") == "workflow" and messages[4].get("files") == ["reference"] and messages[4].get("references") == ["res://original.gd"] and not "fixture-secret" in str(messages[4]), "A steering message retains task identity and references while redacting saved text")
+	check(host.contexts[1].any(func(item: Dictionary) -> bool: return item.get("role") == "user" and "Inspect only" in str(item.get("content", ""))), "The next model request receives the actual user adjustment")
+	check(messages[4].get("delivery") == "steer" and not messages[4].has("tool_calls"), "Delivered adjustments remain ordinary user requirements rather than executable tool messages")
+	host = HarnessHost.new()
+	incoming.clear()
+	messages = []
+	hooks = host.hooks()
+	hooks["steering_pending"] = func() -> bool: return not incoming.is_empty()
+	hooks["steering"] = func() -> Array:
+		var result = incoming.duplicate(true)
+		incoming.clear()
+		return result
+	hooks["execute"] = func(name: String, args: Dictionary) -> Dictionary:
+		incoming.append({"content": "Keep the generated result and change its placement"})
+		return host.execute(name, args)
+	host.replies = [_agent_response("", [a, b]), _agent_response("Existing result retained")]
+	outcome = await core.run({"messages": messages, "tools": [definition]}, hooks)
+	check(outcome.get("ok", false) and host.executed.size() == 1 and JSON.parse_string(messages[1]["content"]).get("ok", false) and JSON.parse_string(messages[2]["content"]).get("code") == "steered", "An adjustment arriving during an operation preserves its confirmed result and skips only later calls")
+	host = HarnessHost.new()
+	incoming.clear()
+	messages = []
+	hooks = host.hooks()
+	hooks["complete"] = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:
+		if host.contexts.is_empty(): incoming.append({"content": "Also check restart"})
+		return await host.complete(context, catalog, stopping, delta)
+	hooks["steering"] = func() -> Array:
+		var result = incoming.duplicate(true)
+		incoming.clear()
+		return result
+	host.replies = [_agent_response("Old completion"), _agent_response("Restart verified")]
+	outcome = await core.run({"messages": messages}, hooks)
+	check(outcome.get("ok", false) and outcome.get("text") == "Restart verified" and host.contexts.size() == 2 and messages[1].get("role") == "user", "An adjustment arriving with a final answer is handled before settling the task")
+	host = HarnessHost.new()
+	var rounds = {"remaining": 1}
+	hooks = host.hooks()
+	hooks["needs_continuation"] = func() -> bool:
+		var unfinished = rounds["remaining"] > 0
+		rounds["remaining"] -= 1
+		return unfinished
+	hooks["continuation_prompt"] = func() -> String: return "Remaining: verify res://restart.tscn"
+	host.replies = [_agent_response("Intermediate answer"), _agent_response("Task checked")]
+	outcome = await core.run({}, hooks)
+	check(outcome.get("ok", false) and host.contexts[1].any(func(item: Dictionary) -> bool: return item.get("role") == "system" and "res://restart.tscn" in str(item.get("content", "")) and "unfinished" in str(item.get("content", ""))), "An unfinished plan produces an explicit continuation instruction with actual remaining task context")
+	var paired = [{"role": "user", "content": "Keep the request"}, {"role": "assistant", "tool_calls": [a, b]}, {"role": "tool", "tool_call_id": a["id"]}, {"role": "tool", "tool_call_id": b["id"]}, {"role": "assistant", "tool_calls": [{"id": "recent"}]}, {"role": "tool", "tool_call_id": "recent"}]
+	check(scripts["harness"].context_cut(paired, 2) == 4 and scripts["harness"].context_cut(paired, 5) == 4, "Semantic compaction cuts between complete batches and keeps the newest assistant/tool group")
+	paired.remove_at(2)
+	check(scripts["harness"].context_cut(paired, 2) == 0, "An unresolved call prevents compaction from hiding its unmatched result")
+	check(scripts["harness"].context_cut([{"role": "user"}, {"role": "assistant"}], 1) == 0, "Compacting only the original user request is rejected as unhelpful")
+	host = HarnessHost.new()
+	hooks = host.hooks()
+	hooks["prepare_context"] = func(_context: Array, _definitions: Array, _force: bool) -> Dictionary: return {"ok": true, "result": [{"role": "user", "content": "Exact task plus validated summary"}], "compacted": true, "through": 10}
+	host.replies = [_agent_response("Completed from prepared context")]
+	outcome = await core.run({}, hooks)
+	check(outcome.get("ok", false) and outcome.get("compactions") == 1 and host.contexts[0][0]["content"] == "Exact task plus validated summary", "The native loop consumes a validated semantic context without starting another task")
+	host = HarnessHost.new()
+	hooks = host.hooks()
+	hooks["prepare_context"] = func(_context: Array, _definitions: Array, _force: bool) -> Dictionary: return {"ok": false, "code": "summary_save_failed", "error": "Original history retained"}
+	outcome = await core.run({}, hooks)
+	check(outcome.get("status") == "blocked" and outcome.get("code") == "summary_save_failed" and host.contexts.is_empty(), "A failed semantic checkpoint blocks before sending an incomplete context to the model")
+	host = HarnessHost.new()
+	hooks = host.hooks()
+	hooks["prepare_context"] = func(_context: Array, _definitions: Array, _force: bool) -> Dictionary: return {"ok": true, "result": "invalid"}
+	outcome = await core.run({}, hooks)
+	check(outcome.get("code") == "invalid_context" and host.contexts.is_empty(), "A malformed context preparation result cannot reach a provider")
 
 func _put_change_text(path: String, text: String) -> void:
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -1483,7 +1694,7 @@ func _behavior_tests(node: Node) -> void:
 	var hooks = host.hooks()
 	hooks["needs_continuation"] = func() -> bool: return true
 	result = await core.run({"max_steps": 5}, hooks)
-	check(result.get("code") == "no_progress" and host.contexts.size() == 3, "An unfinished plan cannot consume model turns forever without tools or progress")
+	check(result.get("code") == "no_progress" and host.contexts.size() == 4, "An unfinished plan receives three reminders before settling without further tools or progress")
 	host = HarnessHost.new()
 	host.tool_result = {"ok": false, "code": "invalid_path", "error": "Missing file"}
 	var read = scripts["common"].tool("read_fixture", "Read a fixture", {}, [])
@@ -1810,6 +2021,7 @@ func _cloud_generation_tests(node: Node) -> void:
 	check(catalog_script.presets("meshy", "image").size() == 7 and catalog_script.presets("meshy", "mesh").size() == 5, "Meshy image and mesh catalogs are distinct and priced in provider credits")
 	check(not catalog_script.presets("tripo", "image").any(func(item: Dictionary) -> bool: return item["id"] == "chat_image_1"), "Retired Tripo image models are not offered for new profiles")
 	check(common.work_mode_index({"ui_mode": 1}) == 2 and common.work_mode_index({"work_mode": "default", "ui_mode": 1}) == 1, "Old Plan selections migrate safely and Default has a stable name")
+	check(common.work_mode_index({"work_mode": "ask", "ui_mode": 3}) == 3 and common.MODE_IDS[3] == 0 and common.MODES[2] == "Plan", "Ask has a stable read-only identity without changing existing Plan selections")
 	var meshy_text = script.cloud_payload({"kind": "meshy", "asset_kind": "mesh", "model": "latest"}, "bird")
 	check(meshy_text.get("result", {}).get("endpoint") == "/openapi/v2/text-to-3d" and meshy_text["result"]["body"]["mode"] == "preview", "Meshy text-to-3D uses preview v2 schema")
 	var meshy_image = script.cloud_payload({"kind": "meshy", "asset_kind": "mesh"}, "bird", "data:image/png;base64,fixture")

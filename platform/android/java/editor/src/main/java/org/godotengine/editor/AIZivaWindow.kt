@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.webkit.ValueCallback
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -31,6 +32,7 @@ object AIZivaWindow {
     private var bounds = DoubleArray(4)
     private var shown = false
     private var files: ValueCallback<Array<Uri>>? = null
+    private var microphone: PermissionRequest? = null
     private val globalLayout = ViewTreeObserver.OnGlobalLayoutListener { position() }
     private val layout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> position() }
 
@@ -65,17 +67,21 @@ object AIZivaWindow {
             shown = true
             position()
             if (reload) web?.reload()
+            web?.onResume()
         }
     }
 
     fun hide() {
         host.get()?.runOnUiThread {
             shown = false
+            releaseMicrophone()
             web?.let { browser ->
+                browser.evaluateJavascript("window.__godotZivaDismissKeyboard && window.__godotZivaDismissKeyboard()", null)
                 if (browser.hasFocus()) (browser.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(browser.windowToken, 0)
                 browser.clearFocus()
             }
             container?.visibility = View.GONE
+            web?.onPause()
         }
     }
 
@@ -87,6 +93,7 @@ object AIZivaWindow {
 
     private fun create(activity: Activity, uiPort: Int) {
         val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        val mobileScript = activity.assets.open("ai/ziva-mobile.js").bufferedReader().use { it.readText() }
         val frame = FrameLayout(activity).apply { visibility = View.GONE; setBackgroundColor(Color.rgb(20, 23, 32)) }
         val browser = WebView(activity).apply {
             settings.javaScriptEnabled = true
@@ -102,6 +109,14 @@ object AIZivaWindow {
             settings.allowContentAccess = false
             settings.setSupportMultipleWindows(true)
             webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) { releaseMicrophone() }
+                private fun adapt(view: WebView, url: String?) {
+                    val uri = url?.let { Uri.parse(it) } ?: return
+                    if (uri.scheme == "http" && uri.host == "127.0.0.1" && uri.port == uiPort && uri.userInfo == null)
+                        view.evaluateJavascript(mobileScript, null)
+                }
+                override fun onPageCommitVisible(view: WebView, url: String?) { adapt(view, url) }
+                override fun onPageFinished(view: WebView, url: String?) { adapt(view, url) }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (!request.isForMainFrame) return false
                     val url = request.url
@@ -111,6 +126,30 @@ object AIZivaWindow {
                 }
             }
             webChromeClient = object : WebChromeClient() {
+                override fun onPermissionRequest(request: PermissionRequest) {
+                    activity.runOnUiThread {
+                        if (!shown || web !== this@apply ||
+                            !AIMicrophonePermission.localOrigin(request.origin.toString(), uiPort) ||
+                            !AIMicrophonePermission.localOrigin(url, uiPort) ||
+                            !request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                            request.deny(); return@runOnUiThread
+                        }
+                        microphone?.let { previous -> microphone = null; AIMicrophonePermission.cancel(previous); previous.deny() }
+                        microphone = request
+                        AIMicrophonePermission.request(activity, request) { granted ->
+                            if (microphone !== request) return@request
+                            microphone = null
+                            if (granted && shown && web === this@apply &&
+                                AIMicrophonePermission.localOrigin(url, uiPort)) {
+                                request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                            } else request.deny()
+                        }
+                    }
+                }
+                override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                    if (microphone === request) microphone = null
+                    AIMicrophonePermission.cancel(request)
+                }
                 override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
                     files?.onReceiveValue(null)
                     files = callback
@@ -179,6 +218,7 @@ object AIZivaWindow {
     }
 
     private fun disposeWeb() {
+        releaseMicrophone()
         files?.onReceiveValue(null); files = null
         (container?.parent as? ViewGroup)?.let { root -> root.removeOnLayoutChangeListener(layout); root.viewTreeObserver.removeOnGlobalLayoutListener(globalLayout); root.removeView(container) }
         web?.stopLoading(); web?.destroy(); web = null; container = null
@@ -187,6 +227,18 @@ object AIZivaWindow {
     private fun dispose() {
         disposeWeb()
         anchor.get()?.removeOnLayoutChangeListener(layout); anchor.clear()
+    }
+    fun pause(activity: Activity) {
+        if (host.get() === activity) {
+            releaseMicrophone()
+            web?.evaluateJavascript("window.__godotZivaDismissKeyboard && window.__godotZivaDismissKeyboard()", null)
+            web?.onPause()
+        }
+    }
+    fun resume(activity: Activity) { if (host.get() === activity && shown) web?.onResume() }
+    private fun releaseMicrophone() {
+        microphone?.let { request -> microphone = null; AIMicrophonePermission.cancel(request); request.deny() }
+        web?.evaluateJavascript("window.__godotZivaReleaseMicrophone && window.__godotZivaReleaseMicrophone()", null)
     }
     private fun external(activity: Activity, url: Uri) {
         if (url.scheme != "https" || url.host.isNullOrEmpty() || url.userInfo != null) return

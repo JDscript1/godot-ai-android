@@ -271,6 +271,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 		}
 
 		super.onCreate(savedInstanceState)
+		AIVoice.initialize(this)
 
 		// Add the game menu bar.
 		setupGameMenuBar()
@@ -286,13 +287,15 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 
 
 	override fun onStop() {
-		AIVoice.close()
+		AIVoice.pause(this)
+		AIZivaWindow.pause(this)
 		super.onStop()
 	}
 
 	override fun onDestroy() {
 		AIZivaRuntime.release(this)
 		AIZivaWindow.release(this)
+		AIMicrophonePermission.release(this)
 		gradleBuildProvider.buildEnvDisconnect()
 		super.onDestroy()
 	}
@@ -494,6 +497,8 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 
 	override fun onResume() {
 		super.onResume()
+		AIVoice.initialize(this)
+		AIZivaWindow.resume(this)
 		AIZivaRuntime.resume(this)
 		updateWindowAppearance()
 
@@ -833,7 +838,7 @@ abstract class BaseGodotEditor : GodotActivity(), GameMenuFragment.GameMenuListe
 		grantResults: IntArray
 	) {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-		if (AIVoice.permissionResult(requestCode, grantResults)) return
+		if (AIMicrophonePermission.result(this, requestCode, permissions, grantResults)) return
 		// Check if we got access to the necessary storage permissions
 		if (requestCode == PermissionsUtil.REQUEST_ALL_PERMISSION_REQ_CODE) {
 			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {

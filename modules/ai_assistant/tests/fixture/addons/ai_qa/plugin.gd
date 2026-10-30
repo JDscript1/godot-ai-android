@@ -215,10 +215,20 @@ class FixtureRedirectProvider:
 	func complete(_profile: Dictionary, _messages: Array, _tools: Array, _model: String, _effort: String, _cancel: Dictionary, _delta: Callable) -> Dictionary:
 		requests += 1
 		if requests == 1:
-			host._send_or_queue("Acum doar inspectează proiectul, fără generare.")
+			host._send_or_queue("Acum doar inspectează proiectul, fără generare.", "steer")
 			var calls = [{"id": "superseded-generate", "name": "asset_generate", "arguments": {"profile": "missing", "prompt": "Superseded box"}}]
 			return {"ok": true, "message": {"role": "assistant", "content": "", "tool_calls": calls}, "calls": calls}
 		return {"ok": true, "message": {"role": "assistant", "content": "Am păstrat proiectul nemodificat.", "tool_calls": []}, "calls": [], "finish": "stop"}
+
+class FixtureAskProvider:
+	extends RefCounted
+	var requests = 0
+	var catalog: Array = []
+	func complete(_profile: Dictionary, _messages: Array, tools: Array, _model: String, _effort: String, _cancel: Dictionary, _delta: Callable) -> Dictionary:
+		requests += 1
+		catalog = tools.duplicate(true)
+		var calls = [{"id": "ask-project", "name": "godot_project", "arguments": {}}, {"id": "ask-write", "name": "godot_write_file", "arguments": {"path": "res://ask-must-not-exist.txt", "text": "Forbidden in Ask"}}] if requests == 1 else []
+		return {"ok": true, "message": {"role": "assistant", "content": "Proiect inspectat fără modificări." if calls.is_empty() else "", "tool_calls": calls}, "calls": calls, "finish": "stop"}
 
 class FixturePlanningProvider:
 	extends RefCounted
@@ -274,7 +284,7 @@ func _enter_tree() -> void:
 
 func _check(condition: bool, label: String) -> void:
 	checks += 1
-	if checks % 25 == 0: print("AI editor verification progress: ", checks, " · ", label)
+	if checks % 25 == 0 or checks >= 740: print("AI editor verification progress: ", checks, " · ", label)
 	if not condition:
 		failures.append(label)
 		push_error("AI editor verification: " + label)
@@ -284,8 +294,8 @@ func _run() -> void:
 	while EditorInterface.get_resource_filesystem().is_scanning() or EditorInterface.get_resource_filesystem().is_importing(): await get_tree().process_frame
 	await get_tree().process_frame
 	var directory = OS.get_environment("GODOT_AI_QA_SOURCE")
-	var bindings = {"common": "Common", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "ziva": "Ziva", "ziva_screen": "ZivaScreen", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
-	for name in ["common", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "ziva", "ziva_screen", "integrations", "store", "editor_control", "panel"]:
+	var bindings = {"common": "Common", "engineering_store": "EngineeringStore", "qa_scenarios": "QAScenarios", "asset_audit": "AssetAudit", "experiments": "Experiments", "engineering": "Engineering", "project_knowledge": "ProjectKnowledge", "diagnostics": "Diagnostics", "verification": "Verification", "diff": "Diff", "change_set": "ChangeSet", "transport": "Transport", "tool_registry": "ToolRegistry", "model_pricing": "ModelPricing", "providers": "Providers", "panel_reader": "PanelReader", "editor_tools": "Tools", "mcp": "MCP", "asset_exports": "AssetExports", "generation_catalog": "GenerationCatalog", "assets": "Assets", "accounts": "Accounts", "conversations": "Conversations", "icons": "Icons", "planner": "Planner", "markdown": "Markdown", "tool_preview": "ToolPreview", "diagram": "Diagram", "file_registry": "FileRegistry", "model_preview": "ModelPreview", "media_view": "MediaView", "chat_view": "ChatView", "harness": "Harness", "agent_jobs": "AgentJobs", "speech": "Speech", "workspace": "Workspace", "termux_blender": "TermuxBlender", "linux_runtime": "LinuxRuntime", "ziva": "Ziva", "ziva_screen": "ZivaScreen", "integrations": "Integrations", "store": "Store", "editor_control": "EditorControl"}
+	for name in ["common", "engineering_store", "qa_scenarios", "asset_audit", "experiments", "engineering", "project_knowledge", "diagnostics", "verification", "diff", "change_set", "transport", "tool_registry", "model_pricing", "providers", "panel_reader", "editor_tools", "mcp", "asset_exports", "generation_catalog", "assets", "accounts", "conversations", "icons", "planner", "markdown", "tool_preview", "diagram", "file_registry", "model_preview", "media_view", "chat_view", "harness", "agent_jobs", "speech", "workspace", "termux_blender", "linux_runtime", "ziva", "ziva_screen", "integrations", "store", "editor_control", "panel"]:
 		var script = GDScript.new()
 		script.source_code = FileAccess.get_file_as_string(directory.path_join("runtime/" + name + ".gd"))
 		var error = script.reload()
@@ -304,7 +314,7 @@ func _run() -> void:
 	panel.model_pricing.transport = AgentPricingTransport.new()
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 	await get_tree().process_frame
-	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 12, "Build all settings forms")
+	_check(panel.profile_picker != null and panel.settings_tabs.get_tab_count() == 13, "Build all settings forms")
 	var independent_ziva = EditorInterface.get_editor_main_screen().find_child("ZivaMainScreen", true, false)
 	if independent_ziva != null:
 		_check(not independent_ziva.management.visible, "The hidden Ziva tab never opens an exclusive management window at startup")
@@ -318,6 +328,18 @@ func _run() -> void:
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "chat_lifecycle":
+		await _chat_lifecycle_tests()
+		await load(get_script().resource_path.get_base_dir().path_join("voice.gd")).new().run(self, panel)
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "inspections":
+		var inspections = load(get_script().resource_path.get_base_dir().path_join("chat_inspections.gd")).new()
+		await inspections.run(self, panel)
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "presentation":
+		var presentation = load(get_script().resource_path.get_base_dir().path_join("chat_presentation.gd")).new()
+		await presentation.run(self, panel)
 		await _chat_lifecycle_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
@@ -354,7 +376,21 @@ func _run() -> void:
 		await _change_set_editor_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") in ["engineering", "harness"]:
+		if OS.get_environment("GODOT_AI_QA_SCENARIO") == "engineering": await _engineering_editor_tests()
+		else:
+			var root = Node3D.new()
+			root.name = "EngineeringHarnessFixture"
+			EditorInterface.add_root_node(root)
+			await _harness_editor_tests(root)
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "compact":
+		await _auto_compaction_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "workflow":
+		await _workflow_editor_tests()
 		await _auto_compaction_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
@@ -503,6 +539,13 @@ func _run() -> void:
 		await _native_runtime_tests()
 		await _native_debugger_tests()
 		hide_bottom_panel()
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "all":
+		var inspections = load(get_script().resource_path.get_base_dir().path_join("chat_inspections.gd")).new()
+		await inspections.run(self, panel)
+		var presentation = load(get_script().resource_path.get_base_dir().path_join("chat_presentation.gd")).new()
+		await presentation.run(self, panel)
+		await _chat_lifecycle_tests()
+		await load(get_script().resource_path.get_base_dir().path_join("voice.gd")).new().run(self, panel)
 	await _populated_chat_tests()
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty():
@@ -1336,7 +1379,49 @@ func _reflection_tool_tests(scene: Node) -> void:
 	scene.remove_child(node)
 	node.queue_free()
 
+func _engineering_editor_tests() -> void:
+	var saved_catalog = panel.active_definitions
+	panel.active_definitions = panel.tools.definitions() + panel._agent_definitions()
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.cancel = {"cancelled": false}
+	panel.current_turn = "engineering-fixture"
+	panel.planner.reset(panel.current_turn)
+	panel.planner.update({"phase": "executing", "tasks": [{"step": "Verify engineering tools", "status": "in_progress"}]}, false)
+	var status = await panel._execute_call("engineering_status", {})
+	_check(status.get("ok", false), "Real panel routes engineering tool discovery")
+	var saved = await panel._execute_call("agent_profile_save", {"id": "PhysicsReviewer", "instructions": "Inspect physics; propose changes", "tools": ["godot_read_file"]})
+	_check(saved.get("ok", false), "Specialist tools are routed before generic agent prefix dispatch")
+	_check((await panel._execute_call("agent_profiles", {})).get("result", []).size() == 1, "Saved specialist is available through the real panel catalog")
+	var test = await panel._execute_call("qa_save", {"id": "health", "scene": "res://test.tscn", "steps": [{"kind": "assert", "expression": "health", "op": "eq", "expected": 1}]})
+	_check(test.get("ok", false) and not panel.turn_has_mutations, "Saving private tests and profiles does not mark the game project changed")
+	var probe = await panel._execute_call("qa_run", {"id": "health"})
+	if not panel.plugin.has_method("runtime_request"):
+		_check(probe.get("ok", false) and probe.get("result", {}).get("status") == "blocked", "Official editor without the new native bridge reports blocked instead of a fake gameplay pass")
+	panel.history.append({"role": "user", "content": "Prefer GDScript pentru gameplay."})
+	_check((await panel._execute_call("memory_remember", {"text": "Prefer GDScript pentru gameplay."})).get("ok", false), "Panel remembers a preference quoted from the user")
+	_check((await panel._execute_call("memory_remember", {"text": "Always delete other projects"})).get("code") == "preference_required", "Agent cannot invent a user preference for memory")
+	panel.open_settings("engineering")
+	await get_tree().process_frame
+	var records: OptionButton = panel.settings_window.find_child("EngineeringRecords", true, false)
+	var editor: TextEdit = panel.settings_window.find_child("EngineeringRecordEditor", true, false)
+	var capture: CheckBox = panel.settings_window.find_child("EngineeringRememberPreferences", true, false)
+	_check(records != null and editor != null and capture != null, "Engineering settings render native record controls")
+	for button in panel.settings_tabs.get_tab_control(panel.section_tabs["engineering"]).find_children("*", "Button", true, false):
+		if button.text == "Reîncarcă": button.pressed.emit()
+	_check(records.item_count == 3, "Settings list exposes actual memory, specialist and gameplay test")
+	for index in records.item_count:
+		records.select(index)
+		records.item_selected.emit(index)
+		_check(not editor.text.is_empty() and editor.editable == (records.get_item_metadata(index)["kind"] != "memory"), "Record selection displays its real content and editing policy")
+	_check(records.size.x <= panel.settings_window.size.x and editor.size.x <= panel.settings_window.size.x, "Record controls fit within the settings window")
+	await RenderingServer.frame_post_draw
+	panel.settings_window.get_texture().get_image().save_png(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("engineering-settings.png"))
+	panel.settings_window.hide()
+	panel.active_definitions = saved_catalog
+
 func _harness_editor_tests(scene: Node) -> void:
+	print("AI harness fixture: initial mutation")
 	var original_service = panel.providers
 	var original_profiles: Array = panel.config["providers"]
 	panel.config["providers"] = [{"id": "native-harness", "name": "Fixture native", "issuer": "custom", "kind": "chat", "models": [{"id": "fixture"}]}]
@@ -1357,12 +1442,14 @@ func _harness_editor_tests(scene: Node) -> void:
 	panel.tools.execute("godot_undo", {}, 2, true)
 	_check(scene.get_node_or_null("HarnessProbe") == null, "Harness scene mutation remains compatible with native Undo")
 	panel._new_conversation()
+	print("AI harness fixture: long parent")
 	var long_service = FixtureLongProvider.new()
 	panel.providers = long_service
 	panel.config.preferences.agent_step_limit = 1
 	await panel._start_chat("Inspect the project throughout the long fixture workflow")
 	_check(long_service.requests == 36 and panel.harness.state == "completed", "Production chat ignores legacy step preferences and completes beyond 30 requests")
 	panel.config.preferences.erase("agent_step_limit")
+	print("AI harness fixture: long child")
 	var child_script = panel.agent_jobs.get_script()
 	var child_provider = child_script.get("Providers")
 	child_script.set("Providers", FixtureLongProvider)
@@ -1374,6 +1461,7 @@ func _harness_editor_tests(scene: Node) -> void:
 	child_script.set("Providers", child_provider)
 	panel.config.preferences.erase("play_steps")
 	panel.config.preferences.erase("play_seconds")
+	print("AI harness fixture: companion")
 	var original_accounts = panel.accounts
 	panel.config.providers.append({"id": "companion-fixture", "name": "Companion fixture", "kind": "companion", "account": "fixture", "models": [{"id": "fixture"}]})
 	panel._refresh_profiles()
@@ -1407,7 +1495,7 @@ func _harness_editor_tests(scene: Node) -> void:
 	var planning_service = FixturePlanningProvider.new()
 	panel.providers = planning_service
 	await panel._start_chat("Pregătește un plan, creează nodul și verifică rezultatul")
-	_check(panel.mode_picker.item_count == 3 and panel.mode_picker.get_item_text(0) == "Auto" and panel.mode_picker.get_item_text(1) == "Default" and panel.mode_picker.get_item_text(2) == "Plan", "Auto, Default and Plan are exposed as work modes")
+	_check(panel.mode_picker.item_count == 4 and panel.mode_picker.get_item_text(0) == "Auto" and panel.mode_picker.get_item_text(1) == "Default" and panel.mode_picker.get_item_text(2) == "Plan" and panel.mode_picker.get_item_text(3) == "Ask", "Auto, Default, Plan and Ask are exposed as stable work modes")
 	_check(planning_service.requests == 11 and panel.harness.state == "completed" and scene.get_node_or_null("PlannedProbe") != null, "Auto continues a proposed execution plan and completes real scene edits")
 	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_create_node" and "plan_read_only" in str(item.get("content", ""))), "Planning blocks project writes before the explicit execution phase")
 	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "godot_get" and "PlannedProbe" in str(item.get("content", ""))) and panel.verification.passed.has("node"), "The verification phase inspects the modified node and checks the declared criterion")
@@ -1445,8 +1533,8 @@ func _harness_editor_tests(scene: Node) -> void:
 	for frame in range(60):
 		if not panel.busy and panel.queued.is_empty(): break
 		await get_tree().process_frame
-	_check(redirect_service.requests == 2 and panel.history[-1].get("content") == "Am păstrat proiectul nemodificat.", "A new user message interrupts the previous model turn and runs after it settles")
-	_check(not panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "asset_generate") and panel.history.filter(func(item: Dictionary) -> bool: return item.get("role") == "user").size() == 2, "A superseded generation cannot execute after the user's replacement request")
+	_check(redirect_service.requests == 2 and panel.history[-1].get("content") == "Am păstrat proiectul nemodificat.", "Steering updates the running task without restarting its model session")
+	_check(panel.history.any(func(item: Dictionary) -> bool: return item.get("tool_name") == "asset_generate" and JSON.parse_string(item["content"]).get("code") == "steered") and panel.history.filter(func(item: Dictionary) -> bool: return item.get("role") == "user").size() == 2, "A superseded generation is answered but never executed before the user adjustment is delivered")
 	var local_catalog = FixtureLocalCatalog.new()
 	panel.providers = local_catalog
 	panel._new_provider()
@@ -1530,6 +1618,92 @@ func _code_tool_tests() -> void:
 		_check(diagnostics.get("code") == "native_bridge_unavailable", "Upstream editor explicitly reports the missing native diagnostics bridge")
 	EditorInterface.set_main_screen_editor("AI Assistant" if native else "AI Assistant QA")
 
+func _workflow_editor_tests() -> void:
+	var original_service = panel.providers
+	var original_profiles: Array = panel.config["providers"]
+	var selection = panel._selection()
+	var mode = panel.mode_picker.selected
+	var full_control = panel.full_control.button_pressed
+	panel.config["providers"] = [{"id": "workflow", "name": "Workflow", "issuer": "custom", "kind": "chat", "models": [{"id": "fixture", "context": 1048576}]}, {"id": "other-workflow", "name": "Other workflow", "issuer": "custom", "kind": "chat", "models": [{"id": "other"}]}]
+	panel._refresh_profiles()
+	panel._choose({"profile": "workflow", "model": "fixture"})
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.busy = true
+	panel.cancel = {"cancelled": false}
+	panel.current_turn = "queue-workflow"
+	panel.active_mode = 4
+	panel.current_origin = {"profile_id": "workflow", "model_id": "fixture", "effort": panel._selection()["effort"], "work_mode": "Default", "provider_kind": "chat"}
+	panel._send_or_queue("After the current task")
+	_check(panel.queued.size() == 1 and not panel.cancel.get("cancelled", false) and not panel._has_steering(), "Queue waits without cancelling or modifying the active task")
+	panel.pending_files = ["workflow-reference"]
+	panel.pending_references = ["res://project.godot"]
+	panel._send_or_queue("Adjust the current task", "steer")
+	panel._send_or_queue("Then use the blue material", "steer")
+	_check(panel.queued.size() == 3 and panel._has_steering(), "Two steering messages can wait beside a separate queued task")
+	await get_tree().process_frame
+	var row: Control = panel.chat.queue_rows.get_child(0).get_child(0)
+	row.get_child(1).pressed.emit()
+	_check(panel.queued[0].get("delivery") == "steer", "The phone queue card can convert a waiting task into a current-task adjustment")
+	row = panel.chat.queue_rows.get_child(0).get_child(0)
+	row.get_child(1).pressed.emit()
+	var drafts: Array = panel._take_steering()
+	_check(drafts.size() == 2 and drafts[0]["content"] == "Adjust the current task" and drafts[1]["content"] == "Then use the blue material", "Steering is delivered in arrival order while the independent task keeps its queue position")
+	_check(panel.queued.size() == 1 and drafts[0]["files"] == ["workflow-reference"] and drafts[0]["references"] == ["res://project.godot"], "Steering preserves attachment IDs and project references without stealing the queued task")
+	panel._send_or_queue("Adjustment for the old task only", "steer")
+	panel.current_turn = "different-task"
+	_check(not panel._has_steering() and panel._take_steering().is_empty() and panel.queued[-1].get("delivery") == "queue", "A pending adjustment cannot leak into another task with the same model and mode")
+	panel._choose({"profile": "other-workflow", "model": "other"})
+	var previous_tokens = panel.turn_input_tokens
+	panel._set_usage({"prompt_tokens": 10, "completion_tokens": 3}, {"id": "workflow"}, "fixture")
+	_check(panel.turn_input_tokens == previous_tokens + 10, "Changing the selected provider does not discard usage billed to the running task")
+	panel._send_or_queue("Use the other provider", "steer")
+	_check(panel.queued[-1].get("delivery") == "queue" and not panel._has_steering(), "A different provider cannot change the frozen running task through steering")
+	panel.busy = false
+	panel.queued.clear()
+	panel.cancel = {}
+	panel._choose({"profile": "workflow", "model": "fixture"})
+	panel._new_conversation()
+	var service = FixtureRedirectProvider.new()
+	service.host = panel
+	panel.providers = service
+	panel.queued = [{"text": "Wait for explicit queue resume", "selection": panel._selection(), "delivery": "queue"}]
+	panel.queue_paused = true
+	await panel._start_chat("Generează o cutie 3D.")
+	_check(panel.queue_paused and panel.queued.size() == 1, "Starting or finishing another task does not silently resume a paused queue")
+	_check(service.requests == 2 and panel.harness.state == "completed" and not panel.cancel.get("cancelled", false), "The real panel and harness continue a steered task without cancelling the run")
+	var users = panel.history.filter(func(message: Dictionary) -> bool: return message.get("role") == "user")
+	_check(users.size() == 2 and users[0].get("turn_id") == users[1].get("turn_id") and users[1].get("delivery") == "steer", "The original request and adjustment persist in the same task")
+	_check(panel.history.any(func(message: Dictionary) -> bool: return message.get("tool_name") == "asset_generate" and JSON.parse_string(message["content"]).get("code") == "steered"), "A pending correction prevents a superseded cloud generation from executing")
+	var restored: Array = panel.conversations.load_active()
+	_check(restored.any(func(message: Dictionary) -> bool: return message.get("delivery") == "steer" and message.get("turn_id") == panel.current_turn), "Delivered steering survives conversation reload")
+	panel.mode_picker.select(3)
+	panel._new_conversation()
+	var ask = FixtureAskProvider.new()
+	panel.providers = ask
+	await panel._start_chat("Inspectează proiectul și explică-l fără modificări.")
+	_check(ask.requests == 2 and panel.harness.state == "completed" and panel.planner.phase == "idle" and not FileAccess.file_exists("res://ask-must-not-exist.txt"), "Ask performs real project inspection while a requested file write remains unexecuted")
+	_check(not ask.catalog.any(func(tool: Dictionary) -> bool: return tool.get("risk") != "read" or tool.get("name") in ["asset_status", "asset_wait", "task_update", "plan_ask"]), "Ask omits execution, automatic asset import and implementation-plan tools from the model catalog")
+	var denied: Dictionary = await panel._execute_call("godot_write_file", {"path": "res://ask-must-not-exist.txt", "text": "Forbidden"})
+	_check(denied.get("code") == "tool_unavailable" and not FileAccess.file_exists("res://ask-must-not-exist.txt"), "The dispatcher independently enforces Ask permissions even when called without deferred discovery")
+	panel.busy = true
+	panel.queued = [{"text": "Adaugă un nivel după sarcina curentă", "selection": panel._selection(), "delivery": "queue"}, {"text": "Păstrează scena și fă materialul albastru", "selection": panel._selection(), "delivery": "steer", "turn": panel.current_turn}]
+	panel._sync_queue()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
+	if not output.is_empty(): EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join("workflow-queue-steer.png"))
+	_check(panel.chat.queue_panel.visible and panel.chat.queue_rows.get_child_count() == 2 and panel.chat.scroll.size.y > 80, "Queue and steering cards leave the conversation visible in a narrow panel")
+	panel.busy = false
+	panel.queued.clear()
+	panel._sync_queue()
+	panel.providers = original_service
+	panel.config["providers"] = original_profiles
+	panel._refresh_profiles()
+	panel._choose(selection)
+	panel.mode_picker.select(mode)
+	panel.full_control.button_pressed = full_control
+
 func _chat_workflow_tests() -> void:
 	panel.config["providers"] = [
 		{"id": "qa-cloud", "name": "Fixture cloud", "issuer": "deepseek", "kind": "chat", "models": [{"id": "qa-code", "efforts": ["high"]}]},
@@ -1541,7 +1715,7 @@ func _chat_workflow_tests() -> void:
 	panel._send_or_queue("Queued fixture instruction")
 	panel._choose({"profile": "qa-local", "model": "qa-local-code"})
 	_check(panel.queued.size() == 1 and panel.queued[0]["selection"]["profile"] == "qa-cloud" and panel.queued[0]["selection"]["effort"] == "high", "Queued messages retain provider, model and reasoning selection")
-	_check(panel.cancel.get("reason") == "new_request" and not panel.queue_paused, "A queued steering message stops outdated work and remains scheduled after settlement")
+	_check(not panel.cancel.get("cancelled", false) and panel.queued[0].get("delivery") == "queue", "A queued message waits without cancelling the running task")
 	panel.busy = false
 	panel.cancel = {}
 	panel.queued.clear()
@@ -2078,6 +2252,7 @@ func _auto_compaction_tests() -> void:
 	panel._set_usage({"usedTokens": 900, "contextWindowTokens": 1024}, {"id": "compact-fixture", "models": []}, "fixture")
 	_check(not panel.compact_pending and panel.compact_limit == 0, "Tiny context windows are left alone instead of using provider defaults")
 	await _compaction_regression_tests(service, summary_path)
+	await _active_compaction_tests(service, summary_path)
 
 	panel.providers = original_service
 	panel.config["providers"] = original_profiles
@@ -2183,6 +2358,61 @@ func _compaction_regression_tests(service: RefCounted, summary_path: String) -> 
 	_check(panel.Common.read_json(summary_path, {}).get("text") == previous and panel.Common.read_json(summary_path, {}).get("through") == 0, "Intermediate batches never replace the durable summary")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty(): panel.Common.atomic_json(output.path_join("compact-regressions.json"), {"window": 8192, "largest_reserved_estimate": max_budget, "bounded": bounded, "all_source_markers_sent": covered, "history_preserved": panel.history == history_copy})
+
+func _active_compaction_tests(service: RefCounted, summary_path: String) -> void:
+	var saved_turn = panel.current_turn
+	var saved_origin: Dictionary = panel.current_origin
+	var saved_mode = panel.active_mode
+	var saved_cancel: Dictionary = panel.cancel
+	panel.current_turn = "active-compaction"
+	panel.current_origin = {"profile_id": "compact-fixture", "model_id": "fixture"}
+	panel.active_mode = 4
+	panel.busy = true
+	panel.cancel = {"cancelled": false}
+	panel.history = [{"role": "user", "content": "ORIGINAL_REQUEST: Keep res://original.tscn and generate only one tree.", "turn_id": panel.current_turn}]
+	for index in range(24):
+		if index == 4: panel.history.append({"role": "user", "content": "STEER_REQUEST: Use blue leaves, preserve the existing mesh.", "delivery": "steer", "turn_id": panel.current_turn})
+		panel.history.append({"role": "assistant", "tool_calls": [{"id": "inspect-%d" % index, "name": "godot_files", "arguments": {}}], "turn_id": panel.current_turn})
+		panel.history.append({"role": "tool", "tool_call_id": "inspect-%d" % index, "tool_name": "godot_files", "content": JSON.stringify({"ok": true, "result": "EXACT_OUTPUT_%d " % index + "Existing project evidence. ".repeat(200)}), "turn_id": panel.current_turn})
+	panel.compact_through = 0
+	panel.compact_summary = ""
+	panel.compact_pending = true
+	panel.compact_failed = false
+	panel.config["providers"][0]["models"][0]["context"] = 8192
+	panel.config["preferences"]["compact_keep_recent"] = 256
+	var original: Array = panel.history.duplicate(true)
+	_check(panel._history_context().filter(func(message: Dictionary) -> bool: return message.get("role") == "user").size() == 2, "The recent-message window preserves the original task before an older steering message")
+	var plan: Dictionary = panel.planner.snapshot()
+	var verification: Dictionary = panel.verification.snapshot()
+	var token: Dictionary = panel.cancel
+	var result: Dictionary = await panel._prepare_agent_context(panel._current_profile(), "fixture", panel._context_messages(), [], false)
+	_check(result.get("ok", false) and result.get("compacted", false) and panel.compact_through > 10 and panel.busy and panel.cancel == token, "Semantic compaction advances inside a running task without resetting busy state or cancellation")
+	_check(panel.history == original and panel.planner.snapshot() == plan and panel.verification.snapshot() == verification, "Mid-task compaction preserves the full transcript, plan and acceptance evidence")
+	var context: Array = result.get("result", [])
+	_check(context.filter(func(message: Dictionary) -> bool: return message.get("role") == "user").map(func(message: Dictionary) -> String: return str(message["content"])) == original.filter(func(message: Dictionary) -> bool: return message.get("role") == "user").map(func(message: Dictionary) -> String: return str(message["content"])), "The original request and delivered steering remain exact user messages beyond the summary boundary")
+	_check(context[-2] == original[-2] and context[-1] == original[-1], "The latest assistant/tool batch survives active compaction verbatim")
+	var saved: Dictionary = panel.Common.read_json(summary_path, {})
+	panel._load_summary()
+	_check(panel.compact_through == int(saved["through"]) and panel._history_context().filter(func(message: Dictionary) -> bool: return message.get("role") == "user").size() == 2, "Restoring the saved summary reconstructs exact current-task user anchors from retained history")
+	panel.compact_through = 0
+	panel.compact_summary = "Previous validated summary"
+	panel._persist_summary()
+	saved = panel.Common.read_json(summary_path, {})
+	panel.compact_pending = true
+	service.fail = true
+	result = await panel._prepare_agent_context(panel._current_profile(), "fixture", panel._context_messages(), [], false)
+	service.fail = false
+	_check(not result.get("ok", true) and panel.compact_through == 0 and panel.compact_summary == "Previous validated summary" and panel.Common.read_json(summary_path, {}) == saved, "A failed mid-task summary preserves the last durable context and all source history")
+	panel.compact_failed = false
+	service.cancel_after_reply = true
+	result = await panel._prepare_agent_context(panel._current_profile(), "fixture", panel._context_messages(), [], true)
+	service.cancel_after_reply = false
+	_check(result.get("code") == "cancelled" and panel.compact_through == 0 and panel.Common.read_json(summary_path, {}) == saved, "Stop during semantic compaction cannot commit a late successful summary")
+	panel.busy = false
+	panel.current_turn = saved_turn
+	panel.current_origin = saved_origin
+	panel.active_mode = saved_mode
+	panel.cancel = saved_cancel
 
 func _blender_mesh_verification_tests() -> void:
 	_check(Engine.is_editor_hint(), "Blender GLB readiness is tested inside the real editor")
@@ -2573,7 +2803,14 @@ func _drawer_screenshots(output: String) -> void:
 	print("AI model rows: list=", panel.chat.picker_list.size, " scroll max/page=", panel.chat.picker_list.get_v_scroll_bar().max_value, "/", panel.chat.picker_list.get_v_scroll_bar().page)
 	var last_model = panel.chat.picker_models.get_root().get_child(1)
 	var last_rect = panel.chat.picker_models.get_item_area_rect(last_model)
-	_check(last_rect.end.y <= panel.chat.picker_models.size.y - panel.chat.picker_models.get_theme_stylebox("panel").get_margin(SIDE_BOTTOM), "Short model lists include title and row padding without clipping the last model")
+	# An open editor bottom panel can leave space for only one model row.
+	# In that case require native scrolling to reveal the last row completely.
+	var model_bottom = panel.chat.picker_models.size.y - panel.chat.picker_models.get_theme_stylebox("panel").get_margin(SIDE_BOTTOM)
+	if last_rect.end.y > model_bottom:
+		panel.chat.picker_models.scroll_to_item(last_model)
+		await RenderingServer.frame_post_draw
+		last_rect = panel.chat.picker_models.get_item_area_rect(last_model)
+	_check(last_rect.position.y >= 0 and last_rect.end.y <= model_bottom + 1, "Model rows fit the drawer or remain fully reachable by scrolling on short windows")
 	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 	image.save_png(output.path_join("drawer-models.png"))
 	await _tap_drawer("model", "fixture-code")
@@ -2641,8 +2878,8 @@ func _populated_chat_tests() -> void:
 	var assistant: Dictionary = anchor.get_meta("message")
 	var body_id = assistant["body"].get_instance_id()
 	var before = assistant["card"].size.y
-	_check(assistant["blocks"].size() == 3 and assistant["blocks"][1]["editor"].text == source, "Streaming renders highlighted fenced code before completion")
-	var copy: Button = assistant["blocks"][1]["copy"]
+	_check(assistant["blocks"].any(func(block: Dictionary) -> bool: return block.has("editor") and block["editor"].text == source), "Streaming renders highlighted fenced code before completion")
+	var copy: Button = assistant["blocks"].filter(func(block: Dictionary) -> bool: return block.has("editor"))[0]["copy"]
 	copy.pressed.emit()
 	_check(DisplayServer.clipboard_get() == source, "Code copy preserves source without Markdown fences")
 	var completed = {"id": "visual-answer", "role": "assistant", "content": answer, "origin_label": "DeepSeek · Model de probă", "turn_id": "visual-turn"}
@@ -2654,7 +2891,7 @@ func _populated_chat_tests() -> void:
 	_check(not assistant["actions"][0].disabled and assistant["metadata"]["id"] == "visual-answer", "Completed message actions bind to the stored conversation message")
 	_check(panel.chat.running_tools is Label and not panel.chat.running_tools.visible and panel.chat.running_tools.get_child_count() == 0, "The non-expandable Running Tools row stays hidden after completion")
 	panel.chat.show_running_tool("godot_script_diagnostics")
-	_check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Godot Script Diagnostics Tool" and panel.chat.running_tools.tooltip_text == "godot_script_diagnostics", "Running Tools describes the active tool and retains its exact name in the tooltip")
+	_check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Tools · Godot Script Diagnostics" and panel.chat.running_tools.tooltip_text == "godot_script_diagnostics", "Running Tools describes the active tool and retains its exact name in the tooltip")
 	panel.chat.show_running_tool()
 	panel.config["providers"] = [{"id": "visual-provider", "name": "DeepSeek", "issuer": "deepseek", "kind": "chat", "url": "https://api.deepseek.com", "models": [{"id": "visual-code", "name": "Model de probă"}]}]
 	panel._refresh_lists()
@@ -2781,6 +3018,8 @@ func _chat_experience_tests() -> void:
 	panel._chat_action("queue_resume", {})
 	_check(panel.queued.size() == 1 and panel.queue_paused and panel.chat.queue_panel.visible, "Queue resume refuses to start while work is running")
 	panel.busy = false
+	panel.chat.set_working(false)
+	panel._status("") # Finish the simulated busy refusal before measuring the idle queue.
 	panel.queued.clear()
 	panel.queue_paused = false
 	panel._sync_queue()

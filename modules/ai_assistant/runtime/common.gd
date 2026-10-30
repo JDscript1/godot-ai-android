@@ -3,9 +3,9 @@ extends RefCounted
 
 const VERSION = "0.1.0"
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
-const MODES = ["Auto", "Default", "Plan"]
-const MODE_IDS = [2, 4, 3]
-const MODE_ICONS = ["Agent", "Chat", "Plan"]
+const MODES = ["Auto", "Default", "Plan", "Ask"]
+const MODE_IDS = [2, 4, 3, 0]
+const MODE_ICONS = ["Agent", "Chat", "Plan", "Search"]
 
 static func uid() -> String:
 	var bytes = Crypto.new().generate_random_bytes(16)
@@ -63,6 +63,25 @@ static func project_path(raw: String) -> String:
 		if directory != null and directory.is_link(component): return ""
 		current = current.path_join(component)
 	return simplified
+
+## Chat navigation is project-local and never passed to the OS URL handler.
+## Lines and columns are one-based, as in EditorInterface.edit_script.
+static func project_link(raw: String) -> Dictionary:
+	if raw.length() > 2048 or not raw.begins_with("res://"): return {}
+	for index in range(raw.length()):
+		if raw.unicode_at(index) < 32: return {}
+	var pattern = RegEx.new()
+	pattern.compile("^(res://[^:#?]+?)(?:(?::([0-9]+)(?::([0-9]+))?)|(?:#L([0-9]+)))?$")
+	var found = pattern.search(raw)
+	if found == null: return {}
+	var path = project_path(found.get_string(1))
+	if path.is_empty(): return {}
+	var line_text = found.get_string(2) + found.get_string(4)
+	var column_text = found.get_string(3)
+	var line = int(line_text) if not line_text.is_empty() else 1
+	var column = int(column_text) if not column_text.is_empty() else 1
+	if line < 1 or line > 1000000 or column < 1 or column > 1000000: return {}
+	return {"path": path, "line": line, "column": column}
 
 static func atomic_json(path: String, value: Variant) -> Error:
 	var error = DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -158,7 +177,7 @@ static func redact(text: String, secrets: Array) -> String:
 
 static func work_mode_index(selection: Dictionary) -> int:
 	if selection.has("work_mode"):
-		var index = ["auto", "default", "plan"].find(str(selection["work_mode"]))
+		var index = ["auto", "default", "plan", "ask"].find(str(selection["work_mode"]))
 		return index if index >= 0 else 1
 	# Older conversations stored only Auto=0 / Plan=1. Never restore Plan as Default.
 	return 2 if int(selection.get("ui_mode", 0)) in [1, 2, 3] else 0

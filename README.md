@@ -175,6 +175,8 @@ validation remain separate.
 are included in this APK; build/device evidence is tracked in
 the progress document.
 
+Dezvoltare verificată a jocurilor: [instrumente, exemple, dovezi și limite](docs/engineering-workflows.md).
+
 # Godot Engine
 
 <p align="center">
