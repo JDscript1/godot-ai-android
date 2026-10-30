@@ -11,7 +11,12 @@ func run(host: Node, panel: Control) -> void:
 	await host.get_tree().process_frame
 	await host.get_tree().process_frame
 	host._check(chat.voice_strip.visible and not chat.input_row.visible and not chat.composer_controls.visible, "Recording replaces the input controls without adding a second toolbar")
-	host._check(chat.voice_state.text.contains("00:12") and chat.voice_finish.visible and chat.voice_wave.visible, "Voice UI shows elapsed recording, level and a distinct stop action")
+	# Rendering may cross a second boundary on a busy CI runner. The live timer
+	# must reflect at least the twelve seconds already recorded, not freeze at 12.
+	var clock = chat.voice_state.text.get_slice(" ", 1)
+	var seconds = clock.get_slice(":", 1)
+	var elapsed_visible = clock.begins_with("00:") and seconds.is_valid_int() and int(seconds) >= 12 and int(seconds) < 60
+	host._check(elapsed_visible and chat.voice_state.text.ends_with(" / 01:00") and chat.voice_finish.visible and chat.voice_wave.visible, "Voice UI shows elapsed recording, level and a distinct stop action")
 	host._check(chat.compose_panel.get_global_rect().encloses(chat.voice_strip.get_global_rect()), "Voice controls fit entirely inside the responsive composer")
 	await RenderingServer.frame_post_draw
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
