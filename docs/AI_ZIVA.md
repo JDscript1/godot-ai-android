@@ -1,5 +1,59 @@
 # Ziva independent în Godot AI — preview
 
+## Conversație compactă, focus și addonuri — 30.10.2026
+
+Implementare în surse pentru distribuția Ziva Preview. Frontend-ul oficial
+rămâne separat de harness-ul agentului nostru. Un adaptor original al gazdei
+(`assets/ai/ziva-mobile.js`) se aplică numai originii locale Ziva, fără bridge
+JavaScript privilegiat și fără modificarea pachetului oficial.
+
+Pe ferestre înguste (≤760 px CSS) sau joase (≤500 px CSS), bara de sus rămâne
+pe un rând cu derulare orizontală. Panourile suplimentare se restrâng sub
+**Detalii**; composerul și zona cu notificări/todo au înălțimi limitate, iar
+textul lung se derulează în câmp. Setările, selectorii, trimiterea și aprobările
+rămân accesibile. Ecranele mai mari păstrează dispunerea oficială. Adaptorul
+urmărește schimbările DOM din navigarea SPA; nu recreează conversația.
+
+Focusul programatic pe câmpuri text nu mai este suficient pentru a cere
+tastatura. Atingerea explicită a câmpului/etichetei, activarea accesibilă și
+navigarea cu Tab permit editarea. Trimite, Setări și ascunderea tabului șterg
+intenția de editare. Gazda Android ascunde IME după o atingere care nu a selectat
+un câmp; evenimentele de atingere continuă către frontend. Aceste mecanisme
+necesită și verificare fizică pe WebView/IME Android.
+
+`AIZivaProjectContext` inventariază `plugin.cfg` și `.gdextension` din addonurile
+proiectului salvat, inclusiv cele dezactivate. Datele separă **instalat**,
+**activat în project.godot**, **bibliotecă Linux ARM64 prezentă** și **încărcare
+verificată**; prezența unui `.so` nu confirmă încărcarea lui. Scanarea este
+limitată și marchează rezultatele parțiale; legăturile din afara proiectului
+nu sunt urmărite. Metadatele nu devin instrucțiuni executabile.
+
+Inventarul se montează la `/root/.agents/godot-ai-addons.json`, iar un context
+scurt în `/root/.agents/AGENTS.md`, descoperit de mecanismul oficial implicit
+al Ziva. Instrucțiunile globale existente sunt păstrate înaintea contextului;
+`AGENTS.md`, `project.godot` și addonurile proiectului nu sunt suprascrise.
+Conținutul administrat este privat sesiunii și se actualizează la aproximativ
+6 secunde, fără repornirea unui agent activ. Dacă utilizatorul a dezactivat
+în Ziva descoperirea instrucțiunilor globale, acestea nu se forțează; inventarul
+rămâne citibil explicit. O conversație veche poate necesita un tur nou pentru
+recitirea contextului.
+
+Terrain3D instalat pentru Android poate să nu includă biblioteca Linux ARM64
+folosită de editorul separat. Inventarul permite recunoașterea addonului și
+raportarea incompatibilității reale; nu compilează automat acea bibliotecă
+și nu face API-ul nativ Terrain3D disponibil în Linux.
+
+Probe și limite: `.ai-qa/ziva-mobile-20261030/`. Compilarea Kotlin focalizată și
+suita companion au trecut; testele DOM simulează gesturile și focusul.
+O probă MCP în backend-ul oficial Ziva v3.3.2/Godot Linux a citit inventarul,
+instrucțiunile gazdei și originalul proiectului, inclusiv cu un addon fixture
+Terrain3D și biblioteca lipsă. Actualizarea inventarului în același backend
+a fost verificată după adăugarea unui addon. Nu este o probă de conversație/model real sau de tastatură
+Android. Randarea nu a fost validată: Chromium și headless-shell se închid cu SIGTRAP
+în PRoot. ADB nu are dispozitive conectate. Raportul complet este în
+`.ai-qa/ziva-mobile-20261030/verification.json`.
+Nu s-a recompilat, instalat sau înlocuit APK-ul; nu s-a făcut push.
+
 ## Adaptarea la telefon și la redimensionare — 29.10.2026
 
 Tabul Ziva folosește automat zona de lucru extinsă, cu panourile Godot
@@ -267,3 +321,20 @@ Surse: [instalare oficială](https://ziva.sh/docs/installation),
 [release v3.3.2](https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/tag/v3.3.2),
 [Godot 4.7.2 Linux ARM64](https://github.com/godotengine/godot/releases/tag/4.7.2-stable),
 [condiții Ziva](https://ziva.sh/terms).
+
+
+### Microfon și tastatură Android (AG-69)
+
+Gazda tratează `WebChromeClient.onPermissionRequest` prin permisiunea Android
+comună cu dictarea nativă. Acordă exclusiv `RESOURCE_AUDIO_CAPTURE` originii
+`http://127.0.0.1:<portul UI activ>` cât tabul propriu este vizibil; resursele
+video sau alte origini nu primesc permisiune. Ascunderea, navigarea și fundalul
+eliberează fluxurile audio, inclusiv cele care devin disponibile după anulare.
+Transcrierea și cheile oficiale Ziva rămân în backend-ul său separat.
+
+Adaptorul nu înlocuiește funcția DOM `focus()` și nu folosește ascundere IME
+întârziată după orice atingere. Editarea poate supraviețui unei înlocuiri de
+nod Lexical, iar compoziția nu schimbă textul prin codul gazdei. Inițializarea,
+Trimite/Setări și ascunderea tabului nu autorizează singure tastatura.
+Probele DOM sunt simulate; textul/cursorul și microfonul real necesită testul
+APK-ului pe dispozitiv. Implementarea oficială Ziva nu este modificată.

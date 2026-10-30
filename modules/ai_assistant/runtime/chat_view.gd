@@ -5,6 +5,7 @@ static var Providers: GDScript
 static var ModelPricing: GDScript
 static var Icons: GDScript
 static var Markdown: GDScript
+static var Diagram: GDScript
 var file_registry: RefCounted
 var file_scope = ""
 signal action(name: String, args: Dictionary)
@@ -64,6 +65,11 @@ var compose_column: VBoxContainer
 var input_row: HBoxContainer
 var controls_spacer: Control
 var voice_button: Button
+var voice_strip: HBoxContainer
+var voice_state: Label
+var voice_wave: Control
+var voice_finish: Button
+var voice_level = 0.0
 var catalog: Array = []
 var follow_bottom = true
 var latest_button: Button
@@ -81,6 +87,10 @@ var attachment_chips: HFlowContainer
 var expand_button: Button
 var workspace_expanded = false
 var message_records: Array = []
+var response_groups: Array = []
+var response_epoch = 0
+var operation_cards: Dictionary = {}
+var unseen_updates = 0
 var restoring = false
 var motion_enabled = true
 var icon_cache = {}
@@ -295,7 +305,7 @@ func _ready() -> void:
 	composer.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ENTER and not event.shift_pressed and not OS.has_feature("android"):
 			composer.accept_event()
-			action.emit("send", {}))
+			action.emit("steer" if event.ctrl_pressed or event.meta_pressed else "send", {}))
 	composer_controls = HBoxContainer.new()
 	composer_controls.add_theme_constant_override("separation", int(4 * EditorInterface.get_editor_scale()))
 	compose_column.add_child(composer_controls)
@@ -343,6 +353,7 @@ func _ready() -> void:
 	context_label = label(context_indicator, "—")
 	context_label.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
 	set_context(0, 0)
+	_build_voice_strip()
 	send_button.add_theme_stylebox_override("normal", style(Color("7650c5")))
 	for control in [model_button, reasoning_button, options_button, voice_button, send_button, stop_button, attach_button]:
 		_compact_button(control)
@@ -412,12 +423,56 @@ func close_mobile_history() -> void:
 
 func _layout_composer() -> void:
 	if selection_row == null: return
+	var scale = EditorInterface.get_editor_scale()
+	var compact_height = root_column.size.y < 360 * scale
+	var gap = int((3 if compact_height else 6) * scale)
+	if root_column.get_theme_constant("separation") != gap: root_column.add_theme_constant_override("separation", gap)
+	var queue_gap = int((4 if compact_height else 6) * scale)
+	if queue_panel.get_theme_constant("separation") != queue_gap: queue_panel.add_theme_constant_override("separation", queue_gap)
+	var compose_surface = compose_panel.get_theme_stylebox("panel")
+	var compose_padding = (4 if compact_height else 8) * scale
+	if compose_surface.get_content_margin(SIDE_TOP) != compose_padding: compose_surface.set_content_margin_all(compose_padding)
 	composer.placeholder_text = "Mesaj…" if root_column.size.x < 280 * EditorInterface.get_editor_scale() else "Scrie un mesaj…"
 	voice_button.visible = not stop_button.visible
 	_size_selection_chips()
 	_layout_drawer()
 	_layout_activity.call_deferred()
 	_layout_queue.call_deferred()
+
+func _build_voice_strip() -> void:
+	var scale = EditorInterface.get_editor_scale()
+	voice_strip = HBoxContainer.new()
+	voice_strip.name = "VoiceRecording"
+	voice_strip.hide()
+	compose_column.add_child(voice_strip)
+	compose_column.move_child(voice_strip, 0)
+	voice_state = label(voice_strip, "")
+	voice_state.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	voice_state.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	voice_wave = Control.new()
+	voice_wave.custom_minimum_size = Vector2(48, 24) * scale
+	voice_wave.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	voice_strip.add_child(voice_wave)
+	voice_wave.draw.connect(func() -> void:
+		for index in 9:
+			var height = (3 + voice_level * (18 - abs(index - 4) * 2)) * scale
+			voice_wave.draw_rect(Rect2(index * 5 * scale, (voice_wave.size.y - height) / 2, 3 * scale, height), Color("aa8be8")))
+	voice_finish = icon_button(voice_strip, "Stop", "Oprește înregistrarea și transcrie", func() -> void: action.emit("voice", {}))
+	_compact_button(voice_finish)
+	_compact_button(icon_button(voice_strip, "Close", "Anulează înregistrarea sau transcrierea", func() -> void: action.emit("voice_cancel", {})))
+
+func set_voice(phase: String, seconds: int = 0, level: float = 0.0) -> void:
+	if voice_strip == null: return
+	var active = phase != "idle"
+	voice_strip.visible = active
+	input_row.visible = not active
+	composer_controls.visible = not active
+	voice_finish.visible = phase == "recording"
+	voice_wave.visible = phase == "recording"
+	voice_state.text = ("Înregistrez %02d:%02d / 01:00" % [seconds / 60, seconds % 60]) if phase == "recording" else ("Transcriu…" if phase == "transcribing" else ("Pregătesc microfonul…" if phase == "starting" else "Permite accesul la microfon…"))
+	if voice_level != level:
+		voice_level = level
+		voice_wave.queue_redraw()
 
 func _build_activity_panel() -> void:
 	var scale = EditorInterface.get_editor_scale()
@@ -526,6 +581,10 @@ func begin_work(turn: String, snapshot: Dictionary = {}, resuming: bool = false)
 	work_live = true
 	work_outcome = ""
 	work_plan = snapshot.duplicate(true)
+	for group in response_groups:
+		if group["turn"] == turn:
+			group["outcome"] = ""
+			_sync_response(group)
 	_refresh_activity(true)
 
 func finish_work(turn: String, outcome: String) -> void:
@@ -536,6 +595,13 @@ func finish_work(turn: String, outcome: String) -> void:
 	work_notice_running = false
 	work_outcome = outcome
 	work_message = ""
+	for group in response_groups:
+		if group["turn"] == turn:
+			group["outcome"] = outcome
+			for operation in group["operations"]:
+				if operation["state"] == "running": operation["state"] = "cancelled"
+			if group.has("operations_toggle"): _refresh_operations(group)
+			_sync_response(group)
 	_refresh_activity(true)
 
 func show_work_plan(snapshot: Dictionary) -> void:
@@ -722,6 +788,8 @@ func _size_messages() -> void:
 	thread.custom_minimum_size.x = minf(760 * scale, maxf(180, scroll.size.x - 24 * scale))
 	for record in message_records:
 		if is_instance_valid(record["card"]) and record["role"] == "user": _size_user(record)
+		for block in record["blocks"]:
+			if block["kind"] == "diagram": _size_diagram(block)
 	for card in plan_cards.values() + question_cards.values():
 		var width = minf(440 * scale, maxf(0, scroll.size.x - 36 * scale))
 		card["node"].custom_minimum_size.x = 0
@@ -834,7 +902,7 @@ func _build_drawer() -> void:
 	drawer_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	drawer_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	drawer_title.add_theme_font_size_override("font_size", int(18 * EditorInterface.get_editor_scale()))
-	icon_button(header, "Close", "Închide fără a schimba modelul", _close_drawer)
+	_compact_button(icon_button(header, "Close", "Închide fără a schimba modelul", _close_drawer))
 	drawer_step = label(body, "")
 	drawer_step.add_theme_color_override("font_color", Color("b5a4d9"))
 	picker_search = LineEdit.new()
@@ -863,6 +931,13 @@ func _build_drawer() -> void:
 	picker_models.set_column_expand_ratio(0, 3)
 	picker_models.set_column_expand_ratio(1, 2)
 	picker_models.add_theme_constant_override("v_separation", int(8 * EditorInterface.get_editor_scale()))
+	var model_surface = style(Color("0d1320"))
+	model_surface.border_color = Color("30394e")
+	model_surface.set_border_width_all(1)
+	# Leave room for a complete selectable row below the title on short screens.
+	model_surface.content_margin_top = 4 * EditorInterface.get_editor_scale()
+	model_surface.content_margin_bottom = 4 * EditorInterface.get_editor_scale()
+	picker_models.add_theme_stylebox_override("panel", model_surface)
 	picker_models.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	picker_models.custom_minimum_size.y = 88 * EditorInterface.get_editor_scale()
 	body.add_child(picker_models)
@@ -885,6 +960,7 @@ func _build_drawer() -> void:
 		action.emit("settings", {"section": "providers"}))
 	manage.icon = _icon("Settings")
 	manage.tooltip_text = "Adaugă un furnizor sau actualizează modelele"
+	for control in [drawer_back, drawer_refresh, manage]: _compact_button(control)
 
 func _show_drawer(stage: String) -> void:
 	runtime_options.hide()
@@ -1112,6 +1188,7 @@ func _update_history_controls() -> void:
 
 func clear_messages() -> void:
 	follow_bottom = true
+	thread.alignment = BoxContainer.ALIGNMENT_BEGIN
 	last_scroll_value = 0.0
 	if latest_button != null: latest_button.hide()
 	reset_work()
@@ -1121,6 +1198,10 @@ func clear_messages() -> void:
 	playtest_cards.clear()
 	question_touch_targets.clear()
 	message_records.clear()
+	response_groups.clear()
+	operation_cards.clear()
+	response_epoch = 0
+	unseen_updates = 0
 	find_matches.clear()
 	find_index = -1
 	if find_count != null: find_count.text = "0/0"
@@ -1389,10 +1470,259 @@ func _playtest_card(turn: String) -> Dictionary:
 	playtest_cards[turn] = card
 	return card
 
-func append_message(role: String, text: String, metadata: Dictionary = {}, rich: bool = true) -> RichTextLabel:
+func _response_group(metadata: Dictionary) -> Dictionary:
+	var turn = str(metadata.get("turn_id", ""))
+	if not turn.is_empty() and not response_groups.is_empty():
+		var last: Dictionary = response_groups[-1]
+		if last["turn"] == turn and last["epoch"] == response_epoch: return last
+	var scale = EditorInterface.get_editor_scale()
 	var row = HBoxContainer.new()
+	row.name = "AssistantResponse"
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	thread.add_child(row)
+	var card = VBoxContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_constant_override("separation", int(10 * scale))
+	row.add_child(card)
+	var identity = HBoxContainer.new()
+	identity.name = "ResponseIdentity"
+	card.add_child(identity)
+	var mark = TextureRect.new()
+	mark.custom_minimum_size = Vector2(16, 16) * scale
+	mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	mark.texture = _icon("Agent")
+	for profile in catalog:
+		if profile["id"] == metadata.get("profile_id"): mark.texture = provider_icon(profile)
+	identity.add_child(mark)
+	var heading = label(identity, str(metadata.get("origin_label", "Godot AI")))
+	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	heading.add_theme_font_size_override("font_size", int(12 * scale))
+	heading.add_theme_color_override("font_color", Color("b5a4d9"))
+	var state = label(identity, "")
+	state.name = "ResponseState"
+	state.add_theme_font_size_override("font_size", int(11 * scale))
+	state.hide()
+	var progress_toggle = button(card, "", func() -> void: pass)
+	progress_toggle.name = "ResponseProgress"
+	progress_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	progress_toggle.clip_text = true
+	progress_toggle.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+	_compact_button(progress_toggle)
+	progress_toggle.hide()
+	var progress = VBoxContainer.new()
+	progress.add_theme_constant_override("separation", int(12 * scale))
+	progress.hide()
+	card.add_child(progress)
+	progress_toggle.pressed.connect(func() -> void:
+		_preserve_reader()
+		progress.visible = not progress.visible
+		_refresh_progress_title(progress_toggle, progress))
+	var content = VBoxContainer.new()
+	content.add_theme_constant_override("separation", int(8 * scale))
+	card.add_child(content)
+	var files = HFlowContainer.new()
+	files.name = "ResponseFiles"
+	files.add_theme_constant_override("h_separation", int(8 * scale))
+	files.add_theme_constant_override("v_separation", int(8 * scale))
+	files.hide()
+	card.add_child(files)
+	var footer = VBoxContainer.new()
+	footer.add_theme_constant_override("separation", int(4 * scale))
+	card.add_child(footer)
+	var group = {"index": response_groups.size(), "row": row, "card": card, "state": state, "progress": progress, "progress_toggle": progress_toggle, "content": content, "files": files, "footer": footer, "records": [], "operations": [], "turn": turn, "epoch": response_epoch, "outcome": str(metadata.get("run_status", ""))}
+	response_groups.append(group)
+	for previous in response_groups.slice(0, -1):
+		if not turn.is_empty() and previous["turn"] == turn: _sync_response(previous)
+	return group
+
+func _refresh_progress_title(toggle: Button, progress: VBoxContainer) -> void:
+	var count = progress.get_child_count()
+	toggle.text = ("▴" if progress.visible else "▸") + " Progres · %d " % count + ("actualizare" if count == 1 else "actualizări")
+
+func _sync_response(group: Dictionary) -> void:
+	var primary: Dictionary = {}
+	var latest = true
+	for other in response_groups.slice(int(group["index"]) + 1):
+		if not str(group["turn"]).is_empty() and other["turn"] == group["turn"]: latest = false
+	for record in group["records"]:
+		if not str(record["text"]).strip_edges().is_empty() or record["streaming"]: primary = record
+	for record in group["records"]:
+		var main = not primary.is_empty() and is_same(record, primary)
+		for key in ["actions_row", "metrics_label"]:
+			if record.has(key) and record[key].get_parent() != group["footer"]: record[key].reparent(group["footer"])
+		if record.has("actions_row"): record["actions_row"].visible = main and latest
+		if record.has("metrics_label"): record["metrics_label"].visible = main and latest and not record["metrics_label"].text.is_empty()
+		var parent: Node = group["content"] if main else group["progress"]
+		if record["row"].get_parent() != parent:
+			_preserve_reader()
+			record["row"].reparent(parent)
+		var empty = str(record["text"]).is_empty() and not record["streaming"] and record["metadata"].get("reasoning_content", "").is_empty()
+		record["row"].visible = not empty
+	var count = group["progress"].get_child_count()
+	group["progress_toggle"].visible = count > 0
+	_refresh_progress_title(group["progress_toggle"], group["progress"])
+	var outcome = str(group.get("outcome", ""))
+	var captions = {"completed": "Rezultat", "cancelled": "Întrerupt", "blocked": "Blocat", "failed": "Eșuat", "limited": "Necesită verificare"}
+	group["state"].text = str(captions.get(outcome, "În lucru" if work_live and group["turn"] == work_turn else ""))
+	group["state"].visible = not group["state"].text.is_empty()
+	group["state"].add_theme_color_override("font_color", Color("9dd0ad") if outcome == "completed" else (Color("dfb97d") if not outcome.is_empty() else Color("aa98cc")))
+	if not primary.is_empty(): primary["column"].set_meta("response_outcome", outcome)
+
+func _preserve_reader() -> void:
+	if follow_bottom or restoring: return
+	var value = scroll.scroll_vertical
+	# Layout changes above the visible content must not pull a reader elsewhere.
+	(func() -> void:
+		if not follow_bottom: scroll.scroll_vertical = value).call_deferred()
+
+func show_tool_event(event: Dictionary, metadata: Dictionary, caption: String = "") -> void:
+	var group = _response_group(metadata)
+	var key = str(group["epoch"]) + ":" + str(metadata.get("turn_id", "")) + ":" + str(event.get("id", ""))
+	var operation: Dictionary = operation_cards.get(key, {})
+	if event.get("kind") == "tool_started" or operation.is_empty() or operation.get("state") != "running":
+		operation = {"name": str(event.get("name", "")), "title": caption.trim_prefix("Running ").replace(" Tool", ""), "state": "running", "detail": "", "expanded": false}
+		if operation["title"].is_empty(): operation["title"] = operation["name"].replace("_", " ").capitalize()
+		group["operations"].append(operation)
+		operation_cards[key] = operation
+	var result: Dictionary = event.get("result", {})
+	if event.get("kind") != "tool_started":
+		var code = str(result.get("code", ""))
+		operation["state"] = "completed" if result.get("ok", false) else ("unknown" if code in ["submission_unknown", "execution_unknown"] else ("cancelled" if code in ["cancelled", "steered"] else "failed"))
+		operation["duration_ms"] = int(event.get("duration_ms", 0))
+		operation["replayed"] = bool(event.get("replayed", false))
+		operation["executed"] = bool(event.get("executed", false))
+		operation["detail"] = str(result.get("error", "")).left(2000)
+		operation["code"] = code
+		operation["preview"] = event.get("preview", {}).duplicate(true)
+		# Only presentation data enters the widget. Provider bodies, bytes and
+		# tool arguments remain in the redacted journal, not in every chat row.
+		var data: Variant = result.get("result", {})
+		if data is Dictionary:
+			var facts: Array[String] = []
+			for field in ["path", "status", "imported_path", "count", "valid"]:
+				if data.has(field) and data[field] is not Dictionary and data[field] is not Array: facts.append(field + ": " + str(data[field]).left(220))
+			operation["facts"] = "\n".join(facts)
+	_refresh_operations(group)
+	_sync_response(group)
+	_follow.call_deferred()
+
+func _refresh_operations(group: Dictionary) -> void:
+	if not group.has("operations_toggle"):
+		var toggle = button(group["card"], "", func() -> void: pass)
+		toggle.name = "ResponseOperations"
+		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		toggle.clip_text = true
+		toggle.add_theme_stylebox_override("normal", _compact_style(Color("181e2b")))
+		_compact_button(toggle)
+		var rows = VBoxContainer.new()
+		rows.hide()
+		group["card"].add_child(rows)
+		group["card"].move_child(toggle, group["content"].get_index())
+		group["card"].move_child(rows, group["content"].get_index())
+		group["operations_toggle"] = toggle
+		group["operations_rows"] = rows
+		group["operations_visible"] = 20
+		toggle.pressed.connect(func() -> void:
+			_preserve_reader()
+			rows.visible = not rows.visible
+			_refresh_operations(group))
+	var operations: Array = group["operations"]
+	var failed = operations.filter(func(op: Dictionary) -> bool: return op["state"] == "failed").size()
+	var unknown = operations.filter(func(op: Dictionary) -> bool: return op["state"] == "unknown").size()
+	var running = operations.any(func(op: Dictionary) -> bool: return op["state"] == "running")
+	group["operations_toggle"].text = ("▴" if group["operations_rows"].visible else "▸") + " Operații · %d" % operations.size() + (" · în lucru" if running else "") + (" · %d cu erori" % failed if failed else "") + (" · %d neconfirmate" % unknown if unknown else "")
+	group["operations_toggle"].add_theme_color_override("font_color", Color("dfb97d") if failed or unknown else Color("aeb9cc"))
+	if not group["operations_rows"].visible: return
+	_preserve_reader()
+	for child in group["operations_rows"].get_children():
+		group["operations_rows"].remove_child(child)
+		child.queue_free()
+	var hidden = maxi(0, operations.size() - int(group["operations_visible"]))
+	if hidden:
+		var more = button(group["operations_rows"], "Arată operațiile anterioare · %d" % hidden, func() -> void:
+			group["operations_visible"] += 20
+			_refresh_operations(group))
+		_compact_button(more)
+	for op in operations.slice(hidden):
+		var column = VBoxContainer.new()
+		group["operations_rows"].add_child(column)
+		var heading = button(column, "", func() -> void: pass)
+		heading.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		heading.clip_text = true
+		heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		heading.text = str({"running": "◌ ", "completed": "✓ ", "failed": "! ", "unknown": "? ", "cancelled": "Ⅱ "}.get(op["state"], "")) + op["title"] + (" · " + _duration_label(int(op.get("duration_ms", 0))) if op.get("duration_ms", 0) > 0 else "")
+		heading.tooltip_text = op["name"]
+		heading.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+		heading.add_theme_color_override("font_color", Color("dfb97d") if op["state"] in ["failed", "unknown"] else Color("aeb9cc"))
+		_compact_button(heading)
+		var details = VBoxContainer.new()
+		details.visible = op["expanded"]
+		column.add_child(details)
+		if op["expanded"]: _operation_details(details, op)
+		heading.pressed.connect(func() -> void:
+			_preserve_reader()
+			op["expanded"] = not op["expanded"]
+			if op["expanded"] and details.get_child_count() == 0: _operation_details(details, op)
+			details.visible = op["expanded"])
+
+func _operation_details(details: VBoxContainer, op: Dictionary) -> void:
+	var text = op["name"] + "\n" + str({"running": "În lucru", "completed": "Operație încheiată", "failed": "Operație eșuată", "unknown": "Rezultat neconfirmat · verifică operația existentă înainte de repetare", "cancelled": "Operație întreruptă"}.get(op["state"], ""))
+	if op.get("replayed", false): text += " · rezultat reutilizat, fără execuție nouă"
+	if not str(op.get("code", "")).is_empty(): text += "\nCod: " + str(op["code"])
+	for field in ["detail", "facts"]:
+		if not str(op.get(field, "")).is_empty(): text += "\n" + str(op[field])
+	var rich = _text_block(details)["node"]
+	rich.add_text(text)
+	var preview: Dictionary = op.get("preview", {})
+	if not preview.is_empty(): _inspection_preview(details, preview)
+	var links = HFlowContainer.new()
+	details.add_child(links)
+	var copy = button(links, "Copiază detaliile", func() -> void: DisplayServer.clipboard_set(text))
+	_compact_button(copy)
+	var journal = button(links, "Jurnal", func() -> void: action.emit("settings", {"section": "journal"}))
+	_compact_button(journal)
+
+func _inspection_preview(parent: Control, preview: Dictionary) -> void:
+	var caption = str({"read": "Fragment citit", "search": "Rezultate căutare", "files": "Fișiere găsite"}.get(preview["kind"], "Inspecție"))
+	if not str(preview.get("query", "")).is_empty(): caption += " · " + str(preview["query"])
+	var heading = label(parent, caption)
+	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	heading.add_theme_color_override("font_color", Color("aabbd3"))
+	for item in preview.get("items", []):
+		var link = Common.project_link(str(item["path"]) + ":%d:%d" % [int(item.get("line", 1)), int(item.get("column", 1))])
+		if link.is_empty(): continue
+		var path = _text_block(parent)["node"]
+		path.name = "InspectionPath"
+		path.push_meta(link, RichTextLabel.META_UNDERLINE_ALWAYS)
+		path.push_color(Color("a7c6fa"))
+		path.add_text(str(item["path"]) + (":%d" % int(item.get("line", 1)) if preview["kind"] != "files" else ""))
+		path.pop(); path.pop()
+		if not item.get("rows", []).is_empty():
+			var block = _code_block(parent)
+			block["language_id"] = str(item["path"]).get_extension()
+			block["rows"] = item["rows"]
+			var lines: Array[String] = []
+			for row in item["rows"]: lines.append(str(row["text"]))
+			block["source"] = "\n".join(lines)
+			_update_code(block)
+			if int(item.get("excerpt_column", 1)) > 1:
+				var excerpt = label(parent, "Fragmentul potrivirii începe la coloana %d." % int(item["excerpt_column"]))
+				excerpt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if preview.get("items", []).is_empty() or preview.get("empty", false): label(parent, "Fișier gol." if preview["kind"] == "read" else "Niciun rezultat.")
+	if preview.get("partial", false):
+		var note = label(parent, "Afișare parțială · deschide fișierul pentru conținutul actual complet.")
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note.add_theme_color_override("font_color", Color("dfb97d"))
+
+func append_message(role: String, text: String, metadata: Dictionary = {}, rich: bool = true) -> RichTextLabel:
+	_preserve_reader()
+	var group = _response_group(metadata) if role == "assistant" else {}
+	if role == "user": response_epoch += 1
+	var row = HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	(thread if group.is_empty() else group["content"]).add_child(row)
 	if role == "user":
 		var spacer = Control.new()
 		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1406,29 +1736,12 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 	var column = VBoxContainer.new()
 	column.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
 	card.add_child(column)
-	if role != "user":
-		var identity = HBoxContainer.new()
-		column.add_child(identity)
-		var mark = TextureRect.new()
-		mark.custom_minimum_size = Vector2(16, 16) * EditorInterface.get_editor_scale()
-		mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		mark.texture = _icon("Agent")
-		for profile in catalog:
-			if profile["id"] == metadata.get("profile_id"): mark.texture = provider_icon(profile)
-		identity.add_child(mark)
-		var heading = label(identity, str(metadata.get("origin_label", "Godot AI")))
-		heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		heading.tooltip_text = heading.text
-		heading.add_theme_font_size_override("font_size", int(12 * EditorInterface.get_editor_scale()))
-		heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		heading.add_theme_color_override("font_color", Color("b5a4d9"))
 	var body = VBoxContainer.new()
 	column.add_child(body)
 	var anchor = RichTextLabel.new()
 	anchor.hide()
 	column.add_child(anchor)
-	var record = {"role": role, "row": row, "card": card, "column": column, "body": body, "blocks": [], "text": text, "metadata": metadata.duplicate(true), "rich": rich, "streaming": role == "assistant" and not metadata.has("id")}
+	var record = {"role": role, "row": row, "card": card, "column": column, "body": body, "blocks": [], "text": text, "metadata": metadata.duplicate(true), "rich": rich, "streaming": role == "assistant" and not metadata.has("id"), "group_index": group.get("index", -1)}
 	anchor.set_meta("message", record)
 	message_records.append(record)
 	_render_content(record)
@@ -1442,18 +1755,29 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 				picture.texture = ImageTexture.create_from_image(preview)
 				picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 				picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-				picture.custom_minimum_size.y = 180
+				picture.custom_minimum_size.y = 112 * EditorInterface.get_editor_scale()
 				column.add_child(picture)
-	for file_id in metadata.get("files", []): _file_card(column, str(file_id))
+	for file_id in metadata.get("files", []):
+		if group.is_empty(): _file_card(column, str(file_id))
+		else:
+			if group["files"].find_child("File_" + str(file_id), true, false) == null: _file_card(group["files"], str(file_id))
+			group["files"].show()
 	if role == "assistant":
-		_message_actions(record)
-		_refresh_metrics(record)
+		if not text.is_empty() or record["streaming"]:
+			group["records"].append(record)
+			_message_actions(record)
+			_refresh_metrics(record)
+		else: row.hide()
+		_sync_response(group)
 	else:
 		for item in message_records: _refresh_message_controls(item)
 	if motion_enabled and not restoring and is_visible_in_tree():
 		row.modulate.a = 0.0
 		create_tween().tween_property(row, "modulate:a", 1.0, 0.12)
 	_follow.call_deferred()
+	if not restoring and not follow_bottom:
+		unseen_updates += 1
+		_update_latest_button()
 	return anchor
 
 func _markdown(target: RichTextLabel, text: String) -> void:
@@ -1471,69 +1795,187 @@ func _size_user(record: Dictionary) -> void:
 	record["card"].custom_minimum_size.x = wanted
 	record["card"].custom_maximum_size.x = wanted
 
+func _text_block(parent: Node) -> Dictionary:
+	var text = RichTextLabel.new()
+	text.fit_content = true
+	text.scroll_active = false
+	text.selection_enabled = true
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_font_size_override("normal_font_size", int(14 * EditorInterface.get_editor_scale()))
+	text.add_theme_constant_override("line_separation", int(4 * EditorInterface.get_editor_scale()))
+	text.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
+	text.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
+	text.meta_clicked.connect(func(value: Variant) -> void:
+		if value is Dictionary:
+			var link = Common.project_link(str(value.get("path", "")) + ":%d:%d" % [int(value.get("line", 1)), int(value.get("column", 1))])
+			if not link.is_empty(): action.emit("project_open", link)
+		elif Common.parse_url(str(value), true).get("ok", false): action.emit("open_url", {"url": str(value)}))
+	parent.add_child(text)
+	return {"kind": "text", "node": text, "source": "", "renders": 0}
+
+func _code_block(parent: Node) -> Dictionary:
+	var scale = EditorInterface.get_editor_scale()
+	var panel = PanelContainer.new()
+	var surface = style(Color("0d1320"), 12)
+	surface.set_content_margin_all(8 * scale)
+	panel.add_theme_stylebox_override("panel", surface)
+	parent.add_child(panel)
+	var box = VBoxContainer.new()
+	panel.add_child(box)
+	var header = HBoxContainer.new()
+	box.add_child(header)
+	var language = label(header, "Cod")
+	language.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	language.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	language.add_theme_color_override("font_color", Color("9faac0"))
+	var editor = CodeEdit.new()
+	editor.editable = false
+	editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	editor.scroll_fit_content_height = true
+	editor.custom_minimum_size.y = 38 * scale
+	editor.custom_maximum_size.y = 360 * scale
+	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	editor.add_theme_font_size_override("font_size", int(13 * scale))
+	var block = {"kind": "code", "node": panel, "editor": editor, "language": language, "source": "", "language_id": "", "expanded": false, "renders": 0}
+	var copy = icon_button(header, "Copy", "Copiază codul complet", func() -> void: DisplayServer.clipboard_set(block["source"]))
+	_compact_button(copy)
+	block["copy"] = copy
+	box.add_child(editor)
+	var expand = button(box, "", func() -> void:
+		_preserve_reader()
+		block["expanded"] = not block["expanded"]
+		_update_code(block, true))
+	expand.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	expand.clip_text = true
+	_compact_button(expand)
+	expand.hide()
+	block["expand"] = expand
+	return block
+
+func _update_code(block: Dictionary, force: bool = false) -> void:
+	var source = str(block["source"])
+	var lines = source.split("\n")
+	var long_code = lines.size() > 18
+	block["expand"].visible = long_code
+	block["expand"].text = "Restrânge codul" if block["expanded"] else "Arată tot codul · %d linii" % lines.size()
+	var preview = "\n".join(lines.slice(0, 12)) if long_code and not block["expanded"] else source
+	block["editor"].custom_maximum_size.y = 0 if block["expanded"] else 360 * EditorInterface.get_editor_scale()
+	if force or block["editor"].text != preview:
+		var offset = block["editor"].scroll_vertical
+		block["editor"].text = preview
+		block["editor"].scroll_vertical = offset
+	if block.has("rows"):
+		var editor: CodeEdit = block["editor"]
+		if not block.has("line_gutter"):
+			block["line_gutter"] = editor.get_gutter_count()
+			editor.add_gutter()
+			editor.set_gutter_type(block["line_gutter"], TextEdit.GUTTER_TYPE_STRING)
+			editor.set_gutter_width(block["line_gutter"], int(54 * EditorInterface.get_editor_scale()))
+		for index in range(mini(editor.get_line_count(), block["rows"].size())):
+			editor.set_line_gutter_text(index, block["line_gutter"], str(block["rows"][index]["line"]))
+	var language = str(block["language_id"]).to_lower()
+	block["language"].text = str({"gdscript": "GDScript", "gd": "GDScript", "python": "Python", "json": "JSON", "csharp": "C#", "bash": "Shell", "sh": "Shell", "": "Cod"}.get(language, language))
+	if block.get("highlighted", "__unset__") == language: return
+	block["highlighted"] = language
+	var colors = CodeHighlighter.new()
+	var words = ["true", "false", "null"]
+	if language in ["gdscript", "gd", "python", "py", ""]: words += ["func", "var", "extends", "if", "else", "return", "class_name", "await", "for", "in", "const", "static", "signal", "def", "class", "import", "from", "True", "False", "None"]
+	elif language in ["csharp", "c#", "cs"]: words += ["using", "class", "public", "private", "void", "return", "if", "else", "new", "static"]
+	for word in words: colors.add_keyword_color(word, Color("c4a4fc"))
+	colors.number_color = Color("91c9eb")
+	colors.symbol_color = Color("b5bfd4")
+	colors.function_color = Color("91c9eb")
+	colors.add_color_region("\"", "\"", Color("b4d6a3"))
+	if language != "json": colors.add_color_region("#", "", Color("7e8ba0"), true)
+	block["editor"].syntax_highlighter = colors
+
+func _diagram_block(parent: Node) -> Dictionary:
+	var block = _code_block(parent)
+	block["kind"] = "diagram"
+	block["language_id"] = "mermaid"
+	var box = block["editor"].get_parent()
+	var tools = HFlowContainer.new()
+	box.add_child(tools)
+	box.move_child(tools, 1)
+	var canvas = Diagram.new()
+	canvas.name = "NativeDiagram"
+	box.add_child(canvas)
+	box.move_child(canvas, 2)
+	var note = label(box, "")
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_color_override("font_color", Color("aabbd3"))
+	box.move_child(note, 3)
+	var source = button(tools, "Sursă", func() -> void:
+		_preserve_reader()
+		block["source_visible"] = not block.get("source_visible", false)
+		_diagram_visibility(block))
+	_compact_button(source)
+	var explore = button(tools, "Explorează", func() -> void: canvas.explore(not canvas.interactive))
+	explore.toggle_mode = true
+	_compact_button(explore)
+	for entry in [["−", 1.0 / 1.3], ["+", 1.3]]:
+		var factor = float(entry[1])
+		_compact_button(button(tools, entry[0], func() -> void: canvas.magnify(factor)))
+	_compact_button(button(tools, "Încadrează", func() -> void: canvas.fit()))
+	block["canvas"] = canvas
+	block["diagram_tools"] = tools
+	block["diagram_note"] = note
+	block["source_toggle"] = source
+	block["source_visible"] = false
+	return block
+
+func _diagram_visibility(block: Dictionary) -> void:
+	var valid = block.get("model", {}).get("ok", false)
+	block["canvas"].visible = valid
+	block["diagram_tools"].visible = valid
+	block["editor"].visible = block.get("source_visible", false) or not valid
+	block["expand"].visible = block["editor"].visible and str(block["source"]).split("\n").size() > 18
+	block["source_toggle"].text = "Ascunde sursa" if block.get("source_visible", false) else "Sursă"
+
+func _size_diagram(block: Dictionary) -> void:
+	var scale = EditorInterface.get_editor_scale()
+	block["canvas"].custom_minimum_size.y = minf(280 * scale, maxf(120 * scale, scroll.size.y * 0.55))
+
+func _update_diagram(block: Dictionary, ready: bool) -> void:
+	_update_code(block)
+	block["language"].text = "Diagramă · Mermaid"
+	if not ready:
+		block["model"] = {}
+		block["diagram_note"].text = "Diagrama se desenează după încheierea blocului."
+	else:
+		block["model"] = Diagram.parse(str(block["source"]))
+		if block["model"].get("ok", false):
+			block["canvas"].configure(block["model"], EditorInterface.get_editor_scale())
+			_size_diagram(block)
+			block["diagram_note"].text = "Zoom: + / − · Explorează activează deplasarea; altfel glisarea derulează conversația."
+		else: block["diagram_note"].text = str(block["model"].get("error", "Diagrama nu a putut fi desenată.")) + " Sursa este păstrată."
+	_diagram_visibility(block)
+
 func _render_content(record: Dictionary) -> void:
-	var pieces = str(record["text"]).split("```") if record["rich"] else PackedStringArray([record["text"]])
+	var pieces = Markdown.blocks(str(record["text"]), record["streaming"]) if record["rich"] else [{"kind": "text", "text": str(record["text"])}]
 	var blocks: Array = record["blocks"]
 	for index in range(pieces.size()):
-		var code_block = index % 2 == 1
-		if index >= blocks.size():
-			if code_block:
-				var panel = PanelContainer.new()
-				var surface = style(Color("0d1320"), 12)
-				surface.set_content_margin_all(8 * EditorInterface.get_editor_scale())
-				panel.add_theme_stylebox_override("panel", surface)
-				record["body"].add_child(panel)
-				var box = VBoxContainer.new()
-				panel.add_child(box)
-				var header = HBoxContainer.new()
-				box.add_child(header)
-				var language = label(header, "GDScript")
-				language.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				language.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-				language.add_theme_color_override("font_color", Color("9faac0"))
-				var editor = CodeEdit.new()
-				editor.editable = false
-				editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-				editor.scroll_fit_content_height = true
-				editor.custom_minimum_size.y = 54 * EditorInterface.get_editor_scale()
-				editor.custom_maximum_size.y = 360 * EditorInterface.get_editor_scale()
-				editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				editor.add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
-				var colors = CodeHighlighter.new()
-				for word in ["func", "var", "extends", "if", "else", "return", "class_name", "await", "for", "in", "const", "static", "signal", "true", "false", "null"]: colors.add_keyword_color(word, Color("c4a4fc"))
-				colors.number_color = Color("91c9eb")
-				colors.symbol_color = Color("b5bfd4")
-				colors.function_color = Color("91c9eb")
-				colors.member_variable_color = Color("e7eaf4")
-				colors.add_color_region("\"", "\"", Color("b4d6a3"))
-				colors.add_color_region("#", "", Color("7e8ba0"), true)
-				editor.syntax_highlighter = colors
-				var copy = icon_button(header, "Copy", "Copiază codul", func() -> void: DisplayServer.clipboard_set(editor.text))
-				_compact_button(copy)
-				box.add_child(editor)
-				blocks.append({"node": panel, "editor": editor, "language": language, "copy": copy})
-			else:
-				var text = RichTextLabel.new()
-				text.fit_content = true
-				text.scroll_active = false
-				text.selection_enabled = true
-				text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				text.add_theme_constant_override("line_separation", int(4 * EditorInterface.get_editor_scale()))
-				text.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
-				text.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
-				text.meta_clicked.connect(func(value: Variant) -> void:
-					if Common.parse_url(str(value), true).get("ok", false): OS.shell_open(str(value)))
-				record["body"].add_child(text)
-				blocks.append({"node": text})
+		var piece: Dictionary = pieces[index]
+		if piece["kind"] == "code" and str(piece.get("language", "")).to_lower() == "mermaid": piece["kind"] = "diagram"
+		if index < blocks.size() and blocks[index]["kind"] != piece["kind"]:
+			while blocks.size() > index:
+				var stale = blocks.pop_back()["node"]
+				record["body"].remove_child(stale)
+				stale.queue_free()
+		if index >= blocks.size(): blocks.append(_diagram_block(record["body"]) if piece["kind"] == "diagram" else (_code_block(record["body"]) if piece["kind"] == "code" else _text_block(record["body"])))
 		var block: Dictionary = blocks[index]
-		if code_block:
-			var source = pieces[index]
-			var language = source.get_slice("\n", 0).strip_edges().left(40) if "\n" in source else "Cod"
-			block["language"].text = {"gdscript": "GDScript", "gd": "GDScript", "python": "Python", "json": "JSON", "csharp": "C#", "bash": "Shell", "": "Cod"}.get(language, language)
-			block["editor"].text = (source.substr(source.find("\n") + 1) if "\n" in source else source).trim_suffix("\n")
+		if block["source"] == piece["text"] and block.get("language_id", "") == piece.get("language", "") and (block.get("diagram_ready", false) == (piece.get("complete", false) or not record["streaming"]) if piece["kind"] == "diagram" else block.get("complete", false) == piece.get("complete", false)) and block["renders"] > 0: continue
+		block["source"] = piece["text"]
+		block["renders"] += 1
+		block["complete"] = piece.get("complete", false)
+		block["diagram_ready"] = piece.get("complete", false) or not record["streaming"]
+		if piece["kind"] == "diagram": _update_diagram(block, piece.get("complete", false) or not record["streaming"])
+		elif piece["kind"] == "code":
+			block["language_id"] = piece.get("language", "")
+			_update_code(block)
 		else:
-			_markdown(block["node"], pieces[index])
-			block["node"].visible = not pieces[index].strip_edges().is_empty()
+			_markdown(block["node"], piece["text"])
+			block["node"].visible = not str(piece["text"]).strip_edges().is_empty()
 	while blocks.size() > pieces.size():
 		var stale = blocks.pop_back()["node"]
 		record["body"].remove_child(stale)
@@ -1558,6 +2000,7 @@ func finish_stream(anchor: RichTextLabel, metadata: Dictionary) -> void:
 	_render_reasoning(record)
 	_refresh_message_controls(record)
 	_refresh_metrics(record)
+	if int(record.get("group_index", -1)) >= 0: _sync_response(response_groups[int(record["group_index"])])
 
 func _process(delta: float) -> void:
 	if OS.has_feature("android") and is_visible_in_tree(): _update_keyboard_inset(DisplayServer.virtual_keyboard_get_height())
@@ -1584,6 +2027,7 @@ func _process(delta: float) -> void:
 func _message_actions(record: Dictionary) -> void:
 	var actions = HBoxContainer.new()
 	record["column"].add_child(actions)
+	record["actions_row"] = actions
 	record["actions"] = []
 	for pair in [["Copy", "Copiază răspunsul", "copy"], ["Retry", "Reia sarcina întreruptă", "retry"], ["Undo", "Anulează răspunsul: restaurează fișierele și readuce promptul în composer", "undo"], ["Changes", "Modificări / Undo", "changes"]]:
 		var control = icon_button(actions, pair[0], pair[1], func() -> void: _message_action(record, pair[2]))
@@ -1635,6 +2079,10 @@ func set_turn_outcome(turn: String, status: String) -> void:
 		if record["metadata"].get("turn_id") != turn: continue
 		record["metadata"]["run_status"] = status
 		_refresh_message_controls(record)
+	for group in response_groups:
+		if group["turn"] == turn:
+			group["outcome"] = status
+			_sync_response(group)
 
 func _message_action(record: Dictionary, name: String) -> void:
 	var metadata: Dictionary = record["metadata"]
@@ -1650,6 +2098,8 @@ func set_turn_metrics(turn: String, metrics: Dictionary) -> void:
 		if record["role"] != "assistant" or record["metadata"].get("turn_id") != turn: continue
 		record["metadata"]["metrics"] = metrics.duplicate(true)
 		_refresh_metrics(record)
+	for group in response_groups:
+		if group["turn"] == turn: _sync_response(group)
 
 func _refresh_metrics(record: Dictionary) -> void:
 	var metrics: Dictionary = record["metadata"].get("metrics", {})
@@ -1722,7 +2172,7 @@ func _render_reasoning(record: Dictionary) -> void:
 	block["toggle"].text = "Gândire · %d cuvinte" % text.split(" ", false).size()
 	Markdown.render(block["body"], text, EditorInterface.get_editor_scale())
 
-func show_queue(items: Array, paused: bool = false) -> void:
+func show_queue(items: Array, paused: bool = false, working: bool = false) -> void:
 	if queue_panel == null: return
 	for child in queue_panel.get_children():
 		queue_panel.remove_child(child)
@@ -1744,6 +2194,7 @@ func show_queue(items: Array, paused: bool = false) -> void:
 		var resume = icon_button(header, "Play", "Reia coada de mesaje", func() -> void: action.emit("queue_resume", {}))
 		resume.text = "Reia"
 		_compact_button(resume)
+		resume.disabled = working
 	queue_scroll = ScrollContainer.new()
 	queue_scroll.name = "QueueScroll"
 	queue_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1768,12 +2219,17 @@ func show_queue(items: Array, paused: bool = false) -> void:
 		card.add_child(line)
 		var attachment_count = item.get("selection", {}).get("attachments", []).size() + item.get("selection", {}).get("files", []).size()
 		var full_text = str(item.get("text", "")).replace("\n", " ").strip_edges()
-		var message = label(line, full_text if not full_text.is_empty() else "Fișiere atașate")
+		var steering = item.get("delivery") == "steer"
+		var message = label(line, ("La pas · " if steering else "După task · ") + (full_text if not full_text.is_empty() else "Fișiere atașate"))
 		message.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		message.clip_text = true
 		message.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		message.add_theme_font_size_override("font_size", int(12 * scale))
 		message.tooltip_text = full_text + ("\n%d atașamente" % attachment_count if attachment_count > 0 else "")
+		var delivery = icon_button(line, "ArrowRight", "Mută după sarcină" if steering else "Aplică în sarcina curentă, după pasul în desfășurare", func() -> void: action.emit("queue_delivery", {"index": index}))
+		delivery.text = "În coadă" if steering else "În task"
+		delivery.disabled = not working
+		_compact_button(delivery)
 		var restore = icon_button(line, "ArrowUp", "Mută mesajul înapoi în composer", func() -> void: action.emit("queue_restore", {"index": index}))
 		var remove = icon_button(line, "Close", "Scoate din coadă", func() -> void: action.emit("queue_remove", {"index": index}))
 		_compact_button(restore)
@@ -1788,9 +2244,9 @@ func _layout_queue() -> void:
 	for child in root_column.get_children():
 		if not child.visible: continue
 		visible_children += 1
-		if child != scroll and child != queue_panel: fixed_height += child.get_combined_minimum_size().y
-	fixed_height += visible_children * root_column.get_theme_constant("separation") + queue_panel.get_theme_constant("separation")
-	var room = maxf(0, size.y - fixed_height - minf(96 * scale, size.y * 0.20))
+		if child != scroll.get_parent() and child != queue_panel: fixed_height += child.get_combined_minimum_size().y
+	fixed_height += maxi(0, visible_children - 1) * root_column.get_theme_constant("separation") + queue_panel.get_theme_constant("separation")
+	var room = maxf(0, size.y - fixed_height - minf(80 * scale, size.y * 0.15))
 	# Scroll offsets are integer pixels; a fractional page can clip the last row.
 	var cap = floorf(minf(room, minf(160 * scale, size.y * 0.22)))
 	var height = minf(cap, queue_rows.get_combined_minimum_size().y)
@@ -1836,7 +2292,20 @@ func _show_find_match(index: int) -> void:
 	find_index = clampi(index, 0, find_matches.size() - 1)
 	var record: Dictionary = find_matches[find_index]
 	find_count.text = "%d/%d" % [find_index + 1, find_matches.size()]
+	var group_index = int(record.get("group_index", -1))
+	if group_index >= 0 and record["row"].get_parent() == response_groups[group_index]["progress"]:
+		var group: Dictionary = response_groups[group_index]
+		group["progress"].show()
+		_refresh_progress_title(group["progress_toggle"], group["progress"])
+	for block in record["blocks"]:
+		if block["kind"] in ["code", "diagram"] and str(block["source"]).to_lower().contains(find_input.text.to_lower()):
+			block["expanded"] = true
+			_update_code(block, true)
+			if block["kind"] == "diagram":
+				block["source_visible"] = true
+				_diagram_visibility(block)
 	if is_instance_valid(record.get("row")): scroll.ensure_control_visible(record["row"])
+	if is_instance_valid(record.get("row")): scroll.ensure_control_visible.call_deferred(record["row"])
 	if is_instance_valid(record.get("card")) and motion_enabled:
 		record["card"].self_modulate = Color("d7c6ff")
 		create_tween().tween_property(record["card"], "self_modulate", Color.WHITE, 0.7)
@@ -1844,7 +2313,8 @@ func _show_find_match(index: int) -> void:
 func show_running_tool(name: String = "", description: String = "") -> void:
 	if running_tools == null: return
 	running_tools.visible = not name.is_empty()
-	running_tools.text = (description if not description.is_empty() else "Running " + name.replace("_", " ").capitalize() + " Tool") if not name.is_empty() else ""
+	var caption = description.trim_prefix("Running ").replace(" Tool", "") if not description.is_empty() else name.replace("_", " ").capitalize()
+	running_tools.text = "Running Tools · " + caption if not name.is_empty() else ""
 	running_tools.tooltip_text = name
 
 func _chat_control_at(control: Control, point: Vector2) -> Control:
@@ -1859,6 +2329,7 @@ func _chat_control_at(control: Control, point: Vector2) -> Control:
 
 func _native_touch_control(control: Control) -> bool:
 	while control != null and control != scroll:
+		if control.get_meta("chat_native_gesture", false): return true
 		if control is BaseButton or control is LineEdit or control is ScrollBar or control is Slider or (control is TextEdit and control.editable): return true
 		control = control.get_parent_control()
 	return false
@@ -1872,6 +2343,7 @@ func _chat_touch(event: InputEvent) -> bool:
 		return Time.get_ticks_msec() < touch_suppress_until
 	if event is InputEventPanGesture:
 		if not scroll.get_global_rect().has_point(event.position): return false
+		if _native_touch_control(_chat_control_at(scroll, event.position)): return false
 		if touch_scroll.is_empty():
 			if event.delta.y < 0: follow_bottom = false
 			scroll.scroll_vertical += int(event.delta.y * 40 * EditorInterface.get_editor_scale())
@@ -1919,8 +2391,29 @@ func _chat_touch(event: InputEvent) -> bool:
 				var check = touch_scroll["tap_check"].get_ref()
 				if check != null and not check.disabled: check.button_pressed = not check.button_pressed
 			elif touch_scroll.has("file"): action.emit("file_open", {"id": touch_scroll["file"]})
+			elif touch_scroll.has("target"):
+				var target = touch_scroll["target"].get_ref()
+				if target is RichTextLabel: _tap_chat_link(target, event.position)
 		touch_scroll.clear()
 	return true
+
+func _tap_chat_link(target: RichTextLabel, point: Vector2) -> void:
+	# Relay a completed, stationary tap inside this Godot viewport. Selection
+	# stays off during native link hit-testing; drags and long presses never relay.
+	if not target.is_visible_in_tree() or not target.get_global_rect().has_point(point): return
+	var selection = target.selection_enabled
+	target.selection_enabled = false
+	var click = InputEventMouseButton.new()
+	click.device = 41
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.position = point
+	click.global_position = point
+	click.pressed = true
+	get_viewport().push_input(click, true)
+	click = click.duplicate()
+	click.pressed = false
+	get_viewport().push_input(click, true)
+	target.selection_enabled = selection
 
 func _touch_selection_after(token: int) -> void:
 	await get_tree().create_timer(0.55).timeout
@@ -1966,10 +2459,13 @@ func _scroll_changed(value: float) -> void:
 	_update_latest_button()
 
 func _update_latest_button() -> void:
-	if latest_button != null: latest_button.visible = not follow_bottom
+	if latest_button != null:
+		latest_button.visible = not follow_bottom
+		latest_button.tooltip_text = "Mergi la ultimul mesaj și urmărește conversația" + (" · %d mesaje noi" % unseen_updates if unseen_updates else "")
 
 func _jump_to_latest() -> void:
 	follow_bottom = true
+	unseen_updates = 0
 	_follow()
 	_follow.call_deferred()
 
@@ -2165,14 +2661,18 @@ func _file_card(parent: Node, id: String) -> Control:
 		retention.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
 	var actions = HBoxContainer.new()
 	column.add_child(actions)
-	for spec in [["Inspect", "Deschide", "file_open"], ["Attach", "Menționează", "file_mention"], ["ArrowUp", "Trimite referința", "file_send"], ["Pin", "Fixează / eliberează", "file_pin"], ["Compare", "Compară", "file_compare"]]:
+	for spec in [["Inspect", "Deschide", "file_open"], ["Pin", "Fixează / eliberează", "file_pin"]]:
 		var entry = icon_button(actions, spec[0], spec[1], func() -> void: action.emit(spec[2], {"id": id}))
+		if spec[2] == "file_open": entry.text = "Deschide"
 		_compact_button(entry)
 		if item.get("capture_expired", false): entry.disabled = true
 		if spec[2] == "file_pin":
 			entry.toggle_mode = true
 			entry.set_meta("file_pin_id", id)
 			entry.set_pressed_no_signal(item.get("pinned", false))
+	var more = icon_button(actions, "More", "Menționează, trimite sau compară", func() -> void: _file_menu(id, card.get_global_rect().end))
+	_compact_button(more)
+	more.disabled = item.get("capture_expired", false)
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
 	var gesture = {"pressed": false, "start": Vector2.ZERO, "delta": Vector2.ZERO, "mentioned": false, "started": 0}
 	card.gui_input.connect(func(event: InputEvent) -> void:

@@ -99,15 +99,15 @@ func run(host: Node, panel: Control) -> void:
 	host._check(panel.journal_part == previous_part + 1 and FileAccess.file_exists(log_path), "Full logs rotate into successive files while preserving older events")
 	host._check(not panel.chat.running_tools.visible, "Running Tools stays hidden while the agent is idle")
 	panel._harness_event({"kind": "tool_started", "name": "godot_save_scene"})
-	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Scene Save Tool" and panel.chat.running_tools.tooltip_text == "godot_save_scene" and panel.chat.running_tools.get_child_count() == 0, "Running Tools describes the active operation without a dropdown")
+	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Tools · Scene Save" and panel.chat.running_tools.tooltip_text == "godot_save_scene" and panel.chat.running_tools.get_child_count() == 0, "Running Tools describes the active operation without a dropdown")
 	panel._harness_event({"kind": "tool_started", "name": "godot_script_diagnostics"})
-	host._check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Script Diagnostics Tool", "Running Tools follows the next active tool")
+	host._check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Tools · Script Diagnostics", "Running Tools follows the next active tool")
 	var saved_profiles = panel.config["generation"].duplicate(true)
 	var saved_jobs = panel.assets.jobs
 	panel.config["generation"] = [{"id": "qa-image", "asset_kind": "image"}, {"id": "qa-mesh", "asset_kind": "mesh"}]
 	panel.assets.jobs = [{"id": "qa-image-job", "kind": "image"}, {"id": "qa-mesh-job", "kind": "mesh"}]
 	for kind in ["image", "mesh"]:
-		var expected = "Running " + ("Image" if kind == "image" else "3D") + " Generator Tool"
+		var expected = "Running Tools · " + ("Image" if kind == "image" else "3D") + " Generator"
 		panel._harness_event({"kind": "tool_started", "name": "asset_generate", "arguments": {"profile": "qa-" + kind}})
 		host._check(panel.chat.running_tools.text == expected, "Generation status uses the selected " + kind + " profile")
 		panel._harness_event({"kind": "tool_started", "name": "asset_wait", "arguments": {"job": "qa-" + kind + "-job"}})
@@ -274,7 +274,7 @@ func _navigation_tests(host: Node, panel: Control) -> void:
 	chat.show_plan(snapshot)
 	chat.append_message("assistant", "Resursa a fost verificată.", {"id": "qa-final"})
 	await host.get_tree().process_frame
-	host._check(plan.get_index() < chat.message_records.back()["row"].get_index(), "A completed plan stays in history before later messages")
+	host._check(not plan.is_greater_than(chat.message_records.back()["row"]), "A completed plan stays in history before later messages")
 	chat.clear_messages()
 	var prose = chat.append_message("assistant", "Mesaj pentru derulare tactilă.\n".repeat(35), {"id": "qa-touch-prose"})
 	var code = chat.append_message("assistant", "```gdscript\n" + "print(\"scroll\")\n".repeat(30) + "```", {"id": "qa-touch-code"})
@@ -287,7 +287,7 @@ func _navigation_tests(host: Node, panel: Control) -> void:
 	host._check(chat.scroll.scroll_vertical < before, "A real window touch scrolls from empty chat margins")
 	for anchor in [prose, code]:
 		var record: Dictionary = anchor.get_meta("message")
-		var control = record["blocks"][0]["node"] if anchor == prose else record["blocks"][1]["editor"]
+		var control = record["blocks"][0]["node"] if anchor == prose else record["blocks"].filter(func(block: Dictionary) -> bool: return block.get("kind") == "code")[0]["editor"]
 		chat.scroll.ensure_control_visible(control)
 		await host.get_tree().process_frame
 		var region = control.get_global_rect().intersection(chat.scroll.get_global_rect())

@@ -12,7 +12,7 @@ var act_runs: Dictionary = {}
 
 func _init(panel: Node = null) -> void: owner = panel
 
-func spawn(task: String, kind: String, profile: Dictionary, model: String, references: String, parent: String) -> Dictionary:
+func spawn(task: String, kind: String, profile: Dictionary, model: String, references: String, parent: String, configuration: Dictionary = {}) -> Dictionary:
 	if task.strip_edges().is_empty() or not kind in ["Explore", "General", "Playtest"]: return Common.failure("Sarcină sau tip de subagent invalid.")
 	var active = jobs.values().filter(func(job: Dictionary) -> bool: return job["status"] == "running")
 	var limited = profile.get("kind") == "companion" or profile.get("issuer") in ["ollama", "lmstudio", "llamacpp"]
@@ -23,6 +23,8 @@ func spawn(task: String, kind: String, profile: Dictionary, model: String, refer
 	if kind == "Playtest" and playtest_busy: return Common.failure("Există deja un playtest activ.")
 	var id = Common.uid()
 	var job = {"id": id, "kind": kind, "task": task, "profile": profile.duplicate(true), "model": model, "parent": parent, "context": references, "status": "running", "text": "", "cancel": {"cancelled": false}, "steps": 0}
+	job["configuration"] = configuration.duplicate(true)
+	if not _persist(job): return Common.failure("Subagentul nu a pornit: jurnalul nu poate fi salvat.", "checkpoint_failed")
 	jobs[id] = job
 	changed.emit(parent)
 	if kind == "Playtest": playtest_busy = true
@@ -30,7 +32,12 @@ func spawn(task: String, kind: String, profile: Dictionary, model: String, refer
 	return Common.success({"id": id, "status": "running", "kind": kind})
 
 func wait_for(id: String, cancel: Dictionary) -> Dictionary:
-	if not jobs.has(id): return Common.failure("Subagent inexistent.")
+	if not jobs.has(id):
+		if id.is_empty() or not id.is_valid_filename() or "/" in id or "\\" in id: return Common.failure("ID invalid.")
+		var previous: Variant = Common.read_json(owner.project_directory.path_join("jobs").path_join(id + ".json"), {})
+		if not previous is Dictionary or previous.get("id") != id: return Common.failure("Subagent inexistent.")
+		if previous.get("status") == "running": previous = previous.merged({"status": "interrupted", "report": "Execuția anterioară nu are un rezultat confirmat; nu a fost repornită automat."}, true)
+		return Common.success(previous)
 	var job: Dictionary = jobs[id]
 	while job["status"] == "running" and not cancel.get("cancelled", false): await owner.get_tree().process_frame
 	return Common.success({"id": id, "status": job["status"], "report": job["text"], "steps": job["steps"]})
@@ -59,6 +66,10 @@ func _run(job: Dictionary) -> void:
 		if not first.get("ok", false):
 			_finish(job, "blocked", str(first.get("error")))
 			return
+	var configuration: Dictionary = job.get("configuration", {})
+	instruction += "\nSpecialist instructions (subordinate to read-only restrictions and the parent's task):\n" + str(configuration.get("instructions", ""))
+	var allowed: Array = configuration.get("tools", [])
+	if not allowed.is_empty(): definitions = definitions.filter(func(tool: Dictionary) -> bool: return tool["name"] in allowed)
 	var messages = [{"role": "system", "content": instruction}, {"role": "user", "content": job["task"]}]
 	if job["profile"].get("kind") == "siwc":
 		var access = await owner.accounts.ensure_access(job["profile"], job["cancel"])
@@ -96,7 +107,10 @@ func _finish(job: Dictionary, status: String, text: String) -> void:
 		var verdict = _playtest_verdict(str(job["text"]))
 		if not verdict.is_empty() and owner.current_turn == job["parent"] and owner.chat != null:
 			owner.chat.playtest_note(str(job["parent"]), _verdict_note(verdict), str(verdict.get("verdict", "")))
-	Common.atomic_json(owner.project_directory.path_join("jobs").path_join(str(job["id"]) + ".json"), {"id": job["id"], "parent": job["parent"], "kind": job["kind"], "task": owner._redact(str(job["task"])), "status": status, "report": job["text"], "steps": job["steps"], "evidence": job.get("evidence", [])})
+	if not _persist(job): owner._record_event("child_checkpoint_failed", {"job": job["id"]}, Common.failure("Raportul subagentului nu a putut fi salvat.", "checkpoint_failed"))
+
+func _persist(job: Dictionary) -> bool:
+	return Common.atomic_json(owner.project_directory.path_join("jobs").path_join(str(job["id"]) + ".json"), {"id": job["id"], "parent": job["parent"], "kind": job["kind"], "specialist": job.get("configuration", {}).get("id", job["kind"]), "task": owner._redact(str(job["task"])), "status": job["status"], "report": job["text"], "steps": job["steps"], "evidence": job.get("evidence", [])}) == OK
 
 func _companion(job: Dictionary, definitions: Array, instruction: String) -> void:
 	var service = Accounts.new(owner, owner.vault)
@@ -235,6 +249,8 @@ func _verdict_note(verdict: Dictionary) -> String:
 
 func execute(job: Dictionary, name: String, args: Dictionary) -> Dictionary:
 	if job["cancel"].get("cancelled", false): return Common.failure("Oprit.", "cancelled")
+	var allowed: Array = job.get("configuration", {}).get("tools", [])
+	if not allowed.is_empty() and name not in allowed: return Common.failure("Instrument exclus din profilul specialistului.", "tool_unavailable")
 	if name in ["godot_project_map", "godot_diagnostics"]: return await owner._project_observe(name, args, job["cancel"])
 	if name in ["godot_changes_prepare", "godot_changes_status"]: return await owner.tools.execute_changes(name, args, job["cancel"])
 	if name.begins_with("playtest_") and job["kind"] == "Playtest":

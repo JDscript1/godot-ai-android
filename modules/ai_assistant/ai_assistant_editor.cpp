@@ -19,6 +19,7 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_paths.h"
+#include "editor/run/run_instances_dialog.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -168,6 +169,8 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_chat_placement"), &AIAssistantEditorPlugin::get_chat_placement);
 	ClassDB::bind_method(D_METHOD("runtime_request", "command", "arguments"), &AIAssistantEditorPlugin::runtime_request);
 	ClassDB::bind_method(D_METHOD("runtime_poll", "id"), &AIAssistantEditorPlugin::runtime_poll);
+	ClassDB::bind_method(D_METHOD("experiment_launch", "project", "scene"), &AIAssistantEditorPlugin::experiment_launch);
+	ClassDB::bind_method(D_METHOD("experiment_stop"), &AIAssistantEditorPlugin::experiment_stop);
 	ClassDB::bind_method(D_METHOD("speech_request", "action", "arguments"), &AIAssistantEditorPlugin::speech_request);
 	ClassDB::bind_method(D_METHOD("linux_runtime_request", "action", "arguments"), &AIAssistantEditorPlugin::linux_runtime_request);
 	ClassDB::bind_method(D_METHOD("termux_blender_request", "action", "arguments"), &AIAssistantEditorPlugin::termux_blender_request);
@@ -404,6 +407,55 @@ int64_t AIAssistantEditorPlugin::runtime_request(const String &p_command, const 
 }
 Dictionary AIAssistantEditorPlugin::runtime_poll(int64_t p_id) {
 	return runtime_debugger->poll(p_id);
+}
+Dictionary AIAssistantEditorPlugin::experiment_launch(const String &p_project, const String &p_scene) {
+	Dictionary response;
+	response["ok"] = false;
+	response["code"] = "invalid_experiment";
+	String managed = panel ? String(panel->get("project_directory")).path_join("engineering/experiments").simplify_path() : String();
+	String project = p_project.simplify_path();
+	String relative_scene = p_scene.trim_prefix("res://");
+	if (managed.is_empty() || !project.is_absolute_path() || !project.begins_with(managed + "/") || !project.ends_with("/project") ||
+			!p_scene.begins_with("res://") || relative_scene.contains("..") || relative_scene.contains("\\") ||
+			!FileAccess::exists(project.path_join("project.godot")) || !FileAccess::exists(project.path_join(relative_scene))) {
+		response["error"] = "Only a managed project copy and an existing scene can be launched.";
+		return response;
+	}
+	if (EditorInterface::get_singleton()->is_playing_scene() || experiment_runner.get_status() != EditorRun::STATUS_STOP) {
+		response["code"] = "game_already_running";
+		response["error"] = "Finish the existing game session before starting an experiment.";
+		return response;
+	}
+	if (RunInstancesDialog::get_singleton()->get_instance_count() != 1) {
+		response["error"] = "An isolated experiment requires exactly one configured run instance.";
+		return response;
+	}
+	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
+	String uri = debugger->get_server_uri();
+	debugger->start(uri.is_empty() ? String("tcp://") : uri);
+	Vector<String> arguments;
+	arguments.push_back("--path");
+	arguments.push_back(project.replace(" ", "%20"));
+	arguments.push_back("--ignore-error-breaks");
+	// EditorRun supplies platform-native process dispatch, including Android.
+	// This path deliberately avoids autosaving/building the original project.
+	Error error = experiment_runner.run(project.path_join(relative_scene), "", arguments);
+	if (error != OK) {
+		experiment_runner.stop();
+		response["error"] = "The native game process could not be started.";
+		return response;
+	}
+	Dictionary result;
+	result["project"] = project;
+	result["scene"] = p_scene;
+	result["requested"] = true;
+	result["verified"] = false;
+	response["ok"] = true;
+	response["result"] = result;
+	return response;
+}
+void AIAssistantEditorPlugin::experiment_stop() {
+	experiment_runner.stop();
 }
 static Dictionary ai_speech_request(const String &p_action, const Dictionary &p_args) {
 #ifdef ANDROID_ENABLED
@@ -745,6 +797,7 @@ AIAssistantEditorPlugin::AIAssistantEditorPlugin() {
 }
 
 AIAssistantEditorPlugin::~AIAssistantEditorPlugin() {
+	experiment_runner.stop();
 	remove_error_handler(&diagnostic_handler);
 	if (runtime_debugger.is_valid()) {
 		remove_debugger_plugin(runtime_debugger);

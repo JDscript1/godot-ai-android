@@ -42,6 +42,25 @@ def identity(path, package=PACKAGE):
     return metadata
 
 
+def verify_build(run, commit, run_id):
+    assert run['head_sha'] == commit, 'Build source differs'
+    if run['status'] == 'completed' and run['conclusion'] == 'success':
+        return {'evidence': 'workflow_success'}
+    # Actions can leave the aggregate run pending after every job has finished.
+    # Accept only the exact, complete set of successful jobs for this attempt.
+    assert run['status'] == 'in_progress' and run['conclusion'] is None, 'Source build has not passed'
+    attempt = run.get('run_attempt')
+    assert isinstance(attempt, int) and attempt > 0, 'Build attempt is unavailable'
+    payload = json.loads(command('gh', 'api', f'repos/{REPO}/actions/runs/{run_id}/jobs'))
+    jobs = payload['jobs']
+    assert payload['total_count'] == len(jobs) == 3, 'Build job set is incomplete'
+    assert {job['name'] for job in jobs} == {'runtime', 'android', 'native-editor'}, 'Unexpected build job set'
+    assert all(job['head_sha'] == commit and job['run_id'] == run_id and job['run_attempt'] == attempt
+               and job['status'] == 'completed' and job['conclusion'] == 'success' for job in jobs), 'Build jobs have not passed'
+    return {'evidence': 'all_required_jobs_success', 'workflow_status': run['status'],
+            'attempt': attempt, 'jobs': [{'id': job['id'], 'name': job['name'], 'completed_at': job['completed_at']} for job in jobs]}
+
+
 def atomic_copy(source, target, expected):
     temporary = None
     try:
@@ -72,7 +91,7 @@ def main():
     package, output_name, old_name = DISTRIBUTIONS[args.distribution]
     assert re.fullmatch('[a-f0-9]{40}', args.commit), 'Use the exact source commit'
     run = json.loads(command('gh', 'api', f'repos/{REPO}/actions/runs/{args.run}'))
-    assert run['head_sha'] == args.commit and run['status'] == 'completed' and run['conclusion'] == 'success', 'Source build has not passed'
+    build_verification = verify_build(run, args.commit, args.run)
     expected = Path(str(args.source) + '.sha256').read_text().split()[0]
     assert sha256(args.source) == expected, 'Artifact checksum differs'
     metadata = identity(args.source, package)
@@ -86,6 +105,7 @@ def main():
             source = command('git', 'show', f'{args.commit}:modules/ai_assistant/runtime/{name}.gd')
             assert source + b'\x00' in library, f'Embedded source differs: {name}'
     report = {'commit': args.commit, 'run': args.run, 'build_url': run['html_url'], 'sha256': expected,
+              'build_verification': build_verification,
               'certificate_sha256': CERTIFICATE, 'package': package, 'distribution': args.distribution, 'abi': 'arm64-v8a',
               'embedded_scripts_verified': len(bindings), 'delivered': False, 'removed': [],
               'physical_android_tested': False, 'live_providers_tested': False}
