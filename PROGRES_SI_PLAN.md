@@ -24,6 +24,9 @@ mijlocul ciornei. Aceleași surse, aplicate temporar în WebView prin CDP, produ
 `verifica`, cursor/model 1…8, cu șapte selecții invalide reparate. Teste DOM:
 **46/0**, inclusiv regresia reală și protecțiile de selecție.
 
+Încă șase probe în WebView-ul fizic trec: inserare în mijloc/la început,
+înlocuire de selecție normală/inversă, diacritice și navigare intenționată.
+
 Eroarea vocală este `NotReadableError: Could not start audio source`, reprodusă
 cu trei configurații de captură. Permisiunea Android este acordată. Politica
 audio arată o captură MIC 44100 Hz rămasă activă pentru UID-ul aplicației.
@@ -31,6 +34,13 @@ audio arată o captură MIC 44100 Hz rămasă activă pentru UID-ul aplicației.
 audio, iar rezultatul permisiunii proprii ajungea mai întâi la acest dispatcher.
 Acum BaseGodotEditor consumă cererile coordonatorului AI/WebView înainte de
 delegarea către Godot; celelalte cereri păstrează traseul existent.
+
+La repornirea APK-ului intermediar s-a identificat și un fișier global
+`/root/.agents/AGENTS.md` gol, cu permisiuni 000, care bloca pregătirea
+contextului. Conținutul unui fișier gol nu mai este citit inutil; overlay-ul
+sesunii este creat fără modificarea originalului ori a permisiunilor lui.
+Regresia folosește un fișier real gol cu permisiuni 000: **26/0** probe de
+context; suita Kotlin completă **145/0**.
 
 Dovezi: `.ai-qa/ziva-input-20261031/` — capturi originale păstrate, metadate IME,
 jurnale de selecție, politica audio și probe CDP înainte/după. Backend-ul local

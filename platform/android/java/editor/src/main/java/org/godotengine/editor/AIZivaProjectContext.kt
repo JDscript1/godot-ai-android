@@ -112,7 +112,10 @@ object AIZivaProjectContext {
         val original = globalInstructions
         val overlay = original == null || !original.exists() ||
             (!Files.isSymbolicLink(original.toPath()) && original.isFile && original.length() <= MAX_AGENTS)
-        val originalText = if (overlay && original?.isFile == true) original.readText() else ""
+        // PRoot can leave an empty, mode-000 bind target behind. Its contents are
+        // already known to be empty; opening it would prevent the next session
+        // from starting. Preserve the original file and its permissions.
+        val originalText = if (overlay && original?.isFile == true && original.length() > 0L) original.readText() else ""
         val context = """
 
             # Godot AI host context for the independent Ziva editor

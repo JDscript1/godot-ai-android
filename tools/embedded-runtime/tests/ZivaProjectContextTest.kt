@@ -69,6 +69,18 @@ fun main() {
         expect(global.readText() == "GLOBAL USER RULES\n" && original.readText() == "USER PROJECT RULES\n")
         config.writeText("[editor_plugins]\nenabled=PackedStringArray(\n\"res://addons/terrain_3d/plugin.cfg\"\n)\n")
         expect(AIZivaProjectContext.snapshot(project).getJSONArray("plugins").getJSONObject(0).getBoolean("enabled_in_project"))
+        // A previous PRoot bind can leave a zero-byte, unreadable target.
+        // Refresh must still create the session overlay, preserving that target.
+        val placeholder = File(scratch, "empty-bind-target").apply { createNewFile() }
+        val permissions = emptySet<java.nio.file.attribute.PosixFilePermission>()
+        Files.setPosixFilePermissions(placeholder.toPath(), permissions)
+        try {
+            expect(AIZivaProjectContext.refresh(project, session, placeholder))
+            expect(AIZivaProjectContext.canOverlay(session))
+            expect(JSONObject(File(session, "addons.json").readText()).getBoolean("host_instructions_available"))
+            expect(placeholder.length() == 0L && Files.getPosixFilePermissions(placeholder.toPath()) == permissions)
+            expect(File(session, "AGENTS.md").readText().contains(AIZivaProjectContext.INVENTORY))
+        } finally { placeholder.setReadable(true, true); placeholder.setWritable(true, true) }
         println("Ziva project addon context: $checks checks, 0 failures")
     } finally { scratch.deleteRecursively() }
 }
