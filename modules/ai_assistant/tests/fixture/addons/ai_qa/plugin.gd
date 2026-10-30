@@ -2801,7 +2801,14 @@ func _drawer_screenshots(output: String) -> void:
 	print("AI model rows: list=", panel.chat.picker_list.size, " scroll max/page=", panel.chat.picker_list.get_v_scroll_bar().max_value, "/", panel.chat.picker_list.get_v_scroll_bar().page)
 	var last_model = panel.chat.picker_models.get_root().get_child(1)
 	var last_rect = panel.chat.picker_models.get_item_area_rect(last_model)
-	_check(last_rect.end.y <= panel.chat.picker_models.size.y - panel.chat.picker_models.get_theme_stylebox("panel").get_margin(SIDE_BOTTOM), "Short model lists include title and row padding without clipping the last model")
+	# An open editor bottom panel can leave space for only one model row.
+	# In that case require native scrolling to reveal the last row completely.
+	var model_bottom = panel.chat.picker_models.size.y - panel.chat.picker_models.get_theme_stylebox("panel").get_margin(SIDE_BOTTOM)
+	if last_rect.end.y > model_bottom:
+		panel.chat.picker_models.scroll_to_item(last_model)
+		await RenderingServer.frame_post_draw
+		last_rect = panel.chat.picker_models.get_item_area_rect(last_model)
+	_check(last_rect.position.y >= 0 and last_rect.end.y <= model_bottom + 1, "Model rows fit the drawer or remain fully reachable by scrolling on short windows")
 	image = EditorInterface.get_base_control().get_viewport().get_texture().get_image()
 	image.save_png(output.path_join("drawer-models.png"))
 	await _tap_drawer("model", "fixture-code")
@@ -3009,6 +3016,8 @@ func _chat_experience_tests() -> void:
 	panel._chat_action("queue_resume", {})
 	_check(panel.queued.size() == 1 and panel.queue_paused and panel.chat.queue_panel.visible, "Queue resume refuses to start while work is running")
 	panel.busy = false
+	panel.chat.set_working(false)
+	panel._status("") # Finish the simulated busy refusal before measuring the idle queue.
 	panel.queued.clear()
 	panel.queue_paused = false
 	panel._sync_queue()

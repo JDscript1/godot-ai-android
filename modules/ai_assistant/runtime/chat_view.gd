@@ -881,6 +881,13 @@ func _build_drawer() -> void:
 	picker_models.set_column_expand_ratio(0, 3)
 	picker_models.set_column_expand_ratio(1, 2)
 	picker_models.add_theme_constant_override("v_separation", int(8 * EditorInterface.get_editor_scale()))
+	var model_surface = style(Color("0d1320"))
+	model_surface.border_color = Color("30394e")
+	model_surface.set_border_width_all(1)
+	# Leave room for a complete selectable row below the title on short screens.
+	model_surface.content_margin_top = 4 * EditorInterface.get_editor_scale()
+	model_surface.content_margin_bottom = 4 * EditorInterface.get_editor_scale()
+	picker_models.add_theme_stylebox_override("panel", model_surface)
 	picker_models.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	picker_models.custom_minimum_size.y = 88 * EditorInterface.get_editor_scale()
 	body.add_child(picker_models)
@@ -2186,9 +2193,9 @@ func _layout_queue() -> void:
 	for child in root_column.get_children():
 		if not child.visible: continue
 		visible_children += 1
-		if child != scroll and child != queue_panel: fixed_height += child.get_combined_minimum_size().y
-	fixed_height += visible_children * root_column.get_theme_constant("separation") + queue_panel.get_theme_constant("separation")
-	var room = maxf(0, size.y - fixed_height - minf(96 * scale, size.y * 0.20))
+		if child != scroll.get_parent() and child != queue_panel: fixed_height += child.get_combined_minimum_size().y
+	fixed_height += maxi(0, visible_children - 1) * root_column.get_theme_constant("separation") + queue_panel.get_theme_constant("separation")
+	var room = maxf(0, size.y - fixed_height - minf(80 * scale, size.y * 0.15))
 	# Scroll offsets are integer pixels; a fractional page can clip the last row.
 	var cap = floorf(minf(room, minf(160 * scale, size.y * 0.22)))
 	var height = minf(cap, queue_rows.get_combined_minimum_size().y)

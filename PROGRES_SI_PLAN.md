@@ -15,6 +15,15 @@ comun al surselor curente, pe ramura izolată `build/both-20261030T133124Z`,
 pentru două rulări ale workflow-ului Android: `standard` și `ziva-preview`.
 Sunt incluse modificările agentului nativ și adaptarea independentă Ziva.
 
+Prima rundă a compilat și semnat ambele APK-uri, dar verificarea randată a
+oprit livrarea la două regresii în configurația `phone_landscape`: rândul final
+din selectorul de modele și înălțimea cozii. S-au redus marginile verticale ale
+selectorului și s-a corectat calculul spațiului cozii (conversația se rezervă o
+singură dată, separatoarele se numără corect). Proba verifică derularea unui
+selector limitat de înălțime și încheie starea busy simulată înaintea măsurării
+cozii inactive. Reproducerea focalizată la înălțimea de 385 px trece **76/0**,
+cu capturi inspectate. Se recompilează ambele distribuții cu această corecție.
+
 Stare inițială: pregătire/compilare; APK-urile existente rămân în Download
 până când înlocuitoarele trec verificarea semnăturii, identificatorului,
 ABI-ului, runtime-ului Linux și a celor 44 de scripturi încorporate. Cele două
