@@ -35,10 +35,16 @@ audio, iar rezultatul permisiunii proprii ajungea mai întâi la acest dispatche
 Acum BaseGodotEditor consumă cererile coordonatorului AI/WebView înainte de
 delegarea către Godot; celelalte cereri păstrează traseul existent.
 
+Proba intermediară elimină captura Godot rămasă activă, dar WebView încă
+respinge sursa audio. Manifestul nu declara `MODIFY_AUDIO_SETTINGS`, necesară
+împreună cu `RECORD_AUDIO` pentru selecția dispozitivului de captură Chromium.
+Este adăugată permisiunea normală; accesul la înregistrare rămâne controlat de
+dialogul Android. Remediul se verifică din nou pe APK, nu doar în surse.
+
 La repornirea APK-ului intermediar s-a identificat și un fișier global
 `/root/.agents/AGENTS.md` gol, cu permisiuni 000, care bloca pregătirea
 contextului. Conținutul unui fișier gol nu mai este citit inutil; overlay-ul
-sesunii este creat fără modificarea originalului ori a permisiunilor lui.
+sesiunii este creat fără modificarea originalului ori a permisiunilor lui.
 Regresia folosește un fișier real gol cu permisiuni 000: **26/0** probe de
 context; suita Kotlin completă **145/0**.
 
