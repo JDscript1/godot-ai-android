@@ -1,5 +1,46 @@
 # Ziva independent în Godot AI — preview
 
+## Delegare către agentul Ziva — 31.10.2026
+
+Agentul nostru poate cere oficialului Ziva o sarcină de sine stătătoare, prin
+procedurile RPC locale ale sidecarului (`/api/rpc/*`), nu prin WebView și nu
+printr-o punte MCP proprie. Comenzile trec prin `AIZivaChat` în procesul
+aplicației: sarcina rulează în fundal, iar harness-ul nostru o așteaptă prin
+sonde (`poll`) și citește doar răspunsul final.
+
+Uneltele expuse modelului nostru:
+
+- `ziva_task` — risc „external”, deci cere aprobarea utilizatorului când YOLO
+  este oprit și dispare în modurile doar-citire. Trimite promptul, creează sau
+  refolosește o conversație dedicată intitulată **Godot AI** și așteaptă până
+  la răspuns final, permisiune sau întrebare. Ziva nu vede conversația noastră:
+  promptul trebuie să conțină singur căile, cerințele și criteriul de acceptare.
+- `ziva_task_poll` — reia așteptarea unei sarcini după ce utilizatorul a
+  aprobat o permisiune sau a răspuns unei întrebări în tabul Ziva.
+- `ziva_task_result` — citește felii exacte (offset/limit) dintr-un răspuns lung;
+  primul răspuns se taie la 6000 de caractere și indică `next_offset`.
+
+Sarcina este acceptată numai când sesiunea Ziva rulează pe **același proiect**
+ca editorul Android (identificatori de proiect SHA-256 comparați) și pornește
+în conversația dedicată, cu selecția de model a conversației sau implicitul
+furnizorului `zivacode`. Nicio permisiune și niciun răspuns la întrebări nu
+sunt aprobate automat: starea `ziva_permission_required` /
+`ziva_question_required` se întoarce cu `job_id`, iar sarcina continuă în
+fundal. Limite: 30–1800 secunde per apel, maximum 4 sarcini simultane, jurnalul
+în memorie ține 24 de sarcini și 30 de minute după terminare; o repornire a
+aplicației pierde jocurile. După un răspuns Ziva cu unelte executate, harta
+proiectului, diagnosticile și verificarea noastră sunt marcate învechite, fiindcă
+Ziva editează aceleași fișiere prin uneltele ei.
+
+Contractul RPC este cel privat al pachetului v3.3.2 (`chats/create`,
+`chats/sendPrompt`, `chats/snapshot`, `plugin/bootstrap`, anvelopa oRPC
+`{"json": …}`) și poate diferi între versiuni; erorile sunt raportate explicit,
+fără reîncercări ascunse. Verificarea de până acum este statică (schema din
+bundle-ul oficial), plus fixture-ul Godot cu un bridge simulat: 8 verificări
+noi pentru delegare, tăierea răspunsului, permisiune și anulare. O conversație
+reală Ziva, fluxul permisiunii și tastarea pe dispozitiv rămân de probat pe
+APK-ul `ziva-preview`.
+
 ## Conversație compactă, focus și addonuri — 30.10.2026
 
 Implementare în surse pentru distribuția Ziva Preview. Frontend-ul oficial

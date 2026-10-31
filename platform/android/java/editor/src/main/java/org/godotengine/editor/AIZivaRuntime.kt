@@ -151,6 +151,7 @@ object AIZivaRuntime {
             return state.put("same_project", target.isNotEmpty() && projectId(File(target)) == state.optString("project_id"))
         }
         check(BuildConfig.GODOT_AI_ZIVA) { "Disponibil în aplicația separată Godot AI Ziva." }
+        if (action.startsWith("ziva_chat_")) return chat(context, action, args)
         if (action == "ziva_embed" && !args.optBoolean("visible")) { AIZivaWindow.hide(); return JSONObject().put("ok", true) }
         if (action == "ziva_embed") {
             val state = status(context)
@@ -183,5 +184,25 @@ object AIZivaRuntime {
             } }
         } else error("Operație Ziva necunoscută.")
         return JSONObject().put("ok", true)
+    }
+
+    /** Delegation to the official agent through its own local RPC, never the WebView. */
+    private fun chat(context: Context, action: String, args: JSONObject): JSONObject {
+        // Jobs live in this process; reading them never touches the sidecar, so a finished answer survives a stop.
+        if (action == "ziva_chat_poll") return AIZivaChat.poll(args.optString("job_id"))
+        if (action == "ziva_chat_cancel") return AIZivaChat.cancel(args.optString("job_id"))
+        val state = status(context)
+        val port = state.optInt("ui_port", 0)
+        if (!state.optBoolean("running") || port <= 0)
+            return JSONObject().put("ok", false).put("code", "ziva_not_running")
+                .put("error", "Sesiunea Ziva nu rulează. Pornește-o din tabul Ziva, apoi reia.")
+        val target = args.optString("project_directory")
+        if (target.isEmpty() || projectId(File(target)) != state.optString("project_id"))
+            return JSONObject().put("ok", false).put("code", "ziva_other_project")
+                .put("error", "Ziva rulează pe alt proiect; deschide același proiect în tabul Ziva.")
+        return when (action) {
+            "ziva_chat_send" -> AIZivaChat.send(port, args.optString("prompt"), args.optString("chat_id"), args.optInt("timeout_seconds", 600))
+            else -> JSONObject().put("ok", false).put("code", "ziva_unknown_action").put("error", "Operație Ziva necunoscută.")
+        }
     }
 }

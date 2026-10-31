@@ -8,6 +8,47 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-72 — agentul nostru deleagă sarcini către Ziva — 31.10.2026
+
+Cerința utilizatorului: în timp ce lucrăm cu agentul nostru, să putem folosi
+direct agentul Ziva, printr-un mesaj injectat de agentul nostru. Implementat
+în surse (necommis încă la data acestei însemnări):
+
+- `AIZivaChat.kt` (nou) folosește RPC-ul local propriu al sidecarului oficial:
+  rezolvă sau creează conversația dedicată **Godot AI** (`plugin/bootstrap`,
+  `chats/create`), trimite promptul (`chats/sendPrompt`, selecție de model din
+  conversație sau implicitul `zivacode`) și sondează `chats/snapshot` până la
+  terminarea turului. Rezultatul final, eroarea de tur, permisiunile și
+  întrebările în așteptare sunt raportate ca stare. Sarcinile trăiesc în memorie,
+  maximum 4 simultane, păstrate 30 de minute după terminare.
+- `AIZivaRuntime.kt` rutează `ziva_chat_send/poll/cancel`; trimiterea cere ca
+  sesiunea să ruleze pe același proiect, iar citirea stării este pur locală, ca
+  un răspuns terminat să nu se piardă dacă Ziva se oprește.
+- `panel.gd` expune `ziva_task` (risc „external” — aprobare per apel, ascuns în
+  modurile doar-citire), `ziva_task_poll` și `ziva_task_result`. Primul răspuns
+  se limitează la 6000 de caractere cu `next_offset` explicit, restul se citește
+  pe felii exacte; răspunsurile lungi nu mai depind de trunchierea harness-ului.
+  Nicio permisiune Ziva nu este aprobată automat: ne întoarcem cu
+  `ziva_permission_required` / `ziva_question_required` și `job_id`, iar după ce
+  utilizatorul răspunde în tabul Ziva reluăm cu `ziva_task_poll`. Un tur Ziva
+  care a executat unelte marchează harta proiectului, diagnosticile și
+  verificarea ca învechite.
+
+Verificare: `panel.gd` și fixture-ul parsează cu Godot 4.7.2 headless
+(`--check-only`). Fixture-ul `ziva` are 8 aserțiuni noi: risc/vizibilitate,
+prompt + proiect trimise, tăiere la 6000 cu `next_offset`, felie exactă,
+permisiune întoarsă fără aprobare, reluare după răspuns și anulare care oprește
+și sarcina Ziva. Nu există compilator Kotlin local; compilarea `AIZivaChat.kt`
+rămâne a fi dovedită de jobul Android CI după commit/push. O conversație reală
+cu model, fluxul permisiunii și citirea răspunsului pe dispozitiv rămân de
+probat pe APK-ul `ziva-preview`.
+
+Contract RPC folosit: `chats/create`, `chats/sendPrompt`, `chats/snapshot`,
+`chats/abort`, `plugin/bootstrap`, anvelopă oRPC `{"json": …}`. Este un contract
+privat al pachetului v3.3.2 (analizat static din bundle-ul oficial, 30–31.10.2026)
+și poate diferi între versiuni; eșecurile sunt raportate explicit, fără
+reîncercări ascunse. Detalii: `docs/AI_ZIVA.md`.
+
 ## AG-71 — recuperare după compactarea nereușită a agentului nativ — 31.10.2026
 
 Jurnalul citit prin ADB din panoul agentului nostru, în distribuția Ziva de pe

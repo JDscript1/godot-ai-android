@@ -45,6 +45,7 @@ var project_text_view: AcceptDialog
 var compare_file = ""
 
 var plugin: Node
+var ziva_runtime: Node
 var project_manager_mode = false
 var generated_files: Array = []
 var vault: RefCounted
@@ -2766,12 +2767,15 @@ func _running_tool_label(name: String, args: Dictionary = {}) -> String:
 				if str(job.get("id", "")) == str(args.get("job", "")): kind = str(job.get("kind", "")); break
 		var generator = "3D Generator" if kind == "mesh" else ("Image Generator" if kind == "image" else "Asset Generator")
 		return "Running " + generator + " Tool" + ({"asset_wait": " · Waiting for result", "asset_status": " · Checking result"}.get(name, ""))
-	var names = {"godot_changes_prepare": "Change Set Preview", "godot_changes_apply": "Coordinated File Editor", "godot_changes_rollback": "Change Set Rollback", "godot_changes_status": "Change Set Inspection", "asset_remove_background": "Image Background Removal", "asset_export": "3D Export", "asset_import": "Asset Import", "blender_run": "Blender", "godot_read_file": "File Reader", "godot_read_range": "Code Reader", "godot_write_file": "File Writer", "godot_apply_patch": "Code Editor", "godot_script_diagnostics": "Script Diagnostics", "godot_project_map": "Project Map", "godot_diagnostics": "Project Diagnostics", "godot_debugger": "Debugger Inspection", "godot_panels": "Panel Inventory", "godot_panel_read": "Panel Reader", "godot_panel_data": "Native Panel Reader", "task_check": "Acceptance Check", "godot_save_scene": "Scene Save", "store_search": "Asset Store Search", "store_install": "Plugin Installer", "storage_search": "Storage Search", "file_observe": "File Inspection", "task_update": "Plan Update", "plan_ask": "Plan Questions", "tool_search": "Tool Search", "tool_describe": "Tool Inspection", "playtest_act": "Playtest", "playtest_watch": "Playtest Monitor", "playtest_state": "Game Inspection"}
+	var names = {"ziva_task": "Ziva Delegation", "ziva_task_poll": "Ziva Delegation · Waiting", "ziva_task_result": "Ziva Answer Reader", "godot_changes_prepare": "Change Set Preview", "godot_changes_apply": "Coordinated File Editor", "godot_changes_rollback": "Change Set Rollback", "godot_changes_status": "Change Set Inspection", "asset_remove_background": "Image Background Removal", "asset_export": "3D Export", "asset_import": "Asset Import", "blender_run": "Blender", "godot_read_file": "File Reader", "godot_read_range": "Code Reader", "godot_write_file": "File Writer", "godot_apply_patch": "Code Editor", "godot_script_diagnostics": "Script Diagnostics", "godot_project_map": "Project Map", "godot_diagnostics": "Project Diagnostics", "godot_debugger": "Debugger Inspection", "godot_panels": "Panel Inventory", "godot_panel_read": "Panel Reader", "godot_panel_data": "Native Panel Reader", "task_check": "Acceptance Check", "godot_save_scene": "Scene Save", "store_search": "Asset Store Search", "store_install": "Plugin Installer", "storage_search": "Storage Search", "file_observe": "File Inspection", "task_update": "Plan Update", "plan_ask": "Plan Questions", "tool_search": "Tool Search", "tool_describe": "Tool Inspection", "playtest_act": "Playtest", "playtest_watch": "Playtest Monitor", "playtest_state": "Game Inspection"}
 	return "Running " + str(names.get(name, name.replace("_", " ").capitalize())) + " Tool"
 
 func _tool_status(name: String) -> String:
 	if name == "asset_remove_background": return "Elimin fundalul imaginii…"
 	if name == "blender_run": return "Lucrez în Blender…"
+	if name == "ziva_task": return "Trimit sarcina agentului Ziva…"
+	if name == "ziva_task_poll": return "Aștept răspunsul Ziva…"
+	if name == "ziva_task_result": return "Citesc răspunsul Ziva…"
 	return str({"asset_generate": "Trimit cererea de generare…", "asset_wait": "Aștept rezultatul generării…", "asset_status": "Verific generarea…", "asset_import": "Import resursa…", "asset_export": "Export resursa…", "task_update": "Actualizez planul…", "godot_project": "Inspectez proiectul…", "godot_files": "Caut fișiere…", "storage_search": "Caut în stocare…", "file_observe": "Examinez fișierul…", "godot_read_file": "Citesc fișierul…", "godot_read_range": "Citesc fragmentul de cod…", "godot_write_file": "Actualizez fișierul…", "godot_apply_patch": "Aplic modificările…", "godot_delete_file": "Șterg resursa…", "godot_scene_tree": "Verific scena…", "godot_create_node": "Creez un nod…", "godot_create_resource": "Pregătesc resursa…", "godot_set": "Actualizez proprietățile…", "godot_get": "Verific proprietățile…", "godot_save_scene": "Salvez scena…", "godot_script_diagnostics": "Verific scriptul…", "store_search": "Caut în Asset Store…", "store_describe": "Verific extensia…", "store_install": "Instalez extensia…", "github_read": "Verific repository-ul…", "github_create_issue": "Public cererea pe GitHub…", "agent_spawn": "Pornesc sarcina secundară…", "agent_wait": "Aștept sarcina secundară…"}.get(name, "Execut operația…"))
 
 func _work_jobs_changed(parent: String) -> void:
@@ -2822,7 +2826,7 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 			result = Common.success({"opened": true, "file_id": args["id"], "viewer": "Godot"}) if media_view.load_result.get("ok", false) else media_view.load_result.duplicate(true)
 	elif Engineering.handles(name):
 		result = await engineering.execute(name, args, cancel)
-	elif name.begins_with("agent_") or name.begins_with("playtest_") or name in ["task_update", "plan_ask", "memory_write"]:
+	elif name.begins_with("agent_") or name.begins_with("playtest_") or name.begins_with("ziva_task") or name in ["task_update", "plan_ask", "memory_write"]:
 		result = await _agent_call(name, args)
 	elif name in ["godot_project_map", "godot_diagnostics"]: result = await _project_observe(name, args, cancel)
 	elif name == "task_check": result = verification.check(str(args["criterion"]), args["evidence"])
@@ -4923,7 +4927,7 @@ func _set_usage(usage: Dictionary, profile: Dictionary, model: String) -> void:
 	chat.set_context(input, limit, output, bool(usage.get("estimated", false)))
 
 func _agent_definitions() -> Array:
-	return _intelligence_definitions() + Engineering.definitions() + [Verification.definition(), Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Planner.definition(), Planner.question_definition(), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write")]
+	return _intelligence_definitions() + Engineering.definitions() + [Verification.definition(), Common.tool("agent_spawn", "Delegate a focused task to Explore, General or Playtest. Children return findings/proposed changes, never edit project files. Provide explicit context; they do not receive the whole chat. Use agent_wait for the report.", {"kind": Common.string_field(), "task": Common.string_field()}, ["kind", "task"], "external"), Common.tool("agent_wait", "Wait for a child agent report.", {"id": Common.string_field()}, ["id"]), Common.tool("agent_cancel", "Cancel a child agent.", {"id": Common.string_field()}, ["id"]), Planner.definition(), Planner.question_definition(), Common.tool("memory_write", "Save explicit durable project preferences to project memory. Do not include credentials.", {"text": Common.string_field()}, ["text"], "write"), Common.tool("ziva_task", "Hand a self-contained task to the official Ziva agent running in the separate Ziva tab. It works in the same Godot project via its own tools, in a dedicated chat titled 'Godot AI'. Ziva never sees this conversation: include every path, requirement and acceptance criterion. The call waits until Ziva answers or asks for permission. Answer length is capped; use ziva_task_result for the rest.", {"prompt": Common.string_field(), "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 1800}}, ["prompt"], "external"), Common.tool("ziva_task_poll", "Resume waiting for a Ziva delegation started by ziva_task. Use after a permission or question was requested once the user answered it in the Ziva tab.", {"job_id": Common.string_field(), "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 1800}}, ["job_id"]), Common.tool("ziva_task_result", "Read a character slice of a finished Ziva answer. Follow next_offset until it is -1.", {"job_id": Common.string_field(), "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 12000}}, ["job_id"])]
 
 func _intelligence_definitions() -> Array:
 	return [ProjectKnowledge.definition(), Diagnostics.definition()]
@@ -5103,6 +5107,9 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 	if name.begins_with("playtest_"):
 		return await agent_jobs.execute({"id": current_turn, "parent": current_turn, "kind": "Playtest", "cancel": cancel, "authorized": true}, name, args)
 	match name:
+		"ziva_task": return await _ziva_task(args)
+		"ziva_task_poll": return await _ziva_wait(str(args.get("job_id", "")), clampi(int(args.get("timeout_seconds", 600)), 30, 1800))
+		"ziva_task_result": return _ziva_task_result(str(args.get("job_id", "")), int(args.get("offset", 0)), int(args.get("limit", 6000)))
 		"plan_ask": return await _ask_questions(args)
 		"agent_spawn":
 			var kind = str(args.get("kind", "Explore"))
@@ -5144,6 +5151,93 @@ func _agent_call(name: String, args: Dictionary) -> Dictionary:
 			memory_editor.text = _redact(str(args.get("text", ""))).left(32000)
 			return _save_memories()
 	return Common.failure("Instrument necunoscut.")
+
+func _ziva_runtime_node() -> Node:
+	if is_instance_valid(ziva_runtime) and ziva_runtime.has_method("linux_runtime_request"): return ziva_runtime
+	if is_instance_valid(plugin) and plugin.has_method("linux_runtime_request"): return plugin
+	return null
+
+func _ziva_request(action: String, args: Dictionary) -> Dictionary:
+	var runtime = _ziva_runtime_node()
+	if runtime == null: return Common.failure("Delegarea către Ziva este disponibilă doar în editorul Android, cu sesiunea Ziva pornită.", "ziva_unavailable")
+	var response: Variant = runtime.call("linux_runtime_request", action, args)
+	if not response is Dictionary: return Common.failure("Răspuns Ziva invalid.", "ziva_protocol_error")
+	if not response.get("ok", false):
+		return Common.failure(_redact(str(response.get("error", "Ziva nu a răspuns."))).left(2000), str(response.get("code", "ziva_error")))
+	return response
+
+func _ziva_task(args: Dictionary) -> Dictionary:
+	var prompt = str(args.get("prompt", "")).strip_edges()
+	if prompt.is_empty(): return Common.failure("Descrie sarcina pentru Ziva.", "ziva_invalid_prompt")
+	var request = {"prompt": _redact(prompt), "project_directory": ProjectSettings.globalize_path("res://").trim_suffix("/"), "timeout_seconds": clampi(int(args.get("timeout_seconds", 600)), 30, 1800)}
+	var started = _ziva_request("ziva_chat_send", request)
+	if not started.get("ok", false): return started
+	_record_event("ziva_delegation", {"prompt": prompt.left(200), "job": str(started.get("job_id", ""))}, Common.success("Sarcină trimisă agentului Ziva"))
+	return await _ziva_wait(str(started.get("job_id", "")), int(request["timeout_seconds"]))
+
+func _ziva_wait(job_id: String, timeout_seconds: int) -> Dictionary:
+	if job_id.is_empty(): return Common.failure("Identificatorul sarcinii Ziva lipsește.", "ziva_job_unknown")
+	var deadline = Time.get_ticks_msec() + (timeout_seconds + 30) * 1000
+	while true:
+		if cancel.get("cancelled", false):
+			_ziva_request("ziva_chat_cancel", {"job_id": job_id})
+			return Common.failure("Oprit.", "cancelled")
+		var polled = _ziva_request("ziva_chat_poll", {"job_id": job_id})
+		if not polled.get("ok", false): return polled
+		match str(polled.get("state", "")):
+			"completed": return _ziva_completed(polled)
+			"error": return Common.failure(_redact(str(polled.get("error", "Ziva a eșuat."))).left(2000), "ziva_failed")
+			"timeout": return Common.failure(_redact(str(polled.get("error", "Ziva nu a răspuns în timpul acordat."))), "ziva_timeout")
+			"cancelled": return Common.failure("Sarcina Ziva a fost oprită.", "cancelled")
+			"permission_required": return _ziva_blocked("permission", polled)
+			"question_required": return _ziva_blocked("question", polled)
+		if Time.get_ticks_msec() > deadline:
+			_ziva_request("ziva_chat_cancel", {"job_id": job_id})
+			return Common.failure("Ziva nu a răspuns în timpul acordat.", "ziva_timeout")
+		await get_tree().create_timer(1.5).timeout
+	return Common.failure("Sarcina Ziva s-a oprit.", "ziva_error")
+
+func _ziva_completed(polled: Dictionary) -> Dictionary:
+	var job_id = str(polled.get("job_id", ""))
+	var answer = _redact(str(polled.get("answer", "")))
+	var tools = int(polled.get("tools", 0))
+	var data = {"status": "completed", "job_id": job_id, "chat_id": str(polled.get("chat_id", "")), "message_id": str(polled.get("message_id", "")), "finish": str(polled.get("finish", "")), "tools": tools, "characters": answer.length(), "offset": 0, "total": answer.length(), "next_offset": -1, "answer": answer.left(6000)}
+	if answer.length() > 6000: data["next_offset"] = 6000
+	if answer.is_empty(): data["note"] = "Ziva a încheiat turul fără text."
+	# Ziva edits the same project through its own tools; our map and diagnostics are stale.
+	if not project_manager_mode:
+		project_knowledge.mark_changed()
+		diagnostics.invalidate()
+	if tools > 0:
+		turn_has_mutations = true
+		verification.changed()
+	_record_event("ziva_result", {"job": job_id, "characters": answer.length(), "tools": tools}, Common.success("Răspuns Ziva primit"))
+	return Common.success(data)
+
+func _ziva_blocked(kind: String, polled: Dictionary) -> Dictionary:
+	var waiting: Dictionary = polled.get("waiting", {}) if polled.get("waiting") is Dictionary else {}
+	var detail = ""
+	var record: Dictionary = waiting.get(kind, {}) if waiting.get(kind) is Dictionary else {}
+	if kind == "permission":
+		detail = str(record.get("permission", ""))
+		var tool = record.get("tool", {})
+		if tool is Dictionary and not str(tool.get("callId", "")).is_empty(): detail += " (" + str(tool["callId"]).left(80) + ")"
+	else:
+		var questions = record.get("questions", [])
+		if questions is Array and not questions.is_empty() and questions[0] is Dictionary: detail = str(questions[0].get("header", questions[0].get("question", ""))).left(200)
+	var instruction = "aprobe permisiunea" if kind == "permission" else "răspundă întrebării"
+	var error = "Ziva așteaptă ca utilizatorul să " + instruction + " în tabul Ziva" + (" (" + detail + ")" if not detail.is_empty() else "") + ". Sarcina continuă în fundal; după ce utilizatorul răspunde, reia cu ziva_task_poll(job_id=\"" + str(polled.get("job_id", "")) + "\")."
+	_record_event("ziva_blocked", {"job": str(polled.get("job_id", "")), "kind": kind}, {"ok": false, "error": error, "code": "ziva_" + kind + "_required"})
+	return {"ok": false, "code": "ziva_" + kind + "_required", "error": error, "job_id": str(polled.get("job_id", "")), "waiting": waiting}
+
+func _ziva_task_result(job_id: String, offset: int, limit: int) -> Dictionary:
+	var polled = _ziva_request("ziva_chat_poll", {"job_id": job_id})
+	if not polled.get("ok", false): return polled
+	if str(polled.get("state", "")) != "completed": return Common.failure("Răspunsul Ziva nu este încă disponibil.", "ziva_not_completed")
+	var answer = _redact(str(polled.get("answer", "")))
+	var start = clampi(offset, 0, answer.length())
+	var end = mini(start + clampi(limit, 1, 12000), answer.length())
+	return Common.success({"job_id": job_id, "offset": start, "next_offset": (end if end < answer.length() else -1), "total": answer.length(), "items": [answer.substr(start, end - start)]})
 
 func _track_verification(name: String) -> void:
 	if name in ["godot_write_file", "godot_apply_patch", "godot_delete_file", "godot_set", "godot_create_scene", "godot_create_node", "godot_remove_node", "godot_attach_script", "godot_connect_signal", "godot_save_scene", "godot_save_resource", "godot_set_setting", "godot_run", "linux_execute"]:

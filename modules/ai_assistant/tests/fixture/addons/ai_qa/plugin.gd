@@ -3815,12 +3815,69 @@ class FixtureZivaBridge:
 	extends Node
 	var state = {"ok": true, "enabled": true, "installed": false, "running": false, "ready": false, "ui_port": 0, "busy": false, "version": "v3.3.2", "same_project": true, "linux_ready": true}
 	var requests: Array = []
+	var chat = {"job": "", "state": "running", "answer": "", "error": "", "waiting": {}, "tools": 0, "scripted": []}
 	func linux_runtime_request(action: String, args: Dictionary) -> Dictionary:
 		if action == "ziva_status": return state.duplicate(true)
 		requests.append({"action": action, "arguments": args.duplicate(true)})
-		if action == "ziva_install": state.merge({"status": "installing", "message": "Descarc Ziva…", "busy": true}, true)
-		elif action == "ziva_check_updates": state["updates"] = {"available": true, "message": "Versiune oficială disponibilă: v3.3.3"}
+		match action:
+			"ziva_install": state.merge({"status": "installing", "message": "Descarc Ziva…", "busy": true}, true)
+			"ziva_check_updates": state["updates"] = {"available": true, "message": "Versiune oficială disponibilă: v3.3.3"}
+			"ziva_chat_send":
+				chat["job"] = "fixture-ziva-job"
+				chat["state"] = "running"
+				chat["answer"] = ""
+				chat["error"] = ""
+				chat["waiting"] = {}
+				chat["tools"] = 0
+				return {"ok": true, "job_id": chat["job"], "state": "running"}
+			"ziva_chat_poll":
+				if not chat["scripted"].is_empty(): chat.merge(chat["scripted"].pop_front(), true)
+				return {"ok": true, "job_id": chat["job"], "state": chat["state"], "answer": chat["answer"], "error": chat["error"], "waiting": chat["waiting"], "tools": chat["tools"], "chat_id": "fixture-ziva-chat", "message_id": "fixture-ziva-message"}
+			"ziva_chat_cancel":
+				chat["state"] = "cancelled"
+				return {"ok": true, "job_id": chat["job"], "state": "cancelled"}
 		return {"ok": true}
+
+func _ziva_delegation_tests(bridge: FixtureZivaBridge) -> void:
+	# Delegation uses the sidecar's own local RPC; this bridge stands for it.
+	var previous_mode = panel.mode_picker.selected
+	var previous_control = panel.full_control.button_pressed
+	var previous_definitions = panel.active_definitions
+	panel.ziva_runtime = bridge
+	panel.mode_picker.select(1)
+	panel.full_control.button_pressed = true
+	panel.active_definitions = panel._agent_definitions()
+	panel.cancel = {}
+	bridge.state.merge({"running": true, "ready": true, "status": "running", "ui_port": 7013}, true)
+	var definition = panel.active_definitions.filter(func(item: Dictionary) -> bool: return item["name"] == "ziva_task")
+	_check(definition.size() == 1 and definition[0]["risk"] == "external", "Ziva delegation is an externally approved tool")
+	panel.mode_picker.select(3)
+	_check(not panel._definition_visible(definition[0]), "Read-only modes hide Ziva delegation")
+	panel.mode_picker.select(1)
+	bridge.chat["scripted"] = [{"state": "completed", "answer": "Răspuns Ziva.\n\n" + "detaliu ".repeat(1200), "finish": "stop"}]
+	var delegated = await panel._execute_call("ziva_task", {"prompt": "Verifică scena principală."})
+	var sent = bridge.requests.filter(func(request: Dictionary) -> bool: return request["action"] == "ziva_chat_send")
+	_check(sent.size() == 1 and sent[0]["arguments"].get("prompt") == "Verifică scena principală." and not str(sent[0]["arguments"].get("project_directory", "")).is_empty(), "Delegation sends the prompt and the current project to the official agent")
+	_check(delegated.get("ok", false) and delegated["result"]["status"] == "completed" and delegated["result"]["next_offset"] == 6000 and delegated["result"]["answer"].length() == 6000, "Our agent reads the completed Ziva answer and knows where it was cut")
+	var tail = await panel._execute_call("ziva_task_result", {"job_id": delegated["result"]["job_id"], "offset": 6000, "limit": 200})
+	_check(tail.get("ok", false) and tail["result"]["items"][0].length() == 200 and tail["result"]["next_offset"] == 6200, "A long Ziva answer is read in exact character slices")
+	bridge.chat["scripted"] = [{"state": "permission_required", "waiting": {"kind": "permission", "permission": {"id": "perm-1", "chatId": "fixture-ziva-chat", "permission": "bash"}}}, {"state": "completed", "answer": "Am continuat după aprobare."}]
+	var blocked = await panel._execute_call("ziva_task", {"prompt": "Rulează verificarea."})
+	_check(not blocked.get("ok", false) and blocked.get("code") == "ziva_permission_required" and not str(blocked.get("job_id", "")).is_empty(), "A pending Ziva permission is handed back, never approved by our agent")
+	var resumed = await panel._execute_call("ziva_task_poll", {"job_id": blocked.get("job_id", ""), "timeout_seconds": 30})
+	_check(resumed.get("ok", false) and resumed["result"]["status"] == "completed", "After the user answers in the Ziva tab our agent resumes the same job")
+	bridge.chat["scripted"] = [{"state": "running"}, {"state": "running"}, {"state": "running"}]
+	bridge.chat["state"] = "running"
+	panel.cancel = {}
+	get_tree().create_timer(0.3).timeout.connect(func() -> void: panel.cancel["cancelled"] = true)
+	var stopped = await panel._execute_call("ziva_task", {"prompt": "Anulează."})
+	_check(stopped.get("code") == "cancelled" and bridge.requests.back()["action"] == "ziva_chat_cancel", "Cancelling our turn cancels the delegated Ziva job")
+	panel.cancel = {}
+	panel.ziva_runtime = null
+	panel.mode_picker.select(previous_mode)
+	panel.full_control.button_pressed = previous_control
+	panel.active_definitions = previous_definitions
+	bridge.state.merge({"running": false, "ready": false, "status": "idle", "ui_port": 0}, true)
 
 func _ziva_tests(output: String) -> void:
 	var history = panel.history.duplicate(true)
@@ -3828,6 +3885,7 @@ func _ziva_tests(output: String) -> void:
 	_check(not panel.forms.has("ziva") and not panel.section_tabs.has("ziva"), "Assistant settings contain no Ziva installation or session controls")
 	var bridge = FixtureZivaBridge.new()
 	add_child(bridge)
+	await _ziva_delegation_tests(bridge)
 	var backend = embedded["ziva"].new(bridge, ProjectSettings.globalize_path("res://").trim_suffix("/"))
 	var was_expanded = EditorInterface.is_distraction_free_mode_enabled()
 	var screen = EditorInterface.get_editor_main_screen().find_child("ZivaMainScreen", true, false)
