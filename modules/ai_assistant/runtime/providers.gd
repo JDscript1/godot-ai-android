@@ -277,6 +277,12 @@ func complete(profile: Dictionary, messages: Array, tools: Array, model: String,
 	if not resolved.get("ok", false): return resolved
 	messages = normalize_context(profile, model, messages)
 	var kind = str(profile.get("kind", "chat"))
+	if not tools.is_empty() and str(profile.get("issuer", profile.get("id", ""))) == "deepseek":
+		# DeepSeek thinking mode rejects tool requests where a prior assistant
+		# turn lacks reasoning_content; an empty replay satisfies it without
+		# resending foreign or legacy reasoning.
+		for message in messages:
+			if message.get("role") == "assistant" and not message.has("reasoning_content"): message["reasoning_content"] = ""
 	var wire = build_request(kind, messages, tools, model, effort, max_output_tokens)
 	var path = str(wire["path"])
 	var collected = {"text": "", "reasoning": "", "calls": {}, "blocks": {}, "items": [], "terminal": false, "finish": "", "usage": {}, "error": ""}

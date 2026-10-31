@@ -1770,6 +1770,10 @@ func _network_tests(node: Node) -> void:
 	check(rejected.get("status") == 400, "Strict thinking protocol reproduces the native Stop/Resume rejection for synthetic assistant notices")
 	var resumed = await adapter.complete(resume_profile, interrupted, resume_tools, "m", "high", {})
 	check(resumed.get("ok", false) and resumed.get("message", {}).get("content") == "Resume verified" and resumed.get("message", {}).get("reasoning_content") == "fixture continuation", "Real HTTP Stop/Resume preserves provider reasoning and sends application notices separately")
+	var replay_profile = profile.merged({"id": "deepseek-replay", "issuer": "deepseek", "url": mock_url + "/replay/v1"}, true)
+	var replay_history = [{"role": "user", "content": "Continue the task"}, {"role": "assistant", "content": "Earlier verified answer", "wire_source": "another-provider:m"}, {"role": "user", "content": "Apply the next change"}]
+	var replayed = await adapter.complete(replay_profile, replay_history, resume_tools, "m", "high", {})
+	check(replayed.get("ok", false) and replayed.get("message", {}).get("content") == "Replay verified", "DeepSeek tool requests replay every prior assistant turn, including foreign or legacy turns without saved reasoning")
 	var core = scripts["harness"].new(node)
 	var direct_messages = [{"role": "user", "content": "Inspect through the native harness"}]
 	var direct_complete = func(context: Array, catalog: Array, stopping: Dictionary, delta: Callable) -> Dictionary:

@@ -315,6 +315,13 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
                     return
                 self.sse([{"choices": [{"delta": {"reasoning_content": "fixture continuation", "content": "Resume verified"}, "finish_reason": "stop"}]}])
                 return
+            if location.path.startswith("/replay/"):
+                assistants = [m for m in payload.get("messages", []) if m.get("role") == "assistant"]
+                if not payload.get("tools") or any("reasoning_content" not in m for m in assistants):
+                    self.reply({"error": {"message": "The reasoning_content in the thinking mode must be passed back to the API."}}, 400)
+                    return
+                self.sse([{"choices": [{"delta": {"content": "Replay verified"}, "finish_reason": "stop"}]}])
+                return
             if location.path.startswith("/json/"):
                 message = {"role": "assistant", "content": "JSON verified"} if has_result else {"role": "assistant", "content": None, "tool_calls": [{"id": "json-call-a", "function": {"name": "godot_project", "arguments": "{}"}}, {"id": "json-call-b", "function": {"name": "godot_files", "arguments": "{}"}}]}
                 self.reply({"choices": [{"message": message, "finish_reason": "stop" if has_result else "tool_calls"}]})

@@ -8,6 +8,26 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-74 — replay DeepSeek în modul thinking — 31.10.2026
+
+Defect raportat din aplicația instalată: un tur cu unelte a eșuat cu
+`HTTP 400: The reasoning_content in the thinking mode must be passed back to the
+API`. Conform ghidului DeepSeek, când cererea oferă unelte, `reasoning_content`
+trebuie retrimis pentru **fiecare** tur asistent anterior, nu doar pentru cele
+cu `tool_calls`.
+
+- `providers.gd` completează, după normalizarea contextului, câmpul
+  `reasoning_content` pe fiecare mesaj asistent fără el, doar pentru profilurile
+  DeepSeek (`issuer` sau `id`) și doar când se trimit unelte. Răspunsurile
+  proprii păstrează raționamentul original; tururile străine sau vechi primesc
+  șir gol, fără a inventa sau retrimite raționament privat.
+- Fixture-ul HTTP are ruta `/replay/` care reproduce regula strictă, iar
+  `test_runtime.gd` verifică o conversație cu un tur asistent străin fără
+  raționament salvat.
+
+Verificare: suita runtime locală, Godot 4.7.2 headless, 940 aserțiuni, 0
+eșecuri. Compilarea CI și APK-ul nou sunt necesare pentru livrare.
+
 ## AG-73 — chat fix, erorile se deschid la cerere — 31.10.2026
 
 Cerința utilizatorului: când apar erori în consolă, interfața de chat nu mai
@@ -32,7 +52,9 @@ Verificare: fixture-ul `presentation` are 6 aserțiuni noi (indicator ascuns fă
 erori, text, culoare de atenție, acțiune la atingere, stil mut după deschidere,
 ascundere la zero); 127/0 atât la `narrow`, cât și la `phone_landscape`, iar
 `chat` 82/0, `chat_lifecycle` 83/0 și `compact` 122/0 pe `phone_landscape`.
-Modificările C++ nu sunt încă dovedite de o compilare CI și nu există APK nou.
+Compilarea CI este verde pe `95744349` (standard `41209307182`, Ziva
+`41209307079`); APK-urile arm64 `95744349` au fost puse în Download. Defectul
+DeepSeek apărut apoi în aplicația instalată este tratat în AG-74.
 
 ## AG-72 — agentul nostru deleagă sarcini către Ziva — 31.10.2026
 
