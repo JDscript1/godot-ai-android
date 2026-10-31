@@ -67,6 +67,7 @@ var verification: RefCounted
 var cancel: Dictionary = {}
 var busy = false
 var capture_prune_clock = 0.0
+var debugger_clock = 0.0
 var approval_pending = false
 var question_waiting = ""
 var question_draft_revision = 0
@@ -3648,6 +3649,13 @@ func _process(_delta: float) -> void:
 	if capture_prune_clock >= 60.0 and file_registry != null:
 		capture_prune_clock = 0.0
 		file_registry.prune_captures()
+	if chat != null and not project_manager_mode:
+		debugger_clock += _delta
+		if debugger_clock >= 1.0:
+			debugger_clock = 0.0
+			if plugin.has_method("debugger_status"):
+				var debugger: Dictionary = plugin.debugger_status()
+				if debugger.get("ok", false): chat.set_error_count(int(debugger.get("errors", 0)))
 	if not project_manager_mode and chat != null:
 		var expanded = EditorInterface.is_distraction_free_mode_enabled()
 		if expanded != chat.workspace_expanded:
@@ -4094,6 +4102,9 @@ func _chat_action(name: String, args: Dictionary) -> void:
 					_chat_action("file_mention", {"id": registered["result"]["id"]})
 
 		"expand": _expand_workspace()
+		"errors":
+			if EditorInterface.is_distraction_free_mode_enabled(): EditorInterface.set_distraction_free_mode(false)
+			if plugin.has_method("open_debugger_errors"): plugin.open_debugger_errors()
 		"send": _send_or_queue()
 		"steer": _send_or_queue("", "steer")
 		"stop": _stop()

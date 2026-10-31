@@ -14,6 +14,7 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/docks/editor_dock.h"
+#include "editor/docks/editor_dock_manager.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
@@ -177,6 +178,8 @@ void AIAssistantEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("script_diagnostics", "source", "path"), &AIAssistantEditorPlugin::script_diagnostics);
 	ClassDB::bind_method(D_METHOD("diagnostics_snapshot"), &AIAssistantEditorPlugin::diagnostics_snapshot);
 	ClassDB::bind_method(D_METHOD("debugger_snapshot"), &AIAssistantEditorPlugin::debugger_snapshot);
+	ClassDB::bind_method(D_METHOD("debugger_status"), &AIAssistantEditorPlugin::debugger_status);
+	ClassDB::bind_method(D_METHOD("open_debugger_errors"), &AIAssistantEditorPlugin::open_debugger_errors);
 	ClassDB::bind_method(D_METHOD("panel_snapshot", "section", "session", "offset", "limit", "frame", "monitor"), &AIAssistantEditorPlugin::panel_snapshot, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("audio_bus_activity", "bus"), &AIAssistantEditorPlugin::audio_bus_activity);
 	ClassDB::bind_method(D_METHOD("scene_is_unsaved", "path"), &AIAssistantEditorPlugin::scene_is_unsaved);
@@ -295,6 +298,42 @@ Dictionary AIAssistantEditorPlugin::debugger_snapshot() {
 	response["ok"] = true;
 	response["result"] = data;
 	return response;
+}
+
+Dictionary AIAssistantEditorPlugin::debugger_status() {
+	Dictionary response;
+	EditorDebuggerNode *node = EditorDebuggerNode::get_singleton();
+	if (!node || runtime_debugger.is_null()) {
+		response["ok"] = false;
+		return response;
+	}
+	int errors = 0;
+	int warnings = 0;
+	const Array sessions = runtime_debugger->get_sessions();
+	for (int i = 0; i < sessions.size(); i++) {
+		ScriptEditorDebugger *debugger = node->get_debugger(i);
+		if (!debugger) {
+			continue;
+		}
+		errors += debugger->get_error_count();
+		warnings += debugger->get_warning_count();
+	}
+	response["ok"] = true;
+	response["errors"] = errors;
+	response["warnings"] = warnings;
+	return response;
+}
+
+void AIAssistantEditorPlugin::open_debugger_errors() {
+	EditorDebuggerNode *node = EditorDebuggerNode::get_singleton();
+	EditorDockManager *docks = EditorDockManager::get_singleton();
+	ERR_FAIL_NULL(node);
+	ERR_FAIL_NULL(docks);
+	docks->open_dock(node, true);
+	ScriptEditorDebugger *debugger = node->get_current_debugger();
+	if (debugger) {
+		debugger->switch_to_debugger(1);
+	}
 }
 
 Dictionary AIAssistantEditorPlugin::panel_snapshot(const String &p_section, int p_session, int p_offset, int p_limit, int p_frame, const String &p_monitor) {

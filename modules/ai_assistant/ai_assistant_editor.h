@@ -62,6 +62,7 @@ protected:
 
 public:
 	bool has_main_screen() const override { return true; }
+	bool keeps_workspace_fixed() const override { return true; }
 	String get_plugin_name() const override { return "AI Assistant"; }
 	void make_visible(bool p_visible) override;
 	void set_chat_placement(int p_placement);
@@ -76,6 +77,8 @@ public:
 	Dictionary script_diagnostics(const String &p_source, const String &p_path);
 	Dictionary diagnostics_snapshot();
 	Dictionary debugger_snapshot();
+	Dictionary debugger_status();
+	void open_debugger_errors();
 	Dictionary panel_snapshot(const String &p_section, int p_session, int p_offset, int p_limit, int p_frame, const String &p_monitor = String());
 	Dictionary audio_bus_activity(int p_bus) const;
 	bool scene_is_unsaved(const String &p_path);
@@ -116,6 +119,7 @@ protected:
 
 public:
 	bool has_main_screen() const override { return true; }
+	bool keeps_workspace_fixed() const override { return true; }
 	String get_plugin_name() const override { return "Ziva"; }
 	void make_visible(bool p_visible) override;
 	AIZivaEditorPlugin();

@@ -5504,6 +5504,11 @@ void EditorNode::_project_run_started() {
 		log->clear();
 	}
 
+	EditorPlugin *selected = editor_main_screen->get_selected_plugin();
+	if (is_distraction_free_mode_enabled() || (selected && selected->keeps_workspace_fixed())) {
+		return;
+	}
+
 	int action_on_play = EDITOR_GET("run/bottom_panel/action_on_play");
 	if (action_on_play == ACTION_ON_PLAY_OPEN_OUTPUT) {
 		editor_dock_manager->open_dock(log, true);

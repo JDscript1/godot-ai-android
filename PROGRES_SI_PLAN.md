@@ -8,6 +8,32 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-73 — chat fix, erorile se deschid la cerere — 31.10.2026
+
+Cerința utilizatorului: când apar erori în consolă, interfața de chat nu mai
+trebuie să se ridice ca să facă loc ecranului de erori; chatul rămâne fix, iar
+erorile se deschid doar la atingere.
+
+- `EditorPlugin::keeps_workspace_fixed()` (nou, implicit `false`); ecranele
+  principale **AI Assistant** și **Ziva** îl suprascriu. Când un astfel de ecran
+  este selectat, `EditorNode::_project_run_started` nu mai deschide automat
+  Output/Debugger-ul la pornirea scenei; modul distraction-free păstrează aceeași
+  regulă. Panourile rămân deschizibile manual.
+- `chat_view.gd` afișează un indicator plat în antet (`ErrorIndicator`) doar când
+  Debugger-ul raportează erori: „1 eroare”/„N erori”, culoare de atenție până la
+  prima deschidere, apoi mută. Atingerea emite acțiunea `errors`.
+- `panel.gd` sondează `debugger_status` o dată pe secundă și tratează `errors`:
+  iese din distraction-free dacă e necesar și deschide Debugger-ul pe tabul
+  Errors. `AIAssistantEditorPlugin::debugger_status()` însumează contoarele
+  sesiunilor native, iar `open_debugger_errors()` deschide docul și selectează
+  tabul Errors.
+
+Verificare: fixture-ul `presentation` are 6 aserțiuni noi (indicator ascuns fără
+erori, text, culoare de atenție, acțiune la atingere, stil mut după deschidere,
+ascundere la zero); 127/0 atât la `narrow`, cât și la `phone_landscape`, iar
+`chat` 82/0, `chat_lifecycle` 83/0 și `compact` 122/0 pe `phone_landscape`.
+Modificările C++ nu sunt încă dovedite de o compilare CI și nu există APK nou.
+
 ## AG-72 — agentul nostru deleagă sarcini către Ziva — 31.10.2026
 
 Cerința utilizatorului: în timp ce lucrăm cu agentul nostru, să putem folosi
@@ -38,10 +64,17 @@ Verificare: `panel.gd` și fixture-ul parsează cu Godot 4.7.2 headless
 (`--check-only`). Fixture-ul `ziva` are 8 aserțiuni noi: risc/vizibilitate,
 prompt + proiect trimise, tăiere la 6000 cu `next_offset`, felie exactă,
 permisiune întoarsă fără aprobare, reluare după răspuns și anulare care oprește
-și sarcina Ziva. Nu există compilator Kotlin local; compilarea `AIZivaChat.kt`
-rămâne a fi dovedită de jobul Android CI după commit/push. O conversație reală
-cu model, fluxul permisiunii și citirea răspunsului pe dispozitiv rămân de
-probat pe APK-ul `ziva-preview`.
+și sarcina Ziva. Compilarea Kotlin a fost dovedită de CI după commit/push
+(`41170143305`, toate joburile verzi). Pe dispozitiv, cu APK-ul
+`Godot-AI-Ziva-arm64-d5105508.apk` (112.586.234 octeți, sha256 `5bdfe443…`,
+semnătură debug) instalat pe NX729J, proiectul devonian-era: sarcina
+`901939ee-c535-4606-8393-b1673f439c0c` s-a terminat `completed` cu răspunsul
+„PONG” (4 caractere, fără unelte) în ~3,4 s. Snapshotul independent al
+sidecarului confirmă conversația dedicată `chat_e6f8261c1ffel4nzFv4HtWuA8i`
+(`fallbackTitle` „Godot AI”, titlu automat „Răspunde cu PONG”), mesajul
+utilizatorului cu partea `<additional_context>` marcată `synthetic` (ignorată
+corect de potrivirea exactă din `findTurn`) și mesajul asistentului legat prin
+`parentId`, cu `finish: "stop"`. Fluxul permisiunii rămâne de probat separat.
 
 Contract RPC folosit: `chats/create`, `chats/sendPrompt`, `chats/snapshot`,
 `chats/abort`, `plugin/bootstrap`, anvelopă oRPC `{"json": …}`. Este un contract

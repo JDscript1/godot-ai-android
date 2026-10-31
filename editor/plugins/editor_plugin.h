@@ -198,6 +198,8 @@ public:
 	virtual String get_plugin_version() const;
 	virtual void set_plugin_version(const String &p_version);
 	virtual bool has_main_screen() const;
+	// Main screens that own the whole workspace keep it stable when a scene starts playing.
+	virtual bool keeps_workspace_fixed() const { return false; }
 	virtual void make_visible(bool p_visible);
 	virtual void set_current() {}
 	virtual void selected_notify() {} //notify that it was raised by the user, not the editor

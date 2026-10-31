@@ -85,6 +85,9 @@ var root_column: VBoxContainer
 var compose_panel: PanelContainer
 var attachment_chips: HFlowContainer
 var expand_button: Button
+var error_button: Button
+var error_count = 0
+var error_seen = 0
 var workspace_expanded = false
 var message_records: Array = []
 var response_groups: Array = []
@@ -137,7 +140,7 @@ func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_apply_theme()
 	var gradient = Gradient.new()
-	gradient.colors = PackedColorArray([Color("171523"), Color("111b2b"), Color("101218")])
+	gradient.colors = PackedColorArray([Color("17191f"), Color("17191f")])
 	backdrop = GradientTexture2D.new()
 	backdrop.gradient = gradient
 	backdrop.fill_from = Vector2.ZERO
@@ -182,6 +185,16 @@ func _ready() -> void:
 	title = label(header, "Conversație nouă")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	error_button = button(header, "", _open_errors)
+	error_button.name = "ErrorIndicator"
+	error_button.visible = false
+	error_button.focus_mode = Control.FOCUS_NONE
+	error_button.tooltip_text = "Deschide erorile din Debugger"
+	_compact_button(error_button)
+	error_button.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+	error_button.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+	error_button.add_theme_stylebox_override("hover", _compact_style(Color("2a2d36")))
+	error_button.add_theme_stylebox_override("pressed", _compact_style(Color("353947")))
 	navigation_buttons["new"] = icon_button(header, "Add", "Conversație nouă", func() -> void: action.emit("new", {}))
 	_compact_button(navigation_buttons["new"])
 	expand_button = icon_button(header, "Expand", "Extinde chatul și ascunde panourile", _toggle_expanded)
@@ -270,10 +283,8 @@ func _ready() -> void:
 	queue_panel.visible = false
 	root_column.add_child(queue_panel)
 	compose_panel = PanelContainer.new()
-	var compose_style = style(Color("1d2130"), 18)
-	compose_style.set_content_margin_all(8 * EditorInterface.get_editor_scale())
-	compose_style.border_color = Color("35364c")
-	compose_style.set_border_width_all(1)
+	var compose_style = style(Color("1e2026"), 22)
+	compose_style.set_content_margin_all(10 * EditorInterface.get_editor_scale())
 	compose_panel.add_theme_stylebox_override("panel", compose_style)
 	root_column.add_child(compose_panel)
 	compose_panel.minimum_size_changed.connect(func() -> void: _layout_queue.call_deferred())
@@ -358,7 +369,20 @@ func _ready() -> void:
 	for control in [model_button, reasoning_button, options_button, voice_button, send_button, stop_button, attach_button]:
 		_compact_button(control)
 	for control in [attach_button, voice_button, send_button, stop_button]: control.size_flags_vertical = Control.SIZE_SHRINK_END
-	send_button.add_theme_stylebox_override("normal", _compact_style(Color("7650c5")))
+	for control in [model_button, reasoning_button, options_button]:
+		control.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+		control.add_theme_stylebox_override("hover", _compact_style(Color("2a2d36")))
+		control.add_theme_stylebox_override("pressed", _compact_style(Color("333743")))
+		control.add_theme_color_override("font_color", Color("b9c0ce"))
+		control.add_theme_color_override("font_hover_color", Color.WHITE)
+	var send_surface = _compact_style(Color("7650c5"))
+	var send_hover = _compact_style(Color("8662d9"))
+	var send_pressed = _compact_style(Color("6846b5"))
+	for surface in [send_surface, send_hover, send_pressed]: surface.set_corner_radius_all(int(18 * EditorInterface.get_editor_scale()))
+	send_button.custom_minimum_size = Vector2(36, 36) * EditorInterface.get_editor_scale()
+	send_button.add_theme_stylebox_override("normal", send_surface)
+	send_button.add_theme_stylebox_override("hover", send_hover)
+	send_button.add_theme_stylebox_override("pressed", send_pressed)
 	provider_picker = OptionButton.new()
 	model_picker = OptionButton.new()
 	effort_picker = OptionButton.new()
@@ -478,10 +502,8 @@ func _build_activity_panel() -> void:
 	var scale = EditorInterface.get_editor_scale()
 	activity_panel = PanelContainer.new()
 	activity_panel.name = "AgentActivity"
-	var surface = style(Color("1a1d2a"), 10)
+	var surface = style(Color.TRANSPARENT, 0)
 	surface.set_content_margin_all(0)
-	surface.border_color = Color("39364b")
-	surface.set_border_width_all(1)
 	activity_panel.add_theme_stylebox_override("panel", surface)
 	root_column.add_child(activity_panel)
 	var body = VBoxContainer.new()
@@ -761,8 +783,8 @@ func _compact_button(control: Button) -> void:
 	control.add_theme_constant_override("icon_max_width", int(16 * scale))
 	control.add_theme_constant_override("h_separation", int(4 * scale))
 	control.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT if control.text.is_empty() else Color("252939")))
-	control.add_theme_stylebox_override("hover", _compact_style(Color("393456")))
-	control.add_theme_stylebox_override("pressed", _compact_style(Color("59458c")))
+	control.add_theme_stylebox_override("hover", _compact_style(Color("2a2d36")))
+	control.add_theme_stylebox_override("pressed", _compact_style(Color("353947")))
 
 func _size_selection_chips() -> void:
 	if reasoning_button == null: return
@@ -1486,9 +1508,10 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	row.add_child(card)
 	var identity = HBoxContainer.new()
 	identity.name = "ResponseIdentity"
+	identity.add_theme_constant_override("separation", int(6 * scale))
 	card.add_child(identity)
 	var mark = TextureRect.new()
-	mark.custom_minimum_size = Vector2(16, 16) * scale
+	mark.custom_minimum_size = Vector2(14, 14) * scale
 	mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	mark.texture = _icon("Agent")
@@ -1498,8 +1521,8 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	var heading = label(identity, str(metadata.get("origin_label", "Godot AI")))
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	heading.add_theme_font_size_override("font_size", int(12 * scale))
-	heading.add_theme_color_override("font_color", Color("b5a4d9"))
+	heading.add_theme_font_size_override("font_size", int(11 * scale))
+	heading.add_theme_color_override("font_color", Color("8f97a9"))
 	var state = label(identity, "")
 	state.name = "ResponseState"
 	state.add_theme_font_size_override("font_size", int(11 * scale))
@@ -1510,6 +1533,7 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	progress_toggle.clip_text = true
 	progress_toggle.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
 	_compact_button(progress_toggle)
+	progress_toggle.add_theme_color_override("font_color", Color("8f97a9"))
 	progress_toggle.hide()
 	var progress = VBoxContainer.new()
 	progress.add_theme_constant_override("separation", int(12 * scale))
@@ -1567,7 +1591,7 @@ func _sync_response(group: Dictionary) -> void:
 	var captions = {"completed": "Rezultat", "cancelled": "Întrerupt", "blocked": "Blocat", "failed": "Eșuat", "limited": "Necesită verificare"}
 	group["state"].text = str(captions.get(outcome, "În lucru" if work_live and group["turn"] == work_turn else ""))
 	group["state"].visible = not group["state"].text.is_empty()
-	group["state"].add_theme_color_override("font_color", Color("9dd0ad") if outcome == "completed" else (Color("dfb97d") if not outcome.is_empty() else Color("aa98cc")))
+	group["state"].add_theme_color_override("font_color", Color("8fbf9f") if outcome == "completed" else (Color("d2b47f") if not outcome.is_empty() else Color("9aa2b4")))
 	if not primary.is_empty(): primary["column"].set_meta("response_outcome", outcome)
 
 func _preserve_reader() -> void:
@@ -1614,8 +1638,11 @@ func _refresh_operations(group: Dictionary) -> void:
 		toggle.name = "ResponseOperations"
 		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		toggle.clip_text = true
-		toggle.add_theme_stylebox_override("normal", _compact_style(Color("181e2b")))
 		_compact_button(toggle)
+		toggle.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+		toggle.add_theme_stylebox_override("hover", _compact_style(Color("262a33")))
+		toggle.add_theme_stylebox_override("pressed", _compact_style(Color("30343f")))
+		toggle.add_theme_color_override("font_color", Color("8f97a9"))
 		var rows = VBoxContainer.new()
 		rows.hide()
 		group["card"].add_child(rows)
@@ -1633,7 +1660,7 @@ func _refresh_operations(group: Dictionary) -> void:
 	var unknown = operations.filter(func(op: Dictionary) -> bool: return op["state"] == "unknown").size()
 	var running = operations.any(func(op: Dictionary) -> bool: return op["state"] == "running")
 	group["operations_toggle"].text = ("▴" if group["operations_rows"].visible else "▸") + " Operații · %d" % operations.size() + (" · în lucru" if running else "") + (" · %d cu erori" % failed if failed else "") + (" · %d neconfirmate" % unknown if unknown else "")
-	group["operations_toggle"].add_theme_color_override("font_color", Color("dfb97d") if failed or unknown else Color("aeb9cc"))
+	group["operations_toggle"].add_theme_color_override("font_color", Color("d2b47f") if failed or unknown else Color("8f97a9"))
 	if not group["operations_rows"].visible: return
 	_preserve_reader()
 	for child in group["operations_rows"].get_children():
@@ -1645,6 +1672,8 @@ func _refresh_operations(group: Dictionary) -> void:
 			group["operations_visible"] += 20
 			_refresh_operations(group))
 		_compact_button(more)
+		more.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+		more.add_theme_color_override("font_color", Color("8f97a9"))
 	for op in operations.slice(hidden):
 		var column = VBoxContainer.new()
 		group["operations_rows"].add_child(column)
@@ -1654,9 +1683,11 @@ func _refresh_operations(group: Dictionary) -> void:
 		heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		heading.text = str({"running": "◌ ", "completed": "✓ ", "failed": "! ", "unknown": "? ", "cancelled": "Ⅱ "}.get(op["state"], "")) + op["title"] + (" · " + _duration_label(int(op.get("duration_ms", 0))) if op.get("duration_ms", 0) > 0 else "")
 		heading.tooltip_text = op["name"]
-		heading.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
-		heading.add_theme_color_override("font_color", Color("dfb97d") if op["state"] in ["failed", "unknown"] else Color("aeb9cc"))
 		_compact_button(heading)
+		heading.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+		heading.add_theme_stylebox_override("hover", _compact_style(Color("262a33")))
+		heading.add_theme_stylebox_override("pressed", _compact_style(Color("30343f")))
+		heading.add_theme_color_override("font_color", Color("d2b47f") if op["state"] in ["failed", "unknown"] else Color("9aa2b4"))
 		var details = VBoxContainer.new()
 		details.visible = op["expanded"]
 		column.add_child(details)
@@ -1681,8 +1712,11 @@ func _operation_details(details: VBoxContainer, op: Dictionary) -> void:
 	details.add_child(links)
 	var copy = button(links, "Copiază detaliile", func() -> void: DisplayServer.clipboard_set(text))
 	_compact_button(copy)
+	copy.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
 	var journal = button(links, "Jurnal", func() -> void: action.emit("settings", {"section": "journal"}))
 	_compact_button(journal)
+	journal.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+	for control in [copy, journal]: control.add_theme_color_override("font_color", Color("9aa2b4"))
 
 func _inspection_preview(parent: Control, preview: Dictionary) -> void:
 	var caption = str({"read": "Fragment citit", "search": "Rezultate căutare", "files": "Fișiere găsite"}.get(preview["kind"], "Inspecție"))
@@ -1729,13 +1763,21 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 		row.add_child(spacer)
 	var card = PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_SHRINK_END if role == "user" else Control.SIZE_EXPAND_FILL
-	var surface = style(Color("2c2940") if role == "user" else Color.TRANSPARENT, 16)
-	if role != "user": surface.set_content_margin_all(2 * EditorInterface.get_editor_scale())
+	var surface = style(Color.TRANSPARENT, 0)
+	surface.set_content_margin_all(0)
 	card.add_theme_stylebox_override("panel", surface)
 	row.add_child(card)
 	var column = VBoxContainer.new()
-	column.add_theme_constant_override("separation", int(8 * EditorInterface.get_editor_scale()))
+	column.add_theme_constant_override("separation", int(6 * EditorInterface.get_editor_scale()))
 	card.add_child(column)
+	if role == "user":
+		var identity = HBoxContainer.new()
+		identity.name = "UserIdentity"
+		identity.alignment = BoxContainer.ALIGNMENT_END
+		column.add_child(identity)
+		var you = label(identity, "Tu")
+		you.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+		you.add_theme_color_override("font_color", Color("8f97a9"))
 	var body = VBoxContainer.new()
 	column.add_child(body)
 	var anchor = RichTextLabel.new()
@@ -1790,7 +1832,7 @@ func _size_user(record: Dictionary) -> void:
 	var width = 0.0
 	for line in str(record["text"]).split("\n"):
 		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, get_theme_font_size("font_size", "Label")).x)
-	var wanted = minf(maxf(64 * scale, width + 30 * scale), available * 0.74)
+	var wanted = minf(maxf(64 * scale, width), available * 0.74)
 	if not record["metadata"].get("attachments", []).is_empty() or not record["metadata"].get("files", []).is_empty(): wanted = minf(320 * scale, available * 0.74)
 	record["card"].custom_minimum_size.x = wanted
 	record["card"].custom_maximum_size.x = wanted
@@ -2139,10 +2181,8 @@ func _render_reasoning(record: Dictionary) -> void:
 	if block.is_empty() or not is_instance_valid(block.get("node")):
 		var scale = EditorInterface.get_editor_scale()
 		var panel = PanelContainer.new()
-		var surface = style(Color("141926"), 10)
-		surface.border_color = Color("2d3448")
-		surface.set_border_width_all(1)
-		surface.set_content_margin_all(6 * scale)
+		var surface = style(Color.TRANSPARENT, 0)
+		surface.set_content_margin_all(0)
 		panel.add_theme_stylebox_override("panel", surface)
 		var column = VBoxContainer.new()
 		column.add_theme_constant_override("separation", int(2 * scale))
@@ -2153,6 +2193,7 @@ func _render_reasoning(record: Dictionary) -> void:
 		toggle.clip_text = true
 		toggle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		_compact_button(toggle)
+		toggle.add_theme_color_override("font_color", Color("8f97a9"))
 		var body = RichTextLabel.new()
 		body.fit_content = true
 		body.scroll_active = false
@@ -2543,6 +2584,22 @@ func set_workspace_expanded(value: bool) -> void:
 func _toggle_expanded() -> void:
 	action.emit("expand", {})
 
+func set_error_count(count: int) -> void:
+	count = maxi(count, 0)
+	error_seen = 0 if count == 0 else mini(error_seen, count)
+	if error_button == null or count == error_count: return
+	error_count = count
+	error_button.visible = count > 0
+	if count > 0:
+		error_button.text = "1 eroare" if count == 1 else "%d erori" % count
+		error_button.add_theme_color_override("font_color", Color("8f97a9") if error_seen >= count else Color("d2b47f"))
+	error_button.tooltip_text = "Deschide erorile din Debugger"
+
+func _open_errors() -> void:
+	error_seen = error_count
+	if error_button != null: error_button.add_theme_color_override("font_color", Color("8f97a9"))
+	action.emit("errors", {})
+
 func show_status(message: String, working: bool = false) -> void:
 	status_revision += 1
 	var revision = status_revision
@@ -2634,9 +2691,12 @@ func _file_card(parent: Node, id: String) -> Control:
 	card.set_meta("chat_file_id", id)
 	card.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	card.custom_maximum_size.x = 280 * EditorInterface.get_editor_scale()
-	card.add_theme_stylebox_override("panel", style(Color("202638"), 10))
+	var surface = style(Color.TRANSPARENT, 0)
+	surface.set_content_margin_all(0)
+	card.add_theme_stylebox_override("panel", surface)
 	parent.add_child(card)
 	var column = VBoxContainer.new()
+	column.add_theme_constant_override("separation", int(4 * EditorInterface.get_editor_scale()))
 	card.add_child(column)
 	if not str(item.get("preview", "")).is_empty() and FileAccess.file_exists(item["preview"]):
 		var texture = ImageTexture.create_from_image(Image.load_from_file(item["preview"]))
@@ -2651,8 +2711,10 @@ func _file_card(parent: Node, id: String) -> Control:
 	var heading = label(column, str(item["name"]))
 	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	heading.tooltip_text = str(item["source"])
+	heading.add_theme_font_size_override("font_size", int(13 * EditorInterface.get_editor_scale()))
 	var origin = label(column, "%s · %s · %s" % [str(item["kind"]).to_upper(), String.humanize_size(int(item["bytes"])), Time.get_datetime_string_from_unix_time(int(item["modified"])).replace("T", " ")])
 	origin.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
+	origin.add_theme_color_override("font_color", Color("7e8ba0"))
 	origin.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	if item.get("temporary_capture", false):
 		var retention = label(column, "Captură expirată · miniatura a fost curățată" if item.get("capture_expired", false) else ("Captură păstrată · fixată" if item.get("pinned", false) else "Captură temporară · 24 h · fixează pentru păstrare"))
@@ -2665,6 +2727,8 @@ func _file_card(parent: Node, id: String) -> Control:
 		var entry = icon_button(actions, spec[0], spec[1], func() -> void: action.emit(spec[2], {"id": id}))
 		if spec[2] == "file_open": entry.text = "Deschide"
 		_compact_button(entry)
+		entry.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+		entry.add_theme_color_override("font_color", Color("9aa2b4"))
 		if item.get("capture_expired", false): entry.disabled = true
 		if spec[2] == "file_pin":
 			entry.toggle_mode = true

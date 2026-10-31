@@ -37,9 +37,15 @@ Contractul RPC este cel privat al pachetului v3.3.2 (`chats/create`,
 `{"json": …}`) și poate diferi între versiuni; erorile sunt raportate explicit,
 fără reîncercări ascunse. Verificarea de până acum este statică (schema din
 bundle-ul oficial), plus fixture-ul Godot cu un bridge simulat: 8 verificări
-noi pentru delegare, tăierea răspunsului, permisiune și anulare. O conversație
-reală Ziva, fluxul permisiunii și tastarea pe dispozitiv rămân de probat pe
-APK-ul `ziva-preview`.
+noi pentru delegare, tăierea răspunsului, permisiune și anulare. Pe dispozitiv,
+cu APK-ul `ziva-preview` din `d5105508`, o sarcină reală a mers cap-coadă:
+job `901939ee-c535-4606-8393-b1673f439c0c`, `completed`, răspuns „PONG” în
+~3,4 s, fără unelte. Snapshotul sidecarului confirmă conversația dedicată
+`chat_e6f8261c1ffel4nzFv4HtWuA8i` („Godot AI”) și legătura `parentId`
+întrebare→răspuns; partea `<additional_context>` injectată de Ziva este
+`synthetic`, deci potrivirea exactă a promptului din `findTurn` rămâne validă.
+Fluxul permisiunii (întrebare în tabul Ziva → `ziva_task_poll`) rămâne de
+probat separat pe dispozitiv.
 
 ## Conversație compactă, focus și addonuri — 30.10.2026
 

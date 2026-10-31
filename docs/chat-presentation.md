@@ -5,9 +5,12 @@ Godot AI. Interfața oficială din tabul Ziva rămâne independentă.
 
 ## Mesaje și sarcini
 
-Mesajele utilizatorului sunt bule compacte, la dreapta. Răspunsurile agentului
+Conversația este plată, fără carduri sau bule: mesajele utilizatorului sunt
+text aliniat la dreapta, etichetat discret „Tu”, iar răspunsurile agentului
 folosesc text liber, cu lățimea adaptată spațiului disponibil și un singur
-antet pentru intervențiile consecutive ale aceleiași sarcini.
+antet pentru intervențiile consecutive ale aceleiași sarcini. Doar câmpul de
+compunere păstrează o suprafață proprie, discretă.
+
 
 O sarcină afișează, în ordine:
 
@@ -26,6 +29,17 @@ cumulat apare pe ultimul segment al sarcinii. Istoricul original al mesajelor
 Stările **Rezultat**, **Întrerupt**, **Blocat**, **Eșuat** și **Necesită verificare**
 sunt distincte. „Rezultat” descrie încheierea rulării, fără să pretindă că
 gameplay-ul a fost verificat; criteriile și dovezile existente rămân separate.
+
+## Spațiu fix și erori
+
+Chatul rămâne pe loc când o scenă pornește: ecranele principale AI Assistant
+și Ziva nu lasă editorul să deschidă automat Output sau Debugger-ul la rulare.
+Erorile raportate de Debugger apar ca un indicator compact în antet
+(„1 eroare”/„N erori”); până la prima citire folosește culoarea de atenție.
+Atingerea lui deschide Debugger-ul direct pe tabul **Errors**, la cerere, iar
+indicatorul rămâne disponibil în stilul mut cât timp există erori în sesiune.
+Dacă fila de chat extinsă este activă, atingerea restaurează mai întâi
+panourile, apoi arată erorile.
 
 ## Streaming și formatare
 
@@ -91,7 +105,8 @@ interacțiunile sunt documentate în
 
 Scenariul `presentation` din `tests/render.py` testează widgeturile reale,
 streaming-ul, gruparea, operațiile, restaurarea istoricului, codul lung,
-fișierele, atingerea linkurilor și ciclul de derulare/tastatură. Scenariul
+fișierele, indicatorul de erori, atingerea linkurilor și ciclul de
+derulare/tastatură. Scenariul
 `all` îl include, împreună cu scenariul `inspections`. Rezultatele etapei și limitele verificării sunt în
 `PROGRES_SI_PLAN.md`, AG-64; dovezile locale sunt în
 `.ai-qa/chat-presentation-20261030/`.
