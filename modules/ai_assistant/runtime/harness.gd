@@ -16,6 +16,7 @@ const OLD_TOOL_CONTEXT_LIMIT = 2048
 var owner: Node
 var state = "idle"
 var stats = {}
+var _context_window = 0
 var _tool_budget = TOOL_BATCH_LIMIT
 var _active = false
 var _cancel: Dictionary = {}
@@ -39,6 +40,15 @@ func _init(node: Node = null) -> void:
 func stop() -> void:
 	_cancel["cancelled"] = true
 
+func _batch_limit() -> int:
+	# Per-step tool output scales with the model window so a large-context model
+	# is not held to a small-window constant. The constants remain the floor for
+	# small or unpublished windows.
+	return maxi(TOOL_BATCH_LIMIT, _context_window / 4)
+
+func _result_limit() -> int:
+	return maxi(TOOL_RESULT_LIMIT, _context_window / 8)
+
 func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	if _active: return Common.failure("Agentul are deja o sarcină activă.", "busy")
 	if not hooks.get("complete", Callable()).is_valid(): return Common.failure("Lipsește conexiunea modelului.", "invalid_harness")
@@ -52,6 +62,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	_turn = str(options.get("metadata", {}).get("turn_id", options.get("id", "")))
 	_deduplicate_tools = options.get("deduplicate_tools", [])
 	_effects = _restore_effects(_messages)
+	_context_window = maxi(0, int(options.get("context_window", 0)))
 	stats = {"version": 1, "id": str(options.get("id", Common.uid())), "steps": 0, "requests": 0, "retries": 0, "tool_calls": 0, "reused_calls": 0, "continuations": 0, "context_pruned": 0, "context_recoveries": 0, "compactions": 0, "steering": 0}
 	_continuations = 0
 	_continuation_hint = ""
@@ -87,7 +98,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 			repeated_count = 0
 			repeated_result = ""
 		if _checkpoint_failed: return _finish("failed", "Intervenția nu a putut fi salvată.", "checkpoint_failed", last_text)
-		_tool_budget = TOOL_BATCH_LIMIT
+		_tool_budget = _batch_limit()
 		var continuation_hint = _continuation_hint
 		_continuation_hint = ""
 		definitions = registry.active_definitions()
@@ -458,7 +469,7 @@ func _tool_message(call: Dictionary, result: Dictionary, metadata: Dictionary, r
 	var body = result.duplicate()
 	body.erase("images")
 	var serialized = _redact(JSON.stringify(Common.json_safe(body)))
-	var limit = mini(TOOL_RESULT_LIMIT, _tool_budget - TOOL_RESULT_RESERVE * maxi(0, remaining_calls - 1))
+	var limit = mini(_result_limit(), _tool_budget - TOOL_RESULT_RESERVE * maxi(0, remaining_calls - 1))
 	if serialized.length() > limit: serialized = _bounded_result(serialized, limit)
 	_tool_budget = maxi(0, _tool_budget - serialized.length())
 	return {"id": Common.uid(), "role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": serialized, "attachments": _safe(result.get("images", [])), "turn_id": metadata.get("turn_id", stats["id"])}

@@ -8,6 +8,69 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-71 — recuperare după compactarea nereușită a agentului nativ — 31.10.2026
+
+Jurnalul citit prin ADB din panoul agentului nostru, în distribuția Ziva de pe
+NX729J, confirmă trei opriri înainte de cererea principală (`requests: 0`).
+Primele două au `incomplete_summary`; ultima are `empty_summary`, cu **4096
+tokeni de ieșire, toți raportați ca reasoning**, fără rezumat final. APK-ul
+instalat este construit din `37a3bf4`. Raportul „niciun fișier confirmat” privește
+încercarea întreruptă, nu dovedește absența schimbărilor din sarcinile anterioare.
+
+Corecții în surse:
+
+- Compactarea auxiliară folosește un efort redus numai dacă modelul îl declară;
+  selecția de efort a agentului principal rămâne separată.
+- Un răspuns gol sau tăiat de limita de ieșire permite o singură reîncercare
+  pe segment, cu buget suplimentar pentru generare, rezervat în fereastra
+  modelului. Limita textului rezumat și cursorul sursei rămân controlate;
+  segmentele intermediare nu înlocuiesc rezumatul durabil.
+- Dacă rezumatul rămâne indisponibil, sarcina continuă cu contextul existent.
+  Harness-ul poate reduce rezultatele vechi ale tool-urilor în copia destinată
+  furnizorului. Istoricul integral, cererile utilizatorului, planul, dovezile și
+  identificatorii apelurilor rămân păstrate; reluarea nu este blocată de un
+  eșec auxiliar memorat. Nu se reexecută operații ca parte a recuperării.
+- Stop, schimbarea contextului și eșecul salvării rezumatului rămân erori
+  explicite. Jurnalul compactării include tentativa, bugetul, motivul încheierii,
+  dimensiunea textului și consumul, fără conținutul raționamentului.
+
+Verificare locală cu Godot Linux ARM64 4.7.2: **939 aserțiuni runtime / 0 eșecuri**
+și **120 verificări în editor îngust / 0 eșecuri**. Proba folosește harness-ul
+real și hook-ul real de pregătire din panou, cu furnizor simulat: două rezumate
+goale sunt urmate de cererea principală și finalizare; sunt verificate păstrarea
+contextului durabil, a ultimului lot de tool-uri, oprirea și salvarea eșuată.
+Regresiile existente acoperă și Unicode, segmente lungi și reducerea intrării
+după depășirea ferestrei.
+
+Dovezi: `.ai-qa/compaction-20261031/device-diagnosis.json`, `runtime.log`,
+`compact-final.log`, `final-rendered/narrow/editor-report.json`.
+Citirea jurnalului fizic confirmă cauza versiunii instalate; nu constituie o
+probă live a corecției. **APK-urile din Download nu au fost recompilate sau
+înlocuite în această etapă**; aplicarea pe telefon și reluarea reală cu DeepSeek
+rămân de verificat după compilare.
+
+Fără plafoane euristice de context (aceeași etapă, 31.10.2026): agentul primește
+tot istoricul păstrat de la granița rezumatului, nu doar ultimele 24 de mesaje —
+preferința `history_messages` a fost eliminată. Pentru un model fără fereastră
+publicată nu se mai presupune 8192 de tokeni: tăierea preventivă din harness și
+compactarea nu mai pornesc din presupuneri, ci doar din depășirea raportată de
+furnizor, iar limita nu se mai moștenește de la modelul selectat anterior.
+Bugetele de rezultate ale tool-urilor cresc cu fereastra modelului (24000 și
+48000 de caractere rămân pragurile pentru ferestre mici sau necunoscute).
+Rezumatul auxiliar are acum un plafon de ieșire de 8192 de tokeni, cu o singură
+reîncercare la 16384 la tăiere, iar continuările după un răspuns tăiat urcă de
+la 2 la 5.
+
+Verificare locală: **939 aserțiuni runtime / 0 eșecuri** și **917 verificări în
+editorul îngust / 0 eșecuri** (`.ai-qa/limits-20261031-runtime.log`,
+`.ai-qa/limits-20261031-narrow/narrow/editor-report.json`). Compilarea unui APK
+nou și proba pe dispozitiv rămân necesare.
+
+Jurnal: 31.10.2026 — AG-71, compactarea auxiliară nu mai oprește automat
+sarcina nativă; recuperarea și conservarea contextului sunt testate local.
+Agentul nu mai are plafoane euristice de context; istoricul complet este trimis
+modelului și compactarea urmează doar semnalul real al furnizorului.
+
 ## AG-70 — tastare WebView și proprietarul capturii audio — 31.10.2026
 
 Pe telefonul NX729J / Android 15, cu Gboard și WebView 156.0.8078.47, captura

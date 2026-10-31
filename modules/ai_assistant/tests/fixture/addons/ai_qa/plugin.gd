@@ -264,14 +264,16 @@ class FixtureCompactionProvider:
 	var requests = 0
 	var messages: Array = []
 	var output_limits: Array = []
+	var efforts: Array = []
 	var replies: Array = []
 	var cancel_after_reply = false
 	var fail = false
 	var summary = "Rezumat fixture: obiectivele, schimbările reale și verificările rămân păstrate."
-	func complete(_profile: Dictionary, context: Array, _tools: Array, _model: String, _effort: String, cancel: Dictionary, _delta: Callable = Callable(), max_output_tokens: int = 0) -> Dictionary:
+	func complete(_profile: Dictionary, context: Array, _tools: Array, _model: String, effort: String, cancel: Dictionary, _delta: Callable = Callable(), max_output_tokens: int = 0) -> Dictionary:
 		requests += 1
 		messages.append(context.duplicate(true))
 		output_limits.append(max_output_tokens)
+		efforts.append(effort)
 		if cancel.get("cancelled", false): return {"ok": false, "code": "cancelled", "error": "Oprit"}
 		if fail: return {"ok": false, "error": "Fixture summary failure"}
 		if cancel_after_reply: cancel["cancelled"] = true
@@ -2288,13 +2290,30 @@ func _compaction_regression_tests(service: RefCounted, summary_path: String) -> 
 		{"ok": true, "message": {"content": null}},
 		{"ok": true, "message": "invalid"},
 		{"ok": true, "message": {"content": "Rezumat incomplet"}, "finish": "length"},
-		{"ok": true, "message": {"content": "x".repeat(10000)}}
+		{"ok": true, "message": {"content": "x".repeat(20000)}}
 	]
 	for index in range(invalid.size()):
-		service.replies = [invalid[index]]
+		service.replies = [invalid[index], invalid[index]]
 		await panel._start_compaction("auto")
 		_check(panel.compact_failed and panel.compact_through == 2 and panel.compact_summary == previous, "Invalid summary preserves the active context: %d" % index)
 		_check(panel.Common.read_json(summary_path, {}) == saved, "Invalid summary preserves the saved context: %d" % index)
+	service.replies.clear()
+	panel.config["providers"][0]["models"][0]["efforts"] = ["low", "high", "max"]
+	_check(panel._compaction_effort(panel._current_profile(), "fixture") == "low" and panel._compaction_effort({}, "unknown").is_empty() and panel._compaction_effort({"models": [{"id": "fixture", "efforts": ["high"]}]}, "fixture").is_empty(), "Auxiliary summaries use only declared low effort and never invent unsupported parameters")
+	var requests = service.requests
+	service.replies = [{"ok": true, "message": {"content": "", "reasoning_content": "PRIVATE_REASONING_NOT_FOR_LOGS"}, "finish": "length", "usage": {"completion_tokens": 4096, "completion_tokens_details": {"reasoning_tokens": 4096}}}]
+	await panel._start_compaction("manual")
+	_check(not panel.compact_failed and service.requests == requests + 2 and panel.compact_summary == service.summary, "An output-limited reasoning-only summary retries once and commits only a complete response")
+	_check(service.output_limits[-2] == 8192 and service.output_limits[-1] == 16384 and service.efforts[-1] == "low", "The retry reserves extra generation tokens while the main agent effort remains untouched")
+	_check(str(service.messages[-1][0]["content"]).contains("16384 UTF-8 bytes") and service.messages[-1][1] == service.messages[-2][1], "Summary retries retain the visible summary limit and replay the same uncommitted source range")
+	var responses: Array = panel.journal.filter(func(entry: Dictionary) -> bool: return entry.get("tool") == "agent_compaction_response")
+	var diagnostic: Dictionary = JSON.parse_string(str(responses[-2]["result"]))
+	_check(diagnostic.get("code") == "incomplete_summary" and diagnostic.get("finish") == "length" and diagnostic.get("text_bytes") == 0 and int(diagnostic.get("usage", {}).get("completion_tokens_details", {}).get("reasoning_tokens", 0)) == 4096, "Summary diagnostics distinguish reasoning-only truncation from an ordinary empty response")
+	_check(responses[-1]["arguments"].get("attempt") == 2 and responses[-1]["arguments"].get("output_tokens") == 16384 and not str(responses).contains("PRIVATE_REASONING_NOT_FOR_LOGS"), "Summary retry diagnostics record the budget without storing reasoning text")
+	panel.compact_through = 2
+	panel.compact_summary = previous
+	panel._persist_summary()
+	saved = panel.Common.read_json(summary_path, {})
 	service.cancel_after_reply = true
 	await panel._start_compaction("manual")
 	service.cancel_after_reply = false
@@ -2313,7 +2332,10 @@ func _compaction_regression_tests(service: RefCounted, summary_path: String) -> 
 
 	panel.config["providers"][0]["models"][0]["context"] = 8192
 	panel.compact_limit = 1048576
-	_check(panel._compaction_window(panel._current_profile(), "fixture") == 8192 and panel._compaction_window({}, "unknown") == 8192, "Summary budgets use the selected model and never inherit a previous large window")
+	_check(panel._compaction_window(panel._current_profile(), "fixture") == 8192 and panel._compaction_window({}, "unknown") == 0, "Summary budgets use the selected model and an unpublished window is never guessed or inherited")
+	var scaled_agent = embedded["harness"].new(panel)
+	scaled_agent._context_window = 1048576
+	_check(scaled_agent._result_limit() == 131072 and scaled_agent._batch_limit() == 262144, "Tool-output budgets scale with the model window; small or unpublished windows keep the current floors")
 	panel.config["preferences"]["compact_keep_recent"] = 256
 	panel.history = []
 	for index in range(40):
@@ -2381,7 +2403,8 @@ func _active_compaction_tests(service: RefCounted, summary_path: String) -> void
 	panel.config["providers"][0]["models"][0]["context"] = 8192
 	panel.config["preferences"]["compact_keep_recent"] = 256
 	var original: Array = panel.history.duplicate(true)
-	_check(panel._history_context().filter(func(message: Dictionary) -> bool: return message.get("role") == "user").size() == 2, "The recent-message window preserves the original task before an older steering message")
+	_check(panel._history_context().size() == panel.history.size() and panel.history.size() > 24, "The full retained history is sent to the model without a message-count window")
+	_check(panel._history_context().filter(func(message: Dictionary) -> bool: return message.get("role") == "user").size() == 2, "The full retained history preserves the original task and the steering message")
 	var plan: Dictionary = panel.planner.snapshot()
 	var verification: Dictionary = panel.verification.snapshot()
 	var token: Dictionary = panel.cancel
@@ -2402,7 +2425,36 @@ func _active_compaction_tests(service: RefCounted, summary_path: String) -> void
 	service.fail = true
 	result = await panel._prepare_agent_context(panel._current_profile(), "fixture", panel._context_messages(), [], false)
 	service.fail = false
-	_check(not result.get("ok", true) and panel.compact_through == 0 and panel.compact_summary == "Previous validated summary" and panel.Common.read_json(summary_path, {}) == saved, "A failed mid-task summary preserves the last durable context and all source history")
+	_check(result.get("ok", false) and not result.get("compacted", false) and panel.compact_failed and panel.compact_through == 0 and panel.compact_summary == "Previous validated summary" and panel.Common.read_json(summary_path, {}) == saved, "A failed mid-task summary returns usable context without changing the durable summary")
+	var requests = service.requests
+	var retained: Array = panel._context_messages()
+	result = await panel._prepare_agent_context(panel._current_profile(), "fixture", retained, [], true)
+	_check(result.get("ok", false) and result.get("result") == retained and service.requests == requests, "A cached summary failure permits resume and overflow recovery without repeatedly calling the summarizer")
+
+	# Exercise the actual harness with the real panel preparation hook: two
+	# failed auxiliary responses must not prevent the main provider request.
+	panel.compact_failed = false
+	panel.compact_pending = true
+	service.replies = [{"ok": true, "message": {"content": ""}, "finish": "stop"}, {"ok": true, "message": {"content": ""}, "finish": "stop"}]
+	var provider_contexts = []
+	var agent = embedded["harness"].new(panel)
+	var hooks = {
+		"prepare_context": func(messages: Array, definitions: Array, force: bool) -> Dictionary: return await panel._prepare_agent_context(panel._current_profile(), "fixture", messages, definitions, force),
+		"complete": func(messages: Array, _definitions: Array, _stopping: Dictionary, _delta: Callable) -> Dictionary:
+			provider_contexts.append(messages.duplicate(true))
+			return {"ok": true, "message": {"role": "assistant", "content": "Provider reached after failed summary."}, "finish": "stop"}
+	}
+	var outcome: Dictionary = await agent.run({"messages": retained.duplicate(true), "tools": [], "cancel": panel.cancel, "context_window": 8192}, hooks)
+	_check(outcome.get("status") == "completed" and provider_contexts.size() == 1 and service.requests == requests + 2 and outcome.get("compactions") == 0, "Two empty summaries do not stop the actual harness before its main provider request")
+	_check(panel.history == original and panel.Common.read_json(summary_path, {}) == saved and panel.planner.snapshot() == plan and panel.verification.snapshot() == verification, "Fallback preserves full history, durable summary, plan and verification evidence")
+	_check(provider_contexts[0][-2] == retained[-2] and provider_contexts[0][-1] == retained[-1] and outcome.get("context_pruned", 0) > 0, "Fallback bounds old tool results but preserves the latest tool batch verbatim")
+	_check(provider_contexts[0].filter(func(message: Dictionary) -> bool: return message.get("role") == "user") == retained.filter(func(message: Dictionary) -> bool: return message.get("role") == "user"), "Fallback leaves the original request and steering messages exact")
+	panel.compact_failed = false
+	var backup = summary_path + ".active-qa-backup"
+	_check(DirAccess.rename_absolute(summary_path, backup) == OK and DirAccess.make_dir_absolute(summary_path) == OK, "Active compaction fixture blocks only the summary checkpoint destination")
+	result = await panel._prepare_agent_context(panel._current_profile(), "fixture", retained, [], true)
+	_check(not result.get("ok", true) and result.get("code") == "summary_save_failed" and panel.compact_through == 0 and panel.compact_summary == "Previous validated summary", "A failed durable summary checkpoint remains an explicit blocking error")
+	_check(DirAccess.remove_absolute(summary_path) == OK and DirAccess.rename_absolute(backup, summary_path) == OK and panel.Common.read_json(summary_path, {}) == saved, "Active summary checkpoint failure leaves the original durable context recoverable")
 	panel.compact_failed = false
 	service.cancel_after_reply = true
 	result = await panel._prepare_agent_context(panel._current_profile(), "fixture", panel._context_messages(), [], true)
