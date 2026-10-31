@@ -362,7 +362,12 @@ def main():
                 if os.environ.get("GODOT_AI_TERRAIN3D_ZIP"):
                     prefix += ["GODOT_AI_TERRAIN3D_ZIP=" + os.environ["GODOT_AI_TERRAIN3D_ZIP"]]
                 command = prefix + command
-            return subprocess.run(command, env=env, check=False).returncode
+            result = subprocess.run(command, env=env, check=False, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True)
+            print(result.stdout, end="")
+            # GDScript can abort one coroutine while SceneTree still exits 0.
+            # Such a run must not be reported as a passed test suite.
+            return result.returncode or (1 if "SCRIPT ERROR:" in result.stdout else 0)
     finally:
         server.shutdown()
 

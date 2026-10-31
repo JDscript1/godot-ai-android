@@ -186,17 +186,25 @@ class AIZivaService : Service() {
                 sessionNonce = java.util.UUID.randomUUID().toString()
                 val identity = privateDirectory("sessions/$sessionNonce")
                 File(identity, "owner").writeText("GODOT_AI_ZIVA_OWNER=$sessionNonce\n")
+                val globalAgents = File(runtime.root, "root/.agents")
+                check(!Files.isSymbolicLink(globalAgents.parentFile!!.toPath()) && !Files.isSymbolicLink(globalAgents.toPath()))
+                check(globalAgents.isDirectory || globalAgents.mkdirs()) { "Directorul contextului Ziva nu poate fi creat." }
+                val globalInstructions = File(globalAgents, "AGENTS.md")
+                AIZivaProjectContext.refresh(project, identity, globalInstructions)
                 val guestIdentity = File(runtime.root, "run/godot-ai-ziva")
                 check(!Files.isSymbolicLink(File(runtime.root, "run").toPath()) && !Files.isSymbolicLink(guestIdentity.toPath()))
                 check(guestIdentity.isDirectory || guestIdentity.mkdirs()) { "Directorul de identificare Ziva nu poate fi creat." }
-                val binds = listOf(
+                val binds = mutableListOf(
                     identity.absolutePath to "/run/godot-ai-ziva",
+                    File(identity, "addons.json").absolutePath to AIZivaProjectContext.INVENTORY,
                     ziva.addon.absolutePath to "/workspace/addons/ziva_agent",
                     privateDirectory("projects/$projectId/local-share").absolutePath to "/root/.local/share",
                     privateDirectory("projects/$projectId/cache").absolutePath to "/root/.cache",
                     privateDirectory("projects/$projectId/config").absolutePath to "/root/.config",
                     privateDirectory("projects/$projectId/godot").absolutePath to "/workspace/.godot"
                 )
+                if (AIZivaProjectContext.canOverlay(identity))
+                    binds += File(identity, "AGENTS.md").absolutePath to "/root/.agents/AGENTS.md"
                 // Discard endpoint hints only; account/session history stays intact.
                 val share = privateDirectory("projects/$projectId/local-share")
                 share.walkTopDown().maxDepth(10).filter { it.isFile && it.name.matches(Regex("sidecar-[0-9]+-.*\\.port")) }.forEach { it.delete() }
@@ -235,7 +243,18 @@ class AIZivaService : Service() {
                     synchronized(lock) { state.put("ui_port", port) }
                     update("running", "Editorul separat Ziva rulează · interfața este disponibilă")
                     var failures = 0
+                    var lastContextRefresh = 0L
                     while (!cancelled() && !child!!.waitFor(2, TimeUnit.SECONDS)) {
+                        if (System.nanoTime() - lastContextRefresh > 5_000_000_000L) {
+                            // Metadata refresh never restarts an active agent or edits project files.
+                            try {
+                                AIZivaProjectContext.refresh(project, identity, globalInstructions)
+                                synchronized(lock) { state.remove("addon_context_error") }
+                            } catch (_: Exception) {
+                                synchronized(lock) { state.put("addon_context_error", "Inventarul addonurilor nu s-a putut actualiza; verifică accesul la fișierele proiectului.") }
+                            }
+                            lastContextRefresh = System.nanoTime()
+                        }
                         failures = if (uiReady(port)) 0 else failures + 1
                         check(failures < 30) { "Interfața Ziva nu mai răspunde. Repornește sesiunea." }
                     }

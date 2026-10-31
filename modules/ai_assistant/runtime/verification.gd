@@ -2,6 +2,7 @@
 extends RefCounted
 ## Evidence is issued by the executor, not supplied as a model-written success claim.
 static var Common: GDScript
+static var Experiments: GDScript
 var revision = 0
 var criteria: Array = []
 var evidence = {}
@@ -62,6 +63,13 @@ func observe(name: String, args: Dictionary, result: Dictionary) -> Dictionary:
 	if name == "godot_panel_read" and not data.get("coverage", {}).get("contents_readable", false): return {}
 	if name == "godot_panel_data" and (not data is Dictionary or not data.get("collected", false) or data.get("partial", false) or data.get("stale_session", false)): return {}
 	var kinds = []
+	if name == "qa_run" and data is Dictionary and data.get("status") == "pass" and data.get("fingerprint", {}).get("complete", false) and data.get("fingerprint") == data.get("fingerprint_after") and data.get("session", {}).get("experiment", "").is_empty():
+		var captured = Experiments.snapshot(ProjectSettings.globalize_path("res://").trim_suffix("/"))
+		if captured.get("ok", false) and captured["result"]["digest"] == data["fingerprint_after"].get("digest"):
+			kinds.append_array(["inspection", "runtime", "interaction"])
+	if name == "profile_run" and data is Dictionary and data.get("status") == "measured" and data.get("session", {}).get("experiment", "").is_empty(): kinds.append_array(["inspection", "runtime"])
+	if name == "repair_check" and data is Dictionary and data.get("status") == "verified": kinds.append_array(["inspection", "runtime"])
+	if name in ["asset_audit", "godot_impact"]: kinds.append("inspection")
 	if name in ["godot_read_file", "godot_read_range", "godot_get", "godot_describe", "godot_settings", "godot_scene_tree", "godot_project_map", "godot_diagnostics", "godot_debugger", "godot_panels", "godot_panel_read", "godot_panel_data", "godot_files", "asset_status", "asset_wait", "asset_import", "asset_export", "github_read", "github_create_issue"]: kinds.append("inspection")
 	if name == "godot_script_diagnostics" and data is Dictionary and data.get("valid", false) and (not args.has("text") or str(args["text"]).sha256_text() == _file_hash(str(args.get("path", "")))): kinds.append("syntax")
 	if data is Dictionary and data.get("syntax", {}).get("valid", false) and not (name == "godot_apply_patch" and args.get("dry_run", true)): kinds.append("syntax")
