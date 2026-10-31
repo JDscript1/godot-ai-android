@@ -8,6 +8,63 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## AG-75 — context calibrat și diffuri direct în conversație — 31.10.2026
+
+Implementat în surse pentru agentul nativ. Estimarea anterioară putea număra
+întregul JSON, inclusiv imaginile Base64, ca text. Harness-ul și panoul folosesc
+acum același estimator pentru conținutul trimis: text, raționament păstrat,
+apeluri, scheme și imagini separate. Dimensiunea codificării unei imagini nu
+mai modifică estimarea; cei 2048 tokeni/imagine sunt explicit o aproximație,
+nu o tokenizare exactă a modelului.
+
+Fiecare răspuns principal măsurat calibrează următoarea estimare prin consumul
+raportat plus diferența estimată a conținutului nou. Măsurătoarea aparține
+conversației, profilului și modelului; rezumatele auxiliare nu o suprascriu.
+Contoarele de cache Anthropic sunt incluse în intrare, fără dublarea tokenilor
+cache deja incluși în `prompt_tokens` la furnizorii compatibili OpenAI.
+
+Compactarea automată se recalculează la fiecare verificare: pragul este minimul
+dintre **90% din fereastra publicată** și spațiul rămas după rezerva pentru
+răspuns. Pentru DeepSeek se rezervă implicit 64K, respectiv 128K la efort `max`,
+cu respectarea limitei de ieșire declarate; metadatele modelelor păstrează acum
+și `max_output_tokens`. Pe o fereastră de 1048576 tokeni, pragul general este
+943718, iar rezerva 128K îl coboară la 917504. Nu se limitează pașii agentului.
+
+Marcajele vechi se șterg când presiunea scade sau se schimbă modelul; o depășire
+reală rămâne motiv distinct de recuperare. Fără fereastră publicată nu se
+inventează un prag. Istoricul original rămâne pe disc. Implicit, compactarea
+păstrează aproximativ 55% din fereastră ca istoric recent, în loc să reducă
+mereu o conversație mare la 20k. Jurnalul `compact_trigger` înregistrează
+încărcarea, limita, rezerva, pragul și motivul; indicatorul poate fi atins
+pentru detalii despre măsurare și estimare.
+
+Diffurile fișierelor aplicate sau propuse apar direct în fluxul conversației,
+fără carduri, editoare sau zone de scroll imbricate: nume de fișier, linii
+șterse roșii cu `-`, adăugate verzi cu `+`, context neutru. Primul fragment
+are cel mult 40 de linii, iar restul se extinde la cerere în loturi de maximum
+500. Textul codului rămâne literal, inclusiv BBCode și diacritice. Poziția
+cititorului este păstrată; restaurarea și jurnalul modificărilor rămân accesibile.
+
+Verificări locale Godot Linux ARM64 4.7.2: **945 aserțiuni runtime / 0 eșecuri**,
+**132 verificări compactare / 0 eșecuri**, **136 verificări prezentare / 0
+eșecuri** pe fiecare dintre editorul îngust și configurația phone_landscape.
+Capturile diffurilor au fost inspectate. Regresii noi: 50k + patru imagini mari
+pe 1M nu compactează; consumul măsurat și diferența nouă au prioritate;
+rezumatul nu alterează contorul; scăderea încărcării și schimbarea modelului
+șterg declanșările vechi; diffurile se extind fără duplicate sau forțarea
+urmăririi mesajelor recente.
+
+Dovezi: `.ai-qa/context-inline-20261031/`. Suita completă pe sursele finale: **950 verificări / 0 eșecuri**, editor îngust.
+Prima rulare extinsă a avut două aserțiuni eșuate pentru același tap pe link;
+probele izolate trec atât pe bază, cât și pe codul nou (79/0 fiecare), iar
+rularea finală completă trece fără modificarea logicii linkurilor.
+**Nu s-au recompilat
+sau înlocuit APK-urile**; verificarea fizică Android și o conversație reală
+aproape de 1M tokeni rămân probe distincte de fixture-urile locale.
+
+Jurnal: 31.10.2026 — AG-75, compactare pe încărcarea contextului curent,
+fără tokenizarea Base64 ca text, și diffuri colorate direct în chat.
+
 ## AG-74 — replay DeepSeek în modul thinking — 31.10.2026
 
 Defect raportat din aplicația instalată: un tur cu unelte a eșuat cu
