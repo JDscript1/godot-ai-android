@@ -10,10 +10,35 @@ se deschid la tap; erorile și rezultatele neconfirmate se deschid automat.
 Rândurile rămân după terminarea turului și după redeschiderea conversației.
 
 Spațierea dintre mesaje și line-height-ul au fost mărite, iar cardurile de
-unealtă au padding, lățime responsivă și zonă de atingere de minimum 36 px.
+unealtă au padding redus, lățime responsivă și un antet acționabil de 30 px.
 Verificat pe Godot 4.7 headless/VNC: runtime 945/0, chat 82/0, presentation
-140/0 pe narrow, phone compact și landscape, inspections 79/0, activity 69/0 și
-todo 122/0. APK-ul și proba pe dispozitivul fizic rămân verificări separate.
+143/0 pe narrow, phone compact și landscape, inspections 79/0, activity 73/0 și
+planning 81/0. APK-ul și proba pe dispozitivul fizic rămân verificări separate.
+
+## Chat live, emoji și fereastră blocată — 5 noiembrie 2026
+
+Conversația afișează ultimele trei evenimente de lucru direct sub antetul
+„Agentul gândește…”, fără să fie nevoie de extindere: starea curentă și fiecare
+unealtă pornită sau încheiată, cu iconiță și titlu. Extinderea păstrează feed-ul
+complet deasupra pașilor planului. Mesajele asistentului și ale utilizatorului
+primesc fallback de emoji prin fontul de sistem; mesajele proprii au un buton
+compact de copiere.
+
+Butonul de extindere este tratat ca o blocare a ferestrei agentului. Cât timp
+este activ, orice panou inferior care ar reduce conversația este închis din nou
+și modul distraction-free rămâne activ; deblocarea restaurează panoul selectat
+anterior. Indicatorul de erori deblochează explicit fereastra înainte de a
+deschide Debugger-ul.
+
+Cardurile inline au padding redus, antet de 30 px și rezumat doar pentru erori.
+Butonul plutitor de salt se ascunde când ar acoperi un buton acționabil, astfel
+încât submit-ul cardurilor Plan să rămână apăsabil.
+
+Verificat pe Godot 4.7 headless/VNC: runtime 945/0, `presentation` 143/0,
+`activity` 73/0, `chat` 82/0, `inspections` 79/0, `planning` 81/0, `ziva` 88/0,
+`workspace` 70/0 și `controls` 82/0 pe fixture proaspăt. Dovezi:
+`.ai-qa/chat-ziva-live-20261105/`. APK-ul, clipboard-ul Android, tastatura și
+puntea Ziva live rămân verificări separate.
 
 ## Corecții după audit — 28 octombrie 2026
 

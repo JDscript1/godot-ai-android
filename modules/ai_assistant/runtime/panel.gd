@@ -844,11 +844,11 @@ func _set_placement(index: int, persist: bool = true) -> void:
 		if index != 0: EditorInterface.set_distraction_free_mode(false)
 		_control_preference("dock", index)
 
-func _expand_workspace() -> void:
+func _expand_workspace(force: bool = false) -> void:
 	if project_manager_mode: return
 	var expanded = EditorInterface.is_distraction_free_mode_enabled()
 	if current_placement != 0 or (expanded and expanded_dock != 0):
-		if busy or speech.listening or speech.transcribing:
+		if not force and (busy or speech.listening or speech.transcribing):
 			_status("Extinde sau restrânge dock-ul după încheierea sarcinii.")
 			chat.set_workspace_expanded(expanded)
 			return
@@ -2716,6 +2716,7 @@ func _context_messages() -> Array:
 	if _mode() == 3: instructions += "\nPLAN MODE: inspect only. For an underspecified design or implementation request, gather consequential missing requirements with plan_ask before finalizing the proposal. Present concise selectable choices in the user's language, 1–3 questions at a time; the user can also type a custom answer. Wait for submitted answers, use them in the plan, and ask a follow-up only if a material uncertainty remains. Do not repeat supplied answers, ask for secrets or use questions to authorize execution. Skip clarification for fully specified tasks, greetings and simple factual questions. Never modify the project. Use task_update with intent=propose and phase=completed to publish the finished proposal; its implementation steps remain pending."
 	elif _mode() == 0: instructions += "\nASK MODE: answer the user's question using read-only inspection and search when needed. Do not edit files, run the game or tests, execute shell commands, generate/import assets or start an implementation plan. Explain findings and uncertainty directly. Do not claim a missing tool was executed."
 	else: instructions += "\nEXECUTION MODE: carry out the user's task through implementation and verification. Decide whether a plan is needed based on complexity, uncertainty and dependencies. In Default mode, simple questions or small edits do not need a plan. For multi-step or cross-file work, use task_update before the first mutation: planning -> executing -> verifying -> completed. Keep at most one step in progress, revise the plan when findings change and only mark verified work complete. For task_update completed, provide verification and verification_kind: interaction for buttons, controls, collection, victory or restart; runtime for behavior; inspection for static edits. The app checks that real verification tools ran after the last modification. planning is an inspection-only phase; publish executing before changing files. Do not stop after merely proposing an execution plan. If the user asks only for a proposal, use intent=propose and do not execute it. For gameplay criteria, use playtest_state and playtest_input directly, then inspect runtime state and actual game frames with playtest_observe. Counted nodes, connected signals, parser success or launching the game alone do not verify interaction, collection, collision, victory or restart. Use godot_debugger/godot_diagnostics for error checks and godot_output for supplementary console text; Playtest children do not evaluate functions or read console logs. If the user closed the preview, recheck running state; do not claim a capture of the editor shows the game. For filesystem, scene and preview operations already covered by native tools, use those instead of shell workarounds. If blocked, publish phase=blocked with the concrete unverified criterion and reason. Never present internal reasoning; show concise task steps and results."
+	if _mode() != 0: instructions += "\nCLARIFICATION GATE: When material scope, target platform, desired behavior, data, or acceptance criteria are missing, call plan_ask before committing to a plan or changing files. Ask 1–3 focused questions with concrete options and allow a custom answer. Do not guess a consequential requirement. Skip questions for greetings, fully specified tasks, and simple factual questions; honor answers already supplied in the conversation."
 	if _mode() == 2: instructions += "\nAUTO MODE: plan proactively for implementation, generation, uncertain or dependent tasks. An executing task_update plan must exist before the first modifying or external tool call. Inspect first when needed. Keep the plan current at milestones and when requirements change; verify results before completing it. Small edits may use a single concise step. Simple conversation and identity questions still need no plan or tools."
 	elif _mode() == 4: instructions += "\nDEFAULT MODE: work directly on simple tasks; plan when complexity, uncertainty or dependencies warrant it. Complete implementation and verification without stopping at a proposal."
 	instructions += planner.context() + ("" if project_manager_mode else workspace.context() + (engineering_store.context() if engineering_store != null else ""))
@@ -3665,12 +3666,22 @@ func _process(_delta: float) -> void:
 				var debugger: Dictionary = plugin.debugger_status()
 				if debugger.get("ok", false): chat.set_error_count(int(debugger.get("errors", 0)))
 	if not project_manager_mode and chat != null:
-		var expanded = EditorInterface.is_distraction_free_mode_enabled()
-		if expanded != chat.workspace_expanded:
-			chat.set_workspace_expanded(expanded)
-			if not expanded:
-				_restore_dock_groups()
-				_restore_workspace_bottom_panel()
+		# Expanded chat is a locked agent window: bottom panels must not shrink
+		# or raise it while the user keeps the lock active. Expanding again
+		# releases the lock and restores the previously selected panel.
+		if chat.workspace_expanded:
+			if not EditorInterface.is_distraction_free_mode_enabled(): EditorInterface.set_distraction_free_mode(true)
+			var bottom = _editor_bottom_panel()
+			if bottom != null and bottom.get_current_tab() >= 0:
+				plugin.hide_bottom_panel()
+				_status("Fereastra agentului este blocată. Folosește butonul de extindere pentru a o debloca.")
+		else:
+			var expanded = EditorInterface.is_distraction_free_mode_enabled()
+			if expanded != chat.workspace_expanded:
+				chat.set_workspace_expanded(expanded)
+				if not expanded:
+					_restore_dock_groups()
+					_restore_workspace_bottom_panel()
 	if not project_manager_mode and (current_placement != 0 or EditorInterface.is_distraction_free_mode_enabled()) and is_visible_in_tree():
 		var viewport_size = get_viewport().get_visible_rect().size
 		if viewport_size != dock_viewport_size:
@@ -4108,7 +4119,10 @@ func _chat_action(name: String, args: Dictionary) -> void:
 
 		"expand": _expand_workspace()
 		"errors":
-			if EditorInterface.is_distraction_free_mode_enabled(): EditorInterface.set_distraction_free_mode(false)
+			# Asking for errors explicitly releases the locked chat window and
+			# restores the panels before opening the Debugger on its Errors tab.
+			if chat.workspace_expanded: _expand_workspace(true)
+			elif EditorInterface.is_distraction_free_mode_enabled(): EditorInterface.set_distraction_free_mode(false)
 			if plugin.has_method("open_debugger_errors"): plugin.open_debugger_errors()
 		"send": _send_or_queue()
 		"steer": _send_or_queue("", "steer")
@@ -4522,7 +4536,7 @@ func _reference_picker(kind: String) -> void:
 		var root = EditorInterface.get_edited_scene_root()
 		if root != null: _node_references(root, root, entries)
 	else:
-		entries = ["/new", "/settings", "/auto", "/default", "/plan", "/ask", "/compact", "/memory", "/playtest", "/image", "/3d", "/resume", "/steer"]
+		entries = ["/new", "/settings", "/auto", "/default", "/plan", "/ask", "/compact", "/memory", "/playtest", "/ziva", "/image", "/3d", "/resume", "/steer"]
 		for automation in config["automations"]: entries.append("/task " + str(automation["name"]))
 	var fill = func(filter: String) -> void:
 		list.clear()
@@ -4597,8 +4611,47 @@ func _slash(text: String) -> bool:
 				if automation["name"] == argument: _send_or_queue(str(automation["prompt"]))
 		"/compact": _compact()
 		"/playtest": _send_or_queue("Folosește subagentul Playtest pentru: " + (argument if not argument.is_empty() else "verifică scena curentă și raportează cu capturi și pași"))
+		"/ziva": _send_to_ziva_from_agent.call_deferred(argument)
 		_: _status("Comandă necunoscută. Tastează / pentru listă.")
 	return true
+
+func receive_ziva_message(text: String) -> void:
+	var message = _redact(text).strip_edges().left(32000)
+	if message.is_empty(): return
+	var prefixed = "Mesaj de la Ziva: " + message
+	if busy:
+		queued.append({"text": prefixed, "selection": _selection(), "delivery": "queue", "turn": current_turn})
+		_sync_queue()
+		_status("Mesajul Ziva este în coadă.")
+		return
+	_send_or_queue(prefixed)
+
+func _send_to_ziva_from_agent(text: String) -> void:
+	var prompt = text.strip_edges()
+	if prompt.is_empty():
+		_status("Scrie /ziva urmat de mesajul pentru Ziva.")
+		return
+	if busy:
+		_status("Așteaptă terminarea sarcinii curente înainte de a trimite la Ziva.")
+		return
+	_status("Trimit mesajul către Ziva…")
+	var result = await _ziva_task({"prompt": prompt, "timeout_seconds": 600})
+	if not result.get("ok", false):
+		_status(_redact(str(result.get("error", "Ziva nu a răspuns."))).left(2000))
+		return
+	var data: Dictionary = result.get("result", {})
+	var answer = _redact(str(data.get("answer", ""))).strip_edges()
+	if answer.is_empty():
+		_status("Ziva a încheiat turul fără text.")
+		return
+	var relay_turn = "ziva-relay-" + Common.uid()
+	var request_record = {"id": Common.uid(), "role": "user", "content": "/ziva " + prompt, "turn_id": relay_turn, "application_message": "ziva_relay_request"}
+	var answer_record = {"id": Common.uid(), "role": "assistant", "content": "Ziva: " + answer, "turn_id": relay_turn, "origin_label": "Ziva · răspuns", "application_message": "ziva_relay_answer", "run_status": "completed"}
+	history.append_array([request_record, answer_record])
+	var persisted = _persist_history()
+	chat.append_message("user", str(request_record["content"]), request_record)
+	chat.append_message("assistant", str(answer_record["content"]), answer_record)
+	_status("Răspuns Ziva primit." if persisted else "Răspuns Ziva afișat, dar conversația nu a putut fi salvată.")
 
 func _resume_after_stop() -> void:
 	while busy: await get_tree().process_frame

@@ -110,6 +110,10 @@ var activity_chevron: Label
 var activity_indicator: Control
 var activity_details: ScrollContainer
 var activity_rows: VBoxContainer
+var activity_feed_rows: VBoxContainer
+var activity_live_rows: VBoxContainer
+var activity_live_inset: MarginContainer
+var activity_feed: Array[Dictionary] = []
 var activity_expanded = false
 var work_turn = ""
 var work_plan: Dictionary = {}
@@ -135,6 +139,7 @@ var find_index = -1
 var generating = false
 var last_output_msec = 0
 var stall_clock = 0.0
+var conversation_emoji_font: SystemFont
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -569,6 +574,20 @@ func _build_activity_panel() -> void:
 	activity_chevron = label(header, "▾")
 	activity_chevron.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	activity_chevron.add_theme_font_size_override("font_size", int(12 * scale))
+	activity_live_rows = VBoxContainer.new()
+	activity_live_rows.name = "ActivityLivePreview"
+	activity_live_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	activity_live_rows.add_theme_constant_override("separation", int(2 * scale))
+	activity_live_rows.hide()
+	activity_live_inset = MarginContainer.new()
+	activity_live_inset.name = "ActivityLiveInset"
+	activity_live_inset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	activity_live_inset.add_theme_constant_override("margin_left", int(10 * scale))
+	activity_live_inset.add_theme_constant_override("margin_right", int(10 * scale))
+	activity_live_inset.add_theme_constant_override("margin_bottom", int(7 * scale))
+	activity_live_inset.add_child(activity_live_rows)
+	activity_live_inset.hide()
+	body.add_child(activity_live_inset)
 	activity_details = ScrollContainer.new()
 	activity_details.name = "ActivityDetails"
 	activity_details.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -582,8 +601,18 @@ func _build_activity_panel() -> void:
 	for edge in ["left", "right"]: details_inset.add_theme_constant_override("margin_" + edge, int(10 * scale))
 	details_inset.add_theme_constant_override("margin_bottom", int(8 * scale))
 	activity_details.add_child(details_inset)
-	details_inset.add_child(activity_rows)
+	activity_feed_rows = VBoxContainer.new()
+	activity_feed_rows.name = "ActivityLiveStatus"
+	activity_feed_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	activity_feed_rows.add_theme_constant_override("separation", int(3 * scale))
+	var details_stack = VBoxContainer.new()
+	details_stack.name = "ActivityStack"
+	details_stack.add_theme_constant_override("separation", int(7 * scale))
+	details_inset.add_child(details_stack)
+	details_stack.add_child(activity_feed_rows)
+	details_stack.add_child(activity_rows)
 	activity_rows.resized.connect(func() -> void: _layout_activity.call_deferred())
+	activity_feed_rows.resized.connect(func() -> void: _layout_activity.call_deferred())
 	activity_toggle.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and activity_expanded:
 			_toggle_activity()
@@ -608,6 +637,18 @@ func reset_work() -> void:
 	work_message = ""
 	work_live = false
 	work_notice_running = false
+	activity_feed.clear()
+	if activity_feed_rows != null:
+		for child in activity_feed_rows.get_children():
+			activity_feed_rows.remove_child(child)
+			child.queue_free()
+		activity_feed_rows.hide()
+	if activity_live_rows != null:
+		for child in activity_live_rows.get_children():
+			activity_live_rows.remove_child(child)
+			child.queue_free()
+		activity_live_rows.hide()
+	if activity_live_inset != null: activity_live_inset.hide()
 	activity_expanded = false
 	if activity_toggle != null: activity_toggle.set_pressed_no_signal(false)
 	_refresh_activity()
@@ -640,7 +681,15 @@ func finish_work(turn: String, outcome: String) -> void:
 					operation["state"] = "cancelled"
 					_update_tool_row(operation)
 			_sync_response(group)
+	for event in activity_feed:
+		if event.get("state") == "running": event["state"] = "cancelled"
+	activity_feed.append({"kind": "status", "title": _outcome_title(outcome), "state": outcome, "detail": ""})
+	_trim_activity_feed()
+	_refresh_activity_feed()
 	_refresh_activity(true)
+
+func _outcome_title(outcome: String) -> String:
+	return {"completed": "Sarcină finalizată", "cancelled": "Sarcină întreruptă", "failed": "Sarcină eșuată", "limited": "Necesită verificare", "blocked": "Sarcină blocată"}.get(outcome, "Sarcină încheiată")
 
 func show_work_plan(snapshot: Dictionary) -> void:
 	var turn = str(snapshot.get("turn", ""))
@@ -667,10 +716,69 @@ func restore_work(turn: String, snapshot: Dictionary, outcome: String, running: 
 func _work_running() -> bool:
 	return work_live or work_notice_running or work_jobs.any(func(job: Dictionary) -> bool: return job.get("status") == "running")
 
+func _refresh_activity_feed() -> void:
+	if activity_feed_rows == null: return
+	for child in activity_feed_rows.get_children():
+		activity_feed_rows.remove_child(child)
+		child.queue_free()
+	if activity_feed.is_empty():
+		activity_feed_rows.hide()
+		if activity_live_inset != null: activity_live_inset.hide()
+		_layout_activity.call_deferred()
+		return
+	activity_feed_rows.show()
+	var heading = label(activity_feed_rows, "Status live")
+	heading.add_theme_font_size_override("font_size", int(10 * EditorInterface.get_editor_scale()))
+	heading.add_theme_color_override("font_color", Color("9ca6bc"))
+	for event in activity_feed:
+		_activity_feed_row(activity_feed_rows, event, false)
+	if activity_live_rows != null:
+		for child in activity_live_rows.get_children():
+			activity_live_rows.remove_child(child)
+			child.queue_free()
+		for event in activity_feed.slice(maxi(0, activity_feed.size() - 3)):
+			_activity_feed_row(activity_live_rows, event, true)
+		activity_live_rows.visible = true
+		activity_live_inset.visible = not activity_expanded and (_work_running() or activity_feed.any(func(event: Dictionary) -> bool: return event.get("state") == "running"))
+	_layout_activity.call_deferred()
+
+func _activity_feed_row(parent: VBoxContainer, event: Dictionary, compact: bool) -> void:
+	var scale = EditorInterface.get_editor_scale()
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", int(6 * scale))
+	parent.add_child(row)
+	var state = str(event.get("state", "running"))
+	var mark = label(row, str({"running": "◌", "completed": "✓", "failed": "!", "unknown": "?", "cancelled": "Ⅱ", "blocked": "!"}.get(state, "•")))
+	mark.custom_minimum_size.x = 12 * scale
+	mark.add_theme_font_size_override("font_size", int(11 * scale))
+	mark.add_theme_color_override("font_color", Color("bca1ed") if state == "running" else (Color("d2b47f") if state in ["failed", "unknown", "blocked"] else Color("9dd0ad")))
+	var title = label(row, str(event.get("title", "")))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.max_lines_visible = 1 if compact else 2
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title.add_theme_font_size_override("font_size", int((11 if compact else 12) * scale))
+	title.add_theme_color_override("font_color", Color("c5cbda") if state == "running" else Color("aab5c9"))
+	var detail = str(event.get("detail", "")).strip_edges()
+	title.tooltip_text = (str(event.get("title", "")) + ("\n" + detail if not detail.is_empty() else "")).left(500)
+
+func _trim_activity_feed() -> void:
+	if activity_feed.size() > 30: activity_feed = activity_feed.slice(activity_feed.size() - 30)
+
+func _record_activity_status(message: String, state: String) -> void:
+	if message.strip_edges().is_empty(): return
+	var title = message.strip_edges().get_slice("\n", 0).left(220)
+	if not activity_feed.is_empty() and activity_feed[-1].get("kind") == "status" and activity_feed[-1].get("title") == title:
+		activity_feed[-1]["state"] = state
+	else:
+		activity_feed.append({"kind": "status", "title": title, "state": state, "detail": ""})
+	_trim_activity_feed()
+	_refresh_activity_feed()
+
 func _refresh_activity(rebuild: bool = false) -> void:
 	if activity_panel == null: return
 	var steps: Array = work_plan.get("steps", [])
-	var details = not steps.is_empty() or not work_jobs.is_empty() or work_message.length() > 100
+	var details = not steps.is_empty() or not work_jobs.is_empty() or not activity_feed.is_empty() or work_message.length() > 100
 	activity_panel.visible = details or _work_running() or not work_message.is_empty()
 	status.visible = activity_panel.visible
 	var heading = work_message
@@ -681,19 +789,21 @@ func _refresh_activity(rebuild: bool = false) -> void:
 		elif work_outcome == "cancelled" or work_plan.get("phase") == "paused": heading = "Sarcină întreruptă"
 		elif work_outcome == "completed": heading = "Plan pregătit" if work_plan.get("intent") == "propose" else "Finalizat"
 		elif not active.is_empty(): heading = str(active[0].get("step", ""))
-		else: heading = "Agentul lucrează…" if _work_running() else "Activitate"
+		else: heading = "Agentul gândește…" if _work_running() else "Activitate"
 	status.text = heading
 	status.tooltip_text = heading
 	var done = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "completed").size()
-	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else "")
+	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else ("%s acțiuni" % activity_feed.size() if not activity_feed.is_empty() else ""))
 	activity_counter.visible = not activity_counter.text.is_empty()
-	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else "Sarcinile acestei cereri"
+	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else ("Sarcinile acestei cereri" if not work_jobs.is_empty() else "Activitatea live a acestei cereri")
 	activity_chevron.visible = details
 	activity_chevron.text = "▴" if activity_expanded else "▾"
 	activity_toggle.disabled = not details
 	activity_toggle.tooltip_text = ("Restrânge activitatea" if activity_expanded else "Vezi pașii și sarcinile") if details else heading
 	activity_toggle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if details else Control.CURSOR_ARROW
 	activity_details.visible = activity_expanded and details
+	if activity_feed_rows != null: activity_feed_rows.visible = activity_expanded and not activity_feed.is_empty()
+	if activity_live_inset != null: activity_live_inset.visible = not activity_expanded and not activity_feed.is_empty() and (_work_running() or activity_feed.any(func(event: Dictionary) -> bool: return event.get("state") == "running"))
 	activity_indicator.queue_redraw()
 	activity_dirty = activity_dirty or rebuild
 	if activity_expanded and activity_dirty:
@@ -780,7 +890,8 @@ func _layout_activity() -> void:
 		var text_width = title_text_label.get_theme_font("font").get_string_size(title_text_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, title_text_label.get_theme_font_size("font_size")).x
 		title_text_label.max_lines_visible = 2 if text_width > maxf(60 * scale, title_text_label.get_parent().size.x) else 1
 	var cap = maxf(48 * scale, minf(200 * scale, root_column.size.y * 0.30))
-	activity_details.custom_minimum_size.y = minf(cap, activity_rows.get_combined_minimum_size().y + 8 * scale)
+	var feed_height = activity_feed_rows.get_combined_minimum_size().y if activity_feed_rows != null and activity_feed_rows.visible else 0.0
+	activity_details.custom_minimum_size.y = minf(cap, feed_height + activity_rows.get_combined_minimum_size().y + 8 * scale)
 	activity_details.custom_maximum_size.y = cap
 
 func _compact_style(color: Color) -> StyleBoxFlat:
@@ -835,6 +946,7 @@ func _size_messages() -> void:
 	for card in playtest_cards.values():
 		card["node"].custom_minimum_size.x = 0
 		card["node"].custom_maximum_size.x = minf(560 * scale, maxf(0, scroll.size.x - 36 * scale))
+	_update_latest_button.call_deferred()
 
 func style(color: Color, radius: int = 12) -> StyleBoxFlat:
 	var box = StyleBoxFlat.new()
@@ -1475,6 +1587,7 @@ func playtest_note(turn: String, markdown: String, verdict: String = "") -> void
 		entry.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
 		entry.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
 		card["rows"].add_child(entry)
+		_install_conversation_font(entry)
 		Markdown.render(entry, markdown, EditorInterface.get_editor_scale())
 		card["entries"] += 1
 		if card["rows"].get_child_count() > 30:
@@ -1636,6 +1749,13 @@ func show_tool_event(event: Dictionary, metadata: Dictionary, caption: String = 
 				if data.has(field) and data[field] is not Dictionary and data[field] is not Array: facts.append(field + ": " + str(data[field]).left(220))
 			operation["facts"] = "\n".join(facts)
 		if operation["state"] in ["failed", "unknown"]: operation["expanded"] = true
+		var feed: Dictionary = operation.get("feed", {})
+		if not feed.is_empty():
+			feed["state"] = operation["state"]
+			feed["title"] = str(operation.get("title", operation.get("name", "")))
+			feed["detail"] = _tool_summary(operation)
+		_refresh_activity_feed()
+	_refresh_activity()
 	_update_tool_row(operation)
 	_sync_response(group)
 	_follow.call_deferred()
@@ -1648,11 +1768,11 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	var surface = style(Color("151b24"), 10)
 	surface.border_color = Color("2c3444")
 	surface.set_border_width_all(1)
-	surface.set_content_margin_all(10 * scale)
+	surface.set_content_margin_all(7 * scale)
 	panel.add_theme_stylebox_override("panel", surface)
 	group["content"].add_child(panel)
 	var body = VBoxContainer.new()
-	body.add_theme_constant_override("separation", int(4 * scale))
+	body.add_theme_constant_override("separation", int(2 * scale))
 	panel.add_child(body)
 	var header = Button.new()
 	header.name = "ToolCallHeader"
@@ -1660,7 +1780,7 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	header.clip_text = true
 	header.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	header.custom_minimum_size.y = 36 * scale
+	header.custom_minimum_size.y = 30 * scale
 	header.focus_mode = Control.FOCUS_ALL
 	header.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
 	header.add_theme_stylebox_override("hover", _compact_style(Color("202634")))
@@ -1672,7 +1792,7 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	summary.max_lines_visible = 2
 	summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	summary.add_theme_font_size_override("font_size", int(11 * scale))
+	summary.add_theme_font_size_override("font_size", int(10 * scale))
 	summary.add_theme_color_override("font_color", Color("aab5c9"))
 	var details = VBoxContainer.new()
 	details.name = "ToolCallDetails"
@@ -1683,6 +1803,10 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	operation["header"] = header
 	operation["summary"] = summary
 	operation["details"] = details
+	operation["feed"] = {"kind": "tool", "title": str(operation.get("title", operation.get("name", ""))), "state": "running", "detail": ""}
+	activity_feed.append(operation["feed"])
+	_trim_activity_feed()
+	_refresh_activity_feed()
 	header.pressed.connect(func() -> void:
 		_preserve_reader()
 		operation["expanded"] = not operation["expanded"]
@@ -1701,7 +1825,7 @@ func _update_tool_row(operation: Dictionary) -> void:
 	operation["header"].add_theme_color_override("font_color", Color("d2b47f") if state in ["failed", "unknown"] else (Color("8fbf9f") if state == "completed" else Color("c5cbda")))
 	var summary = _tool_summary(operation)
 	operation["summary"].text = summary
-	operation["summary"].visible = not summary.strip_edges().is_empty()
+	operation["summary"].visible = state in ["failed", "unknown"] and not summary.strip_edges().is_empty()
 	var details = operation["details"]
 	details.visible = bool(operation.get("expanded", false))
 	if details.visible:
@@ -1802,6 +1926,10 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 		var you = label(identity, "Tu")
 		you.add_theme_font_size_override("font_size", int(11 * EditorInterface.get_editor_scale()))
 		you.add_theme_color_override("font_color", Color("8f97a9"))
+		var copy_user = icon_button(identity, "Copy", "Copiază mesajul", func() -> void: DisplayServer.clipboard_set(text))
+		copy_user.set_meta("user_copy", true)
+		copy_user.visible = not text.strip_edges().is_empty()
+		_compact_button(copy_user)
 	var body = VBoxContainer.new()
 	column.add_child(body)
 	var anchor = RichTextLabel.new()
@@ -1877,7 +2005,25 @@ func _text_block(parent: Node) -> Dictionary:
 			if not link.is_empty(): action.emit("project_open", link)
 		elif Common.parse_url(str(value), true).get("ok", false): action.emit("open_url", {"url": str(value)}))
 	parent.add_child(text)
+	_install_conversation_font(text)
 	return {"kind": "text", "node": text, "source": "", "renders": 0}
+
+func _install_conversation_font(target: RichTextLabel) -> void:
+	if target == null: return
+	if conversation_emoji_font == null:
+		conversation_emoji_font = SystemFont.new()
+		conversation_emoji_font.font_names = PackedStringArray(["Noto Color Emoji", "Noto Emoji", "Segoe UI Emoji", "Apple Color Emoji", "sans-serif"])
+		conversation_emoji_font.allow_system_fallback = true
+	for key in ["normal_font", "bold_font", "italics_font", "bold_italics_font"]:
+		var base: Font = target.get_theme_font(key)
+		if base == null: continue
+		var variation := FontVariation.new()
+		variation.base_font = base
+		var fallbacks: Array[Font] = []
+		for fallback in base.get_fallbacks(): fallbacks.append(fallback)
+		fallbacks.append(conversation_emoji_font)
+		variation.fallbacks = fallbacks
+		target.add_theme_font_override(key, variation)
 
 func _code_block(parent: Node) -> Dictionary:
 	var scale = EditorInterface.get_editor_scale()
@@ -2227,6 +2373,7 @@ func _render_reasoning(record: Dictionary) -> void:
 		body.add_theme_color_override("default_color", Color("a7b0c3"))
 		body.visible = false
 		column.add_child(body)
+		_install_conversation_font(body)
 		toggle.pressed.connect(func() -> void: body.visible = not body.visible)
 		record["column"].add_child(panel)
 		if is_instance_valid(record.get("body")): record["column"].move_child(panel, record["body"].get_index())
@@ -2523,7 +2670,13 @@ func _scroll_changed(value: float) -> void:
 
 func _update_latest_button() -> void:
 	if latest_button != null:
-		latest_button.visible = not follow_bottom
+		# The floating jump control must never steal a tap intended for a plan
+		# action, question option or any other interactive row underneath it.
+		var covers_action = false
+		if not follow_bottom and scroll != null:
+			var under = _chat_control_at(scroll, latest_button.get_global_rect().get_center())
+			covers_action = _native_touch_control(under)
+		latest_button.visible = not follow_bottom and not covers_action
 		latest_button.tooltip_text = "Mergi la ultimul mesaj și urmărește conversația" + (" · %d mesaje noi" % unseen_updates if unseen_updates else "")
 
 func _jump_to_latest() -> void:
@@ -2599,8 +2752,8 @@ func section_icon(section: String) -> Texture2D:
 func set_workspace_expanded(value: bool) -> void:
 	workspace_expanded = value
 	if expand_button == null: return
-	expand_button.icon = _icon("Collapse" if value else "Expand")
-	expand_button.tooltip_text = "Restaurează panourile" if value else "Extinde chatul și ascunde panourile"
+	expand_button.icon = _icon("Lock" if value else "Expand")
+	expand_button.tooltip_text = "Deblochează fereastra agentului și restaurează panourile" if value else "Blochează fereastra agentului și ascunde panourile"
 	expand_button.set_pressed_no_signal(value)
 
 func _toggle_expanded() -> void:
@@ -2628,6 +2781,7 @@ func show_status(message: String, working: bool = false) -> void:
 	var changed = work_message != message
 	work_message = message
 	work_notice_running = working
+	if working or work_live: _record_activity_status(message, "running" if working else "completed")
 	_refresh_activity(changed)
 	if working or message.is_empty(): return
 	await get_tree().create_timer(4.0).timeout

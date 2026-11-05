@@ -311,6 +311,7 @@ func _run() -> void:
 	native = panel != null
 	if not native:
 		panel = embedded["panel"].new()
+		panel.name = "AIAssistantPanel"
 		panel.configure(self, FixtureVault.new())
 		EditorInterface.get_editor_main_screen().add_child(panel)
 	panel.model_pricing.transport = AgentPricingTransport.new()
@@ -431,6 +432,14 @@ func _run() -> void:
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "activity":
 		await _activity_drawer_tests()
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "workspace":
+		await _workspace_panel_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "controls":
+		await _control_settings_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "files":
@@ -2013,7 +2022,9 @@ func _activity_capture(name: String) -> void:
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if output.is_empty(): return
 	EditorInterface.get_base_control().get_viewport().get_texture().get_image().save_png(output.path_join(name + ".png"))
-	var geometry = {"activity": str(panel.chat.activity_panel.get_global_rect()), "composer": str(panel.chat.compose_panel.get_global_rect()), "details": str(panel.chat.activity_details.get_global_rect()), "rows": []}
+	var geometry = {"activity": str(panel.chat.activity_panel.get_global_rect()), "composer": str(panel.chat.compose_panel.get_global_rect()), "details": str(panel.chat.activity_details.get_global_rect()), "live": str(panel.chat.activity_live_inset.get_global_rect()), "live_rows": [], "rows": []}
+	for row in panel.chat.activity_live_rows.get_children():
+		geometry.live_rows.append({"rect": str(row.get_global_rect()), "text": " / ".join(row.get_children().map(func(item: Node) -> String: return item.text if item is Label else "")), "children": row.get_children().map(func(item: Node) -> Dictionary: return {"rect": str(item.get_global_rect()), "visible": item.is_visible_in_tree(), "modulate": str(item.modulate), "font": str(item.get_theme_color("font_color")) if item is Label else ""})})
 	for row in panel.chat.activity_rows.get_children():
 		if row.has_meta("state"): geometry.rows.append({"state": row.get_meta("state"), "size": str(row.size)})
 	embedded.common.atomic_json(output.path_join(name + "-geometry.json"), geometry)
@@ -2037,6 +2048,8 @@ func _activity_drawer_tests() -> void:
 	var inline_group: Dictionary = chat.response_groups[-1]
 	var inline_operation: Dictionary = inline_group["operations"][-1]
 	_check(inline_operation["state"] == "running" and inline_operation["node"].is_visible_in_tree() and inline_operation["node"].get_parent() == inline_group["content"], "Running tool appears inline in the conversation")
+	_check(chat.activity_feed.any(func(event: Dictionary) -> bool: return event.get("kind") == "tool" and event.get("state") == "running"), "Live status keeps the running tool in its own feed")
+	_check(chat.activity_live_inset.visible and chat.activity_live_rows.get_child_count() >= 2, "Collapsed activity shows each live status and tool event")
 	chat.set_working(true)
 	await get_tree().create_timer(0.2).timeout
 	var between = []
@@ -2047,6 +2060,7 @@ func _activity_drawer_tests() -> void:
 	_activity_capture("activity-collapsed")
 	chat.activity_toggle.pressed.emit()
 	await get_tree().create_timer(0.2).timeout
+	_check(chat.activity_feed_rows.visible and chat.activity_feed_rows.get_child_count() >= 2, "Expanded activity shows the live status feed above the plan steps")
 	var rows = chat.activity_rows.get_children().filter(func(item: Node) -> bool: return item.has_meta("state"))
 	_check(chat.activity_details.visible and rows.size() == 5 and rows[0].get_meta("state") == "completed" and rows[2].get_meta("state") == "in_progress" and rows[4].get_meta("state") == "pending", "Expanding activity reveals completed, running and pending plan steps; operation history remains in Jurnal")
 	_check(rows.slice(0, 5).all(func(row: Node) -> bool: return row.get_child(2).is_visible_in_tree() and row.get_child(2).size.x >= row.get_child(2).get_minimum_size().x and row.get_child(2).size.x > 20 * EditorInterface.get_editor_scale() and row.get_global_rect().grow(1).encloses(row.get_child(2).get_global_rect())), "Plan state captions reserve readable width inside each activity row")
@@ -2065,6 +2079,7 @@ func _activity_drawer_tests() -> void:
 	panel._harness_event({"kind": "tool_result", "id": "activity-animation", "name": "godot_call", "executed": true, "arguments": {}, "result": {"ok": false, "code": "permission_denied", "error": "Operația nu a fost autorizată."}})
 	inline_operation = chat.response_groups[-1]["operations"][-1]
 	_check(inline_operation["state"] == "failed" and inline_operation["details"].visible and inline_operation["node"].is_visible_in_tree(), "Denied tool result remains inline and opens its details")
+	_check(chat.activity_feed.any(func(event: Dictionary) -> bool: return event.get("kind") == "tool" and event.get("state") == "failed"), "Live status advances the same tool event to failed")
 	_check(JSON.parse_string(panel.journal.back()["result"]).get("code") == "permission_denied" and not chat.running_tools.visible, "Denied tool results stay inline and in Jurnal without a duplicate active row")
 	chat.append_message("assistant", "Rezultatul operației este disponibil.", {"id": "activity-visual-final", "turn_id": "activity-visual"})
 	var visible_assistant = chat.message_records.filter(func(record: Dictionary) -> bool: return record["role"] == "assistant" and str(record["metadata"].get("turn_id", "")) == "activity-visual")
@@ -2118,6 +2133,14 @@ func _control_settings_tests() -> void:
 	_check(panel.Common.work_mode_index({"ui_mode": 1}) == 2 and panel.Common.work_mode_index({"work_mode": "default", "ui_mode": 1}) == 1, "Legacy Plan conversations restore read-only while new Default remains distinct")
 	panel.mode_picker.select(1)
 	_check(panel._mode() == 4 and "DEFAULT MODE" in panel._context_messages()[0]["content"] and "one or two short sentences" in panel._context_messages()[0]["content"], "Default is balanced and simple identity replies are instructed to stay compact")
+	panel.mode_picker.select(2)
+	var plan_instructions = str(panel._context_messages()[0]["content"])
+	_check("PLAN MODE" in plan_instructions and "CLARIFICATION GATE" in plan_instructions and "plan_ask" in plan_instructions, "Plan mode instructs the agent to ask consequential questions before proposing")
+	panel.mode_picker.select(0)
+	_check("CLARIFICATION GATE" in str(panel._context_messages()[0]["content"]), "Default and Auto planning paths also require clarification when requirements are missing")
+	panel.mode_picker.select(3)
+	_check(not "CLARIFICATION GATE" in str(panel._context_messages()[0]["content"]), "Read-only Ask mode answers directly instead of opening a planning questionnaire")
+	panel.mode_picker.select(2)
 	var form = panel.forms["generation"]
 	form["kind"].select(2)
 	panel._generation_fields(2, form["workflow_fields"], true)
@@ -4037,6 +4060,29 @@ func _ziva_tests(output: String) -> void:
 	_check(not screen.hint.visible and screen.status.text == "Ziva · Activ", "Ready Ziva uses one compact status row without repeated instructions")
 	_check(screen.body.size.y > screen.size.y * 0.75, "The official frontend retains most of the main tab height")
 	_check(screen.actions.get_global_rect().end.x <= minf(screen.get_global_rect().end.x, screen.get_viewport().get_visible_rect().end.x) + 1, "Ziva actions fit the available width at every editor scale")
+	_check(screen.actions.get_popup().get_item_index(screen.MENU_AGENT) >= 0, "Ziva exposes a direct message bridge to our agent")
+	var saved_busy = panel.busy
+	var saved_queue: Array = panel.queued.duplicate(true)
+	panel.busy = true
+	screen._open_agent_bridge()
+	_check(screen.agent_dialog.visible and not screen.embedded, "Opening the Ziva bridge hides the official frontend without stopping its backend")
+	screen.agent_text.text = "Verifică scena din Ziva."
+	screen._send_agent_bridge_message()
+	_check(not panel.queued.is_empty() and panel.queued[-1]["text"] == "Mesaj de la Ziva: Verifică scena din Ziva." and screen.agent_text.text.is_empty(), "A Ziva message reaches our agent queue with its origin and clears the draft")
+	screen.agent_dialog.hide()
+	panel.busy = saved_busy
+	panel.queued = saved_queue
+	panel._sync_queue()
+	screen._sync_embed()
+	panel.ziva_runtime = bridge
+	bridge.chat["scripted"] = [{"state": "completed", "answer": "Am verificat scena din Ziva.", "finish": "stop"}]
+	panel._slash("/ziva Verifică scena mea")
+	var bridge_deadline = Time.get_ticks_msec() + 10000
+	while Time.get_ticks_msec() < bridge_deadline and not panel.chat.message_records.any(func(record: Dictionary) -> bool: return "Ziva: Am verificat scena din Ziva." in str(record.get("text", ""))):
+		await get_tree().process_frame
+	_check(panel.chat.message_records.any(func(record: Dictionary) -> bool: return "Ziva: Am verificat scena din Ziva." in str(record.get("text", ""))) and panel.history.any(func(record: Dictionary) -> bool: return record.get("application_message") == "ziva_relay_answer"), "The /ziva command relays our agent request and persists Ziva's answer in the conversation")
+	panel.ziva_runtime = null
+	panel.history = history
 	if not temporary: _check(EditorInterface.is_distraction_free_mode_enabled(), "The native Ziva tab gives the frontend the full editor workspace")
 	var count = bridge.requests.size()
 	screen._sync_embed()
@@ -4174,7 +4220,11 @@ func _workspace_panel_tests(output: String) -> void:
 	while panel.dock_layout_busy: await get_tree().process_frame
 	_check(EditorInterface.is_distraction_free_mode_enabled() and bottom.current_tab == -1, "Expand chat collapses Output and the side docks together")
 	_check(panel.chat.size.y > previous_height + 20, "Collapsing the bottom panel returns its height to the chat")
-	_check(panel.chat.expand_button.tooltip_text == "Restaurează panourile" and panel.chat.expand_button.button_pressed, "Expanded chat clearly offers restoring the editor panels")
+	_check(panel.chat.expand_button.tooltip_text.contains("Deblochează fereastra agentului") and panel.chat.expand_button.button_pressed, "Locked chat clearly offers restoring the editor panels")
+	var locked_height = panel.chat.size.y
+	make_bottom_panel_item_visible(diagnostic)
+	await get_tree().create_timer(0.4).timeout
+	_check(EditorInterface.is_distraction_free_mode_enabled() and bottom.current_tab == -1 and panel.chat.size.y >= locked_height - 1, "Locked agent window stays fixed when a bottom panel is opened")
 	for control in [panel.composer, panel.chat.send_button, panel.chat.model_button, panel.chat.expand_button, panel.chat.navigation_buttons["settings"]]:
 		_check(panel.get_viewport().get_visible_rect().grow(2).encloses(control.get_global_rect()), "Expanded chat keeps its control fully accessible: " + control.name)
 	content.text += "\nDiagnostic nou păstrat."

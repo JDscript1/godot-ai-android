@@ -204,6 +204,29 @@ latest-turn-only Undo/Resend gating, file restoration and history truncation,
 queue restore/remove/resume, measured and estimated metrics, Thinking expansion,
 find wrapping and the stall warning.
 
+The activity panel now keeps a live feed of the current status and each tool
+transition. Its collapsed form shows the latest three events; expanding it adds
+the bounded full feed above the plan steps. This is execution telemetry, not
+private provider reasoning. The floating jump control yields to interactive
+content underneath it, so plan and question actions remain reachable.
+
+### Clarification and Ziva relay (source, 2026-11-05)
+
+Plan, Auto, and Default contexts carry a clarification gate: when material
+scope, platform, behavior, data, or acceptance criteria are missing, the model
+must call `plan_ask` before committing to a plan or changing files. Ask mode
+remains a direct read-only answer. Questions stay in the existing persisted
+questionnaire path, with explicit submission and recovery.
+
+The assistant and Ziva can exchange messages without merging their histories.
+`/ziva <text>` delegates through the existing sidecar RPC and appends the final
+Ziva answer to our conversation. Ziva's actions menu can send a message to
+`AIAssistantPanel.receive_ziva_message`; if our turn is active, the message is
+queued with its Ziva origin instead of interrupting it. The official Ziva
+frontend, credentials, tools, and conversation remain separate. The editor QA
+fixture verifies both directions, queueing, and the missing-panel error; a live
+Ziva session is still a separate acceptance check.
+
 ## Symbol map and reviewed writes (source, 2026-10-28)
 
 `godot_symbols` maps top-level GDScript declarations under a project directory:

@@ -5,6 +5,8 @@ extends VBoxContainer
 var bridge: Node
 var backend: RefCounted
 var management: Window
+var agent_dialog: ConfirmationDialog
+var agent_text: TextEdit
 var version_label: Label
 var update_button: Button
 var updates_label: Label
@@ -21,6 +23,7 @@ const MENU_RELOAD = 0
 const MENU_SETTINGS = 1
 const MENU_REFRESH = 2
 const MENU_RESTART = 3
+const MENU_AGENT = 4
 
 func configure(native_bridge: Node, model: RefCounted) -> void:
 	bridge = native_bridge
@@ -49,6 +52,7 @@ func _ready() -> void:
 	menu.add_item("Instalare și actualizări", MENU_SETTINGS)
 	menu.add_item("Verifică starea", MENU_REFRESH)
 	menu.add_separator()
+	menu.add_item("Trimite mesaj agentului", MENU_AGENT)
 	menu.add_item("Repornește sesiunea", MENU_RESTART)
 	menu.id_pressed.connect(_menu_action)
 	hint = Label.new()
@@ -64,6 +68,7 @@ func _ready() -> void:
 	add_child(body)
 	visibility_changed.connect(_visibility_changed)
 	_build_management()
+	_build_agent_bridge()
 	_bind_backend()
 	if backend != null: backend.request("attach")
 	_refresh()
@@ -74,6 +79,7 @@ func _menu_action(id: int) -> void:
 		MENU_SETTINGS: _settings()
 		MENU_REFRESH:
 			if backend != null: backend.refresh()
+		MENU_AGENT: _open_agent_bridge()
 		MENU_RESTART: _action("restart")
 
 func _bind_backend() -> void:
@@ -121,6 +127,46 @@ func _build_management() -> void:
 	content.add_child(updates_label)
 	update_button = _button(content, "Actualizează Ziva", func() -> void: _action("update"))
 	_button(content, "Instalare și condiții ↗", func() -> void: OS.shell_open("https://ziva.sh/docs/installation"))
+
+func _build_agent_bridge() -> void:
+	agent_dialog = ConfirmationDialog.new()
+	agent_dialog.title = "Trimite agentului"
+	agent_dialog.ok_button_text = "Trimite"
+	agent_dialog.cancel_button_text = "Anulează"
+	var content = VBoxContainer.new()
+	content.add_theme_constant_override("separation", 8)
+	agent_text = TextEdit.new()
+	agent_text.placeholder_text = "Mesaj pentru agentul Godot AI…"
+	agent_text.custom_minimum_size = Vector2(360, 120)
+	content.add_child(agent_text)
+	agent_dialog.add_child(content)
+	agent_dialog.confirmed.connect(_send_agent_bridge_message)
+	agent_dialog.close_requested.connect(func() -> void: agent_dialog.hide())
+	add_child(agent_dialog)
+
+func _open_agent_bridge() -> void:
+	if backend == null or backend.project_directory.is_empty():
+		error_text = "Deschide un proiect pentru a trimite un mesaj agentului."
+		_refresh()
+		return
+	_hide_embed()
+	var area = get_viewport().get_visible_rect().size
+	agent_dialog.popup_centered(Vector2i(minf(520, area.x * 0.9), 210))
+	agent_text.grab_focus()
+
+func _send_agent_bridge_message() -> void:
+	var message = agent_text.text.strip_edges()
+	if message.is_empty(): return
+	var assistant = get_tree().root.find_child("AIAssistantPanel", true, false)
+	if assistant == null or not assistant.has_method("receive_ziva_message"):
+		error_text = "Panoul agentului nu este disponibil în acest editor."
+		_refresh()
+		return
+	assistant.call("receive_ziva_message", message)
+	agent_text.clear()
+	status.text = "Mesaj trimis agentului"
+	error_text = ""
+	_refresh()
 
 func _settings() -> void:
 	_hide_embed()

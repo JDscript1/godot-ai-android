@@ -25,6 +25,12 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	chat.motion_enabled = false
 	chat.clear_messages()
 	chat.append_message("user", "Construiește o poiană cu o potecă și copaci.", {"id": "presentation-user", "turn_id": "presentation"})
+	var user_record: Dictionary = chat.message_records[0]
+	var user_copy = user_record["column"].find_children("*", "Button", true, false).filter(func(control: Button) -> bool: return control.get_meta("user_copy", false))
+	check(user_copy.size() == 1, "User messages expose a compact copy action")
+	if not user_copy.is_empty():
+		user_copy[0].pressed.emit()
+		check(DisplayServer.clipboard_get() == "Construiește o poiană cu o potecă și copaci.", "Copy retrieves the exact user message")
 	chat.begin_work("presentation")
 	var origin = {"turn_id": "presentation", "origin_label": "Godot AI · probă de interfață"}
 	chat.append_message("assistant", "Verific scena și resursele existente.", origin.merged({"id": "presentation-first"}))
@@ -76,7 +82,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	await pause()
 	var scale = EditorInterface.get_editor_scale()
 	check(group["row"].size.x <= chat.scroll.size.x + 1, "Grouped responses fit the actual narrow workspace")
-	check(group["content"].get_theme_constant("separation") >= int(14 * scale) and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].size.x <= chat.scroll.size.x + 1 and operation["header"].custom_minimum_size.y >= 36 * scale and operation["summary"].is_visible_in_tree()), "Inline tool cards preserve spacing, width and a readable tap target")
+	check(group["content"].get_theme_constant("separation") >= int(14 * scale) and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].size.x <= chat.scroll.size.x + 1 and operation["header"].custom_minimum_size.y >= 30 * scale), "Inline tool cards preserve spacing, width and a readable tap target")
 	capture("chat-response-grouped")
 	capture("chat-response-operations")
 	# File cards attach to this response, with neither a second identity nor an auto-open.
@@ -206,6 +212,10 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	chat.finish_work("presentation", "cancelled")
 	chat.clear_messages()
 	check(chat.response_groups.is_empty() and chat.operation_cards.is_empty(), "Changing conversations releases response and operation presentation state")
+	var emoji_anchor = chat.append_message("assistant", "Gata 😀 🚀 ✅", {"id": "emoji-answer", "turn_id": "emoji"})
+	var emoji_record: Dictionary = emoji_anchor.get_meta("message")
+	var emoji_text: RichTextLabel = emoji_record["blocks"][0]["node"]
+	check(emoji_text.get_parsed_text().contains("😀") and emoji_text.has_theme_font_override("normal_font"), "Chat keeps emoji text and installs a system emoji fallback")
 	# Console errors stay out of the workspace until the user asks for them.
 	chat.set_error_count(0)
 	check(not chat.error_button.visible, "A clean Debugger leaves no error indicator in the header")

@@ -1,5 +1,25 @@
 # Ziva independent în Godot AI — preview
 
+## Mesagerie directă în ambele sensuri — 5.11.2026
+
+Pe lângă uneltele de delegare disponibile modelului, interfața are o punte
+manuală între tabul Ziva și agentul nostru. Meniul `⋮` al tabului Ziva include
+**Trimite mesaj agentului**: deschide un câmp separat, ascunde temporar WebView-ul
+oficial fără a opri backend-ul și trimite textul către `AIAssistantPanel`.
+Dacă agentul are un tur activ, mesajul este marcat cu originea Ziva și intră în
+coadă; nu întrerupe răspunsul curent.
+
+În sens invers, `/ziva <mesaj>` din chat folosește aceeași delegare RPC ca
+unealta `ziva_task` și adaugă răspunsul final în conversația noastră cu eticheta
+**Ziva · răspuns**. Istoricul, cheile, uneltele și conversația oficială Ziva nu
+sunt copiate între agenți. Textul este redactat înainte de salvare/afișare, iar
+un răspuns gol este raportat explicit.
+
+Verificat în fixture-ul editorului: `ziva` **88/0**, inclusiv deschiderea
+dialogului, coada cu prefixul de origine, comanda `/ziva` și afișarea răspunsului.
+Dialogul și WebView-ul nu au fost probate pe un dispozitiv fizic în această
+etapă; backend-ul Ziva live și permisiunile rămân verificări separate.
+
 ## Delegare către agentul Ziva — 31.10.2026
 
 Agentul nostru poate cere oficialului Ziva o sarcină de sine stătătoare, prin

@@ -8,6 +8,64 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Chat live, Ziva bidirecțional și fereastră blocată — 5.11.2026
+
+**Implementat în surse.** Conversația agentului nostru a primit un set de
+corecții cerute direct din utilizarea pe telefon:
+
+- Textul asistentului și al utilizatorului folosește un fallback de sistem
+  pentru emoji (Noto/Segoe/Apple), aplicat fonturilor normal, bold și italic
+  din blocurile Markdown, raționament și consola Playtest.
+- Mesajele utilizatorului au o acțiune compactă **Copiază mesajul**, care
+  pune în clipboard textul original, fără prefixe vizuale.
+- Panoul **Agentul gândește…** afișează acum, chiar și restrâns, ultimele trei
+  evenimente live: starea curentă și fiecare unealtă pornită/încheiată, cu
+  iconiță, titlu și detaliu în tooltip. Extinderea păstrează istoricul complet
+  de maximum 30 de evenimente deasupra pașilor planului.
+- Cardurile inline de unelte sunt mai compacte: padding 7, separare 2, antet
+  de 30 px și rezumat doar pentru erori sau rezultate neconfirmate.
+- Butonul plutitor „mergi la ultimul mesaj” se ascunde când ar acoperi un
+  control acționabil (de exemplu **Trimite răspunsurile** într-un card Plan),
+  ca tapul să ajungă la controlul de sub el.
+- Butonul de extindere transformă chatul într-o **fereastră blocată**: cât timp
+  este activ, panourile inferioare deschise sunt închise din nou, iar modul
+  distraction-free este menținut. Indicatorul de erori deblochează explicit
+  fereastra și restaurează panourile înainte de a deschide Debugger-ul.
+- Instrucțiunea `CLARIFICATION GATE` cere `plan_ask` în Plan, Auto și Default
+  când lipsesc cerințe materiale (scop, platformă, comportament, date sau
+  criterii de acceptare). Întrebările sunt 1–3, cu opțiuni concrete și răspuns
+  propriu; Ask rămâne răspuns direct, fără chestionar.
+- Puntea Ziva este bidirecțională la nivel de interfață: din tabul Ziva,
+  **⋮ → Trimite mesaj agentului** trimite textul agentului nostru, iar comanda
+  `/ziva <mesaj>` din chat trimite cererea către Ziva și afișează răspunsul
+  primit. Mesajele Ziva primite în timpul unei sarcini intră în coadă, nu
+  întrerup turul curent.
+
+**Verificat în editor.** Godot `4.7.stable.termux` cu Xvnc, 480×900:
+
+- suita runtime: **945/0** aserțiuni;
+- `presentation`: **143/0**;
+- `activity`: **73/0**;
+- `chat`: **82/0**;
+- `inspections`: **79/0**;
+- `planning`: **81/0**;
+- `ziva`: **88/0**;
+- `workspace`: **70/0**;
+- `controls`: **82/0** pe un fixture proiect proaspăt.
+
+Probele noi acoperă copierea mesajului propriu, fallback-ul emoji, feed-ul
+live restrâns, blocarea panourilor inferioare în fereastra extinsă, poziția
+butonului de salt, instrucțiunea de clarificare și mesageria Ziva în ambele
+direcții. Dovezile locale sunt în `.ai-qa/chat-ziva-live-20261105/`.
+
+**Limite.** APK-ul nu a fost încă recompilat din această etapă; emoji,
+clipboard-ul, tastatura și fereastra blocată nu au fost probate fizic pe
+Android. Puntea Ziva folosește bridge-ul simulat al fixture-ului, nu o sesiune
+Ziva live; niciun furnizor real nu a fost apelat.
+
+Jurnal: 5.11.2026 — chat live, emoji, copiere, mesagerie Ziva bidirecțională,
+clarificări Plan și fereastră blocată; verificat în editor.
+
 ## Chat timeline inline și mesaje persistente — 5.11.2026
 
 **Implementat în surse.** `chat_view.gd` nu mai mută actualizările assistant în
