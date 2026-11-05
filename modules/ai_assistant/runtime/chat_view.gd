@@ -778,8 +778,9 @@ func _record_activity_status(message: String, state: String) -> void:
 func _refresh_activity(rebuild: bool = false) -> void:
 	if activity_panel == null: return
 	var steps: Array = work_plan.get("steps", [])
-	var details = not steps.is_empty() or not work_jobs.is_empty() or not activity_feed.is_empty() or work_message.length() > 100
-	activity_panel.visible = details or _work_running() or not work_message.is_empty()
+	var live_feed = activity_feed.any(func(event: Dictionary) -> bool: return event.get("state") == "running")
+	var details = not steps.is_empty() or not work_jobs.is_empty() or _work_running() or live_feed or work_message.length() > 100
+	activity_panel.visible = details or not work_message.is_empty()
 	status.visible = activity_panel.visible
 	var heading = work_message
 	var active = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "in_progress")
@@ -2781,7 +2782,7 @@ func show_status(message: String, working: bool = false) -> void:
 	var changed = work_message != message
 	work_message = message
 	work_notice_running = working
-	if working or work_live: _record_activity_status(message, "running" if working else "completed")
+	if working or work_live: _record_activity_status(message, "running")
 	_refresh_activity(changed)
 	if working or message.is_empty(): return
 	await get_tree().create_timer(4.0).timeout
