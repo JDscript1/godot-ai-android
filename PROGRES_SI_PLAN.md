@@ -8,6 +8,32 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Guard pentru evenimentele de tastatură în chat — 5.11.2026
+
+**Defect raportat în consolă.** La tastarea în chat, cu săgeata „mergi la
+ultimul mesaj” vizibilă, consola afișa repetat:
+
+`Invalid access to property or key 'position' on a base object of type 'InputEventKey'`
+
+**Cauză.** `_input()` trimitea fiecare eveniment către `_chat_touch()`, iar
+acesta citea `event.position` înainte să verifice tipul. Evenimentele
+`InputEventKey` nu au poziție pe ecran; eroarea oprea handler-ul de gesturi și
+murdărea consola la fiecare tastă.
+
+**Corectat în surse.** `_chat_touch()` acceptă acum exclusiv evenimente cu
+poziție: mouse, touch, drag și pan. Tastele, joypad-ul și acțiunile trec direct
+la controalele lor normale, fără să intre în logica de gesturi. Testul
+`chat_lifecycle` trimite explicit un `InputEventKey` cu săgeata vizibilă și
+verifică faptul că handler-ul îl ignoră.
+
+**Verificat în editor.** Runtime **945/0**, `chat_lifecycle` **88/0`,
+`presentation` **144/0**. Jurnalele sunt în
+`.ai-qa/chat-ziva-live-20261105/`. Recompilarea APK și proba fizică rămân
+separate.
+
+Jurnal: 5.11.2026 — eliminată eroarea `InputEventKey.position` din handler-ul
+tactil al chatului; test de regresie adăugat.
+
 ## Chat live, Ziva bidirecțional și fereastră blocată — 5.11.2026
 
 **Implementat în surse.** Conversația agentului nostru a primit un set de

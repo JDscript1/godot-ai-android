@@ -657,6 +657,10 @@ func _chat_lifecycle_tests() -> void:
 	_check(not chat.follow_bottom and chat.latest_button.visible, "Mouse-wheel history browsing also detaches following")
 	_check(chat.scroll.get_global_rect().encloses(chat.latest_button.get_global_rect()), "Latest-message arrow fits inside the conversation")
 	_check(absf(chat.latest_button.get_global_rect().get_center().x - chat.scroll.get_global_rect().get_center().x) <= 1, "Latest-message arrow is centered above the composer")
+	var keyboard_event = InputEventKey.new()
+	keyboard_event.keycode = KEY_A
+	keyboard_event.pressed = true
+	_check(not chat._chat_touch(keyboard_event), "Keyboard events bypass the chat pointer gesture handler")
 	var arrow_center = chat.latest_button.get_global_rect().get_center()
 	var arrow_touch = InputEventScreenTouch.new()
 	arrow_touch.index = 10

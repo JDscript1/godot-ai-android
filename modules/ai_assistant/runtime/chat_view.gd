@@ -2545,6 +2545,9 @@ func _native_touch_control(control: Control) -> bool:
 
 func _chat_touch(event: InputEvent) -> bool:
 	if not is_visible_in_tree() or scroll == null or (picker != null and picker.visible): return false
+	# Keyboard, joypad and action events have no screen position. They must reach
+	# their normal controls without entering the pointer gesture handler.
+	if not (event is InputEventMouse or event is InputEventScreenTouch or event is InputEventScreenDrag or event is InputEventPanGesture): return false
 	# The jump button floats above the message area; the GUI must receive its taps.
 	if latest_button != null and latest_button.visible and latest_button.get_global_rect().has_point(event.position): return false
 	if event is InputEventMouse and event.device == -1:
