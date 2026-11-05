@@ -1,12 +1,70 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **1 noiembrie 2026**.
+Ultima actualizare: **5 noiembrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
 în surse”, „testat în editor”, „compilat în APK” și „verificat pe dispozitiv”
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
+
+## Chat timeline inline și mesaje persistente — 5.11.2026
+
+**Implementat în surse.** `chat_view.gd` nu mai mută actualizările assistant în
+containerul ascuns „Progres”. Toate mesajele rămân în ordinea cronologică, iar
+fiecare apel de unealtă apare inline în cardul răspunsului, cu stare live,
+durată, rezumat și detalii expandabile. Rezultatele `failed`/`unknown` își
+deschid automat detaliile; succesele rămân restrânse. Starea este reconstruită
+din mesajele persistate la redeschiderea conversației, fără schemă nouă de
+istoric. Eticheta transientă „Running Tools” nu mai este afișată separat.
+
+**Verificat în editor.** Godot `4.7.stable.termux` cu display virtual Xvnc:
+
+- suita runtime: **945/0** aserțiuni;
+- scenariul `chat`: **82/0** la 480×900;
+- `presentation`: **140/0** la 480×900, 1280×900 cu display scale 4 și
+  2048×922;
+- `inspections`: **79/0** la 480×900;
+- `activity`: **69/0** la 480×900;
+- `todo`: **122/0** la 480×900.
+
+Dovezile sunt rapoartele `editor-report.json` din rulările locale de verificare
+din 5.11.2026. APK-ul nu a fost regenerat în această etapă; proba fizică pe
+dispozitiv rămâne separată.
+
+Jurnal: 5.11.2026 — mesaje assistant persistente, timeline inline pentru
+unelte, detalii la cerere și layout aerisit; verificat pe trei dimensiuni.
+
+## Livrare locală Ziva — 5.11.2026
+
+**Compilat din sursa `a6f37fa47410e632f6473db7d62043b2d1afc7ca`** prin
+workflow-ul oficial `Godot AI Android`: Ziva-preview
+[`41941532771`](https://github.com/JDscript1/godot-ai-android/actions/runs/41941532771),
+varianta standard existentă
+[`41290558506`](https://github.com/JDscript1/godot-ai-android/actions/runs/41290558506).
+Ambele rulări au încheiat joburile `runtime`, `native-editor` și `android` cu
+succes.
+
+- APK Ziva: **112.594.638 bytes**, `com.jdscript.godotai.ziva.debug`, versiune
+  `4.7.2.stable`, ARM64.
+- SHA-256:
+  `cd8f2351c178184a1043796b0ac7efdcde7cf9f3524ff36fb7fc7285627a63b1`.
+- Livrat în:
+  `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu checksum alăturat
+  `Godot-AI-Ziva-debug.apk.sha256`.
+- Verificat local: hash-ul APK-ului coincide cu checksum-ul artefactului,
+  `unzip -t` nu raportează erori, badging-ul confirmă pachetul Ziva debug și
+  inventarul nativ ARM64. CI-ul a verificat suplimentar semnătura și conținutul
+  încorporat.
+- Varianta standard a rămas ca rezervă în
+  `~/godot-ai-apk-stage/standard/android_editor-android-debug.apk`; nu a fost
+  copiată în `Download` pentru a păstra un singur installer curent.
+- Pachetul **nu a fost instalat automat** și nu a fost testat pe un dispozitiv
+  fizic în această etapă. Testele live ale furnizorilor și comportamentul pe
+  telefon rămân probe separate.
+
+Jurnal: 5.11.2026 — compilat și livrat APK-ul Ziva din `a6f37fa`; varianta
+standard păstrată ca rezervă, fără instalare automată.
 
 ## AG-79 — săgeata „mergi la ultimul mesaj”: centrare și atingere — 1.11.2026
 
@@ -32,8 +90,8 @@ atingerii de press/release și un clic sintetic trimis prin viewport, care ajung
 la buton, readuce `follow_bottom` și ascunde săgeata. Capturi:
 `.ai-qa/chat-arrow-centered-20261101/phone_compact/chat-history-arrow.png`,
 `.ai-qa/chat-arrow-click-20261101/` și
-`.ai-qa/chat-arrow-landscape-20261101/`. **Nu este încă în APK-ul din
-`Download`.**
+`.ai-qa/chat-arrow-landscape-20261101/`. **Inclusă în APK-ul Ziva livrat pe
+5.11.2026.**
 
 Jurnal: 1.11.2026 — AG-79, săgeata de urmărire centrată și apăsată prin GUI;
 comportamentul de blocare pe ultimele mesaje păstrat.

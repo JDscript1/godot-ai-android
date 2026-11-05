@@ -1,5 +1,20 @@
 # Audit interfață AI — 22 octombrie 2026
 
+## Timeline inline și mesaje persistente — 5 noiembrie 2026
+
+Conversația păstrează acum toate mesajele assistant, inclusiv explicațiile
+dintre apelurile de unelte. Containerul „Progres” și toggle-ul „Operații” au
+fost eliminate din fluxul principal. Fiecare tool call apare inline, imediat în
+cardul răspunsului, cu iconiță de stare, durată și un rezumat lizibil. Detaliile
+se deschid la tap; erorile și rezultatele neconfirmate se deschid automat.
+Rândurile rămân după terminarea turului și după redeschiderea conversației.
+
+Spațierea dintre mesaje și line-height-ul au fost mărite, iar cardurile de
+unealtă au padding, lățime responsivă și zonă de atingere de minimum 36 px.
+Verificat pe Godot 4.7 headless/VNC: runtime 945/0, chat 82/0, presentation
+140/0 pe narrow, phone compact și landscape, inspections 79/0, activity 69/0 și
+todo 122/0. APK-ul și proba pe dispozitivul fizic rămân verificări separate.
+
 ## Corecții după audit — 28 octombrie 2026
 
 Aprobarea parțială lucrează pe o copie a argumentelor. Cererea originală rămâne

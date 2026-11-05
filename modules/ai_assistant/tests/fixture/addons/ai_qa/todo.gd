@@ -97,45 +97,21 @@ func run(host: Node, panel: Control) -> void:
 	var previous_part = panel.journal_part
 	panel._append_detailed_log({"after_rotation": true})
 	host._check(panel.journal_part == previous_part + 1 and FileAccess.file_exists(log_path), "Full logs rotate into successive files while preserving older events")
-	host._check(not panel.chat.running_tools.visible, "Running Tools stays hidden while the agent is idle")
-	panel._harness_event({"kind": "tool_started", "name": "godot_save_scene"})
-	host._check(panel.chat.running_tools is Label and panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Tools · Scene Save" and panel.chat.running_tools.tooltip_text == "godot_save_scene" and panel.chat.running_tools.get_child_count() == 0, "Running Tools describes the active operation without a dropdown")
-	panel._harness_event({"kind": "tool_started", "name": "godot_script_diagnostics"})
-	host._check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Tools · Script Diagnostics", "Running Tools follows the next active tool")
-	var saved_profiles = panel.config["generation"].duplicate(true)
-	var saved_jobs = panel.assets.jobs
-	panel.config["generation"] = [{"id": "qa-image", "asset_kind": "image"}, {"id": "qa-mesh", "asset_kind": "mesh"}]
-	panel.assets.jobs = [{"id": "qa-image-job", "kind": "image"}, {"id": "qa-mesh-job", "kind": "mesh"}]
-	for kind in ["image", "mesh"]:
-		var expected = "Running Tools · " + ("Image" if kind == "image" else "3D") + " Generator"
-		panel._harness_event({"kind": "tool_started", "name": "asset_generate", "arguments": {"profile": "qa-" + kind}})
-		host._check(panel.chat.running_tools.text == expected, "Generation status uses the selected " + kind + " profile")
-		panel._harness_event({"kind": "tool_started", "name": "asset_wait", "arguments": {"job": "qa-" + kind + "-job"}})
-		host._check(panel.chat.running_tools.text == expected + " · Waiting for result", "Waiting retains the actual " + kind + " generator identity")
+	host._check(not panel.chat.running_tools.visible, "Legacy Running Tools row stays hidden while idle")
+	panel._harness_event({"kind": "tool_started", "id": "qa-inline-save", "name": "godot_save_scene"})
+	var inline_group: Dictionary = panel.chat.response_groups[-1]
+	var inline_operation: Dictionary = inline_group["operations"][-1]
+	host._check(inline_operation["state"] == "running" and inline_operation["node"].is_visible_in_tree() and inline_operation["node"].get_parent() == inline_group["content"], "Running tool calls render inline in the conversation")
+	panel._harness_event({"kind": "tool_result", "id": "qa-inline-save", "name": "godot_save_scene", "result": {"ok": true}})
+	host._check(inline_operation["state"] == "completed" and inline_operation["node"].is_visible_in_tree() and not panel.chat.running_tools.visible, "Completed tool calls remain inline without a duplicate status row")
 	host._check(panel._running_tool_label("asset_status", {"job": "missing"}) == "Running Asset Generator Tool · Checking result", "An unknown job never invents a generator type")
-	panel.config["generation"] = saved_profiles
-	panel.assets.jobs = saved_jobs
-	panel._harness_event({"kind": "tool_result", "name": "godot_script_diagnostics", "id": "qa-running-tool", "result": {"ok": true}})
-	host._check(not panel.chat.running_tools.visible and panel.chat.running_tools.text.is_empty(), "Running Tools disappears when the operation ends")
-	panel._harness_event({"kind": "tool_started", "name": "godot_save_scene"})
-	panel._harness_event({"kind": "tool_result", "name": "godot_save_scene", "id": "qa-running-tool-denied", "result": {"ok": false, "code": "permission_denied"}})
-	host._check(not panel.chat.running_tools.visible, "A refused tool leaves no persistent Running Tools row")
-	var previous_cancel = panel.cancel
-	var previous_queue_paused = panel.queue_paused
-	panel.cancel = {}
-	panel.chat.show_running_tool("asset_wait")
-	panel._stop()
-	host._check(not panel.chat.running_tools.visible, "Stop hides Running Tools immediately")
-	panel.cancel = previous_cancel
-	panel.queue_paused = previous_queue_paused
-	panel._sync_queue()
-	panel.chat.begin_work("qa-running-tool")
-	panel.chat.show_running_tool("godot_save_scene")
-	panel.chat.finish_work("qa-running-tool", "completed")
-	host._check(not panel.chat.running_tools.visible, "Finishing a turn clears an active Running Tools row")
-	panel.chat.show_running_tool("godot_files")
+	panel.chat.begin_work("qa-inline-finish")
+	panel.chat.show_tool_event({"kind": "tool_started", "id": "qa-inline-finish-tool", "name": "godot_files"}, {"turn_id": "qa-inline-finish"})
+	var finishing_operation: Dictionary = panel.chat.response_groups[-1]["operations"][-1]
+	panel.chat.finish_work("qa-inline-finish", "completed")
+	host._check(finishing_operation["state"] == "cancelled" and finishing_operation["node"].is_visible_in_tree(), "Finishing a turn keeps an unfinished tool visible as cancelled")
 	panel.chat.clear_messages()
-	host._check(not panel.chat.running_tools.visible, "Changing the conversation clears Running Tools")
+	host._check(panel.chat.response_groups.is_empty() and not panel.chat.running_tools.visible, "Changing the conversation clears inline operation state")
 	panel.chat.append_message("assistant", "Scroll probe\n".repeat(120), {"id": "qa-scroll"})
 	panel.chat.show_plan({"turn": "qa-todo-plan", "phase": "executing", "steps": [{"step": "Verifică o scenă fără să lărgești conversația", "status": "in_progress"}]})
 	await host.get_tree().create_timer(0.2).timeout

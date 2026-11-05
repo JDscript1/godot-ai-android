@@ -249,7 +249,7 @@ func _ready() -> void:
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
 	thread = VBoxContainer.new()
-	thread.add_theme_constant_override("separation", int(18 * EditorInterface.get_editor_scale()))
+	thread.add_theme_constant_override("separation", int(20 * EditorInterface.get_editor_scale()))
 	thread.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center.add_child(thread)
 	latest_button = icon_button(thread_area, "ArrowDown", "Mergi la ultimul mesaj și urmărește conversația", _jump_to_latest)
@@ -636,8 +636,9 @@ func finish_work(turn: String, outcome: String) -> void:
 		if group["turn"] == turn:
 			group["outcome"] = outcome
 			for operation in group["operations"]:
-				if operation["state"] == "running": operation["state"] = "cancelled"
-			if group.has("operations_toggle"): _refresh_operations(group)
+				if operation["state"] == "running":
+					operation["state"] = "cancelled"
+					_update_tool_row(operation)
 			_sync_response(group)
 	_refresh_activity(true)
 
@@ -1245,6 +1246,7 @@ func clear_messages() -> void:
 	if find_count != null: find_count.text = "0/0"
 	streaming_dirty.clear()
 	touch_scroll.clear()
+	touch_suppress_until = 0
 	for child in thread.get_children():
 		thread.remove_child(child)
 		child.queue_free()
@@ -1543,24 +1545,8 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	state.name = "ResponseState"
 	state.add_theme_font_size_override("font_size", int(11 * scale))
 	state.hide()
-	var progress_toggle = button(card, "", func() -> void: pass)
-	progress_toggle.name = "ResponseProgress"
-	progress_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	progress_toggle.clip_text = true
-	progress_toggle.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
-	_compact_button(progress_toggle)
-	progress_toggle.add_theme_color_override("font_color", Color("8f97a9"))
-	progress_toggle.hide()
-	var progress = VBoxContainer.new()
-	progress.add_theme_constant_override("separation", int(12 * scale))
-	progress.hide()
-	card.add_child(progress)
-	progress_toggle.pressed.connect(func() -> void:
-		_preserve_reader()
-		progress.visible = not progress.visible
-		_refresh_progress_title(progress_toggle, progress))
 	var content = VBoxContainer.new()
-	content.add_theme_constant_override("separation", int(8 * scale))
+	content.add_theme_constant_override("separation", int(14 * scale))
 	card.add_child(content)
 	var files = HFlowContainer.new()
 	files.name = "ResponseFiles"
@@ -1571,15 +1557,11 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	var footer = VBoxContainer.new()
 	footer.add_theme_constant_override("separation", int(4 * scale))
 	card.add_child(footer)
-	var group = {"index": response_groups.size(), "row": row, "card": card, "state": state, "progress": progress, "progress_toggle": progress_toggle, "content": content, "files": files, "footer": footer, "records": [], "operations": [], "turn": turn, "epoch": response_epoch, "outcome": str(metadata.get("run_status", ""))}
+	var group = {"index": response_groups.size(), "row": row, "card": card, "state": state, "content": content, "files": files, "footer": footer, "records": [], "operations": [], "turn": turn, "epoch": response_epoch, "outcome": str(metadata.get("run_status", ""))}
 	response_groups.append(group)
 	for previous in response_groups.slice(0, -1):
 		if not turn.is_empty() and previous["turn"] == turn: _sync_response(previous)
 	return group
-
-func _refresh_progress_title(toggle: Button, progress: VBoxContainer) -> void:
-	var count = progress.get_child_count()
-	toggle.text = ("▴" if progress.visible else "▸") + " Progres · %d " % count + ("actualizare" if count == 1 else "actualizări")
 
 func _sync_response(group: Dictionary) -> void:
 	var primary: Dictionary = {}
@@ -1594,15 +1576,11 @@ func _sync_response(group: Dictionary) -> void:
 			if record.has(key) and record[key].get_parent() != group["footer"]: record[key].reparent(group["footer"])
 		if record.has("actions_row"): record["actions_row"].visible = main and latest
 		if record.has("metrics_label"): record["metrics_label"].visible = main and latest and not record["metrics_label"].text.is_empty()
-		var parent: Node = group["content"] if main else group["progress"]
-		if record["row"].get_parent() != parent:
+		if record["row"].get_parent() != group["content"]:
 			_preserve_reader()
-			record["row"].reparent(parent)
+			record["row"].reparent(group["content"])
 		var empty = str(record["text"]).is_empty() and not record["streaming"] and record["metadata"].get("reasoning_content", "").is_empty()
 		record["row"].visible = not empty
-	var count = group["progress"].get_child_count()
-	group["progress_toggle"].visible = count > 0
-	_refresh_progress_title(group["progress_toggle"], group["progress"])
 	var outcome = str(group.get("outcome", ""))
 	var captions = {"completed": "Rezultat", "cancelled": "Întrerupt", "blocked": "Blocat", "failed": "Eșuat", "limited": "Necesită verificare"}
 	group["state"].text = str(captions.get(outcome, "În lucru" if work_live and group["turn"] == work_turn else ""))
@@ -1621,14 +1599,29 @@ func show_tool_event(event: Dictionary, metadata: Dictionary, caption: String = 
 	var group = _response_group(metadata)
 	var key = str(group["epoch"]) + ":" + str(metadata.get("turn_id", "")) + ":" + str(event.get("id", ""))
 	var operation: Dictionary = operation_cards.get(key, {})
-	if event.get("kind") == "tool_started" or operation.is_empty() or operation.get("state") != "running":
-		operation = {"name": str(event.get("name", "")), "title": caption.trim_prefix("Running ").replace(" Tool", ""), "state": "running", "detail": "", "expanded": false}
+	# A completed call may legitimately reuse a provider call ID. Keep prior
+	# history rows and create a new inline operation for the next call.
+	if operation.is_empty() or event.get("kind") == "tool_started" or operation.get("state") != "running":
+		operation = {
+			"name": str(event.get("name", "")),
+			"title": caption.trim_prefix("Running ").replace(" Tool", ""),
+			"state": "running",
+			"detail": "",
+			"expanded": false,
+			"duration_ms": 0,
+			"executed": false,
+			"replayed": false,
+			"code": "",
+			"preview": {},
+			"facts": "",
+		}
 		if operation["title"].is_empty(): operation["title"] = operation["name"].replace("_", " ").capitalize()
-		group["operations"].append(operation)
 		operation_cards[key] = operation
+		group["operations"].append(operation)
+		_create_tool_row(group, operation)
 	var result: Dictionary = event.get("result", {})
 	if event.get("kind") != "tool_started":
-		var code = str(result.get("code", ""))
+		var code := str(result.get("code", ""))
 		operation["state"] = "completed" if result.get("ok", false) else ("unknown" if code in ["submission_unknown", "execution_unknown"] else ("cancelled" if code in ["cancelled", "steered"] else "failed"))
 		operation["duration_ms"] = int(event.get("duration_ms", 0))
 		operation["replayed"] = bool(event.get("replayed", false))
@@ -1636,93 +1629,108 @@ func show_tool_event(event: Dictionary, metadata: Dictionary, caption: String = 
 		operation["detail"] = str(result.get("error", "")).left(2000)
 		operation["code"] = code
 		operation["preview"] = event.get("preview", {}).duplicate(true)
-		# Only presentation data enters the widget. Provider bodies, bytes and
-		# tool arguments remain in the redacted journal, not in every chat row.
 		var data: Variant = result.get("result", {})
 		if data is Dictionary:
 			var facts: Array[String] = []
 			for field in ["path", "status", "imported_path", "count", "valid"]:
 				if data.has(field) and data[field] is not Dictionary and data[field] is not Array: facts.append(field + ": " + str(data[field]).left(220))
 			operation["facts"] = "\n".join(facts)
-	_refresh_operations(group)
+		if operation["state"] in ["failed", "unknown"]: operation["expanded"] = true
+	_update_tool_row(operation)
 	_sync_response(group)
 	_follow.call_deferred()
 
-func _refresh_operations(group: Dictionary) -> void:
-	if not group.has("operations_toggle"):
-		var toggle = button(group["card"], "", func() -> void: pass)
-		toggle.name = "ResponseOperations"
-		toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		toggle.clip_text = true
-		_compact_button(toggle)
-		toggle.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
-		toggle.add_theme_stylebox_override("hover", _compact_style(Color("262a33")))
-		toggle.add_theme_stylebox_override("pressed", _compact_style(Color("30343f")))
-		toggle.add_theme_color_override("font_color", Color("8f97a9"))
-		var rows = VBoxContainer.new()
-		rows.hide()
-		group["card"].add_child(rows)
-		group["card"].move_child(toggle, group["content"].get_index())
-		group["card"].move_child(rows, group["content"].get_index())
-		group["operations_toggle"] = toggle
-		group["operations_rows"] = rows
-		group["operations_visible"] = 20
-		toggle.pressed.connect(func() -> void:
-			_preserve_reader()
-			rows.visible = not rows.visible
-			_refresh_operations(group))
-	var operations: Array = group["operations"]
-	var failed = operations.filter(func(op: Dictionary) -> bool: return op["state"] == "failed").size()
-	var unknown = operations.filter(func(op: Dictionary) -> bool: return op["state"] == "unknown").size()
-	var running = operations.any(func(op: Dictionary) -> bool: return op["state"] == "running")
-	group["operations_toggle"].text = ("▴" if group["operations_rows"].visible else "▸") + " Operații · %d" % operations.size() + (" · în lucru" if running else "") + (" · %d cu erori" % failed if failed else "") + (" · %d neconfirmate" % unknown if unknown else "")
-	group["operations_toggle"].add_theme_color_override("font_color", Color("d2b47f") if failed or unknown else Color("8f97a9"))
-	if not group["operations_rows"].visible: return
-	_preserve_reader()
-	for child in group["operations_rows"].get_children():
-		group["operations_rows"].remove_child(child)
-		child.queue_free()
-	var hidden = maxi(0, operations.size() - int(group["operations_visible"]))
-	if hidden:
-		var more = button(group["operations_rows"], "Arată operațiile anterioare · %d" % hidden, func() -> void:
-			group["operations_visible"] += 20
-			_refresh_operations(group))
-		_compact_button(more)
-		more.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
-		more.add_theme_color_override("font_color", Color("8f97a9"))
-	for op in operations.slice(hidden):
-		var column = VBoxContainer.new()
-		group["operations_rows"].add_child(column)
-		var heading = button(column, "", func() -> void: pass)
-		heading.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		heading.clip_text = true
-		heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		heading.text = str({"running": "◌ ", "completed": "✓ ", "failed": "! ", "unknown": "? ", "cancelled": "Ⅱ "}.get(op["state"], "")) + op["title"] + (" · " + _duration_label(int(op.get("duration_ms", 0))) if op.get("duration_ms", 0) > 0 else "")
-		heading.tooltip_text = op["name"]
-		_compact_button(heading)
-		heading.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
-		heading.add_theme_stylebox_override("hover", _compact_style(Color("262a33")))
-		heading.add_theme_stylebox_override("pressed", _compact_style(Color("30343f")))
-		heading.add_theme_color_override("font_color", Color("d2b47f") if op["state"] in ["failed", "unknown"] else Color("9aa2b4"))
-		var details = VBoxContainer.new()
-		details.visible = op["expanded"]
-		column.add_child(details)
-		if op["expanded"]: _operation_details(details, op)
-		heading.pressed.connect(func() -> void:
-			_preserve_reader()
-			op["expanded"] = not op["expanded"]
-			if op["expanded"] and details.get_child_count() == 0: _operation_details(details, op)
-			details.visible = op["expanded"])
+func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
+	var scale = EditorInterface.get_editor_scale()
+	var panel = PanelContainer.new()
+	panel.name = "ToolCall_" + str(operation.get("name", ""))
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var surface = style(Color("151b24"), 10)
+	surface.border_color = Color("2c3444")
+	surface.set_border_width_all(1)
+	surface.set_content_margin_all(10 * scale)
+	panel.add_theme_stylebox_override("panel", surface)
+	group["content"].add_child(panel)
+	var body = VBoxContainer.new()
+	body.add_theme_constant_override("separation", int(4 * scale))
+	panel.add_child(body)
+	var header = Button.new()
+	header.name = "ToolCallHeader"
+	header.toggle_mode = true
+	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	header.clip_text = true
+	header.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	header.custom_minimum_size.y = 36 * scale
+	header.focus_mode = Control.FOCUS_ALL
+	header.add_theme_stylebox_override("normal", _compact_style(Color.TRANSPARENT))
+	header.add_theme_stylebox_override("hover", _compact_style(Color("202634")))
+	header.add_theme_stylebox_override("pressed", _compact_style(Color("262e3d")))
+	header.add_theme_font_size_override("font_size", int(12 * scale))
+	body.add_child(header)
+	var summary = label(body, "")
+	summary.name = "ToolCallSummary"
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.max_lines_visible = 2
+	summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	summary.add_theme_font_size_override("font_size", int(11 * scale))
+	summary.add_theme_color_override("font_color", Color("aab5c9"))
+	var details = VBoxContainer.new()
+	details.name = "ToolCallDetails"
+	details.visible = false
+	details.add_theme_constant_override("separation", int(6 * scale))
+	body.add_child(details)
+	operation["node"] = panel
+	operation["header"] = header
+	operation["summary"] = summary
+	operation["details"] = details
+	header.pressed.connect(func() -> void:
+		_preserve_reader()
+		operation["expanded"] = not operation["expanded"]
+		_update_tool_row(operation)
+		_follow.call_deferred())
 
-func _operation_details(details: VBoxContainer, op: Dictionary) -> void:
-	var text = op["name"] + "\n" + str({"running": "În lucru", "completed": "Operație încheiată", "failed": "Operație eșuată", "unknown": "Rezultat neconfirmat · verifică operația existentă înainte de repetare", "cancelled": "Operație întreruptă"}.get(op["state"], ""))
-	if op.get("replayed", false): text += " · rezultat reutilizat, fără execuție nouă"
-	if not str(op.get("code", "")).is_empty(): text += "\nCod: " + str(op["code"])
+func _update_tool_row(operation: Dictionary) -> void:
+	if not operation.has("header") or not is_instance_valid(operation["header"]): return
+	var state = str(operation.get("state", "running"))
+	var icons = {"running": "◌", "completed": "✓", "failed": "!", "unknown": "?", "cancelled": "Ⅱ"}
+	var duration = ""
+	if int(operation.get("duration_ms", 0)) > 0: duration = " · " + _duration_label(int(operation["duration_ms"]))
+	operation["header"].text = str(icons.get(state, "○")) + " " + str(operation.get("title", operation.get("name", "Tool"))) + duration
+	operation["header"].tooltip_text = str(operation.get("name", "")) + " · " + str(operation.get("state", ""))
+	operation["header"].button_pressed = bool(operation.get("expanded", false))
+	operation["header"].add_theme_color_override("font_color", Color("d2b47f") if state in ["failed", "unknown"] else (Color("8fbf9f") if state == "completed" else Color("c5cbda")))
+	var summary = _tool_summary(operation)
+	operation["summary"].text = summary
+	operation["summary"].visible = not summary.strip_edges().is_empty()
+	var details = operation["details"]
+	details.visible = bool(operation.get("expanded", false))
+	if details.visible:
+		for child in details.get_children():
+			details.remove_child(child)
+			child.queue_free()
+		_render_tool_details(details, operation)
+
+func _tool_summary(operation: Dictionary) -> String:
+	var state = str(operation.get("state", "running"))
+	if state == "running": return "Se execută…"
+	if state == "cancelled": return "Operație întreruptă"
+	if state in ["failed", "unknown"]:
+		var error = str(operation.get("detail", "")).strip_edges()
+		if not error.is_empty(): return error.get_slice("\n", 0).left(220)
+		return "Rezultat neconfirmat · verifică operația înainte de repetare" if state == "unknown" else "Operația a eșuat"
+	var facts = str(operation.get("facts", "")).strip_edges()
+	if facts.is_empty(): return "Finalizat"
+	return " · ".join(facts.split("\n").slice(0, 2)).left(260)
+
+func _render_tool_details(details: VBoxContainer, operation: Dictionary) -> void:
+	var text = str(operation.get("name", "")) + "\n" + str({"running": "În lucru", "completed": "Operație încheiată", "failed": "Operație eșuată", "unknown": "Rezultat neconfirmat · verifică operația existentă înainte de repetare", "cancelled": "Operație întreruptă"}.get(str(operation.get("state", "")), ""))
+	if bool(operation.get("replayed", false)): text += " · rezultat reutilizat, fără execuție nouă"
+	if not str(operation.get("code", "")).is_empty(): text += "\nCod: " + str(operation["code"])
 	for field in ["detail", "facts"]:
-		if not str(op.get(field, "")).is_empty(): text += "\n" + str(op[field])
+		if not str(operation.get(field, "")).is_empty(): text += "\n" + str(operation[field])
 	var rich = _text_block(details)["node"]
 	rich.add_text(text)
-	var preview: Dictionary = op.get("preview", {})
+	var preview: Dictionary = operation.get("preview", {})
 	if not preview.is_empty(): _inspection_preview(details, preview)
 	var links = HFlowContainer.new()
 	details.add_child(links)
@@ -1860,7 +1868,7 @@ func _text_block(parent: Node) -> Dictionary:
 	text.selection_enabled = true
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.add_theme_font_size_override("normal_font_size", int(14 * EditorInterface.get_editor_scale()))
-	text.add_theme_constant_override("line_separation", int(4 * EditorInterface.get_editor_scale()))
+	text.add_theme_constant_override("line_separation", int(6 * EditorInterface.get_editor_scale()))
 	text.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
 	text.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
 	text.meta_clicked.connect(func(value: Variant) -> void:
@@ -2349,11 +2357,6 @@ func _show_find_match(index: int) -> void:
 	find_index = clampi(index, 0, find_matches.size() - 1)
 	var record: Dictionary = find_matches[find_index]
 	find_count.text = "%d/%d" % [find_index + 1, find_matches.size()]
-	var group_index = int(record.get("group_index", -1))
-	if group_index >= 0 and record["row"].get_parent() == response_groups[group_index]["progress"]:
-		var group: Dictionary = response_groups[group_index]
-		group["progress"].show()
-		_refresh_progress_title(group["progress_toggle"], group["progress"])
 	for block in record["blocks"]:
 		if block["kind"] in ["code", "diagram"] and str(block["source"]).to_lower().contains(find_input.text.to_lower()):
 			block["expanded"] = true
@@ -2368,11 +2371,12 @@ func _show_find_match(index: int) -> void:
 		create_tween().tween_property(record["card"], "self_modulate", Color.WHITE, 0.7)
 
 func show_running_tool(name: String = "", description: String = "") -> void:
+	# Tool state lives in the inline timeline. Keep the legacy node hidden so old
+	# callers cannot create a second, non-durable status row above the composer.
 	if running_tools == null: return
-	running_tools.visible = not name.is_empty()
-	var caption = description.trim_prefix("Running ").replace(" Tool", "") if not description.is_empty() else name.replace("_", " ").capitalize()
-	running_tools.text = "Running Tools · " + caption if not name.is_empty() else ""
-	running_tools.tooltip_text = name
+	running_tools.visible = false
+	running_tools.text = ""
+	running_tools.tooltip_text = ""
 
 func _chat_control_at(control: Control, point: Vector2) -> Control:
 	if not control.is_visible_in_tree() or not control.get_global_rect().has_point(point): return null

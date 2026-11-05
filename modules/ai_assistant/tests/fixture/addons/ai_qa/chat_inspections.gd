@@ -34,12 +34,11 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	panel._chat_tool_event({"kind": "tool_result", "id": "search", "name": "godot_search_code", "arguments": {"query": "move_player"}, "result": {"ok": true, "result": {"matches": [{"path": path, "line": 42, "column": 6, "text": "func move_player():", "before": [{"line": 41, "text": "# movement"}], "after": [{"line": 43, "text": "\tvelocity = direction * speed"}]}]}}}, metadata)
 	chat.append_message("assistant", "Am citit mișcarea și am găsit funcția în [script](res://ai_inspection_probe.gd:42:6).", metadata.merged({"id": "inspect-answer"}))
 	var group: Dictionary = chat.response_groups[-1]
-	check(group["operations_rows"].get_child_count() == 0, "Collapsed inspection history constructs no source widgets")
-	group["operations_toggle"].pressed.emit()
-	var read_column = group["operations_rows"].get_child(0)
-	check(read_column.get_child(1).get_child_count() == 0, "Collapsed read operations defer construction of source previews")
-	read_column.get_child(0).pressed.emit()
-	var details = read_column.get_child(1)
+	check(group["operations"].size() == 2 and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree() and operation["node"].get_parent() == group["content"]), "Inspection tool calls render inline in the conversation")
+	var read_operation: Dictionary = group["operations"][0]
+	check(not read_operation["details"].visible and read_operation["details"].get_child_count() == 0, "Collapsed read operations defer construction of source previews")
+	read_operation["header"].pressed.emit()
+	var details: VBoxContainer = read_operation["details"]
 	var editors = details.find_children("*", "CodeEdit", true, false)
 	check(editors.size() == 1 and editors[0].text.contains("velocity = direction") and not editors[0].text.contains("fixture-private-token"), "Expanded read cards show redacted native source snapshots")
 	var editor: CodeEdit = editors[0]
@@ -68,10 +67,10 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	chat._jump_to_latest()
 	await pause()
 	capture("chat-read-card")
-	read_column.get_child(0).pressed.emit()
-	var search_column = group["operations_rows"].get_child(1)
-	search_column.get_child(0).pressed.emit()
-	var search_details = search_column.get_child(1)
+	read_operation["header"].pressed.emit()
+	var search_operation: Dictionary = group["operations"][1]
+	search_operation["header"].pressed.emit()
+	var search_details: VBoxContainer = search_operation["details"]
 	var snippets = search_details.find_children("*", "CodeEdit", true, false)
 	check(snippets.size() == 1 and snippets[0].text == "# movement\nfunc move_player():\n\tvelocity = direction * speed", "Search cards show the actual match and its numbered neighboring lines")
 	search_details.find_child("InspectionPath", true, false).meta_clicked.emit({"path": path, "line": 42, "column": 6})

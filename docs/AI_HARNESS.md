@@ -184,6 +184,21 @@ into view. It does not load older messages that are not yet in the conversation
 view. While generation is running, 15 seconds without streamed output shows a
 client-side stall warning; the next output or the end of the turn clears it.
 
+### Inline execution timeline (source, 2026-11-05)
+
+Every assistant update in a task remains visible in chronological order; the
+chat no longer moves earlier text into a hidden progress container. Tool calls
+are rendered as inset timeline rows in the same response card. A row is created
+on `tool_started`, updated in place on `tool_result`, and remains after the turn
+ends and after the conversation is restored. The header carries the tool label,
+state icon and duration; a short facts/error summary stays visible. Arguments
+and provider payloads are not copied into the row. Expanded details reuse the
+existing redacted inspection previews and remain collapsed by default for
+successful calls; failed and unknown calls open automatically. Repeated
+provider call IDs create separate restored rows instead of overwriting earlier
+history. The legacy `Running Tools` label remains hidden so tool state has a
+single durable presentation path.
+
 The dedicated QA scenario `chat` exercises these paths in the real editor:
 latest-turn-only Undo/Resend gating, file restoration and history truncation,
 queue restore/remove/resume, measured and estimated metrics, Thinking expansion,

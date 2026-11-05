@@ -2027,12 +2027,16 @@ func _activity_drawer_tests() -> void:
 	chat.clear_messages()
 	chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
 	chat.append_message("user", "Pregătește animațiile personajului și verifică scena.", {"id": "activity-visual-user"})
-	chat.append_message("assistant", "Am verificat proiectul și scriptul. Continui cu animațiile, apoi testez scena.", {"id": "activity-visual-answer"})
+	chat.append_message("assistant", "Am verificat proiectul și scriptul. Continui cu animațiile, apoi testez scena.", {"id": "activity-visual-answer", "turn_id": "activity-visual"})
+	panel.current_origin = {"turn_id": "activity-visual", "origin_label": "Godot AI · activity fixture"}
 	var snapshot = {"turn": "activity-visual", "phase": "executing", "intent": "execute", "steps": [{"step": "Inspectează proiectul și scena", "status": "completed"}, {"step": "Actualizează scriptul personajului", "status": "completed"}, {"step": "Pregătește animațiile personajului", "status": "in_progress"}, {"step": "Verifică tranzițiile și comenzile", "status": "pending"}, {"step": "Testează scena în editor", "status": "pending"}]}
 	chat.begin_work("activity-visual", snapshot)
 	panel.busy = true
 	chat.show_status("Pregătesc animațiile personajului…", true)
 	panel._harness_event({"kind": "tool_started", "id": "activity-animation", "name": "godot_call", "arguments": {}})
+	var inline_group: Dictionary = chat.response_groups[-1]
+	var inline_operation: Dictionary = inline_group["operations"][-1]
+	_check(inline_operation["state"] == "running" and inline_operation["node"].is_visible_in_tree() and inline_operation["node"].get_parent() == inline_group["content"], "Running tool appears inline in the conversation")
 	chat.set_working(true)
 	await get_tree().create_timer(0.2).timeout
 	var between = []
@@ -2059,10 +2063,17 @@ func _activity_drawer_tests() -> void:
 	chat.show_work_plan(snapshot)
 	_check(chat.activity_counter.text == "3/5" and chat.activity_details.visible, "Live plan updates preserve the drawer expansion and advance only confirmed completed steps")
 	panel._harness_event({"kind": "tool_result", "id": "activity-animation", "name": "godot_call", "executed": true, "arguments": {}, "result": {"ok": false, "code": "permission_denied", "error": "Operația nu a fost autorizată."}})
-	_check(JSON.parse_string(panel.journal.back()["result"]).get("code") == "permission_denied" and not chat.running_tools.visible, "Denied tool results stay in Jurnal and hide the active tool without claiming completion")
+	inline_operation = chat.response_groups[-1]["operations"][-1]
+	_check(inline_operation["state"] == "failed" and inline_operation["details"].visible and inline_operation["node"].is_visible_in_tree(), "Denied tool result remains inline and opens its details")
+	_check(JSON.parse_string(panel.journal.back()["result"]).get("code") == "permission_denied" and not chat.running_tools.visible, "Denied tool results stay inline and in Jurnal without a duplicate active row")
+	chat.append_message("assistant", "Rezultatul operației este disponibil.", {"id": "activity-visual-final", "turn_id": "activity-visual"})
+	var visible_assistant = chat.message_records.filter(func(record: Dictionary) -> bool: return record["role"] == "assistant" and str(record["metadata"].get("turn_id", "")) == "activity-visual")
+	_check(visible_assistant.size() >= 2 and visible_assistant.all(func(record: Dictionary) -> bool: return record["row"].is_visible_in_tree()), "Intermediate assistant messages remain visible in the conversation")
 	snapshot.phase = "paused"
 	chat.show_work_plan(snapshot)
 	chat.finish_work("activity-visual", "cancelled")
+	inline_operation = chat.response_groups[-1]["operations"][-1]
+	_check(inline_operation["node"].is_visible_in_tree(), "Finished tool history remains visible after the turn ends")
 	panel.busy = false
 	chat.set_working(false)
 	_check(chat.activity_counter.text == "3/5" and chat.status.text.contains("întreruptă") and chat.work_plan.steps[4].status == "pending", "Stopping keeps unfinished tasks visible without claiming full completion")
@@ -3035,9 +3046,9 @@ func _populated_chat_tests() -> void:
 	await get_tree().create_timer(0.2).timeout
 	_check(is_instance_valid(anchor) and assistant["body"].get_instance_id() == body_id and absf(assistant["card"].size.y - before) < 2, "Completion keeps the same message widgets and layout")
 	_check(not assistant["actions"][0].disabled and assistant["metadata"]["id"] == "visual-answer", "Completed message actions bind to the stored conversation message")
-	_check(panel.chat.running_tools is Label and not panel.chat.running_tools.visible and panel.chat.running_tools.get_child_count() == 0, "The non-expandable Running Tools row stays hidden after completion")
+	_check(panel.chat.running_tools is Label and not panel.chat.running_tools.visible and panel.chat.running_tools.get_child_count() == 0, "The legacy Running Tools row stays hidden after completion")
 	panel.chat.show_running_tool("godot_script_diagnostics")
-	_check(panel.chat.running_tools.visible and panel.chat.running_tools.text == "Running Tools · Godot Script Diagnostics" and panel.chat.running_tools.tooltip_text == "godot_script_diagnostics", "Running Tools describes the active tool and retains its exact name in the tooltip")
+	_check(not panel.chat.running_tools.visible and panel.chat.running_tools.text.is_empty() and panel.chat.running_tools.tooltip_text.is_empty(), "The legacy transient tool label stays hidden while the inline timeline owns active state")
 	panel.chat.show_running_tool()
 	panel.config["providers"] = [{"id": "visual-provider", "name": "DeepSeek", "issuer": "deepseek", "kind": "chat", "url": "https://api.deepseek.com", "models": [{"id": "visual-code", "name": "Model de probă"}]}]
 	panel._refresh_lists()
