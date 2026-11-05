@@ -8,6 +8,30 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Livrare APK guard tastatură — 5.11.2026
+
+**Compilat din sursa `66cdb44287740f6153e084204b3e034d33d55d82`** prin
+workflow-ul `Godot AI Android`
+[`42071054030`](https://github.com/JDscript1/godot-ai-android/actions/runs/42071054030).
+Jobul `android` a încheiat cu succes; `runtime` și `native-editor` au rămas
+roșii din verificările cunoscute de ordine/layout.
+
+- APK Ziva: **112.598.266 bytes**, `com.jdscript.godotai.ziva.debug`, versiune
+  `4.7.2.stable`, ARM64.
+- SHA-256:
+  `6b9e7983b8c931a022162ce5edf881fbe27385866483e8894be648cce6b75384`.
+- Livrat în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu
+  checksum alăturat.
+- Verificat: hash-ul coincide, `unzip -t` este curat, `aapt` confirmă pachetul
+  Ziva debug ARM64, `apksigner` confirmă semnătura persistentă.
+- Corecția inclusă: `_chat_touch` ignoră tastele și celelalte evenimente fără
+  poziție, eliminând eroarea `InputEventKey.position`.
+- **APK-ul nu a fost instalat automat.** Proba fizică pe tastatură rămâne
+  separată.
+
+Jurnal: 5.11.2026 — livrat APK-ul Ziva cu guard pentru evenimentele de
+tastatură; artifact verificat, fără instalare automată.
+
 ## Guard pentru evenimentele de tastatură în chat — 5.11.2026
 
 **Defect raportat în consolă.** La tastarea în chat, cu săgeata „mergi la

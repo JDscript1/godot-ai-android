@@ -7,7 +7,7 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 The original harness shipped in APK `12794c4`. The latest delivered Ziva APK is
-`c42b250` (5 November 2026), including the live status feed, emoji fallback,
+`66cdb44` (5 November 2026), including the live status feed, emoji fallback,
 bidirectional Ziva relay, clarification gate, and locked chat workspace. The
 APK was verified but not installed automatically. Normal execution has no fixed
 step limit. Delivery evidence is tracked in
