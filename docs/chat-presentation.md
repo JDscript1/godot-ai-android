@@ -24,7 +24,9 @@ O sarcină afișează, în ordine cronologică:
 Sub antetul sarcinii, panoul **Agentul gândește…** arată chiar și restrâns
 ultimele trei evenimente live: starea curentă și fiecare unealtă pornită sau
 încheiată. Extinderea dezvăluie feed-ul complet, cu maximum 30 de evenimente,
-deasupra pașilor planului. Nu este afișat raționamentul privat al modelului.
+deasupra pașilor planului. Feed-ul este tranzitoriu: după terminare, panoul se
+ascunde dacă nu mai există pași sau sarcini persistente. Nu este afișat
+raționamentul privat al modelului.
 
 Intervenția utilizatorului întrerupe gruparea vizuală, chiar dacă este Steer
 în aceeași sarcină. Mesajele vechi nu sunt mutate după intervenție. Consumul
@@ -146,5 +148,6 @@ editor. Pe 5 noiembrie 2026 au trecut cu 143/0, 73/0, 82/0, 79/0, 81/0, 88/0,
 70/0, respectiv 82/0; suita runtime a avut 945/0. Dovezile locale sunt în
 `.ai-qa/chat-ziva-live-20261105/`.
 
-Aceste probe folosesc Godot Linux în PRoot și rezultate deterministe. Nu sunt
-o probă fizică Android și nu confirmă un APK nou sau un furnizor live.
+Aceste probe folosesc Godot Linux în PRoot și rezultate deterministe. APK-ul
+Ziva `c42b250` include aceste surse și a fost verificat, dar probele nu sunt o
+probă fizică Android și nu confirmă un furnizor live.

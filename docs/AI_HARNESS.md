@@ -6,10 +6,11 @@ embedded in the editor binary by `runtime_builder.py`, alongside the other
 editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
-The original harness shipped in APK `12794c4`. The latest delivered APK is
-`47cc26e` (28 October 2026), including the current source improvements. The last
-separately verified installation is `74887a1`; the new APK was not installed
-automatically. Normal execution has no fixed step limit. Delivery evidence is tracked in
+The original harness shipped in APK `12794c4`. The latest delivered Ziva APK is
+`c42b250` (5 November 2026), including the live status feed, emoji fallback,
+bidirectional Ziva relay, clarification gate, and locked chat workspace. The
+APK was verified but not installed automatically. Normal execution has no fixed
+step limit. Delivery evidence is tracked in
 [the project progress record](../PROGRES_SI_PLAN.md).
 
 ## Stability iteration, 2026-10-27 (source)

@@ -21,7 +21,9 @@ corecții cerute direct din utilizarea pe telefon:
 - Panoul **Agentul gândește…** afișează acum, chiar și restrâns, ultimele trei
   evenimente live: starea curentă și fiecare unealtă pornită/încheiată, cu
   iconiță, titlu și detaliu în tooltip. Extinderea păstrează istoricul complet
-  de maximum 30 de evenimente deasupra pașilor planului.
+  de maximum 30 de evenimente deasupra pașilor planului. Feed-ul este tranzitoriu:
+  după terminare, panoul se ascunde dacă nu mai există pași sau sarcini
+  persistente, ca să nu rămână un status „Finalizat” lipit de composer.
 - Cardurile inline de unelte sunt mai compacte: padding 7, separare 2, antet
   de 30 px și rezumat doar pentru erori sau rezultate neconfirmate.
 - Butonul plutitor „mergi la ultimul mesaj” se ascunde când ar acoperi un
@@ -56,15 +58,48 @@ corecții cerute direct din utilizarea pe telefon:
 Probele noi acoperă copierea mesajului propriu, fallback-ul emoji, feed-ul
 live restrâns, blocarea panourilor inferioare în fereastra extinsă, poziția
 butonului de salt, instrucțiunea de clarificare și mesageria Ziva în ambele
-direcții. Dovezile locale sunt în `.ai-qa/chat-ziva-live-20261105/`.
+direcții. Scenariul agregat `all` a rulat 973 de verificări și a păstrat șapte
+eșecuri de ordine/layout la 480×900, în afara scenariilor țintite. Dovezile
+locale sunt în `.ai-qa/chat-ziva-live-20261105/`.
 
-**Limite.** APK-ul nu a fost încă recompilat din această etapă; emoji,
-clipboard-ul, tastatura și fereastra blocată nu au fost probate fizic pe
+**Limite.** APK-ul a fost compilat ulterior; vezi livrarea de mai jos.
+Emoji, clipboard-ul, tastatura și fereastra blocată nu au fost probate fizic pe
 Android. Puntea Ziva folosește bridge-ul simulat al fixture-ului, nu o sesiune
 Ziva live; niciun furnizor real nu a fost apelat.
 
 Jurnal: 5.11.2026 — chat live, emoji, copiere, mesagerie Ziva bidirecțională,
 clarificări Plan și fereastră blocată; verificat în editor.
+
+## Livrare APK chat live și Ziva bidirecțional — 5.11.2026
+
+**Compilat din sursa `c42b2507740b2f899bd1694e624947b3bd158616`** prin
+workflow-ul `Godot AI Android`
+[`41996805039`](https://github.com/JDscript1/godot-ai-android/actions/runs/41996805039).
+Jobul `android` a încheiat cu succes; `runtime` și `native-editor` au rămas
+roșii din cauza verificărilor de layout în ordine, nu a artefactului Android.
+
+- APK Ziva: **112.599.406 bytes**, `com.jdscript.godotai.ziva.debug`, versiune
+  `4.7.2.stable`, ARM64.
+- SHA-256:
+  `7fae546f020fef81084316ccbbdcb098683fbefb1540915689f978196cfdea33`.
+- Livrat în:
+  `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu checksum alăturat
+  `Godot-AI-Ziva-debug.apk.sha256`.
+- Verificat local: hash-ul coincide cu artefactul, `unzip -t` este curat,
+  `aapt` confirmă pachetul Ziva debug și ARM64, `apksigner` confirmă semnătura
+  persistentă `CN=Godot AI Android Debug`.
+- CI a verificat byte cu byte toate sursele runtime în biblioteca nativă; în
+  APK apar markerii `ActivityLivePreview`, `receive_ziva_message` și
+  `ziva_relay_answer`.
+- Rezultate CI pentru render pe upstream Godot: `desktop`, `narrow` și `wide`
+  **973/0**; `phone_landscape` are trei eșecuri cunoscute de ordine/layout
+  (link proiect, metadată forjată, scroll coadă). Jobul `native-editor` are
+  separat 38 de eșecuri de ordine pe editorul nativ.
+- **APK-ul nu a fost instalat automat.** Clipboard-ul, emoji, tastatura,
+  fereastra blocată și puntea Ziva pe Android rămân probe fizice separate.
+
+Jurnal: 5.11.2026 — livrat APK-ul Ziva cu chat live, emoji, copiere, blocare
+și mesagerie Ziva bidirecțională; artifact verificat, fără instalare automată.
 
 ## Chat timeline inline și mesaje persistente — 5.11.2026
 

@@ -20,9 +20,10 @@ planning 81/0. APK-ul și proba pe dispozitivul fizic rămân verificări separa
 Conversația afișează ultimele trei evenimente de lucru direct sub antetul
 „Agentul gândește…”, fără să fie nevoie de extindere: starea curentă și fiecare
 unealtă pornită sau încheiată, cu iconiță și titlu. Extinderea păstrează feed-ul
-complet deasupra pașilor planului. Mesajele asistentului și ale utilizatorului
-primesc fallback de emoji prin fontul de sistem; mesajele proprii au un buton
-compact de copiere.
+complet deasupra pașilor planului. Feed-ul dispare după terminare când nu mai
+există pași sau sarcini persistente, ca să nu lase un status vechi deasupra
+composer-ului. Mesajele asistentului și ale utilizatorului primesc fallback de
+emoji prin fontul de sistem; mesajele proprii au un buton compact de copiere.
 
 Butonul de extindere este tratat ca o blocare a ferestrei agentului. Cât timp
 este activ, orice panou inferior care ar reduce conversația este închis din nou
@@ -37,8 +38,9 @@ Butonul plutitor de salt se ascunde când ar acoperi un buton acționabil, astfe
 Verificat pe Godot 4.7 headless/VNC: runtime 945/0, `presentation` 143/0,
 `activity` 73/0, `chat` 82/0, `inspections` 79/0, `planning` 81/0, `ziva` 88/0,
 `workspace` 70/0 și `controls` 82/0 pe fixture proaspăt. Dovezi:
-`.ai-qa/chat-ziva-live-20261105/`. APK-ul, clipboard-ul Android, tastatura și
-puntea Ziva live rămân verificări separate.
+`.ai-qa/chat-ziva-live-20261105/`. APK-ul Ziva `c42b250` a fost compilat și
+verificat; clipboard-ul Android, tastatura, emoji și puntea Ziva live rămân
+verificări fizice separate.
 
 ## Corecții după audit — 28 octombrie 2026
 
