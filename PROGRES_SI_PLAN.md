@@ -35,6 +35,29 @@ dispozitiv rămâne separată.
 Jurnal: 5.11.2026 — mesaje assistant persistente, timeline inline pentru
 unelte, detalii la cerere și layout aerisit; verificat pe trei dimensiuni.
 
+## Livrare APK chat timeline — 5.11.2026
+
+**Compilat din sursa `9cf37bc05239e4328531f0ce851f840d75b0ca53`** prin
+workflow-ul `Godot AI Android`
+[`41975980542`](https://github.com/JDscript1/godot-ai-android/actions/runs/41975980542).
+Jobul `android` a încheiat cu succes și a publicat artefactul Ziva; joburile
+`runtime` și `native-editor` au raportat în continuare eșecurile suplimentare
+ale suitei agregate de layout, fără a bloca artefactul.
+
+- APK Ziva: **112.593.714 bytes**, `com.jdscript.godotai.ziva.debug`,
+  versiune `4.7.2.stable`, ARM64.
+- SHA-256:
+  `7c13df44c16d18848bb3d27f2691668157227773055d4fdee8d544b3b37d09ea`.
+- Înlocuit în:
+  `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu checksum alăturat.
+- Verificat: hash-ul coincide cu artefactul, `unzip -t` este curat, badging-ul
+  confirmă pachetul Ziva debug și ARM64. APK-ul nu a fost instalat automat.
+- Testele țintite ale chatului au trecut înainte de build: runtime 945/0,
+  chat 82/0, presentation 140/0, inspections 79/0, activity 69/0, todo 122/0.
+
+Jurnal: 5.11.2026 — livrat APK-ul Ziva al timeline-ului inline; build Android
+reușit, suita agregată de layout rămasă separată.
+
 ## Livrare locală Ziva — 5.11.2026
 
 **Compilat din sursa `a6f37fa47410e632f6473db7d62043b2d1afc7ca`** prin
