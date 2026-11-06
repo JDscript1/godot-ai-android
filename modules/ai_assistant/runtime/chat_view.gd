@@ -667,7 +667,9 @@ func begin_work(turn: String, snapshot: Dictionary = {}, resuming: bool = false)
 
 func finish_work(turn: String, outcome: String) -> void:
 	if work_turn != turn: return
+	if work_outcome == outcome and not work_live and not work_notice_running: return
 	show_running_tool()
+	set_generating(false)
 	if live_plan_card == turn: live_plan_card = ""
 	work_live = false
 	work_notice_running = false
@@ -736,10 +738,8 @@ func _refresh_activity_feed() -> void:
 		for child in activity_live_rows.get_children():
 			activity_live_rows.remove_child(child)
 			child.queue_free()
-		for event in activity_feed.slice(maxi(0, activity_feed.size() - 3)):
-			_activity_feed_row(activity_live_rows, event, true)
-		activity_live_rows.visible = true
-		activity_live_inset.visible = not activity_expanded and (_work_running() or activity_feed.any(func(event: Dictionary) -> bool: return event.get("state") == "running"))
+		activity_live_rows.hide()
+		activity_live_inset.hide()
 	_layout_activity.call_deferred()
 
 func _activity_feed_row(parent: VBoxContainer, event: Dictionary, compact: bool) -> void:
@@ -783,18 +783,26 @@ func _refresh_activity(rebuild: bool = false) -> void:
 	activity_panel.visible = details or not work_message.is_empty()
 	status.visible = activity_panel.visible
 	var heading = work_message
+	if work_live and (heading.is_empty() or " · lucrează" in heading):
+		for index in range(activity_feed.size() - 1, -1, -1):
+			var event: Dictionary = activity_feed[index]
+			if event.get("kind") == "tool" and event.get("state") == "running":
+				heading = str(event.get("title", ""))
+				break
 	var active = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "in_progress")
 	if heading.is_empty() or " · lucrează" in heading or " · continuă pașii" in heading:
 		if work_outcome == "blocked" or work_plan.get("phase") == "blocked": heading = "Sarcină blocată"
 		elif work_outcome in ["failed", "limited"]: heading = "Necesită verificare"
 		elif work_outcome == "cancelled" or work_plan.get("phase") == "paused": heading = "Sarcină întreruptă"
+		elif not work_live and work_jobs.any(func(job: Dictionary) -> bool: return job.get("status") == "running"): heading = "Sarcini în fundal"
 		elif work_outcome == "completed": heading = "Plan pregătit" if work_plan.get("intent") == "propose" else "Finalizat"
 		elif not active.is_empty(): heading = str(active[0].get("step", ""))
 		else: heading = "Agentul gândește…" if _work_running() else "Activitate"
 	status.text = heading
 	status.tooltip_text = heading
 	var done = steps.filter(func(step: Dictionary) -> bool: return step.get("status") == "completed").size()
-	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else ("%s acțiuni" % activity_feed.size() if not activity_feed.is_empty() else ""))
+	var operations = activity_feed.filter(func(event: Dictionary) -> bool: return event.get("kind") == "tool").size()
+	activity_counter.text = "%s/%s" % [done, steps.size()] if not steps.is_empty() else ("%s sarcini" % work_jobs.size() if not work_jobs.is_empty() else (("1 operație" if operations == 1 else "%s operații" % operations) if operations > 0 else ""))
 	activity_counter.visible = not activity_counter.text.is_empty()
 	activity_counter.tooltip_text = "%s din %s pași finalizați" % [done, steps.size()] if not steps.is_empty() else ("Sarcinile acestei cereri" if not work_jobs.is_empty() else "Activitatea live a acestei cereri")
 	activity_chevron.visible = details
@@ -804,7 +812,7 @@ func _refresh_activity(rebuild: bool = false) -> void:
 	activity_toggle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if details else Control.CURSOR_ARROW
 	activity_details.visible = activity_expanded and details
 	if activity_feed_rows != null: activity_feed_rows.visible = activity_expanded and not activity_feed.is_empty()
-	if activity_live_inset != null: activity_live_inset.visible = not activity_expanded and not activity_feed.is_empty() and (_work_running() or activity_feed.any(func(event: Dictionary) -> bool: return event.get("state") == "running"))
+	if activity_live_inset != null: activity_live_inset.hide()
 	activity_indicator.queue_redraw()
 	activity_dirty = activity_dirty or rebuild
 	if activity_expanded and activity_dirty:
@@ -1696,7 +1704,7 @@ func _sync_response(group: Dictionary) -> void:
 			record["row"].reparent(group["content"])
 		var empty = str(record["text"]).is_empty() and not record["streaming"] and record["metadata"].get("reasoning_content", "").is_empty()
 		record["row"].visible = not empty
-	var outcome = str(group.get("outcome", ""))
+	var outcome = "" if work_live and group["turn"] == work_turn else str(group.get("outcome", ""))
 	var captions = {"completed": "Rezultat", "cancelled": "Întrerupt", "blocked": "Blocat", "failed": "Eșuat", "limited": "Necesită verificare"}
 	group["state"].text = str(captions.get(outcome, "În lucru" if work_live and group["turn"] == work_turn else ""))
 	group["state"].visible = not group["state"].text.is_empty()
@@ -1819,12 +1827,13 @@ func _update_tool_row(operation: Dictionary) -> void:
 	if not operation.has("header") or not is_instance_valid(operation["header"]): return
 	var state = str(operation.get("state", "running"))
 	var icons = {"running": "◌", "completed": "✓", "failed": "!", "unknown": "?", "cancelled": "Ⅱ"}
-	var duration = ""
-	if int(operation.get("duration_ms", 0)) > 0: duration = " · " + _duration_label(int(operation["duration_ms"]))
+	var parts: Array[String] = [str(operation.get("title", operation.get("name", "Tool")))]
 	var path = str(operation.get("path", ""))
-	var target = " · " + path.get_file() if not path.is_empty() else ""
+	var filename = path.get_file().strip_edges()
+	if filename not in ["", ".", ".."]: parts.append(filename)
+	if int(operation.get("duration_ms", 0)) > 0: parts.append(_duration_label(int(operation["duration_ms"])))
 	var chevron = "▾" if operation.get("expanded", false) else "▸"
-	operation["header"].text = chevron + " " + str(icons.get(state, "○")) + " " + str(operation.get("title", operation.get("name", "Tool"))) + target + duration
+	operation["header"].text = chevron + " " + str(icons.get(state, "○")) + " " + " · ".join(parts)
 	operation["header"].tooltip_text = str(operation.get("name", "")) + " · " + str(operation.get("state", "")) + ("\n" + path if not path.is_empty() else "") + "\nAtinge pentru detalii"
 	operation["header"].button_pressed = bool(operation.get("expanded", false))
 	operation["header"].add_theme_color_override("font_color", Color("d2b47f") if state in ["failed", "unknown"] else Color("9da8bb"))
@@ -1991,12 +2000,18 @@ func _markdown(target: RichTextLabel, text: String) -> void:
 
 func _size_user(record: Dictionary) -> void:
 	var scale = EditorInterface.get_editor_scale()
-	var available = maxf(thread.size.x, thread.custom_minimum_size.x)
-	var font = get_theme_font("font", "Label")
+	var available = maxf(1.0, scroll.size.x - 24 * scale)
 	var width = 0.0
-	for line in str(record["text"]).split("\n"):
-		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, get_theme_font_size("font_size", "Label")).x)
-	var wanted = minf(maxf(64 * scale, width), available * 0.74)
+	for block in record["blocks"]:
+		if block["kind"] != "text":
+			width = available * 0.74
+			continue
+		var text: RichTextLabel = block["node"]
+		var font: Font = text.get_theme_font("normal_font")
+		var font_size = text.get_theme_font_size("normal_font_size")
+		for line in text.get_parsed_text().split("\n"):
+			width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
+	var wanted = minf(maxf(64 * scale, ceilf(width) + 8 * scale), available * 0.74)
 	if not record["metadata"].get("attachments", []).is_empty() or not record["metadata"].get("files", []).is_empty(): wanted = minf(320 * scale, available * 0.74)
 	record["card"].custom_minimum_size.x = wanted
 	record["card"].custom_maximum_size.x = wanted
@@ -2301,6 +2316,8 @@ func _refresh_message_controls(record: Dictionary) -> void:
 			popup.set_item_disabled(popup.get_item_index(1), record["streaming"] or not is_latest or not completed)
 
 func set_turn_outcome(turn: String, status: String) -> void:
+	if turn == work_turn and status in ["completed", "failed", "cancelled", "blocked", "limited"]:
+		finish_work(turn, status)
 	for record in message_records:
 		if record["metadata"].get("turn_id") != turn: continue
 		record["metadata"]["run_status"] = status

@@ -1,12 +1,62 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **6 noiembrie 2026**.
+Ultima actualizare: **7 noiembrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
 în surse”, „testat în editor”, „compilat în APK” și „verificat pe dispozitiv”
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
+
+## Rectificări după capturile Android — 7.11.2026
+
+**Probleme reproduse.** Capturile `Screenshot_20261106_135716.jpg`,
+`Screenshot_20261106_135722.jpg` și `Screenshot_20261106_135737.jpg` au motivat
+probe dedicate. Pe sursa anterioară, proba `presentation` a avut **158 verificări
+și 6 eșecuri**: mesaj scurt împărțit inutil pe rânduri, activitate restrânsă prea
+înaltă, lipsa operației curente în antet, separator gol pentru `res://`, rezultat
+terminal fără oprirea lucrului și panou de activitate rămas vizibil.
+Nu există o trasă a furnizorului din capturi care să stabilească motivul exact
+al răspunsului incomplet afișat pe telefon.
+
+**Corectat în surse.** Mesajele utilizatorului folosesc fontul și mărimea reale
+pentru calcularea lățimii. Antetele uneltelor omit fișierul gol. Activitatea
+restrânsă are un singur rând, cu unealta curentă și numărul operațiilor efective;
+feed-ul complet rămâne la extindere. Starea terminală încheie în aceeași
+tranziție lucrul și indicatorul cererii, fără să oprească o cerere mai nouă.
+
+Analiza harness-ului a găsit și o cale care marca finalizat un răspuns gol.
+După verificările existente pentru plan și dovezi, cere acum o singură explicație
+vizibilă folosind rezultatele deja obținute, fără tool-uri executabile. Un al
+doilea răspuns gol sau tentativa de apelare a unei unelte în această recuperare
+produce eroarea explicită `empty_response`; operațiile nu sunt repetate.
+Instrucțiunile pentru detaliile scenei cer ierarhia observată, tipuri, scripturi
+și setări relevante, separând fișierele salvate de observațiile runtime.
+Efectul acestor instrucțiuni cu un furnizor real rămâne de verificat.
+
+**Verificat local.** Godot `4.7.stable.termux`, fixture-uri izolate și Xvnc:
+
+- runtime: **949 aserțiuni / 0 eșecuri**, inclusiv recuperarea limitată a unui
+  răspuns gol și prevenirea repetării operațiilor;
+- `presentation`: **158/0** pe narrow și **158/0** pe phone_landscape;
+- `activity`: **73/0**; `chat`: **82/0**; `chat_lifecycle`: **88/0**;
+  `inspections`: **79/0**;
+- capturile rezultatului rectificat pe narrow/phone_landscape și activității
+  restrânse inspectate vizual; fără erori GDScript în aceste rulări;
+- proba dedicată `chat` la rezoluția problematică `2048×922`: **82/0**,
+  inclusiv derularea până la ultimul card din coadă; suita CI completă rămâne
+  o verificare separată;
+- `git diff --check` curat.
+
+Dovezi: `.ai-qa/chat-rectifications-20261107/`, inclusiv `baseline/`,
+`runtime.log`, `rendered/`, rapoartele JSON, capturi și scripturi reproductibile.
+Aceste probe folosesc widgeturi reale și rezultate deterministe; nu confirmă
+un furnizor live sau comportamentul tactil Android. Starea livrării APK este
+consemnată separat după compilare și verificarea artefactului.
+
+Jurnal: 7.11.2026 — reproduse șase eșecuri și rectificate afișarea mesajelor,
+activitatea și încheierea cererii; adăugată recuperarea unui răspuns gol, fără
+reexecutarea operațiilor; runtime și șase probe editor fără eșecuri.
 
 ## Livrare APK cu prezentarea nouă a chatului — 6.11.2026
 

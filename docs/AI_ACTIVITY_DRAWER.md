@@ -1,14 +1,16 @@
 # Bara de activitate și progresul sarcinilor
 
-Actualizat: 24.10.2026. Implementare în surse, după APK-ul livrat `36457dd`.
-Această etapă nu recompilează și nu înlocuiește APK-ul din Download.
+Actualizat: 7.11.2026. Starea compilării și livrării curente este consemnată în
+[PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 
 ## Comportament
 
 Bara de status stă imediat deasupra câmpului de mesaj, în afara zonei derulabile
 a conversației. Rămâne în aceeași poziție când agentul scrie sau când utilizatorul
 citește mesaje anterioare. Forma închisă are un indicator discret, activitatea
-curentă, progresul de tip `2/5` și săgeata de extindere.
+curentă, progresul de tip `2/5` și săgeata de extindere. Ocupă un singur rând;
+feed-ul operațiilor apare la extindere. În absența unui plan, contorul numără
+apelurile efective de unelte, fără notificările de pregătire sau status.
 
 Apăsarea barei deschide detaliile în sus, păstrând câmpul de mesaj accesibil:
 
@@ -27,7 +29,9 @@ nu apare derulare orizontală. Sunt afișate toate etapele planului și ultimele
 
 Oprirea nu bifează pașii rămași. Operațiile fără rezultat confirmat devin
 întrerupte, refuzul unei permisiuni rămâne blocat, iar progresul parțial rămâne
-disponibil. După finalizare, bara poate fi redeschisă pentru verificare. Cererea
+disponibil. Publicarea rezultatului terminal oprește în aceeași tranziție
+indicatorul cererii curente. După finalizare, bara poate fi redeschisă dacă
+există un plan sau sarcini persistente; inspecțiile simple o ascund. Cererea
 nouă începe cu o listă nouă și ignoră notificările sarcinilor vechi.
 
 La reîncărcarea conversației, bara se reconstruiește din planul, mesajele și

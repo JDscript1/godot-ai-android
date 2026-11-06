@@ -23,6 +23,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	panel = target
 	chat = panel.chat
 	chat.motion_enabled = false
+	await rectification_checks()
 	chat.clear_messages()
 	chat.append_message("user", "Construiește o poiană cu o potecă și copaci.", {"id": "presentation-user", "turn_id": "presentation"})
 	var user_record: Dictionary = chat.message_records[0]
@@ -296,3 +297,42 @@ func response_style_example() -> void:
 	check(group["operations"].all(func(operation: Dictionary) -> bool: return not operation["details"].visible and operation["node"].get_theme_stylebox("panel").bg_color.a == 0.0), "A normal answer preserves compact tools before its readable final text")
 	check(answer.get_meta("message")["blocks"].size() >= 4, "Result, short list, try-it instruction and verification limit remain separate readable blocks")
 	capture("chat-response-ziva-style")
+
+func rectification_checks() -> void:
+	chat.clear_messages()
+	chat.thread.alignment = BoxContainer.ALIGNMENT_BEGIN
+	var origin = {"turn_id": "rectification", "origin_label": "Godot AI · verificare interfață"}
+	var user = chat.append_message("user", "vreau detaliile scenei", origin.merged({"id": "rectify-user"}))
+	await pause()
+	chat._size_messages()
+	await pause()
+	var user_record: Dictionary = user.get_meta("message")
+	var user_text: RichTextLabel = user_record["blocks"][0]["node"]
+	check(user_text.get_line_count() == 1, "A short user question uses the rendered font width and stays on one line when space permits")
+	var long_user = chat.append_message("user", "Detaliază scena și scripturile. ".repeat(18), {"id": "rectify-long"})
+	await pause()
+	check(long_user.get_meta("message")["card"].size.x <= chat.scroll.size.x and long_user.get_meta("message")["blocks"][0]["node"].get_line_count() > 1, "Long user messages wrap within the conversation instead of widening the viewport")
+	chat.clear_messages()
+	chat.append_message("user", "vreau detaliile scenei", origin.merged({"id": "rectify-user"}))
+	chat.begin_work("rectification")
+	chat.show_status("Default · lucrează", true)
+	panel._chat_tool_event({"kind": "tool_started", "id": "rectify-tree", "name": "godot_scene_tree"}, origin)
+	await pause()
+	check(not chat.activity_live_inset.visible and chat.activity_panel.size.y <= 48 * EditorInterface.get_editor_scale(), "Collapsed activity reserves a single status row instead of repeating inline tool history")
+	check(chat.status.text.contains("Scene Tree") or chat.status.text.contains("scena"), "The compact activity header identifies the current inspection")
+	panel._chat_tool_event({"kind": "tool_result", "id": "rectify-tree", "name": "godot_scene_tree", "duration_ms": 100, "executed": true, "result": {"ok": true, "result": {"path": "res://"}}}, origin)
+	var group: Dictionary = chat.response_groups[-1]
+	var header: Button = group["operations"][-1]["header"]
+	check(not header.text.replace(" ", "").contains("··"), "Root paths cannot create an empty filename separator in tool titles")
+	chat.append_message("assistant", "Scena conține un nod rădăcină și un script. Aceasta este o probă UI, nu inspecția proiectului tău.", origin.merged({"id": "rectify-answer"}))
+	chat.set_turn_outcome("rectification", "completed")
+	await pause()
+	check(not chat._work_running() and group["state"].text == "Rezultat", "Publishing a terminal result also stops foreground thinking in the same transition")
+	check(not chat.activity_panel.visible, "A finished inspection without a plan or child jobs leaves no stale activity panel")
+	capture("chat-rectified-status")
+	chat.begin_work("rectification-next")
+	chat.set_turn_outcome("rectification", "completed")
+	check(chat.work_live and chat.work_turn == "rectification-next", "Finishing an older response cannot stop a newer request")
+	chat.finish_work("rectification-next", "cancelled")
+	chat.reset_work()
+	chat.clear_messages()

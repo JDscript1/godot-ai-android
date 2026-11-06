@@ -80,6 +80,8 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 	var metadata: Dictionary = options.get("metadata", {})
 	var last_text = ""
 	var empty_rounds = 0
+	var empty_answers = 0
+	var answer_only = false
 	var repeated_result = ""
 	var repeated_count = 0
 	_transition("running")
@@ -95,13 +97,15 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		stats["steps"] = step
 		if _deliver_steering(metadata) > 0:
 			empty_rounds = 0
+			empty_answers = 0
+			answer_only = false
 			repeated_count = 0
 			repeated_result = ""
 		if _checkpoint_failed: return _finish("failed", "Intervenția nu a putut fi salvată.", "checkpoint_failed", last_text)
 		_tool_budget = _batch_limit()
 		var continuation_hint = _continuation_hint
 		_continuation_hint = ""
-		definitions = registry.active_definitions()
+		definitions = [] if answer_only else registry.active_definitions()
 		var declared = {}
 		for definition in definitions: declared[definition["name"]] = true
 		var context: Array = _hooks["context"].call() if _hooks.get("context", Callable()).is_valid() else _messages.duplicate(true)
@@ -169,6 +173,7 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		var validation = _validate_response(response)
 		if not validation.is_empty(): return _finish("failed", validation, "invalid_response", last_text)
 		var calls: Array = response.get("calls", [])
+		if answer_only and not calls.is_empty(): return _finish("failed", "Modelul nu a furnizat explicația cerută. Operațiile încheiate nu au fost repetate.", "empty_response", last_text)
 		var message: Dictionary = _safe(response["message"])
 		message.merge(metadata, true)
 		message["role"] = "assistant"
@@ -197,6 +202,8 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 		if calls.is_empty():
 			if _deliver_steering(metadata) > 0:
 				empty_rounds = 0
+				empty_answers = 0
+				answer_only = false
 				continue
 			var finish = str(response.get("finish", ""))
 			if finish in ["length", "MAX_TOKENS", "max_tokens"]:
@@ -226,6 +233,13 @@ func run(options: Dictionary, hooks: Dictionary) -> Dictionary:
 					_repair_hint = "Completion has not been verified. " + problem + " Continue with the required checks or report the concrete blocker; do not repeat a success claim."
 					event.emit({"kind": "verification_required", "message": problem})
 					continue
+			if last_text.strip_edges().is_empty():
+				empty_answers += 1
+				if empty_answers >= 2: return _finish("failed", "Modelul nu a furnizat un răspuns vizibil după reîncercare. Rezultatele operațiilor executate au fost păstrate.", "empty_response", last_text)
+				answer_only = true
+				_repair_hint = "Your last response had no user-visible answer. Answer the latest user request using the results already obtained. State actual findings and limitations; do not repeat completed tool operations merely to produce a summary. Return visible answer text, not private reasoning."
+				event.emit({"kind": "empty_answer", "attempt": empty_answers})
+				continue
 			return _finish("completed", "Finalizat.", "", last_text)
 		empty_rounds = 0
 		var stalled = false

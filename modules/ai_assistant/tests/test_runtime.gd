@@ -1370,6 +1370,19 @@ func _harness_tests(node: Node) -> void:
 	check(outcome.get("duration_ms", -1) >= 0 and events.filter(func(item: Dictionary) -> bool: return item.get("kind") in ["message", "tool_result"]).all(func(item: Dictionary) -> bool: return item.get("duration_ms", -1) >= 0), "Harness records total, provider-response and tool durations without publishing reasoning")
 	check(not "fixture-secret" in JSON.stringify(messages) and not "fixture-secret" in JSON.stringify(events), "Harness transcripts and events redact credentials")
 	check(host.checkpoints.any(func(value: Dictionary) -> bool: return value.get("status") == "waiting_tool") and host.checkpoints[-1].get("status") == "completed", "Harness checkpoints before side effects and after settlement")
+	var empty_host = HarnessHost.new()
+	empty_host.replies = [_agent_response("", [call]), _agent_response("  "), _agent_response("The scene contains the observed nodes.")]
+	var empty_recovered = await core.run({"messages": [{"role": "user", "content": "Describe the scene"}], "tools": definitions}, empty_host.hooks())
+	check(empty_recovered.get("ok", false) and empty_recovered.get("text") == "The scene contains the observed nodes." and empty_host.executed.size() == 1, "A blank final answer is recovered from existing results without re-executing completed tools")
+	check(empty_host.contexts.size() == 3 and empty_host.catalogs[-1].is_empty(), "Empty-answer recovery requests visible text once with no executable tools")
+	var silent_host = HarnessHost.new()
+	silent_host.replies = [_agent_response(""), _agent_response("\n ")]
+	var silent = await core.run({}, silent_host.hooks())
+	check(not silent.get("ok", true) and silent.get("status") == "failed" and silent.get("code") == "empty_response" and silent_host.contexts.size() == 2, "Repeated empty answers fail explicitly instead of completing a tool-only conversation")
+	var repeat_host = HarnessHost.new()
+	repeat_host.replies = [_agent_response(""), _agent_response("", [call])]
+	var repeat_answer = await core.run({"tools": definitions}, repeat_host.hooks())
+	check(repeat_answer.get("code") == "empty_response" and repeat_host.executed.is_empty(), "A provider cannot replay a mutation during answer-only recovery")
 	var blocked_host = HarnessHost.new()
 	blocked_host.replies = [_agent_response("Verification is unavailable")]
 	var blocked_hooks = blocked_host.hooks()

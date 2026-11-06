@@ -1,6 +1,6 @@
 # Afișarea conversației în Godot AI
 
-Implementare nativă GDScript; actualizat 6 noiembrie 2026. Se aplică panoului
+Implementare nativă GDScript; actualizat 7 noiembrie 2026. Se aplică panoului
 agentului Godot AI. Interfața oficială din tabul Ziva rămâne independentă.
 
 ## Referință vizuală Ziva — 6 noiembrie 2026
@@ -54,12 +54,12 @@ O sarcină afișează, în ordine cronologică:
 5. Cardurile fișierelor, fără duplicate în același grup.
 6. Un singur set principal de acțiuni și metadatele de consum.
 
-Sub antetul sarcinii, panoul **Agentul gândește…** arată chiar și restrâns
-ultimele trei evenimente live: starea curentă și fiecare unealtă pornită sau
-încheiată. Extinderea dezvăluie feed-ul complet, cu maximum 30 de evenimente,
-deasupra pașilor planului. Feed-ul este tranzitoriu: după terminare, panoul se
-ascunde dacă nu mai există pași sau sarcini persistente. Nu este afișat
-raționamentul privat al modelului.
+Deasupra câmpului de mesaj, bara de activitate restrânsă ocupă un singur rând
+cu starea curentă sau unealta în lucru și numărul operațiilor efective. Nu
+repetă ultimele evenimente deja afișate în conversație. Extinderea dezvăluie
+feed-ul complet, cu maximum 30 de evenimente, deasupra pașilor planului. Feed-ul
+este tranzitoriu: după terminare, panoul se ascunde dacă nu mai există pași
+sau sarcini persistente. Nu este afișat raționamentul privat al modelului.
 
 Intervenția utilizatorului întrerupe gruparea vizuală, chiar dacă este Steer
 în aceeași sarcină. Mesajele vechi nu sunt mutate după intervenție. Consumul
@@ -69,6 +69,11 @@ cumulat apare pe ultimul segment al sarcinii. Istoricul original al mesajelor
 Stările **Rezultat**, **Întrerupt**, **Blocat**, **Eșuat** și **Necesită verificare**
 sunt distincte. „Rezultat” descrie încheierea rulării, fără să pretindă că
 gameplay-ul a fost verificat; criteriile și dovezile existente rămân separate.
+Publicarea unei stări terminale oprește și indicatorul de lucru al aceleiași
+cereri. Un rezultat întârziat al unei cereri vechi nu oprește cererea nouă.
+Mesajele utilizatorului sunt măsurate cu fontul și mărimea folosite efectiv
+la randare; mesajele lungi rămân limitate la lățimea conversației. Antetele
+uneltelor omit separatorul de fișier când calea este doar `res://`.
 
 ## Spațiu fix, blocare și erori
 
@@ -172,6 +177,19 @@ Mermaid flowchart și state simple au randare nativă, sursă, zoom și deplasar
 Sintaxa avansată rămâne sursă; nu este motorul Mermaid complet. Limitele și
 interacțiunile sunt documentate în
 [Inspecții și diagrame](chat-inspections-and-diagrams.md).
+
+## Rectificări verificate pe 7 noiembrie 2026
+
+Proba nouă reproducea șase eșecuri în sursa anterioară. După corecții,
+`presentation` trece **158/0** pe narrow și phone_landscape, runtime **949/0**,
+`activity` **73/0**, `chat` **82/0**, `chat_lifecycle` **88/0** și `inspections`
+**79/0**. Capturile `chat-rectified-status.png` au fost inspectate pe ambele
+layouturi. Dovezi: `.ai-qa/chat-rectifications-20261107/`.
+
+Proba de rezultat final este etichetată explicit ca probă UI; nu inspectează
+proiectul utilizatorului. Recuperarea răspunsului gol este verificată cu un
+furnizor simulat, separat de răspunsurile unui model real și de gesturile Android.
+Starea APK-ului și rezultatele CI sunt în [progres](../PROGRES_SI_PLAN.md).
 
 ## Verificare din 6 noiembrie 2026
 

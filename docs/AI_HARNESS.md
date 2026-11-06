@@ -7,11 +7,23 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 The original harness shipped in APK `12794c4`. The latest delivered Ziva APK is
-`66cdb44` (5 November 2026), including the live status feed, emoji fallback,
-bidirectional Ziva relay, clarification gate, and locked chat workspace. The
+`65a99a4` (6 November 2026), including compact tool rows, natural response
+guidance, the live status feed, and the keyboard-event guard. The
 APK was verified but not installed automatically. Normal execution has no fixed
 step limit. Delivery evidence is tracked in
 [the project progress record](../PROGRES_SI_PLAN.md).
+
+## Empty final answers, 2026-11-07
+
+A successful provider response with no visible answer and no remaining tool calls
+no longer completes silently. After the existing plan and verification gates,
+the harness requests one visible answer from the results already obtained. This
+request exposes no executable tools; attempted tool calls are refused before
+execution. A second empty answer fails explicitly with `empty_response`, retaining
+the completed results. Output-limit continuation, cancellation, and new user
+steering retain their existing behavior. Deterministic tests exercise recovery,
+the bounded failure and prevention of repeated side effects; they do not establish
+provider availability or answer quality with a live model.
 
 ## Stability iteration, 2026-10-27 (source)
 
@@ -44,9 +56,11 @@ for actual Android results and remaining work. Fixture success does not establis
 live provider acceptance or readiness for large game production.
 
 The follow-up source guidance asks the model to update task milestones before
-moving on, use three concise result points by default, batch independent known
-actions, and summarize test failures instead of flooding Output with successful
-assertions. These are model instructions, not enforced proof of progress or
+moving on, answer naturally with enough detail for the request, batch independent
+known actions, and summarize test failures instead of flooding Output with
+successful assertions. Scene-detail requests ask for observed hierarchy, node
+types, scripts and relevant settings, while separating saved scene facts from
+measured runtime evidence. These requests do not authorize mutations or playtests. These are model instructions, not enforced proof of progress or
 latency improvements. Live Resume with the corrected temporary provider adapter
 passed; permanent APK acceptance and the default behavior under the new guidance
 remain separate checks.
@@ -206,8 +220,9 @@ queue restore/remove/resume, measured and estimated metrics, Thinking expansion,
 find wrapping and the stall warning.
 
 The activity panel now keeps a live feed of the current status and each tool
-transition. Its collapsed form shows the latest three events; expanding it adds
-the bounded full feed above the plan steps. This is execution telemetry, not
+transition. Its collapsed form is a single current-status row with an actual
+tool-operation count; expanding it adds the bounded full feed above the plan steps.
+Publishing a terminal outcome also settles foreground thinking for the same turn. This is execution telemetry, not
 private provider reasoning. The floating jump control yields to interactive
 content underneath it, so plan and question actions remain reachable.
 

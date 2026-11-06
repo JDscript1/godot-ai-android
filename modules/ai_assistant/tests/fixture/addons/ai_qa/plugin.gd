@@ -2053,7 +2053,7 @@ func _activity_drawer_tests() -> void:
 	var inline_operation: Dictionary = inline_group["operations"][-1]
 	_check(inline_operation["state"] == "running" and inline_operation["node"].is_visible_in_tree() and inline_operation["node"].get_parent() == inline_group["content"], "Running tool appears inline in the conversation")
 	_check(chat.activity_feed.any(func(event: Dictionary) -> bool: return event.get("kind") == "tool" and event.get("state") == "running"), "Live status keeps the running tool in its own feed")
-	_check(chat.activity_live_inset.visible and chat.activity_live_rows.get_child_count() >= 2, "Collapsed activity shows each live status and tool event")
+	_check(not chat.activity_live_inset.visible and not chat.status.text.is_empty(), "Collapsed activity keeps live feedback in one header without duplicate event rows")
 	chat.set_working(true)
 	await get_tree().create_timer(0.2).timeout
 	var between = []
