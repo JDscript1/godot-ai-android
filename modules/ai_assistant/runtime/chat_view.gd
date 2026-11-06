@@ -1668,8 +1668,9 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	files.add_theme_constant_override("v_separation", int(8 * scale))
 	files.hide()
 	card.add_child(files)
-	var footer = VBoxContainer.new()
-	footer.add_theme_constant_override("separation", int(4 * scale))
+	var footer = HFlowContainer.new()
+	footer.add_theme_constant_override("h_separation", int(8 * scale))
+	footer.add_theme_constant_override("v_separation", int(4 * scale))
 	card.add_child(footer)
 	var group = {"index": response_groups.size(), "row": row, "card": card, "state": state, "content": content, "files": files, "footer": footer, "records": [], "operations": [], "turn": turn, "epoch": response_epoch, "outcome": str(metadata.get("run_status", ""))}
 	response_groups.append(group)
@@ -1728,6 +1729,7 @@ func show_tool_event(event: Dictionary, metadata: Dictionary, caption: String = 
 			"code": "",
 			"preview": {},
 			"facts": "",
+			"path": "",
 		}
 		if operation["title"].is_empty(): operation["title"] = operation["name"].replace("_", " ").capitalize()
 		operation_cards[key] = operation
@@ -1745,6 +1747,7 @@ func show_tool_event(event: Dictionary, metadata: Dictionary, caption: String = 
 		operation["preview"] = event.get("preview", {}).duplicate(true)
 		var data: Variant = result.get("result", {})
 		if data is Dictionary:
+			operation["path"] = str(data.get("path", data.get("imported_path", "")))
 			var facts: Array[String] = []
 			for field in ["path", "status", "imported_path", "count", "valid"]:
 				if data.has(field) and data[field] is not Dictionary and data[field] is not Array: facts.append(field + ": " + str(data[field]).left(220))
@@ -1766,10 +1769,8 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	var panel = PanelContainer.new()
 	panel.name = "ToolCall_" + str(operation.get("name", ""))
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var surface = style(Color("151b24"), 10)
-	surface.border_color = Color("2c3444")
-	surface.set_border_width_all(1)
-	surface.set_content_margin_all(7 * scale)
+	var surface = style(Color.TRANSPARENT, 8)
+	surface.set_content_margin_all(0)
 	panel.add_theme_stylebox_override("panel", surface)
 	group["content"].add_child(panel)
 	var body = VBoxContainer.new()
@@ -1820,10 +1821,19 @@ func _update_tool_row(operation: Dictionary) -> void:
 	var icons = {"running": "◌", "completed": "✓", "failed": "!", "unknown": "?", "cancelled": "Ⅱ"}
 	var duration = ""
 	if int(operation.get("duration_ms", 0)) > 0: duration = " · " + _duration_label(int(operation["duration_ms"]))
-	operation["header"].text = str(icons.get(state, "○")) + " " + str(operation.get("title", operation.get("name", "Tool"))) + duration
-	operation["header"].tooltip_text = str(operation.get("name", "")) + " · " + str(operation.get("state", ""))
+	var path = str(operation.get("path", ""))
+	var target = " · " + path.get_file() if not path.is_empty() else ""
+	var chevron = "▾" if operation.get("expanded", false) else "▸"
+	operation["header"].text = chevron + " " + str(icons.get(state, "○")) + " " + str(operation.get("title", operation.get("name", "Tool"))) + target + duration
+	operation["header"].tooltip_text = str(operation.get("name", "")) + " · " + str(operation.get("state", "")) + ("\n" + path if not path.is_empty() else "") + "\nAtinge pentru detalii"
 	operation["header"].button_pressed = bool(operation.get("expanded", false))
-	operation["header"].add_theme_color_override("font_color", Color("d2b47f") if state in ["failed", "unknown"] else (Color("8fbf9f") if state == "completed" else Color("c5cbda")))
+	operation["header"].add_theme_color_override("font_color", Color("d2b47f") if state in ["failed", "unknown"] else Color("9da8bb"))
+	var surface: StyleBoxFlat = operation["node"].get_theme_stylebox("panel")
+	var attention = state in ["failed", "unknown"]
+	surface.bg_color = Color("201e24") if attention else Color.TRANSPARENT
+	surface.border_color = Color("645039")
+	surface.set_border_width_all(1 if attention else 0)
+	surface.set_content_margin_all((7 if attention else 0) * EditorInterface.get_editor_scale())
 	var summary = _tool_summary(operation)
 	operation["summary"].text = summary
 	operation["summary"].visible = state in ["failed", "unknown"] and not summary.strip_edges().is_empty()
@@ -1917,7 +1927,7 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 	card.add_theme_stylebox_override("panel", surface)
 	row.add_child(card)
 	var column = VBoxContainer.new()
-	column.add_theme_constant_override("separation", int(6 * EditorInterface.get_editor_scale()))
+	column.add_theme_constant_override("separation", int(10 * EditorInterface.get_editor_scale()))
 	card.add_child(column)
 	if role == "user":
 		var identity = HBoxContainer.new()
@@ -1932,6 +1942,7 @@ func append_message(role: String, text: String, metadata: Dictionary = {}, rich:
 		copy_user.visible = not text.strip_edges().is_empty()
 		_compact_button(copy_user)
 	var body = VBoxContainer.new()
+	body.add_theme_constant_override("separation", int(12 * EditorInterface.get_editor_scale()))
 	column.add_child(body)
 	var anchor = RichTextLabel.new()
 	anchor.hide()
@@ -1996,8 +2007,10 @@ func _text_block(parent: Node) -> Dictionary:
 	text.scroll_active = false
 	text.selection_enabled = true
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.add_theme_font_size_override("normal_font_size", int(14 * EditorInterface.get_editor_scale()))
-	text.add_theme_constant_override("line_separation", int(6 * EditorInterface.get_editor_scale()))
+	for key in ["normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size"]:
+		text.add_theme_font_size_override(key, int(15 * EditorInterface.get_editor_scale()))
+	text.add_theme_color_override("default_color", Color("e4e8f0"))
+	text.add_theme_constant_override("line_separation", int(5 * EditorInterface.get_editor_scale()))
 	text.add_theme_constant_override("table_h_separation", int(12 * EditorInterface.get_editor_scale()))
 	text.add_theme_constant_override("table_v_separation", int(7 * EditorInterface.get_editor_scale()))
 	text.meta_clicked.connect(func(value: Variant) -> void:

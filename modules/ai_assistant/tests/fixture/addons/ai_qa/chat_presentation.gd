@@ -65,8 +65,11 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	check(failed_text.contains("Linia 12") and failed_text.contains("parse_error") and failed_text.contains("res://scripts/forest.gd"), "Failed tool details expose the readable error, code and relevant project path")
 	check(not failed_text.contains("never-display-this-key"), "Chat tool details exclude arbitrary arguments and credentials")
 	check(not completed_operation["details"].visible, "Successful tool details stay collapsed by default")
+	check(completed_operation["node"].get_theme_stylebox("panel").bg_color.a == 0.0 and failed_operation["node"].get_theme_stylebox("panel").bg_color.a > 0.0, "Successful calls stay unboxed while failures retain their attention surface")
+	check(completed_operation["header"].text.begins_with("▸") and completed_operation["header"].text.contains("forest.gd") and completed_operation["header"].tooltip_text.contains("res://scripts/forest.gd"), "Collapsed tools identify their result file and expose its full path on demand")
 	completed_operation["header"].pressed.emit()
 	check(completed_operation["details"].visible and completed_operation["details"].find_children("*", "RichTextLabel", true, false)[0].get_parsed_text().contains("res://scripts/forest.gd"), "Successful tool details open on demand")
+	check(completed_operation["header"].text.begins_with("▾"), "Expanding tool details updates the disclosure indicator")
 	completed_operation["header"].pressed.emit()
 	check(not completed_operation["details"].visible, "Successful tool details can be collapsed again")
 	failed_operation["details"].find_children("*", "Button", true, false)[0].pressed.emit()
@@ -82,6 +85,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	await pause()
 	var scale = EditorInterface.get_editor_scale()
 	check(group["row"].size.x <= chat.scroll.size.x + 1, "Grouped responses fit the actual narrow workspace")
+	check(group["footer"] is HFlowContainer and record["metrics_label"].get_parent() == group["footer"] and group["footer"].size.x <= chat.scroll.size.x + 1, "Actions and measured usage share a wrapping footer within the conversation width")
 	check(group["content"].get_theme_constant("separation") >= int(14 * scale) and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].size.x <= chat.scroll.size.x + 1 and operation["header"].custom_minimum_size.y >= 30 * scale), "Inline tool cards preserve spacing, width and a readable tap target")
 	capture("chat-response-grouped")
 	capture("chat-response-operations")
@@ -239,6 +243,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	check(not chat.error_button.visible, "The indicator hides when the Debugger no longer reports errors")
 
 	await inline_diff_checks()
+	await response_style_example()
 
 func inline_diff_checks() -> void:
 	chat.clear_messages()
@@ -272,3 +277,22 @@ func inline_diff_checks() -> void:
 	check(chat.context_detail.contains("100000 / 1048576") and chat.context_detail.contains("65536") and chat.context_detail.contains("furnizor"), "Context details distinguish measured request usage, model capacity and output reserve")
 	chat.clear_messages()
 	check(chat.diff_expanded.is_empty(), "Changing conversation releases expanded diff state")
+
+func response_style_example() -> void:
+	# Presentation fixture only: these deterministic tool results are not a live game test.
+	chat.clear_messages()
+	var origin = {"turn_id": "response-style", "origin_label": "Godot AI · exemplu de prezentare"}
+	chat.append_message("user", "Exemplu UI: arată cum ai prezenta rezultatul unui mini-joc.", {"id": "style-user", "turn_id": "response-style"})
+	chat.append_message("assistant", "Verific scena și scriptul personajului.", origin.merged({"id": "style-progress"}))
+	for entry in [["godot_read_file", "res://scripts/player.gd"], ["godot_script_diagnostics", "res://scripts/player.gd"]]:
+		panel._chat_tool_event({"kind": "tool_started", "id": entry[0], "name": entry[0]}, origin)
+		panel._chat_tool_event({"kind": "tool_result", "id": entry[0], "name": entry[0], "duration_ms": 180, "executed": true, "result": {"ok": true, "result": {"path": entry[1], "valid": true}}}, origin)
+	var answer = chat.append_message("assistant", "Mini-jocul are o scenă simplă, cu personaj și monede.\n\n- **Mișcare:** tastele WASD sau săgețile.\n- **Obiectiv:** strânge toate monedele.\n- **Restart:** tasta R.\n\nDeschide scena și apasă **F6** ca să îl încerci.\n\nAcesta este un exemplu de afișare; gameplay-ul nu a fost testat în această probă.", origin.merged({"id": "style-answer", "run_status": "completed"}))
+	chat.set_turn_outcome("response-style", "completed")
+	chat.set_turn_metrics("response-style", {"elapsed_ms": 12300, "output_tokens": 254, "cost_usd": 0.002})
+	chat.scroll.scroll_vertical = 0
+	await pause()
+	var group: Dictionary = chat.response_groups[-1]
+	check(group["operations"].all(func(operation: Dictionary) -> bool: return not operation["details"].visible and operation["node"].get_theme_stylebox("panel").bg_color.a == 0.0), "A normal answer preserves compact tools before its readable final text")
+	check(answer.get_meta("message")["blocks"].size() >= 4, "Result, short list, try-it instruction and verification limit remain separate readable blocks")
+	capture("chat-response-ziva-style")

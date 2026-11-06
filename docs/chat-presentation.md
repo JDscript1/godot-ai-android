@@ -1,7 +1,39 @@
 # Afișarea conversației în Godot AI
 
-Implementare nativă GDScript; actualizat 5 noiembrie 2026. Se aplică panoului
+Implementare nativă GDScript; actualizat 6 noiembrie 2026. Se aplică panoului
 agentului Godot AI. Interfața oficială din tabul Ziva rămâne independentă.
+
+## Referință vizuală Ziva — 6 noiembrie 2026
+
+Comparația folosește [captura oficială din pagina Ziva](https://ziva.sh/)
+(`hero-img.0nqz82eb5mpe9.webp`) și widgeturile reale ale chatului nostru.
+În exemplul public, actualizările scurte, operațiile discrete și răspunsul
+final apar într-un flux continuu. Detaliile operațiilor sunt expandabile, iar
+rezultatul spune ce s-a schimbat, ce a fost verificat și cum se încearcă jocul.
+Aceasta este o referință de prezentare, nu o probă a sesiunii Ziva instalate.
+
+Adaptarea nativă păstrează identitatea și stările agentului nostru:
+
+- Uneltele reușite sau în lucru apar ca rânduri fără chenar. Săgeata arată
+  starea extins/restrâns; antetul include fișierul din rezultatul uneltei,
+  când acesta există, iar tooltip-ul păstrează calea completă.
+- Erorile și rezultatele neconfirmate păstrează fundalul de atenție și
+  deschiderea automată a detaliilor. Succesul nu devine dovadă de gameplay.
+- Textul are font de 15 unități editor, aceeași mărime pentru bold/italic,
+  contrast clar și spațiu distinct între paragrafe. Scalarea editorului este
+  aplicată în continuare.
+- Acțiunile și metadatele sunt într-un footer comun, care trece automat pe
+  alt rând când spațiul disponibil nu ajunge.
+- Instrucțiunile agentului cer un rezultat direct, progres numai la constatări
+  utile, liste doar când ajută, verificări reale și o indicație de încercare
+  când e cazul. Șablonul obligatoriu de trei bullet-uri a fost înlocuit cu
+  paragrafe naturale; jurnalele și sursele deja modificate nu se repetă în chat.
+
+Captura `chat-response-ziva-style.png` este un exemplu UI etichetat explicit,
+cu rezultate deterministe. Nu confirmă un joc construit sau un răspuns de la
+un model real. Referința, capturile și rapoartele sunt păstrate în
+`.ai-qa/ziva-chat-style-20261106/`. Modificările sunt în surse; APK-ul
+`66cdb44` livrat pe 5 noiembrie nu le include.
 
 ## Mesaje și sarcini
 
@@ -75,7 +107,7 @@ previzualizarea este restrânsă. Evidențierea sintaxei ține cont de limbaj.
 
 ## Unelte și fișiere
 
-Fiecare apel de unealtă apare inline în cardul răspunsului, în ordinea reală.
+Fiecare apel de unealtă apare inline în fluxul răspunsului, în ordinea reală.
 Antetul are iconiță de stare, titlu, durată și o zonă de atingere de 30 px;
 succesele au detaliile închise, iar erorile și rezultatele neconfirmate le
 deschid automat. Rezumatul rămâne vizibil numai pentru erori. Argumentele
@@ -139,6 +171,18 @@ Mermaid flowchart și state simple au randare nativă, sursă, zoom și deplasar
 Sintaxa avansată rămâne sursă; nu este motorul Mermaid complet. Limitele și
 interacțiunile sunt documentate în
 [Inspecții și diagrame](chat-inspections-and-diagrams.md).
+
+## Verificare din 6 noiembrie 2026
+
+Runtime **945/0**, `presentation` **150/0** pe narrow și **150/0** pe
+phone_compact, `chat` **82/0**, `chat_lifecycle` **88/0**. Probele exercită
+rândurile reușite fără chenar, erorile evidențiate, fișierele din antet,
+indicatoarele expandabil/restrâns, footer-ul adaptabil, istoricul, copierea,
+tastatura simulată și navigarea. Capturile narrow și phone_compact au fost
+inspectate. Dovezi: `.ai-qa/ziva-chat-style-20261106/`.
+
+Aceste rezultate nu reprezintă un APK recompilat, o probă tactilă Android sau
+o conversație live cu un furnizor. Regresia agregată CI rămâne separată.
 
 ## Verificare
 

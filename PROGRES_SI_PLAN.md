@@ -1,12 +1,60 @@
 # Godot AI Android — implementări, verificări și plan
 
-Ultima actualizare: **5 noiembrie 2026**.
+Ultima actualizare: **6 noiembrie 2026**.
 
 Acesta este documentul de lucru al proiectului. Se actualizează după fiecare
 etapă importantă: implementare, verificare, compilare sau livrare. „Implementat
 în surse”, „testat în editor”, „compilat în APK” și „verificat pe dispozitiv”
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
+
+## Prezentare chat inspirată din Ziva — 6.11.2026
+
+**Referință inspectată.** Captura oficială din [pagina Ziva](https://ziva.sh/)
+(`hero-img.0nqz82eb5mpe9.webp`), comparată vizual cu chatul nostru randat.
+Referința arată un flux continuu de mesaje, operații discrete cu detalii la
+cerere și un rezultat explicat prin schimbări, verificări și modul de încercare.
+Nu este o observație a sesiunii Ziva instalate sau a promptului intern Ziva.
+
+**Implementat în surse.** În `chat_view.gd`, operațiile reușite și cele în lucru
+nu mai au chenar; săgețile indică extinderea, antetul arată fișierul returnat și
+tooltip-ul calea completă. Erorile și rezultatele neconfirmate păstrează
+suprafața de atenție și detaliile deschise automat. Textul are 15 unități editor,
+contrast și spațiere de paragraf mai clare; bold/italic păstrează aceeași scară.
+Acțiunile și consumul folosesc un singur footer cu trecere automată pe rândul
+următor. Istoricul, cronologia, copierea și cardurile interactive sunt păstrate.
+
+În `panel.gd`, stilul de răspuns cere rezultate directe, actualizări scurte
+numai la constatări utile, liste când ajută și indicații de încercare relevante.
+Șablonul fix cu trei bullet-uri a fost eliminat. Verificările reale și limitele
+rămân obligatorii, iar sursele modificate și jurnalul nu se repetă în răspuns.
+Instrucțiunea este o configurare a stilului; efectul cu un model real rămâne
+separat de verificarea widgeturilor.
+
+**Verificat acum.** Godot `4.7.stable.termux`, cu fixture-uri izolate și Xvnc:
+
+- runtime: **945 aserțiuni / 0 eșecuri**;
+- `presentation`, layout narrow: **150/0**;
+- `presentation`, layout phone_compact: **150/0**;
+- `chat`, layout phone_compact: **82/0**;
+- `chat_lifecycle`, layout phone_compact: **88/0**;
+- capturile narrow și phone_compact inspectate vizual;
+- logurile fără erori GDScript sau erori de salvare; `git diff --check` curat.
+
+Dovezi: `.ai-qa/ziva-chat-style-20261106/`, inclusiv referința oficială,
+`runtime.log`, rapoartele `editor-report.json`, scriptul reproductibil pentru
+Xvnc și capturile `chat-response-ziva-style.png`. Exemplul UI este etichetat
+explicit și folosește rezultate deterministe, nu pretinde gameplay verificat.
+
+**Limite și rămas de făcut.** Schimbările sunt locale, în surse; APK-ul
+`66cdb44` din Download nu le include. APK nou, gesturi fizice Android și
+comportamentul stilului cu un furnizor real rămân de verificat separat. Suita
+agregată CI nu a fost relansată; eșecurile de layout/ordine raportate anterior
+nu sunt închise de aceste probe țintite.
+
+Jurnal: 6.11.2026 — comparată captura oficială Ziva și adaptată prezentarea
+nativă a mesajelor, uneltelor și răspunsurilor; runtime și patru probe editor
+fără eșecuri, capturi inspectate, fără recompilare APK.
 
 ## Livrare APK guard tastatură — 5.11.2026
 
