@@ -8,6 +8,51 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Livrare APK cu rectificările chatului — 7.11.2026
+
+**Compilat din sursa `54b092a7fa3d14221edde71a4f15476816eb5efe`** prin workflow-ul
+[Godot AI Android — `42312982797`](https://github.com/JDscript1/godot-ai-android/actions/runs/42312982797).
+Jobul `android` a trecut; au fost verificate separat probele și eșecurile
+celorlalte joburi înainte de livrare.
+
+- APK Ziva: **112.599.678 bytes**, `com.jdscript.godotai.ziva.debug`,
+  versiune `4.7.2.stable`, ARM64.
+- SHA-256: `c60b14cacfa4f8f67d9243232d8a9423def91cfa5a76d2b89e94140e9dfd6450`.
+- Livrat atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`,
+  cu checksum alăturat; aceeași semnătură persistentă, verificată înainte de
+  înlocuirea instalatorului anterior.
+- Verificări locale ale artefactului: checksum, integritate ZIP, pachet/ABI,
+  certificat, toate cele **44 de scripturi** comparate byte cu byte cu sursa
+  exactă, manifest runtime și baza Linux.
+- Include lățimea corectă a mesajelor, separatorii uneltelor, activitatea pe un
+  singur rând și încheierea coerentă a cererii. Recuperarea unui răspuns gol
+  cere o singură explicație fără tool-uri executabile; un al doilea eșec este
+  afișat explicit. Instrucțiunile cer detaliile observate ale scenei.
+- CI runtime: **949/0**; editor upstream desktop/narrow/wide: **988/0** fiecare.
+  Phone landscape: **988 verificări / 1 eșec**, același test de derulare a cozii.
+  Editor nativ: **1013 verificări / 38 eșecuri**, aceleași etichete de layout
+  ca în buildul precedent. Nicio etichetă de eșec nouă, fără erori GDScript.
+- Workflow-ul agregat este `failure` din cauza probelor de layout; succesul
+  jobului Android și integritatea APK-ului sunt raportate separat.
+- **APK-ul nu a fost instalat automat.** Comportamentul tactil, suspendarea
+  Android și răspunsurile unui furnizor real rămân de verificat pe dispozitiv.
+
+**Problemă suplimentară analizată și rămasă deschisă.** În CI, cu Output deschis,
+chatul are 385 px înălțime; coada primește 44 px, iar un card are 66 px. Ultimul
+card rămâne parțial tăiat la capătul derulării. Proba izolată are 728 px pentru
+chat și 160 px pentru coadă și trece. Adaptarea cozii când panourile reduc
+înălțimea chatului și problemele de andocare rămân lucru separat; nu au fost
+ascunse prin modificarea aserțiunilor.
+
+Dovezi: `.ai-qa/chat-rectifications-20261107/`, inclusiv `verification-index.json`,
+`build/delivery.json`, `build/verification.json`, logurile și comparațiile CI,
+`build/ci-rendered/phone_landscape/queue-regressions.json` și captura aferentă.
+Arhiva și artefactul original sunt în `~/godot-ai-apk-stage/ziva-54b092a/`.
+
+Jurnal: 7.11.2026 — compilat, semnat, verificat și livrat APK-ul Ziva cu
+rectificările chatului; 44 de surse încorporate confirmate; documentate separat
+eșecurile CI existente și cauza geometrică a tăierii cardului din coadă.
+
 ## Rectificări după capturile Android — 7.11.2026
 
 **Probleme reproduse.** Capturile `Screenshot_20261106_135716.jpg`,

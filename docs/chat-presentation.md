@@ -189,7 +189,12 @@ layouturi. Dovezi: `.ai-qa/chat-rectifications-20261107/`.
 Proba de rezultat final este etichetată explicit ca probă UI; nu inspectează
 proiectul utilizatorului. Recuperarea răspunsului gol este verificată cu un
 furnizor simulat, separat de răspunsurile unui model real și de gesturile Android.
-Starea APK-ului și rezultatele CI sunt în [progres](../PROGRES_SI_PLAN.md).
+APK-ul Ziva `54b092a` a fost compilat, verificat și livrat pe 7 noiembrie.
+CI runtime a trecut cu **949/0**, iar desktop/narrow/wide cu **988/0** fiecare.
+Rămân testul cozii din phone landscape și aceleași 38 de eșecuri ale editorului
+nativ, fără etichete de eșec noi. Geometria CI confirmă un viewport de 44 px
+pentru un card de 66 px când Output reduce înălțimea chatului. Detaliile și
+lucrul rămas sunt în [progres](../PROGRES_SI_PLAN.md).
 
 ## Verificare din 6 noiembrie 2026
 
