@@ -6,8 +6,11 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 debug APK](https://github.com/JDscript1/godot-ai-android/actions/runs/40764656531/artifacts/12850107387)
-(GitHub Actions artifact, source `090b939`, delivered 28 October 2026).
+[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42191273959/artifacts/13490336991)
+(GitHub Actions artifact, source `65a99a4`, delivered 6 November 2026).
+This includes the updated native chat presentation; the Android build and APK
+integrity checks passed, while known aggregate editor-layout failures remain
+tracked in [the progress document](PROGRES_SI_PLAN.md).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation

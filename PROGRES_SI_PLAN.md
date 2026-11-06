@@ -8,6 +8,39 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Livrare APK cu prezentarea nouă a chatului — 6.11.2026
+
+**Compilat din sursa `65a99a4ae8ed21c9b215456bbde7f4d5b6e6754c`** prin workflow-ul
+[Godot AI Android — `42191273959`](https://github.com/JDscript1/godot-ai-android/actions/runs/42191273959).
+Jobul `android` a trecut, inclusiv semnătura, conținutul nativ, runtime-ul Linux
+și compararea surselor încorporate.
+
+- APK Ziva: **112.600.414 bytes**, `com.jdscript.godotai.ziva.debug`,
+  versiune `4.7.2.stable`, ARM64.
+- SHA-256: `5616fd83cacda9ec1f5d099ae2e90a67628c52d2808afa30b9d739b8550b1a3e`.
+- Livrat atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`,
+  cu checksum alăturat; instalatorul anterior a fost înlocuit numai după verificare.
+- Verificat local: checksum artefact și copie, integritate ZIP, pachet/ABI,
+  aceeași semnătură persistentă, toate cele **44 de scripturi** comparate byte cu
+  byte cu sursa commitului, manifestul runtime-ului și baza Linux.
+- Include uneltele compacte fără chenar, fișierul și detaliile expandabile,
+  tipografia îmbunătățită, footer-ul adaptabil și instrucțiunile de răspuns natural.
+- CI runtime: **945/0**; editor upstream desktop/narrow/wide: **980/0** fiecare.
+  Phone landscape păstrează un eșec existent: `Scrolling the queue reaches its last card`.
+  Editorul nativ a avut **1005 verificări / 38 eșecuri**, aceleași etichete de
+  layout ca în buildul precedent; comparația nu a găsit eșecuri noi.
+- Workflow-ul agregat rămâne `failure` din cauza acestor probe; succesul jobului
+  Android și integritatea APK-ului sunt raportate separat.
+- **APK-ul nu a fost instalat automat.** Gesturile fizice Android și stilul
+  răspunsurilor cu un model real rămân de verificat după instalare.
+
+Dovezi: `.ai-qa/ziva-chat-style-20261106/build/`, inclusiv `delivery.json`,
+`verification.json`, logurile CI și comparațiile cu buildul `66cdb44`.
+Artefactul original și arhiva sunt în `~/godot-ai-apk-stage/ziva-65a99a4/`.
+
+Jurnal: 6.11.2026 — compilat, semnat, verificat și livrat APK-ul Ziva cu
+prezentarea nouă a chatului; același pachet/certificat, fără instalare automată.
+
 ## Prezentare chat inspirată din Ziva — 6.11.2026
 
 **Referință inspectată.** Captura oficială din [pagina Ziva](https://ziva.sh/)
@@ -46,11 +79,11 @@ Dovezi: `.ai-qa/ziva-chat-style-20261106/`, inclusiv referința oficială,
 Xvnc și capturile `chat-response-ziva-style.png`. Exemplul UI este etichetat
 explicit și folosește rezultate deterministe, nu pretinde gameplay verificat.
 
-**Limite și rămas de făcut.** Schimbările sunt locale, în surse; APK-ul
-`66cdb44` din Download nu le include. APK nou, gesturi fizice Android și
-comportamentul stilului cu un furnizor real rămân de verificat separat. Suita
-agregată CI nu a fost relansată; eșecurile de layout/ordine raportate anterior
-nu sunt închise de aceste probe țintite.
+**Limite și rămas de făcut.** Etapa de mai sus a fost verificată inițial în
+surse; APK-ul `65a99a4` a fost compilat și livrat ulterior, conform secțiunii
+precedente. Gesturile fizice Android și comportamentul stilului cu un furnizor
+real rămân separate. CI a fost relansat la compilare și a păstrat eșecurile
+cunoscute de layout/ordine, fără etichete de eșec noi.
 
 Jurnal: 6.11.2026 — comparată captura oficială Ziva și adaptată prezentarea
 nativă a mesajelor, uneltelor și răspunsurilor; runtime și patru probe editor

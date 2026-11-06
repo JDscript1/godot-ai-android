@@ -32,8 +32,9 @@ Adaptarea nativă păstrează identitatea și stările agentului nostru:
 Captura `chat-response-ziva-style.png` este un exemplu UI etichetat explicit,
 cu rezultate deterministe. Nu confirmă un joc construit sau un răspuns de la
 un model real. Referința, capturile și rapoartele sunt păstrate în
-`.ai-qa/ziva-chat-style-20261106/`. Modificările sunt în surse; APK-ul
-`66cdb44` livrat pe 5 noiembrie nu le include.
+`.ai-qa/ziva-chat-style-20261106/`. Modificările sunt incluse în APK-ul Ziva
+`65a99a4`, verificat și livrat în Download pe 6 noiembrie. Identitatea de
+semnare și cele 44 de surse runtime au fost verificate în noul artefact.
 
 ## Mesaje și sarcini
 
@@ -181,8 +182,12 @@ indicatoarele expandabil/restrâns, footer-ul adaptabil, istoricul, copierea,
 tastatura simulată și navigarea. Capturile narrow și phone_compact au fost
 inspectate. Dovezi: `.ai-qa/ziva-chat-style-20261106/`.
 
-Aceste rezultate nu reprezintă un APK recompilat, o probă tactilă Android sau
-o conversație live cu un furnizor. Regresia agregată CI rămâne separată.
+Aceste probe UI nu reprezintă o probă tactilă Android sau o conversație live
+cu un furnizor. APK-ul a fost compilat ulterior din `65a99a4`; jobul Android a
+trecut și artefactul a fost verificat local. CI desktop/narrow/wide a trecut cu
+980/0 fiecare; phone landscape păstrează un eșec de derulare a cozii, iar editorul
+nativ aceleași 38 de eșecuri de layout ca buildul precedent. Detaliile sunt în
+[PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 
 ## Verificare
 
