@@ -101,6 +101,43 @@ Sources: [LM Studio LAN hosting](https://lmstudio.ai/docs/developer/core/server/
 [Ollama model catalog](https://docs.ollama.com/api/tags),
 [Ollama loaded models](https://docs.ollama.com/api/ps).
 
+## OmniRoute across networks
+
+OmniRoute is available as a first-class **Local / self-hosted** provider. It uses
+the OpenAI-compatible API on port `20128` and defaults to
+`http://127.0.0.1:20128/v1`; replace the loopback host with the address of the
+machine running OmniRoute. The **Permite HTTP** option is enabled for this local
+preset, and **Opțiuni avansate** exposes a manual model ID when `/v1/models` cannot
+describe the route.
+
+When the two devices are not on the same Wi-Fi network, a private LAN address will
+not work. Prefer a private overlay network such as Tailscale and use its
+`100.64.0.0/10` address. Addresses in that range are grouped as local/self-hosted,
+so they receive the longer local inference and idle budgets. Both devices should
+be authenticated to the same tailnet; restrict OmniRoute with an API key and do not
+publish a keyless `/v1` endpoint. The token stored in Godot AI is the OmniRoute
+inference key, never an upstream provider key.
+
+In OmniRoute, set `REQUIRE_API_KEY=true` before binding beyond loopback. Its
+default ports are loopback-only; for a remote client, bind to the overlay IP (or
+`0.0.0.0` only behind authentication) and verify:
+
+```sh
+curl http://127.0.0.1:20128/healthz
+curl -H "Authorization: Bearer $OMNIROUTE_API_KEY" \
+  http://100.x.y.z:20128/v1/models
+```
+
+Choose **OmniRoute**, enter the Tailscale address as `100.x.y.z:20128`, add the
+OmniRoute API key, then press **Conectează**. The model list and a normal chat turn
+are separate checks; tool calling and vision depend on the upstream model selected
+by OmniRoute. A phone used as the server should keep Termux awake and be exempted
+from battery optimization.
+
+Sources: [OmniRoute deployment](https://omniroute.cheaperinference.com/deploy/),
+[Termux guide](https://omniroute.hagicode.com/en-US/guides/termux-guide/),
+[self-host security](https://omniroute.hagicode.com/en-US/getting-started/self-hosting/).
+
 ## Execution and recovery
 
 The chat exposes **Auto / Default / Plan**. Default is initially selected for

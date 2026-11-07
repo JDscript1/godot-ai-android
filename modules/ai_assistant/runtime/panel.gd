@@ -582,7 +582,7 @@ func _build_settings() -> void:
 		p["name"].text = str(entry["name"])
 		p["allow_http"].button_pressed = bool(entry.get("local", false))
 		p["groups"]["url"].visible = bool(entry.get("local", false)) or entry["id"] == "custom"
-		provider_advanced.visible = entry["id"] == "custom"
+		provider_advanced.visible = entry["id"] in ["custom", "omniroute"]
 		_refresh_provider_connections()
 		_update_settings_controls())
 	p["local_connection"] = VBoxContainer.new()
@@ -2184,7 +2184,7 @@ func _edit_provider(index: int) -> void:
 	_select_issuer(str(profile.get("issuer", "custom")))
 	forms["provider"]["hosting"].select({"cloud": 1, "local": 2}.get(str(profile.get("hosting", "")), 0))
 	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
-	provider_advanced.visible = profile.get("issuer") == "custom"
+	provider_advanced.visible = profile.get("issuer") in ["custom", "omniroute"]
 	forms["provider"]["groups"]["url"].visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "custom"]
 	forms["provider"]["models"] = profile.get("models", []).duplicate(true)
 	forms["provider"]["selected_model"] = str(_selection().get("model", "")) if _current_profile().get("id") == profile["id"] else ""

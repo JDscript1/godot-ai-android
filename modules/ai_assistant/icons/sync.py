@@ -28,6 +28,7 @@ ACTIONS = {
     'Close': 'x', 'Back': 'arrow-left', 'Check': 'check', 'Search': 'search',
     'Attach': 'paperclip', 'Models': 'layers', 'Reasoning': 'brain', 'Auto': 'sparkles',
     'Providers': 'blocks', 'Cloud': 'cloud', 'Accounts': 'badge-check', 'Local': 'monitor',
+    'Provider_omniroute': 'route',
     'Inspect': 'scan-search', 'Confirm': 'shield-check', 'Agent': 'bot', 'Plan': 'list-checks',
     'MCP': 'plug', 'Generation': 'image', 'Automations': 'zap', 'Journal': 'notebook-text',
     'Play': 'play', 'Favorite': 'star', 'Rename': 'pencil', 'Archive': 'archive',

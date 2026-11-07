@@ -8,6 +8,30 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## OmniRoute ca furnizor AI — 7.11.2026
+
+**Implementat în surse.** OmniRoute este acum preset de furnizor
+**Local / self-hosted**, OpenAI-compatible, cu URL implicit
+`http://127.0.0.1:20128/v1`. Utilizatorul poate introduce adresa Tailscale și
+portul, iar `local_endpoint` completează `/v1`. Opțiunile avansate rămân
+disponibile pentru model manual și pentru HTTP local.
+
+- Adresele Tailscale `100.64.0.0/10` sunt recunoscute ca local/self-hosted,
+  fără să extindă scanarea LAN obișnuită.
+- Erorile de conectare pentru OmniRoute explică verificarea Tailscale/VPN,
+  portul 20128 și accesul în afara loopback-ului.
+- Am adăugat un emblema vectorială distinctă OmniRoute; catalogul păstrează
+  identități vizuale separate pentru fiecare furnizor.
+- Ghidul recomandă `REQUIRE_API_KEY=true`, cheia OmniRoute în vault și
+  Tailscale între rețele diferite; `/healthz` și `/v1/models` sunt verificările
+  separate de catalogul de modele.
+
+**Verificat local.** Runtime **991/0**, scenariul editor `providers` **94/0**.
+Compilarea Android și proba fizică cu un server OmniRoute real rămân separate.
+
+Jurnal: 7.11.2026 — adăugat preset OmniRoute, normalizare pentru Tailscale și
+protecție explicită pentru expunerea remote.
+
 ## Reparație pornire Ziva după instalare — 7.11.2026
 
 **Defect raportat pe dispozitiv.** După instalarea APK-ului, tabul Ziva afișa

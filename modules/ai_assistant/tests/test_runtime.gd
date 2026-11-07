@@ -269,6 +269,11 @@ func _run() -> void:
 		var default_endpoint = providers.endpoint({"issuer": entry["id"]})
 		check(default_endpoint.get("ok", false) and default_endpoint.get("result") == entry["url"], "Known cloud provider restores its catalog endpoint: " + str(entry["id"]))
 	check(providers.endpoint({"issuer": "deepseek", "url": ""}).get("result") == "https://api.deepseek.com", "An empty saved DeepSeek endpoint recovers its official catalog URL")
+	var omniroute = providers.CATALOG.filter(func(entry: Dictionary) -> bool: return entry["id"] == "omniroute")
+	check(omniroute.size() == 1 and omniroute[0]["name"] == "OmniRoute" and omniroute[0]["url"] == "http://127.0.0.1:20128/v1" and omniroute[0].get("local", false), "OmniRoute has a first-class local OpenAI-compatible preset")
+	check(providers.endpoint({"issuer": "omniroute", "url": "100.101.102.103:20128", "allow_http": true}).get("result") == "http://100.101.102.103:20128/v1", "OmniRoute accepts a Tailscale address and restores its API path")
+	check(providers.tailscale_ipv4("100.64.0.1") and providers.tailscale_ipv4("100.127.255.254") and not providers.tailscale_ipv4("100.63.255.255") and not providers.tailscale_ipv4("100.128.0.1"), "Tailscale CGNAT addresses are recognized without widening LAN discovery")
+	check(providers.hosting({"issuer": "custom", "url": "http://100.101.102.103:20128/v1"}) == "local", "A Tailscale-hosted custom gateway keeps local inference timeouts")
 	check(providers.endpoint({"issuer": "deepseek", "url": "https://gateway.example.test/v1/"}).get("result") == "https://gateway.example.test/v1", "A configured compatible gateway is preserved instead of silently changing destination")
 	check(not providers.endpoint({"issuer": "custom"}).get("ok", false) and not providers.endpoint({"issuer": "lmstudio"}).get("ok", false), "Unknown and local endpoints still require an explicit server address")
 	check(common.uid().length() == 36 and common.uid().get_slice("-", 2).begins_with("4"), "Task identifiers use UUIDv4")
@@ -1818,10 +1823,11 @@ func _behavior_tests(node: Node) -> void:
 
 func _local_connection_tests(node: Node) -> void:
 	var script = scripts["providers"]
-	for entry in [["192.168.1.50", "lmstudio", "http://192.168.1.50:1234/v1"], ["192.168.1.50", "ollama", "http://192.168.1.50:11434/v1"], ["192.168.1.50:7777/v1/models", "lmstudio", "http://192.168.1.50:7777/v1"], ["http://192.168.1.50:11434/api/tags", "ollama", "http://192.168.1.50:11434/v1"], ["::1", "lmstudio", "http://[::1]:1234/v1"], ["https://local.example/proxy/v1", "lmstudio", "https://local.example:443/proxy/v1"]]:
+	for entry in [["192.168.1.50", "lmstudio", "http://192.168.1.50:1234/v1"], ["192.168.1.50", "ollama", "http://192.168.1.50:11434/v1"], ["192.168.1.50:7777/v1/models", "lmstudio", "http://192.168.1.50:7777/v1"], ["http://192.168.1.50:11434/api/tags", "ollama", "http://192.168.1.50:11434/v1"], ["::1", "lmstudio", "http://[::1]:1234/v1"], ["https://local.example/proxy/v1", "lmstudio", "https://local.example:443/proxy/v1"], ["100.101.102.103", "omniroute", "http://100.101.102.103:20128/v1"], ["100.101.102.103:20128/v1/models", "omniroute", "http://100.101.102.103:20128/v1"]]:
 		check(script.local_endpoint(entry[0], entry[1]).get("result") == entry[2], "Local connection accepts an IP or URL without requiring manual API paths: " + entry[0])
 	check(not script.local_endpoint("http://user@host:1234?token=x", "lmstudio").get("ok", true), "Quick local connection rejects embedded credentials and URL query tokens")
 	check(script.connection_error({"url": "http://127.0.0.1:1234/v1"}, {"code": "connection_failed"}, true).contains("acest dispozitiv"), "Android loopback failures explain which device 127.0.0.1 refers to")
+	check(script.connection_error({"issuer": "omniroute", "url": "http://100.101.102.103:20128/v1"}, {"code": "connection_failed"}, true).contains("Tailscale"), "OmniRoute failures explain the remote VPN/port path instead of suggesting the same Wi-Fi")
 	check(script.connection_error({"url": mock_url}, {"status": 401}).contains("token valid"), "An authenticated server is distinguished from an unreachable host")
 	var local_options = script.inference_options({"issuer": "lmstudio", "url": mock_url})
 	check(local_options["connect_timeout"] < local_options["first_response_timeout"] and local_options["idle_timeout"] > 0 and local_options["timeout"] > local_options["first_response_timeout"], "Local inference has independent connect, initial-response, idle and total budgets")

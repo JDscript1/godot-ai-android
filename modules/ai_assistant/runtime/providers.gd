@@ -24,6 +24,7 @@ const CATALOG = [
 	{"id": "ollama", "name": "Ollama", "kind": "chat", "url": "http://127.0.0.1:11434/v1", "prefix": "", "local": true},
 	{"id": "lmstudio", "name": "LM Studio", "kind": "chat", "url": "http://127.0.0.1:1234/v1", "prefix": "", "local": true},
 	{"id": "llamacpp", "name": "llama.cpp", "kind": "chat", "url": "http://127.0.0.1:8080/v1", "prefix": "", "local": true},
+	{"id": "omniroute", "name": "OmniRoute", "kind": "chat", "url": "http://127.0.0.1:20128/v1", "prefix": "", "local": true},
 	{"id": "custom", "name": "OpenAI-compatible", "kind": "chat", "url": "", "prefix": ""},
 ]
 
@@ -43,12 +44,19 @@ static func private_ipv4(address: String) -> bool:
 		if not part.is_valid_int() or int(part) < 0 or int(part) > 255: return false
 	return int(parts[0]) == 10 or (int(parts[0]) == 172 and int(parts[1]) in range(16, 32)) or (int(parts[0]) == 192 and int(parts[1]) == 168)
 
+static func tailscale_ipv4(address: String) -> bool:
+	var parts = address.split(".")
+	if parts.size() != 4: return false
+	for part in parts:
+		if not part.is_valid_int() or int(part) < 0 or int(part) > 255: return false
+	return int(parts[0]) == 100 and int(parts[1]) in range(64, 128)
+
 static func hosting(profile: Dictionary) -> String:
 	if profile.get("hosting") in ["cloud", "local"]: return profile["hosting"]
-	if profile.get("issuer", profile.get("id", "")) in ["ollama", "lmstudio", "llamacpp"]: return "local"
+	if profile.get("issuer", profile.get("id", "")) in ["ollama", "lmstudio", "llamacpp", "omniroute"]: return "local"
 	var parsed = Common.parse_url(str(profile.get("url", "")), true)
 	var host = str(parsed.get("host", "")).to_lower()
-	return "local" if host in ["localhost", "127.0.0.1", "::1"] or host.ends_with(".local") or private_ipv4(host) else "cloud"
+	return "local" if host in ["localhost", "127.0.0.1", "::1"] or host.ends_with(".local") or private_ipv4(host) or tailscale_ipv4(host) else "cloud"
 
 static func endpoint(profile: Dictionary) -> Dictionary:
 	var url = str(profile.get("url", "") if profile.get("url") != null else "").strip_edges().trim_suffix("/")
@@ -58,7 +66,7 @@ static func endpoint(profile: Dictionary) -> Dictionary:
 			if entry["id"] == issuer and not entry.get("local", false):
 				url = str(entry["url"])
 				break
-	if issuer in ["lmstudio", "ollama", "llamacpp"]:
+	if issuer in ["lmstudio", "ollama", "llamacpp", "omniroute"]:
 		var normalized = local_endpoint(url, issuer)
 		if not normalized.get("ok", false): return normalized
 		url = str(normalized["result"])
@@ -81,7 +89,7 @@ static func local_endpoint(value: String, issuer: String) -> Dictionary:
 		var suffix = url.substr(raw_authority.length())
 		if raw_authority.is_valid_ip_address() and ":" in raw_authority: raw_authority = "[" + raw_authority + "]"
 		var has_port = "]:" in raw_authority if raw_authority.begins_with("[") else ":" in raw_authority
-		if not has_port: raw_authority += ":" + str({"lmstudio": 1234, "ollama": 11434, "llamacpp": 8080}.get(issuer, 1234))
+		if not has_port: raw_authority += ":" + str({"lmstudio": 1234, "ollama": 11434, "llamacpp": 8080, "omniroute": 20128}.get(issuer, 1234))
 		url = "http://" + raw_authority + suffix
 	var parsed = Common.parse_url(url, true)
 	if not parsed.get("ok", false): return parsed
@@ -103,6 +111,8 @@ static func connection_error(profile: Dictionary, result: Dictionary, android: b
 	if android and host in ["localhost", "127.0.0.1", "::1"]: return "Adresa locală indică acest dispozitiv. Pentru serverul de pe calculator introdu IP-ul Wi-Fi al calculatorului."
 	if host.begins_with("169.254."): return "Adresa nu răspunde. Folosește IPv4-ul adaptorului Wi-Fi activ al calculatorului."
 	if result.get("code") in ["timeout", "connection_failed"]:
+		if str(profile.get("issuer", "")) == "omniroute":
+			return "OmniRoute nu răspunde. Verifică adresa Tailscale/VPN, portul 20128 și dacă serverul ascultă în afara localhost-ului."
 		return "Serverul nu răspunde. Verifică IP-ul actual, aceeași rețea Wi-Fi/hotspot și accesul LAN al serverului." if local else "Furnizorul nu răspunde. Verifică accesul la internet și reîncearcă actualizarea modelelor."
 	if int(result.get("status", 0)) == 429: return "Furnizorul a limitat cererile. Reîncearcă actualizarea modelelor mai târziu."
 	if int(result.get("status", 0)) == 404: return "Ruta API nu este disponibilă. Folosește adresa serverului cu /v1." if local else "Ruta API nu este disponibilă. Verifică furnizorul și adresa configurată."

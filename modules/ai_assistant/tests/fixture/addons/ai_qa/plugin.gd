@@ -2798,6 +2798,9 @@ func _provider_connection_tests(output: String) -> void:
 		await get_tree().create_timer(0.15).timeout
 		form["issuer"].get_popup().get_texture().get_image().save_png(output.path_join("providers-catalog.png"))
 		form["issuer"].get_popup().hide()
+	panel._select_issuer("omniroute")
+	form["issuer"].item_selected.emit(form["issuer"].selected)
+	_check(form["url"].text == "http://127.0.0.1:20128/v1" and form["allow_http"].button_pressed and form["local_connection"].visible and panel.provider_advanced.visible, "OmniRoute preset exposes port 20128, HTTP opt-in and advanced model controls")
 	panel._select_issuer("deepseek")
 	form["issuer"].item_selected.emit(form["issuer"].selected)
 	form["key"].text = "fixture-provider-secret"
