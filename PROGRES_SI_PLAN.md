@@ -10,7 +10,22 @@ drept funcție validată cu un serviciu real.
 
 ## Chat compact, comunicare și tastatură Ziva — 7.11.2026
 
-**Corectat în surse; APK-ul nou urmează după verificările CI.**
+**Compilat, verificat și livrat: `c4b94310c4ef86bcff9b708a419ca002340f5331`.** Toate cele trei joburi
+[CI `42365599979`](https://github.com/JDscript1/godot-ai-android/actions/runs/42365599979) au trecut. [Artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42365599979/artifacts/13572020186).
+
+- APK: **112.616.846 bytes**, `com.jdscript.godotai.ziva.debug`, ARM64.
+- SHA-256: `446a3b3d01db19a229433aa658e005738d6f9c96478b866cdc1d907f74c748f7`.
+- Înlocuit atomic: `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk` și
+  checksum-ul asociat, după verificarea certificatului persistent, ZIP-ului,
+  pachetului/ABI, celor **44 de scripturi GDScript** identice cu sursa,
+  adaptorului `ziva-mobile.js` identic, claselor native și manifestelor Linux/runtime.
+  Nu s-a instalat automat și nu s-au modificat proiectele/datele aplicației.
+- CI upstream: desktop 1061/0, narrow 1061/0, wide 1061/0, phone_landscape 1061/0, phone_compact 1061/0.
+- CI editor nativ: desktop 1092/0, narrow 1092/0, wide 1092/0, phone_landscape 1092/0, phone_compact 1092/0.
+- CI confirmă și DOM **48/0**, RPC **20/0**, client/mailbox **18/0** și context **36/0**.
+  Detaliile scenariilor sunt în `release-build/*-ci-comparison.json`.
+- Dovezi de livrare: `.ai-qa/phone-chat-ziva-20261107/release-build/`;
+  capturile native finale: `release-rendered/` în același director de probă.
 
 - Apelurile de unelte au un singur rând curent. Următorul apare după încheierea
   celui care rulează; contorul deschide istoricul complet, cu rezultate și durate.
@@ -44,7 +59,9 @@ DeepSeek **`opencode/deepseek-v4.1-flash-free`** a contribuit la audit prin Open
 izolat; cheia personală DeepSeek nu a fost folosită. Tentativa sa de a genera
 testele a atins limita de răspuns (`length`, 32.000 tokeni de raționament, fără
 patch) și a fost oprită; suita DOM a fost finalizată local și reinclusă în CI.
-Review-ul final delegat rămâne separat de rezultatele locale măsurate.
+Review-ul final DeepSeek Free s-a încheiat fără defecte găsite în cele două
+zone cerute: ordinea Trimite și anularea ascunderii amânate. Acesta nu confirmă
+comportamentul fizic Android.
 Tastarea, autocorectarea și atingerea butonului pe APK-ul instalat rămân probe
 fizice separate. ADB nu vede un dispozitiv conectat în această sesiune.
 Dovezi: `.ai-qa/phone-chat-ziva-20261107/` (loguri, randări, RPC sanitizat,
@@ -5005,7 +5022,7 @@ Certificatul de dezvoltare a rămas neschimbat:
 
 ## Jurnalul etapelor
 
-- **7.11.2026 — chat compact și Ziva, în surse:** un rând activ cu istoric, raportare corectă pentru `aborted`, protecție la anulare și eliminarea intervențiilor gazdei în cursor/IME. Runtime 984/0, prezentare 168/0, inspecții 81/0, RPC 20/0; APK în pregătire, testarea fizică rămâne separată.
+- **7.11.2026 — chat compact și Ziva, în surse:** un rând activ cu istoric, raportare corectă pentru `aborted`, protecție la anulare și eliminarea intervențiilor gazdei în cursor/IME. Runtime 984/0, prezentare 168/0, inspecții 81/0, RPC 20/0; APK `c4b9431` verificat și livrat după trei joburi CI verzi, testarea fizică rămâne separată.
 
 - **7.11.2026 — APK `3bb7a24` cu rectificările harness livrat.** Toate cele trei joburi CI au trecut; criterii, generări și delegări întărite, cele 38 de eșecuri native rezolvate, artefactul verificat exact înainte de înlocuirea Ziva din Downloads. Testele fizice rămân separate.
 

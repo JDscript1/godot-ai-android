@@ -7,9 +7,10 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 The original harness shipped in APK `12794c4`. The latest delivered Ziva APK is
-`3bb7a24` (7 November 2026), including bidirectional native-agent/Ziva task
+`c4b9431` (7 November 2026), including bidirectional native-agent/Ziva task
 control, protected criteria and execution intent, durable generation identities,
-real delegation completion, corrected chat queue/docks, bounded empty-answer
+real delegation completion, compact current tool rows, Ziva interruption/input fixes,
+corrected chat queue/docks, bounded empty-answer
 recovery and the keyboard-event guard. All three CI jobs passed. The
 APK was verified but not installed automatically. Normal execution has no fixed
 step limit. Delivery evidence is tracked in
@@ -257,7 +258,8 @@ The legacy `Running Tools` label remains hidden.
 The Ziva client treats an official `aborted` finish as interrupted and an empty
 final answer or `error` finish as failure. Cancelling during chat resolution
 cannot submit a delayed prompt; cancelling during send is checked again after
-the RPC response. A liveness-only request uses `ziva_status` without a model task.
+the RPC response. The guidance directs liveness-only requests to `ziva_status`
+without a model task.
 
 The host WebView adapter leaves text and selection to Lexical/Android IME.
 It preserves Send pointerdown/click focus until the official form handler runs,

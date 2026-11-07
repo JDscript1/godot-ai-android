@@ -2,7 +2,7 @@
 
 ## Un singur apel curent și tastatură Ziva — 7 noiembrie 2026
 
-Sursele afișează un singur rând curent pentru uneltele aceluiași răspuns.
+APK-ul `c4b9431` afișează un singur rând curent pentru uneltele aceluiași răspuns.
 Tranziția urmează rezultatul real al apelului precedent; contorul deschide
 istoricul complet cu rezultate/durate. Textele asistentului rămân vizibile.
 Prezentare compactă 168/0, inspecții 81/0; capturile finale au fost inspectate.
