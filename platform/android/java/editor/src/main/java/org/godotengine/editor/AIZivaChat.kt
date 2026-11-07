@@ -22,7 +22,7 @@ object AIZivaChat {
 
     private val jobs = ConcurrentHashMap<String, Job>()
 
-    private class Job(val id: String, val port: Int, val prompt: String, val timeoutMs: Long) {
+    private class Job(val id: String, val port: Int, val prompt: String, val timeoutMs: Long, val slot: String, val projectId: String) {
         @Volatile var state = "running"
         @Volatile var error: String? = null
         @Volatile var answer = ""
@@ -39,22 +39,27 @@ object AIZivaChat {
 
     private class RpcFailure(message: String) : Exception(message)
 
-    fun send(port: Int, prompt: String, chatId: String, timeoutSeconds: Int): JSONObject {
+    @Synchronized
+    fun send(port: Int, prompt: String, chatId: String, timeoutSeconds: Int, projectId: String = ""): JSONObject {
         val text = prompt.trim()
         if (text.isEmpty()) return failure("Cererea către Ziva este goală.", "ziva_invalid_prompt")
         if (text.length > 32000) return failure("Cererea către Ziva este prea lungă (maximum 32000 de caractere).", "ziva_invalid_prompt")
         prune()
         if (jobs.values.count { it.state == "running" || it.state == "permission_required" || it.state == "question_required" } >= MAX_RUNNING)
             return failure("Ziva are deja $MAX_RUNNING sarcini în lucru.", "ziva_busy")
-        val job = Job(UUID.randomUUID().toString(), port, text, timeoutSeconds.coerceIn(30, 1800) * 1000L)
+        val slot = chatId.trim().ifEmpty { "default" }
+        if (jobs.values.any { it.finishedAt == 0L && (slot == "default" || it.slot == "default" || it.slot == slot || it.chatId == slot) })
+            return failure("Conversația Ziva are deja o cerere activă; așteaptă rezultatul sau anulează jobul identificat.", "ziva_busy")
+        val job = Job(UUID.randomUUID().toString(), port, text, timeoutSeconds.coerceIn(30, 1800) * 1000L, slot, projectId)
         job.chatId = chatId.trim()
         jobs[job.id] = job
         Thread({ execute(job) }, "ZivaChat").apply { isDaemon = true }.start()
         return JSONObject().put("ok", true).put("job_id", job.id).put("state", job.state)
     }
 
-    fun poll(jobId: String): JSONObject {
+    fun poll(jobId: String, projectId: String = ""): JSONObject {
         val job = jobs[jobId] ?: return failure("Sarcina Ziva nu mai există; pornește una nouă.", "ziva_job_unknown")
+        if (projectId.isNotEmpty() && job.projectId != projectId) return failure("Cererea Ziva aparține altui proiect.", "ziva_other_project")
         val result = JSONObject().put("ok", true).put("job_id", job.id).put("state", job.state)
             .put("chat_id", job.chatId).put("message_id", job.messageId)
             .put("answer", job.answer).put("answer_length", job.answer.length)
@@ -64,8 +69,10 @@ object AIZivaChat {
         return result
     }
 
-    fun cancel(jobId: String): JSONObject {
+    fun cancel(jobId: String, projectId: String = ""): JSONObject {
         val job = jobs[jobId] ?: return failure("Sarcina Ziva nu mai există.", "ziva_job_unknown")
+        if (projectId.isNotEmpty() && job.projectId != projectId) return failure("Cererea Ziva aparține altui proiect.", "ziva_other_project")
+        if (job.finishedAt > 0L) return poll(jobId, projectId)
         job.cancelled = true
         if (job.finishedAt == 0L) {
             job.state = "cancelled"
@@ -178,7 +185,9 @@ object AIZivaChat {
                 return
             }
             val messages = snapshot.optJSONArray("messages") ?: JSONArray()
-            val turn = findTurn(messages, started, job.prompt)
+            val turns = relatedTurns(messages, started, job.prompt)
+            val turn = turns.lastOrNull()
+            job.tools = turns.sumOf { toolCount(it) }
             if (turn == null) {
                 idle = if (statusType == "idle") idle + 1 else 0
                 if (idle >= 4) {
@@ -197,17 +206,17 @@ object AIZivaChat {
             }
             val created = info.optJSONObject("time")?.optLong("created", 0L) ?: 0L
             val completed = info.optJSONObject("time")?.optLong("completed", 0L) ?: 0L
-            if (created > 0 && completed > 0) {
+            if (created > 0 && completed > 0 && statusType == "idle" &&
+                info.optString("finish") !in setOf("tool-calls", "tool_calls", "tool_use")) {
                 job.answer = textOf(turn)
                 job.finish = info.optString("finish", "")
-                job.tools = toolCount(turn)
                 finish(job, "completed", null)
                 return
             }
         }
     }
 
-    private fun findTurn(messages: JSONArray, started: Long, prompt: String): JSONObject? {
+    internal fun relatedTurns(messages: JSONArray, started: Long, prompt: String): List<JSONObject> {
         val expected = prompt.trim()
         var userId = ""
         for (index in 0 until messages.length()) {
@@ -216,15 +225,20 @@ object AIZivaChat {
             if (info.optString("role", "") != "user") continue
             val created = info.optJSONObject("time")?.optLong("created", 0L) ?: 0L
             if (created > 0 && created < started - 5000L) continue
-            if (textOf(message).trim() == expected) { userId = info.optString("id", ""); break }
+            if (textOf(message).trim() == expected) userId = info.optString("id", "")
         }
-        if (userId.isEmpty()) return null
+        if (userId.isEmpty()) return emptyList()
+        val parents = mutableSetOf(userId)
+        val turns = mutableListOf<JSONObject>()
         for (index in 0 until messages.length()) {
             val message = messages.optJSONObject(index) ?: continue
             val info = message.optJSONObject("info") ?: continue
-            if (info.optString("role", "") == "assistant" && info.optString("parentId", "") == userId) return message
+            if (info.optString("role", "") == "assistant" && info.optString("parentId", "") in parents) {
+                turns += message
+                parents += info.optString("id", "")
+            }
         }
-        return null
+        return turns
     }
 
     private fun textOf(message: JSONObject): String {

@@ -151,6 +151,19 @@ object AIZivaRuntime {
             return state.put("same_project", target.isNotEmpty() && projectId(File(target)) == state.optString("project_id"))
         }
         check(BuildConfig.GODOT_AI_ZIVA) { "Disponibil în aplicația separată Godot AI Ziva." }
+        if (action.startsWith("ziva_agent_")) {
+            val target = File(args.getString("project_directory")).canonicalFile
+            check(File(target, "project.godot").isFile)
+            val link = AIZivaAgentLink(File(directory(context), "projects/${projectId(target)}/agent-link"))
+            val identity = args.getString("owner")
+            return when (action) {
+                "ziva_agent_register" -> link.register(identity, context.assets.open("ai/agent-link-client.gd").bufferedReader().use { it.readText() })
+                "ziva_agent_poll" -> link.poll(identity)
+                "ziva_agent_reply" -> link.reply(identity, args.getString("id"), args.getJSONObject("result"))
+                "ziva_agent_close" -> link.close(identity)
+                else -> error("Operație de comunicare necunoscută.")
+            }
+        }
         if (action.startsWith("ziva_chat_")) return chat(context, action, args)
         if (action == "ziva_embed" && !args.optBoolean("visible")) { AIZivaWindow.hide(); return JSONObject().put("ok", true) }
         if (action == "ziva_embed") {
@@ -189,19 +202,21 @@ object AIZivaRuntime {
     /** Delegation to the official agent through its own local RPC, never the WebView. */
     private fun chat(context: Context, action: String, args: JSONObject): JSONObject {
         // Jobs live in this process; reading them never touches the sidecar, so a finished answer survives a stop.
-        if (action == "ziva_chat_poll") return AIZivaChat.poll(args.optString("job_id"))
-        if (action == "ziva_chat_cancel") return AIZivaChat.cancel(args.optString("job_id"))
+        val target = args.optString("project_directory")
+        require(target.isNotEmpty()) { "Proiectul cererii Ziva lipsește." }
+        val scope = projectId(File(target))
+        if (action == "ziva_chat_poll") return AIZivaChat.poll(args.optString("job_id"), scope)
+        if (action == "ziva_chat_cancel") return AIZivaChat.cancel(args.optString("job_id"), scope)
         val state = status(context)
         val port = state.optInt("ui_port", 0)
         if (!state.optBoolean("running") || port <= 0)
             return JSONObject().put("ok", false).put("code", "ziva_not_running")
                 .put("error", "Sesiunea Ziva nu rulează. Pornește-o din tabul Ziva, apoi reia.")
-        val target = args.optString("project_directory")
-        if (target.isEmpty() || projectId(File(target)) != state.optString("project_id"))
+        if (projectId(File(target)) != state.optString("project_id"))
             return JSONObject().put("ok", false).put("code", "ziva_other_project")
                 .put("error", "Ziva rulează pe alt proiect; deschide același proiect în tabul Ziva.")
         return when (action) {
-            "ziva_chat_send" -> AIZivaChat.send(port, args.optString("prompt"), args.optString("chat_id"), args.optInt("timeout_seconds", 600))
+            "ziva_chat_send" -> AIZivaChat.send(port, args.optString("prompt"), args.optString("chat_id"), args.optInt("timeout_seconds", 600), scope)
             else -> JSONObject().put("ok", false).put("code", "ziva_unknown_action").put("error", "Operație Ziva necunoscută.")
         }
     }

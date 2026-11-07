@@ -196,6 +196,7 @@ class AIZivaService : Service() {
                 check(guestIdentity.isDirectory || guestIdentity.mkdirs()) { "Directorul de identificare Ziva nu poate fi creat." }
                 val binds = mutableListOf(
                     identity.absolutePath to "/run/godot-ai-ziva",
+                    privateDirectory("projects/$projectId/agent-link").absolutePath to AIZivaAgentLink.GUEST,
                     File(identity, "addons.json").absolutePath to AIZivaProjectContext.INVENTORY,
                     ziva.addon.absolutePath to "/workspace/addons/ziva_agent",
                     privateDirectory("projects/$projectId/local-share").absolutePath to "/root/.local/share",

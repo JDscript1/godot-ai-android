@@ -42,6 +42,8 @@ fun main() {
         expect(!extension.getBoolean("load_verified"))
         expect(File(session, "AGENTS.md").readText().startsWith(global.readText()))
         expect(File(session, "AGENTS.md").readText().contains(AIZivaProjectContext.INVENTORY))
+        expect(File(session, "AGENTS.md").readText().contains("/run/godot-ai-ziva/agent-link/client.gd"))
+        expect(File(session, "AGENTS.md").readText().contains("read-only Ask mode"))
         expect(original.readText() == "USER PROJECT RULES\n" && config.readText() == configBefore)
         expect(!AIZivaProjectContext.refresh(project, session, global))
         // A store install made while the session is running becomes visible.

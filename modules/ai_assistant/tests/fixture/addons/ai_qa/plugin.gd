@@ -4018,6 +4018,7 @@ func _ziva_tests(output: String) -> void:
 	var bridge = FixtureZivaBridge.new()
 	add_child(bridge)
 	await _ziva_delegation_tests(bridge)
+	await load(get_script().resource_path.get_base_dir().path_join("peer_link.gd")).new().run(self, panel, bridge)
 	var backend = embedded["ziva"].new(bridge, ProjectSettings.globalize_path("res://").trim_suffix("/"))
 	var was_expanded = EditorInterface.is_distraction_free_mode_enabled()
 	var screen = EditorInterface.get_editor_main_screen().find_child("ZivaMainScreen", true, false)

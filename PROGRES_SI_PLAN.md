@@ -8,6 +8,54 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Comunicare și control Godot AI ↔ Ziva — 7.11.2026
+
+**Implementat în surse.** Agentul nostru are pornire asincronă, stare, rezultat
+paginat și anulare pe job pentru Ziva. Ziva are un client GDScript livrat de APK,
+cu operații de stare, întrebare Ask, sarcină, rezultat, intervenție și anulare
+pentru agentul nativ. Legătura inversă folosește un director privat per proiect,
+identificator de sesiune și fișiere atomice; nu modifică proiectul utilizatorului.
+Contextul global Ziva documentează apelurile prin `execute_script`.
+
+Cererile inversate trec prin harness-ul real și permisiunile lui; Ask impune
+citirea independent de ce unealtă încearcă modelul. Joburile sunt corelate cu
+cererea și turul executat. Cererile vechi nu opresc un tur nou; anularea unui
+job din coadă păstrează restul cozii. Ciorna și atașamentele utilizatorului sunt
+păstrate. Sunt refuzate apelurile pentru aprobarea permisiunilor și delegarea
+circulară. Fișierele salvate sunt comune, scenele live ale editorilor rămân separate.
+
+**Defecte suplimentare corectate în delegare.** Cererile simultane în aceeași
+conversație Ziva sunt refuzate. Rezultatul urmărește ultimul mesaj al turului și
+starea idle, nu primul mesaj încheiat care conține apeluri de unelte. Uneltele
+întregului tur sunt numărate. Anularea unui job deja încheiat nu mai trimite
+abort în conversația reutilizată, iar citirea/anularea resping alt proiect.
+
+**Verificări efectuate.** Catalogul MCP activ local a fost recitit: Ziva
+`v3.3.5`, 42 de unelte; `execute_script` confirmă subprocess GDScript și `read`
+acceptă căi absolute. Nu au fost trimise sarcini unui model real prin această
+inspecție. Testele Kotlin locale au trecut: transport/client **18/0**, RPC
+**10/0**, context Ziva **36/0**. Proba transportului folosește clientul GDScript
+livrat și implementarea Kotlin în procese distincte, nu un înlocuitor al acestora.
+RPC-ul și furnizorul din probe sunt simulate. Succesul acestor probe nu confirmă
+încă doi agenți cu modele reale pe Android.
+
+Runtime local: **949/0**; editor `ziva`: **105/0** pe narrow și **105/0** pe
+phone_landscape; `chat_lifecycle`: **88/0**. Proba inversă execută efectiv
+harness-ul nativ cu un furnizor simulat care încearcă o scriere în Ask:
+scrierea este refuzată, răspunsul este corelat, ciorna și atașamentele rămân.
+Testele clientului/transportului/RPC/contextului sunt incluse și în workflow-ul
+CI, înaintea suitei de randare. Verificarea APK confirmă și noua clasă Android
+și conținutul clientului GDScript din assets.
+
+Dovezi: `.ai-qa/agent-ziva-link-20261107/`, logurile runtime/editor/JVM și
+scripturile reproductibile; contractul complet este în
+[AI_ZIVA_COLLABORATION.md](docs/AI_ZIVA_COLLABORATION.md). Starea livrării și
+rezultatele finale sunt consemnate după verificări și compilare.
+
+Jurnal: 7.11.2026 — implementată colaborarea dintre agenți în ambele sensuri;
+verificat transportul real între clientul Godot și Kotlin, corectate corelarea
+răspunsurilor Ziva și izolarea comenzilor pe job/proiect.
+
 ## Livrare APK cu rectificările chatului — 7.11.2026
 
 **Compilat din sursa `54b092a7fa3d14221edde71a4f15476816eb5efe`** prin workflow-ul

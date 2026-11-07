@@ -244,6 +244,17 @@ frontend, credentials, tools, and conversation remain separate. The editor QA
 fixture verifies both directions, queueing, and the missing-panel error; a live
 Ziva session is still a separate acceptance check.
 
+### Bidirectional agent control (2026-11-07)
+
+The native agent can start Ziva jobs asynchronously, inspect their state and
+cancel an exact job. Ziva can use the app-provided GDScript client to query the
+native model in Ask mode, submit tasks, inspect correlated results, steer an
+identified active turn or cancel it. The private per-project mailbox is scoped
+to the editor session. Draft attachments and credentials are not shared.
+Read-only enforcement and normal execution permissions remain in the native
+harness. Circular delegation is refused while status remains available.
+See [the communication contract and checks](AI_ZIVA_COLLABORATION.md).
+
 ## Symbol map and reviewed writes (source, 2026-10-28)
 
 `godot_symbols` maps top-level GDScript declarations under a project directory:
