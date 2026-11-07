@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **7.11.2026**. APK Ziva livrat în Download: **be466bf**, cu AG-01–AG-57.
+Actualizat: **7.11.2026**. APK Ziva livrat în Download: **5f7fd57**, cu AG-01–AG-57.
 Distribuția standard este păstrată separat. [Dovezi actuale](PROGRES_SI_PLAN.md).
 Ultima instalare consemnată aici prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
 Bifele de acceptare nu se închid numai
@@ -10,6 +10,14 @@ real prin unelte, inclusiv **46 cereri**. Continue a expus o eroare DeepSeek,
 apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
+
+## Modificări în chat, jurnal și fullscreen — 7.11.2026, în APK `5f7fd57`
+
+- [x] Modificările rămân în fluxul cronologic, inclusiv după mesaje interne goale, și pornesc restrânse; actualizările păstrează extinderea aleasă de utilizator.
+- [x] Buton cu confirmare pentru golirea jurnalului proiectului, exporturilor activity și diagnosticelor Blender afișate, cu sesiune nouă și păstrarea conversațiilor/recuperării.
+- [x] Fullscreen-ul nativ nu mai este forțat înapoi de agent; ieșirea restaurează panourile și dock-ul lateral inițial.
+- [x] Trei joburi CI verzi; APK semnat și 44 de scripturi exacte verificate, livrat în Download.
+- [ ] Confirmare fizică pe Android pentru derulare, carduri, golirea jurnalului și comutarea panourilor/fullscreen-ului.
 
 ## Profiluri de generare și rutare imagine → mesh — 7.11.2026, în APK `be466bf`
 

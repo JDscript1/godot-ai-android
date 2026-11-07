@@ -10,16 +10,20 @@ drept funcție validată cu un serviciu real.
 
 ## Istoricul modificărilor, golirea jurnalului și panourile editorului — 7.11.2026
 
-**Implementat în surse și verificat local; compilarea și livrarea APK sunt în curs.**
+**Compilat, verificat și livrat din `5f7fd570400759aa130e49641497a0d595832a54`.** Toate cele trei joburi din [CI `42412786639`](https://github.com/JDscript1/godot-ai-android/actions/runs/42412786639) au trecut; [artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42412786639/artifacts/13590691141).
 
+- APK `com.jdscript.godotai.ziva.debug`, ARM64, **112.623.878 bytes**.
+- SHA-256: `02078aac4ccd7928ef24a82959e882016a0e33f8b8b2085ab23c6d45ea53c648`.
+- Certificatul persistent, integritatea ZIP-ului, ABI-ul și toate cele **44 de scripturi** încorporate au fost verificate față de sursele commitului final.
+- Înlocuit atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu checksum alăturat. APK-ul nu a fost instalat automat.
 - Cardul „Modificări” apare în fluxul cronologic al răspunsului, la prima modificare observată, înaintea explicațiilor ulterioare. Rămâne vizibil și când mesajul intern al agentului este gol. Pornește restrâns, iar actualizările păstrează alegerea utilizatorului de a-l extinde.
-- „Golește jurnalul…” cere confirmare, apoi golește `journal.json` și înregistrările `activity-*.jsonl` din proiect și copia configurată de export. Golește și diagnosticele Blender afișate în jurnal. Păstrează conversațiile, jurnalul de recuperare și fișierele fără legătură; începe o sesiune nouă de jurnal.
-- Butonul de fullscreen al editorului nu mai este reactivat forțat de agent într-o buclă. Starea butonului din chat urmărește modul nativ al editorului; panourile de diagnostic și poziția laterală inițială sunt restaurate la ieșirea din modul extins, inclusiv prin controlul nativ.
-- Verificări locale: runtime **1038/0**, prezentarea chat **175/0**, jurnal și rotație **126/0**, panouri **71/0**; `git diff --check`.
+- „Golește jurnalul…” cere confirmare, apoi golește `journal.json`, înregistrările `activity-*.jsonl` din proiect și copia configurată de export, precum și diagnosticele Blender afișate. Păstrează conversațiile, jurnalul de recuperare și fișierele fără legătură; începe o sesiune nouă de jurnal.
+- Butonul fullscreen al editorului nu mai este reactivat forțat de agent într-o buclă. Starea butonului din chat urmărește modul nativ; panourile de diagnostic și poziția laterală inițială sunt restaurate la ieșirea din modul extins, inclusiv prin controlul nativ.
+- Verificări locale: runtime **1038/0**, prezentarea chat **175/0**, jurnal și rotație **126/0**, panouri **71/0**; `git diff --check`. Captura locală cu cardul restrâns a fost inspectată. CI runtime, editor nativ și Android sunt verzi.
 
-Limită: randările de editor sunt probe pe Godot Linux/Xvfb, nu verificări pe telefonul Android. APK-ul se va livra după terminarea CI.
+**Limită:** randările sunt probe în Godot Linux/Xvfb. Interacțiunile fizice, glitch-ul din captura utilizatorului și funcționarea APK-ului instalat pe telefon rămân de confirmat pe dispozitiv.
 
-Jurnal: 7.11.2026 — ordine cronologică și disclosure pentru modificări, golire sigură a jurnalelor și sincronizarea fullscreen-ului nativ.
+Jurnal: 7.11.2026 — ordine cronologică și carduri de modificări restrânse, golirea jurnalelor și sincronizarea fullscreen-ului nativ; APK Ziva `5f7fd57` verificat și livrat.
 
 ## Rutarea profilurilor de generare imagine și 3D — 7.11.2026
 
