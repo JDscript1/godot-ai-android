@@ -2759,7 +2759,9 @@ func _context_messages() -> Array:
 		instructions += "\nCurrent project: " + _redact(JSON.stringify(snapshot))
 		instructions += "\nProject map: " + JSON.stringify(project_knowledge.summary()) + ". Use godot_project_map for dependency/symbol facts; stale or partial coverage cannot prove absence. Use godot_diagnostics to collect native Debugger, parser, reference and runtime issues. When the user mentions Debugger errors, read godot_debugger first; it works with hidden panels and stopped sessions. Inspect message, file, line, stack, active state and generation. Retained errors are historical observations, not proof the current source still fails. After relevant fixes rerun the affected scene and read the new session diagnostics before declaring errors resolved. Never clear the Debugger to manufacture a clean result. Missing native access, truncation or empty visible console text cannot prove a clean run. Use godot_panels to inventory hidden and visible editor controls, then godot_panel_read for cached Tree rows, lists, menus, tabs and text. Follow snapshot/next_offset and text/next_offset for complete pages. If the harness marks a page truncated, retry its returned cursor with a smaller limit or a specific item/column; do not skip omitted rows. Check generation/current_generation/stale_session on native caches. For Output, Profiler, Visual Profiler, Monitors, VRAM, stack, variables, threads, breakpoints, Inspector, selection, audio buses and animation resources use godot_panel_data. Retained unscoped Output messages do not prove a new run still fails; prefer the native Debugger generation. Reading must not open panels or start profilers. Uncollected, protected, expired, partial or custom-drawn state is not readable evidence and does not mean empty/zero; use the specific native tool or capture when supported and report remaining limits. Inspect root causes before patching cascaded failures."
 		instructions += "\nAcceptance evidence: " + JSON.stringify(verification.snapshot()) + ". For implementation tasks declare task_update.criteria with stable IDs, description, kind, relevant project paths and a measured check for runtime/interaction. Checks use JSON pointers into actual tool results and eq/ne/gt/gte/lt/lte/contains/nonempty. Use returned verification_evidence.id with task_check for each criterion. A successful read, an empty Output or a run request alone does not verify gameplay. After edits or restart collect fresh affected evidence. Already declared criteria are protected: repeat them unchanged with stable IDs; append new requirements using new IDs. Earlier evidence cannot verify a criterion added later. If a protected requirement is wrong or cannot be verified, report the concrete blocker. Never invent IDs or lower the acceptance criteria merely to finish."
-		instructions += "\nGeneration profiles: " + JSON.stringify(config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "model": profile.get("model", ""), "price": profile.get("model_info", {}).get("price", {}), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")}))
+		var generation_profiles = config["generation"].map(func(profile: Dictionary) -> Dictionary: return {"id": profile["id"], "name": profile["name"], "provider": profile.get("kind", ""), "kind": profile.get("asset_kind", "image"), "model": profile.get("model", ""), "price": profile.get("model_info", {}).get("price", {}), "destination": profile.get("destination", "res://ai_assets"), "preferred_format": profile.get("preferred_format", "glb")})
+		instructions += "\nGeneration profiles: " + JSON.stringify(generation_profiles)
+		instructions += "\nGENERATION ROUTING: Select saved profiles by their exact ID, name or model ID; the tool also accepts the semantic selector image or mesh when exactly one saved profile has that kind. For a requested 3D object, first inspect the listed kinds. If a mesh profile exists and an image profile also exists, automatically generate one isolated reference_3d image, wait for completion, confirm quality.ready_for_use, then call the mesh profile with the completed image's actual imported_path (or file path) as reference. Use distinct stable asset keys for the reference image and final mesh. If a mesh profile exists without an image profile, call mesh directly without an image. If no mesh profile exists, explain that the configured generators cannot produce a mesh; do not call an image profile as a substitute. Do not ask the user to choose a configured generator when the profile kinds already make the route unambiguous."
 		instructions += "\nIMAGE ASSET CONTRACT: Always choose asset_generate.purpose for images. reference_3d means an isolated, fully visible single object for reconstruction, without environment/floor/pedestal/shadow; sprite means the requested 2D game art and exact frame layout, not a reconstruction render; texture means a flat tileable surface; background means complete scenery; generic means an ordinary illustration. reference_3d and sprite default to a real transparent background. Respect an explicit user override via background. Never infer transparency from PNG, a white background or a drawn checkerboard. After asset_wait inspect quality.ready_for_use and observe the exact output before feeding it to a 3D generator. If transparency is missing, use asset_remove_background on the existing imported image with a saved Runware profile, then wait and inspect it; do not regenerate the source, invent alpha support or convert an invalid reference. If no background-removal service is configured, report that specific blocker and preserve the original. Background removal consumes provider credits and follows the same permission and planning rules as generation."
 		instructions += "\n3D PREVIEW: Never open generated images or meshes automatically. Show compact cards; call file_preview ONLY when the latest user explicitly requests opening the viewer. Use file_observe to inspect the downloaded GLB with the native Godot renderer and file_preview to open it for the user. Both work without Blender CLI. Always leave the completed asset card in chat. Blender is for modeling/conversion and is never required to view a GLB. Keep the original GLB preview when exporting FBX or other formats."
 		instructions += "\nGenerated PNG/GLB originals are automatically placed in a named project folder. If a 3D profile prefers another format, call asset_export with that format after completion; it stores the conversion beside the original when available. Never claim a provider conversion succeeded until asset_export returns completed."
@@ -2825,8 +2827,7 @@ func _running_tool_label(name: String, args: Dictionary = {}) -> String:
 	if name in ["asset_generate", "asset_wait", "asset_status"]:
 		var kind = ""
 		if name == "asset_generate":
-			for profile in config.get("generation", []):
-				if str(profile.get("id", "")) == str(args.get("profile", "")): kind = str(profile.get("asset_kind", "image")); break
+			kind = str(_generation_profile(str(args.get("profile", ""))).get("asset_kind", ""))
 		else:
 			for job in assets.jobs:
 				if str(job.get("id", "")) == str(args.get("job", "")): kind = str(job.get("kind", "")); break
@@ -2937,8 +2938,13 @@ func _execute_call(name: String, args: Dictionary) -> Dictionary:
 	elif name.begins_with("mcp_"):
 		result = await mcp.call_tool(name, args, _permission_mode(), true, cancel)
 	elif name == "asset_generate":
-		var profile = _generation_profile(str(args.get("profile", "")))
-		result = await assets.submit(profile, str(args.get("prompt", "")), str(args.get("reference", "")), cancel, args) if not profile.is_empty() else Common.failure("Profil de generare inexistent.")
+		var profile_query = str(args.get("profile", ""))
+		var profile = _generation_profile(profile_query)
+		if profile.is_empty():
+			var choices = config.get("generation", []).map(func(item: Dictionary) -> Dictionary: return {"id": item.get("id", ""), "name": item.get("name", ""), "model": item.get("model", ""), "kind": item.get("asset_kind", "image")})
+			result = Common.failure("Profil de generare inexistent sau ambiguu: %s. Profiluri salvate: %s" % [profile_query, JSON.stringify(choices)], "generation_profile_not_found")
+		else:
+			result = await assets.submit(profile, str(args.get("prompt", "")), str(args.get("reference", "")), cancel, args)
 	elif name == "asset_remove_background":
 		var profile = _generation_profile(str(args.get("profile", "")))
 		result = await assets.remove_background(profile, str(args.get("reference", "")), cancel, str(args.get("purpose", "generic"))) if not profile.is_empty() else Common.failure("Profil de generare inexistent.")
@@ -3485,8 +3491,23 @@ func _edit_generation(index: int) -> void:
 
 func _generation_profile(id: String = "") -> Dictionary:
 	if id.is_empty(): id = str(forms["generation"].get("editing", ""))
-	for profile in config["generation"]:
-		if profile["id"] == id: return profile
+	var query = id.strip_edges().to_lower()
+	if query.is_empty(): return {}
+	var expected_kind = query if query in ["image", "mesh"] else ""
+	var candidates: Array = []
+	for profile in config.get("generation", []):
+		if expected_kind.is_empty() or str(profile.get("asset_kind", "image")) == expected_kind:
+			if str(profile.get("id", "")).to_lower() == query: return profile
+	if not expected_kind.is_empty():
+		for profile in config.get("generation", []):
+			if str(profile.get("asset_kind", "image")) == expected_kind: candidates.append(profile)
+		return candidates[0] if candidates.size() == 1 else {}
+	for field in ["name", "model"]:
+		candidates.clear()
+		for profile in config.get("generation", []):
+			if str(profile.get(field, "")).strip_edges().to_lower() == query: candidates.append(profile)
+		if candidates.size() == 1: return candidates[0]
+		if candidates.size() > 1: return {}
 	return {}
 
 func _test_generation() -> void:

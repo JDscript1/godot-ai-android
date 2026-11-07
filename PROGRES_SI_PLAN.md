@@ -8,6 +8,27 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Rutarea profilurilor de generare imagine și 3D — 7.11.2026
+
+**Implementat în surse, încă necompilat și nelivrat.** Executorul acceptă acum
+ID-ul, numele sau modelul exact al profilului, plus selectorii `image`/`mesh`
+când există un singur profil de acel tip. Dacă selecția lipsește ori este
+ambiguă, eroarea include profilurile salvate fără secrete.
+
+Instrucțiunile active ale agentului îl învață să facă mesh direct când există
+un profil 3D fără profil de imagine; când ambele tipuri sunt configurate,
+generează mai întâi o imagine izolată `reference_3d`, așteaptă și verifică
+rezultatul, apoi trimite calea reală a imaginii profilului mesh. Profilurile
+și destinațiile existente rămân configurate în proiectul utilizatorului.
+
+Verificare locală executată: `git diff --check`. Nu au fost rulate teste runtime,
+nu s-a compilat APK și nu s-a apelat vreun furnizor; disponibilitatea live a
+cheilor Refract/Trellis2 rămâne neverificată. Următorul pas pentru distribuție
+este buildul Ziva CI și verificarea APK-ului rezultat.
+
+Jurnal: 7.11.2026 — reparată rezolvarea profilurilor pentru apelurile agentului
+și adăugată rutarea automată imagine-de-referință → mesh.
+
 ## Meta Model API și revenirea din login ChatGPT — 7.11.2026
 
 **Compilat, verificat și livrat din `cd3076a678fdb91fb2e3230df1bd5e174eced099`.** Toate cele trei joburi
