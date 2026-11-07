@@ -16,32 +16,39 @@ drept funcție validată cu un serviciu real.
 - Catalogul pentru chat exclude modelele OmniRoute de imagine, audio, rerank și
   alte tipuri non-chat. Rutele/combo-urile fără un tip declarat rămân disponibile.
 - `context_length` este citit din catalog și ajunge la bugetul de context și
-  compactarea preventivă; câmpurile existente ale celorlalți furnizori sunt păstrate.
+  compactarea preventivă; valorile primare `null`/`0` sunt omise. Câmpurile
+  existente ale celorlalți furnizori, inclusiv valorile numerice text, sunt păstrate.
 - Alegerea manuală a unui model are un marcaj persistent, separat de proveniența
   metadatelor. Actualizarea catalogului păstrează ruta, fără duplicare, inclusiv
   dacă apare și apoi dispare din listă. Metadatele noi ale rutei descoperite sunt
-  preluate. Intrările vechi `source=manual` sunt recunoscute în continuare.
+  preluate. Dacă ruta nu mai este listată, limitele/prețurile/capabilitățile vechi
+  nu mai sunt prezentate ca metadate live. Intrările vechi `source=manual` sunt recunoscute în continuare.
 - Atât Testează/refresh, cât și descoperirea ciornei păstrează modelele manuale.
   Un catalog gol cu HTTP reușit acceptă o rută explicită; fără o astfel de alegere
   rămâne indisponibil. Un eșec de autentificare nu elimină modelele salvate.
   Un endpoint diferit nu moștenește rutele manuale ale conexiunii anterioare.
 
-**Verificat local:** runtime **1008/0** (catalog, Bearer, SSE fragmentat, apel
+**Verificat local:** runtime **1013/0** (catalog, Bearer, SSE fragmentat, apel
 unealtă → rezultat → răspuns final și persistența modelului manual); formular
-providers phone compact **110/0**. Aceeași probă UI pe sursa veche raportează
-**110 verificări / 9 eșecuri**. Captura formularului salvat a fost inspectată.
+providers phone compact **113/0**. Proba inițială UI reproduce pe sursa veche
+**110 verificări / 9 eșecuri**, față de **110/0** după corecția inițială;
+cele trei cazuri suplimentare din review sunt incluse în rezultatul final 113/0. Captura formularului salvat a fost inspectată.
 Testele folosesc server HTTP și transport de catalog simulate, fără prompturi
 către un serviciu cloud. Inferența pe OmniRoute real și proba fizică Android
 rămân separate de aceste rezultate.
 
-DeepSeek Free, model exact `opencode/deepseek-v4.1-flash-free`, primește un review
-limitat al patch-ului și al probelor prin OpenCode izolat, fără cheia personală
-și fără fallback plătit. Rezultatul său se consemnează după încheiere.
+DeepSeek Free, model exact `opencode/deepseek-v4.1-flash-free`, a încheiat review-ul
+limitat prin OpenCode izolat (exit 0), fără cheia personală și fără fallback
+plătit. Au fost corectate două cazuri semnalate: context primar null/zero și
+metadate live devenite neverificate. Observația despre lipsa barierei la schimbarea
+serverului era bazată pe context incomplet: codul existent refuză cheia goală la
+schimbare și nu păstrează vechiul catalog. Probe directe pentru refuz și salvarea
+unei conexiuni înlocuite validează acea protecție; logica de facturare este păstrată.
 Dovezi: `.ai-qa/omniroute-fixes-20261107/`; auditul și cele patru cazuri inițiale
 sunt în `.ai-qa/omniroute-review-20261107/`.
 
 Jurnal: 7.11.2026 — corectate cele patru probleme OmniRoute în surse, adăugate
-regresii de protocol și de formular; runtime 1008/0, UI 110/0 față de 9 eșecuri
+regresii de protocol și de formular; runtime 1013/0, UI final 113/0 după 9 eșecuri reproduse
 pe sursa veche. APK în pregătire, livrarea se face după CI și verificarea artefactului.
 
 ## OmniRoute ca furnizor AI — 7.11.2026

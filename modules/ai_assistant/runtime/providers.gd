@@ -263,7 +263,7 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 		var supported: Dictionary = item.get("supported_parameters", {}) if item.get("supported_parameters", {}) is Dictionary else {}
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
-		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": item.get("context_window", item.get("context_length", item.get("inputTokenLimit", 0))), "max_output_tokens": item.get("max_output_tokens", item.get("outputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")})
+		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": model_context(item), "max_output_tokens": item.get("max_output_tokens", item.get("outputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")})
 	if issuer in ["lmstudio", "ollama"]:
 		var metadata = await transport.request(root + ("/api/v0/models" if issuer == "lmstudio" else "/api/ps"), HTTPClient.METHOD_GET, headers(profile, key_override), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 3, "connect_timeout": 2})
 		if cancel.get("cancelled", false): return Common.failure("Verificare oprită.", "cancelled")
@@ -281,6 +281,17 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 				if capacity > 0: item["context"] = capacity
 	return Common.success(models)
 
+static func model_context(model: Dictionary) -> int:
+	for field in ["context_window", "context_length", "inputTokenLimit"]:
+		var value: Variant = model.get(field)
+		if value is String:
+			if not value.is_valid_int(): continue
+			value = int(value)
+		if value is int or value is float:
+			var capacity = int(value) if is_finite(float(value)) else 0
+			if capacity > 0: return capacity
+	return 0
+
 static func merge_model_catalog(catalog: Array, previous: Array, manual_id: String = "") -> Array:
 	# Catalog metadata can change; an explicit manual choice remains durable even
 	# when a route temporarily appears in discovery and later disappears again.
@@ -297,8 +308,9 @@ static func merge_model_catalog(catalog: Array, previous: Array, manual_id: Stri
 		if by_id.has(id):
 			by_id[id]["manual"] = true
 		else:
-			var retained = model.duplicate(true)
-			retained["manual"] = true
+			# Keep the user's route, not now-unverified live limits, prices or
+			# capabilities. Explicit vision overrides live on the profile.
+			var retained = {"id": id, "name": str(model.get("name", id)), "source": "manual", "manual": true, "capabilities": {}}
 			models.append(retained)
 			by_id[id] = retained
 	var id = manual_id.strip_edges()

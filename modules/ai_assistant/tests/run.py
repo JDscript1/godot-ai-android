@@ -67,12 +67,12 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
         if location.path == "/omni-review/v1/models":
             valid = self.headers.get("Authorization") == "Bearer omniroute-protocol-fixture-key"
             self.reply({"object":"list", "data":[
-                {"id":"ds/chat-fixture", "type":"chat", "context_length":262144, "max_output_tokens":8192, "capabilities":{"tool_calling":True,"vision":True}},
+                {"id":"ds/chat-fixture", "type":"chat", "context_window":0, "context_length":262144, "max_output_tokens":8192, "capabilities":{"tool_calling":True,"vision":True}},
                 {"id":"images/image-fixture", "type":"image", "output_modalities":["image"]},
                 {"id":"audio/speech-fixture", "type":"audio", "subtype":"speech"},
                 {"id":"vectors/embed-fixture", "type":"embedding"},
                 {"id":"rank/rerank-fixture", "type":"rerank"},
-                {"id":"combo-fixture", "owned_by":"combo", "context_length":131072}
+                {"id":"combo-fixture", "owned_by":"combo", "context_window":None, "context_length":131072}
             ]} if valid else {"error":"Unauthorized"}, 200 if valid else 401)
             return
         if location.path in ["/drip", "/idle-drip"]:

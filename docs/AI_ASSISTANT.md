@@ -112,9 +112,10 @@ describe the route.
 
 For OmniRoute, the chat picker keeps chat routes and combos while excluding
 image/audio/rerank-only endpoints. The catalog's `context_length` supplies the
-context budget. A manual route remains saved across catalog refreshes, including
+context budget, skipping null/zero primary values. A manual route remains saved across catalog refreshes, including
 a route temporarily appearing and later disappearing from discovery. Fresh catalog
-metadata still updates it. Reopening a saved OmniRoute connection keeps the API
+metadata still updates it; when the route becomes unlisted, old live limits,
+prices and capabilities are cleared. Reopening a saved OmniRoute connection keeps the API
 address editable. An authenticated empty catalog permits an explicit manual route;
 without a manual choice it remains unavailable. Changing the server starts a
 separate catalog scope and does not inherit the old server's manual routes.

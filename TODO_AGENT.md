@@ -15,7 +15,7 @@ repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă
 
 - [x] Adresă vizibilă la reeditare, filtrare non-chat și citirea `context_length`.
 - [x] Model manual păstrat prin Testează, ciornă și refresh; metadate actualizate, fără duplicare ori transfer la alt endpoint.
-- [x] Runtime 1008/0 și UI providers 110/0; aceeași probă UI reproduce 9 eșecuri pe sursa veche.
+- [x] Runtime 1013/0 și UI providers 113/0; proba inițială UI reproduce 9 eșecuri pe sursa veche.
 - [ ] Compilare CI complet verde și livrare verificată a noului APK Ziva.
 - [ ] Inferență pe OmniRoute real, conexiune prin Tailscale și acceptare fizică Android.
 

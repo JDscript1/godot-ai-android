@@ -2470,7 +2470,7 @@ func _omniroute_contract_tests(node: Node) -> void:
 	var chats = models.filter(func(model: Dictionary) -> bool: return model["id"] == "ds/chat-fixture")
 	check(chats.size() == 1 and chats[0]["context"] == 262144, "OmniRoute context_length is retained for proactive compaction")
 	check(chats.size() == 1 and chats[0]["capabilities"].get("vision", false), "OmniRoute vision metadata remains available")
-	check("combo-fixture" in ids, "OmniRoute combos remain selectable with the original route identity")
+	check("combo-fixture" in ids and models.filter(func(item: Dictionary) -> bool: return item["id"] == "combo-fixture")[0]["context"] == 131072, "OmniRoute combos preserve their route and context_length despite a null primary field")
 	var messages = [{"role": "user", "content": "Inspect the fixture scene"}]
 	var tools = [{"name": "godot_scene_tree", "description": "Read fixture scene", "parameters": {"type": "object", "properties": {}}}]
 	var first: Dictionary = await client.complete(profile, messages, tools, "ds/chat-fixture", "", {})
@@ -2484,13 +2484,19 @@ func _omniroute_contract_tests(node: Node) -> void:
 
 func _manual_catalog_tests(providers: GDScript) -> void:
 	var previous = [{"id": "combo/manual", "name": "My route", "source": "manual", "capabilities": {"vision": true}}, {"id": "stale-auto", "source": "live"}]
-	var live = [{"id": "combo/manual", "source": "live", "context": 262144, "capabilities": {"vision": false}}, {"id": "new-auto", "source": "live"}]
+	var live = [{"id": "combo/manual", "source": "live", "context": 262144, "capabilities": {"vision": false}, "pricing": {"input": 5}, "efforts": ["high"], "max_output_tokens": 8192}, {"id": "new-auto", "source": "live"}]
 	var merged: Array = providers.merge_model_catalog(live, previous)
 	check(merged.size() == 2 and merged[0].get("manual", false) and merged[0]["context"] == 262144 and not merged[0]["capabilities"]["vision"], "Manual identity keeps fresh catalog metadata when its route becomes discoverable")
 	check(not previous[0].has("manual") and not live[0].has("manual"), "Catalog merge leaves saved and incoming snapshots unchanged")
 	merged = providers.merge_model_catalog([{"id": "next-auto", "source": "live"}], merged)
 	check(merged.size() == 2 and merged.any(func(item: Dictionary) -> bool: return item["id"] == "combo/manual" and item.get("manual", false)), "Manual intent survives a listed then unlisted catalog transition")
 	check(not merged.any(func(item: Dictionary) -> bool: return item["id"] in ["new-auto", "stale-auto"]), "Refresh removes obsolete automatic models without retaining a stale catalog")
+	var retained: Dictionary = merged.filter(func(item: Dictionary) -> bool: return item["id"] == "combo/manual")[0]
+	check(retained["source"] == "manual" and retained["capabilities"].is_empty() and not retained.has("context") and not retained.has("pricing") and not retained.has("efforts") and not retained.has("max_output_tokens"), "An unlisted manual route cannot present old live limits, prices or capabilities as current")
+	check(providers.model_context({"context_window": 0, "context_length": 131072}) == 131072 and providers.model_context({"context_window": null, "context_length": 65536}) == 65536, "Empty primary context fields fall through to a valid OmniRoute context_length")
+	check(providers.model_context({"context_window": -1, "context_length": 0, "inputTokenLimit": "8192"}) == 8192, "Context fallback preserves legacy numeric strings and skips nonpositive values")
+	check(providers.model_context({"context_window": 32768, "context_length": 131072}) == 32768, "A positive primary context retains existing field precedence")
+	check(providers.model_context({"context_window": INF, "context_length": "unknown", "inputTokenLimit": null}) == 0, "An unknown context stays unknown instead of inventing a capacity")
 	var empty: Array = providers.merge_model_catalog([], merged)
 	check(empty.size() == 1 and empty[0]["id"] == "combo/manual", "An empty successful catalog still retains an explicitly configured route")
 	var existing: Array = providers.merge_model_catalog(live, [], " combo/manual ")

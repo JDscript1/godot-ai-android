@@ -47,6 +47,8 @@ func run(host: EditorPlugin, panel: Control, output: String) -> void:
 		refreshed = await panel._test_provider(id)
 		host._check(refreshed and profile["models"].any(func(item: Dictionary) -> bool: return item["id"] == manual_id and item.get("manual", false)) and panel._selection().get("model") == manual_id, "A route disappearing from discovery remains selected after refresh")
 		host._check(not profile["models"].any(func(item: Dictionary) -> bool: return item["id"] == "ds/catalog-chat"), "Refresh removes stale automatic entries while keeping manual routes")
+		var unlisted: Dictionary = profile["models"].filter(func(item: Dictionary) -> bool: return item["id"] == manual_id)[0]
+		host._check(unlisted["source"] == "manual" and unlisted.get("context", 0) == 0, "An unlisted manual route no longer claims stale catalog context as live metadata")
 		# Re-enter through draft discovery, the other catalog replacement path.
 		panel._edit_provider(0)
 		await panel._discover_provider_draft()
@@ -65,6 +67,7 @@ func run(host: EditorPlugin, panel: Control, output: String) -> void:
 			await host.get_tree().create_timer(.2).timeout
 			panel.settings_window.get_texture().get_image().save_png(output.path_join("omniroute-saved.png"))
 		form["url"].text = "100.101.102.103:20129"
+		host._check(not panel._save_provider() and panel._profile_by_id(id)["url"].ends_with(":20128/v1") and panel.vault.read(id) == "omniroute-fixture-key", "Saving a changed endpoint without a replacement key is refused before credential or model carry")
 		form["key"].text = "omniroute-fixture-key"
 		transport.rows = [{"id": "different-endpoint-chat", "type": "chat"}]
 		await panel._discover_provider_draft()
@@ -77,6 +80,9 @@ func run(host: EditorPlugin, panel: Control, output: String) -> void:
 		await panel._discover_provider_draft()
 		host._check(not form.get("catalog_verified", false) and form["models"].is_empty(), "An empty catalog without manual intent remains unavailable")
 		host._check(transport.requests.all(func(item: Dictionary) -> bool: return item["authenticated"] and item["method"] == HTTPClient.METHOD_GET and item["url"].ends_with("/v1/models")), "Every catalog check uses the exact gateway URL and its own bearer credential")
+		transport.rows = [{"id": "different-endpoint-chat", "type": "chat"}]
+		await panel._discover_provider_draft()
+		host._check(panel._save_provider() and panel._profile_by_id(id)["url"].ends_with(":20129/v1") and not panel._profile_by_id(id)["models"].any(func(item: Dictionary) -> bool: return item["id"] == manual_id), "Saving a verified replacement endpoint uses its new catalog without the previous server's manual routes")
 		panel.vault.erase(id)
 	panel.provider_cancel["cancelled"] = true
 	panel.provider_epoch += 1
