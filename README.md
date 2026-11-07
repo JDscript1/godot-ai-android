@@ -6,12 +6,12 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42316466533/artifacts/13550882528)
-(GitHub Actions artifact, source `53a50e8`, delivered 7 November 2026).
-This includes bidirectional Godot AI/Ziva communication and task control, corrected
-chat presentation, and bounded empty-answer recovery. The Android build and APK
-integrity checks passed, while known aggregate editor-layout failures remain
-tracked in [the progress document](PROGRES_SI_PLAN.md).
+[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42354417191/artifacts/13566289271)
+(GitHub Actions artifact, source `3bb7a24`, delivered 7 November 2026).
+This includes protected acceptance criteria, durable generation identities and
+agent collaboration, plus corrected chat queue and dock behavior. All three
+CI jobs passed; physical Android and live-model acceptance remain tracked in
+[the progress document](PROGRES_SI_PLAN.md).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
@@ -39,7 +39,7 @@ The linked APK includes [project knowledge, unified diagnostics, adaptive
 recovery and acceptance evidence](docs/AI_HARNESS_INTELLIGENCE.md), plus
 [coordinated file changes and compensating rollback](docs/AI_CHANGE_SETS.md), and
 [editor panel access and coverage](docs/AI_PANEL_ACCESS.md).
-The compiled native editor passed 732 checks on each of five layouts; physical
+The compiled native editor passed the full suite on all five layouts; physical
 Android use and live-provider behavior remain separate verification steps.
 
 The harness now [compacts long sessions automatically](docs/AI_HARNESS.md):

@@ -8,9 +8,46 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Livrare APK cu rectificările harness — 7.11.2026
+
+**Compilat, verificat și livrat din `3bb7a244dd2547a479ffbe6e34bf40adf635d061`.** Toate cele trei joburi ale
+[workflow-ului `42354417191`](https://github.com/JDscript1/godot-ai-android/actions/runs/42354417191) au trecut: runtime, android și native-editor.
+[Artefactul Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42354417191/artifacts/13566289271) este separat de distribuția standard.
+
+- APK: **112.618.494 bytes**, `com.jdscript.godotai.ziva.debug`, Godot 4.7.2, ARM64.
+- SHA-256: `efd71956e4765eede05f74d0908bf9c9f1ef2cfbebc708c8bf1fc0abdbdb0268`.
+- Livrat atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu
+  checksum, după verificarea certificatului persistent, ZIP-ului, pachetului/ABI,
+  celor **44 de scripturi GDScript** identice cu sursa, clientului
+  agent-link, clasei Kotlin, manifestului runtime și bazei Linux. Livrarea
+  înlocuiește exclusiv instalatorul Ziva; instalarea pe telefon este separată.
+- Include criterii protejate, blocarea schimbării execuției în propunere,
+  identitate durabilă pentru generări, bariera reală de finalizare Ziva,
+  rezultate peer persistente și corecțiile cozii/blocării/andocării chatului.
+- Runtime CI **984/0**; transport/client **18/0**, RPC **10/0**, context **36/0**.
+  Upstream **1050/0 × 5**, nativ **1081/0 × 5**.
+  Scenariile suplimentare sunt în rapoartele CI de mai jos.
+  Cele 38 de eșecuri vechi de andocare și eșecul vechi de derulare a cozii sunt
+  rezolvate în editorul compilat. Corecția de izolare a scenariilor compacte
+  păstrează toate aserțiunile; proba locală cu istoricul deschis trece de la
+  **157 verificări / 16 eșecuri** la **158/0**; inspecția compactă trece de la **79/4** la **80/0**, cu
+  punctul de input verificat în conversație.
+- Proba completă locală phone compact pe sursa `cc4ee85`, în Godot **4.7.stable.termux** a raportat
+  **1049/6**, pentru input/link, tastatură și geometrie. Logul și cele șase
+  etichete sunt păstrate; rezultatele verzi CI pe 4.7.2 upstream/nativ nu sunt
+  prezentate drept validare fizică Android a acelor cazuri.
+- DeepSeek Free a contribuit până la limita gratuită; OpenCode nu a primit
+  cheia personală și nu s-a trecut la un model plătit în OpenCode. Acceptarea cu două modele
+  reale și gesturile/tastatura pe APK-ul instalat rămân de verificat separat.
+
+Dovezi: `.ai-qa/harness-fixes-20261107/release-build/` (`delivery.json`,
+`verification.json`, `*-ci-comparison.json`, loguri), `compact-history-probe/`,
+`compact-all-fixed/phone_compact/editor-report.json`, capturile finale
+`release-rendered/phone_compact/` inspectate și restul probelor de sursă.
+
 ## Rectificări ale auditului harness — 7.11.2026
 
-**Implementat și verificat local în surse; încă necompilat în noul APK.**
+**Inclus în APK-ul `3bb7a24`, verificat și livrat; acceptarea fizică este separată.**
 
 - Criteriile deja declarate sunt protejate împotriva eliminării ori reformulării;
   adăugările păstrează probele vechi valide, dar cer probe noi pentru criteriul
@@ -50,7 +87,7 @@ cu lista istoricului deschisă, care ascunde intenționat conversația. Capturil
 `current-rendered/phone_compact/chat-response-grouped.png` și
 `chat-native-diagram.png` arată lista, nu mesajele. Pregătirea celor două
 scenarii deschide acum conversația prin `show_history(false)`; aserțiunile sunt
-păstrate. APK-ul primei rulări nu este livrat înaintea verificării corecției.
+păstrate. APK-ul primei rulări nu a fost livrat; corecția este verificată în rularea finală.
 
 A doua rulare, [42353520373](https://github.com/JDscript1/godot-ai-android/actions/runs/42353520373),
 a redus eșecurile phone compact de la 17 la 4. Proba de inspecție derula înainte
@@ -62,8 +99,6 @@ viewport înainte de input. Proba locală izolată reproduce **79/4** înainte �
 Proba de prezentare cu istoric deschis reproduce **157/16 → 158/0**.
 Aceste modificări suplimentare sunt în fixture; codul livrabil al aplicației
 rămâne identic cu implementarea din `5b6fba618a`.
-
-
 
 **Delegare cerută de utilizator:** OpenCode nativ Termux `2.0.31`, instalat
 izolat din [distribuția Termux](https://github.com/Hope2333/opencode-termux), cu
@@ -4927,6 +4962,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **7.11.2026 — APK `3bb7a24` cu rectificările harness livrat.** Toate cele trei joburi CI au trecut; criterii, generări și delegări întărite, cele 38 de eșecuri native rezolvate, artefactul verificat exact înainte de înlocuirea Ziva din Downloads. Testele fizice rămân separate.
 
 - **7.11.2026:** rectificări audit în surse: criterii și intenție protejate, dependențe Ziva, chitanțe peer și identități de generare; runtime 984/0, peer 140/0, UI nou 58/0 după 3 eșecuri reproduse pe sursa veche; delegare DeepSeek Free, apoi continuare locală după 429.
 

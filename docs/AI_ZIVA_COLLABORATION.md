@@ -1,6 +1,6 @@
 # Colaborarea dintre Godot AI și Ziva
 
-Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `53a50e8`, verificat și livrat.
+Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `3bb7a24`, verificat și livrat.
 Starea sursei, verificărilor și APK-ului livrat este
 în [PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 
@@ -24,7 +24,7 @@ Harness-ul oferă `ziva_status`, `ziva_task_start`, `ziva_task_status`,
 conversații cunoscute este posibilă prin `chat_id` când conversația este liberă.
 O a doua sarcină simultană în aceeași conversație este refuzată explicit.
 
-În sursa din această iterație, joburile pornite de un tur devin dependențe
+În această versiune livrată, joburile pornite de un tur devin dependențe
 obligatorii. Bariera de finalizare așteaptă rezultatul real, îl transmite modelului
 și respinge verdictul de succes dacă jobul încă rulează, a eșuat, a fost anulat
 sau așteaptă permisiune/întrebare. Citirea repetată a aceluiași rezultat nu
@@ -66,13 +66,14 @@ print(JSON.stringify(peer.request("status")))
 Răspunsurile folosesc `{ok, result}` sau `{ok:false, code, error}`. Un job primit
 poate fi `queued`, `running`, `completed`, `failed`, `cancelled`, `blocked` sau
 `limited`. `next_offset` indică următorul fragment; `-1` indică sfârșitul.
-În sursa actualizată, joburile sunt salvate în directorul privat al proiectului.
+În versiunea livrată, joburile sunt salvate în directorul privat al proiectului.
 Rezultatele și identitățile cererilor rămân disponibile după repornire, inclusiv
 prin chitanțe arhivate după evacuarea din cache. Un job care rula revine ca
 `interrupted`; nu își reia automat modificările. Un jurnal deteriorat ori o
 salvare eșuată refuză pornirea. Refolosirea unui request_id cu alt text sau altă
 acțiune este un conflict. Răspunsurile sunt păstrate cu un buget de 128.000 de
-caractere; paginarea acoperă fragmentul păstrat.
+caractere; paginarea acoperă fragmentul păstrat, iar `truncated` și
+`original_characters` semnalizează o trunchiere.
 
 O cerere nouă așteaptă dacă agentul lucrează deja. O coadă oprită rămâne oprită.
 O intervenție sau anulare cu `turn_id` vechi este refuzată. Ciorna utilizatorului

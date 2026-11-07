@@ -7,14 +7,15 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 The original harness shipped in APK `12794c4`. The latest delivered Ziva APK is
-`53a50e8` (7 November 2026), including bidirectional native-agent/Ziva task
-control, corrected chat presentation, bounded empty-answer recovery and the
-keyboard-event guard. The
+`3bb7a24` (7 November 2026), including bidirectional native-agent/Ziva task
+control, protected criteria and execution intent, durable generation identities,
+real delegation completion, corrected chat queue/docks, bounded empty-answer
+recovery and the keyboard-event guard. All three CI jobs passed. The
 APK was verified but not installed automatically. Normal execution has no fixed
 step limit. Delivery evidence is tracked in
 [the project progress record](../PROGRES_SI_PLAN.md).
 
-## Audit corrections, 2026-11-07 (source)
+## Audit corrections, 2026-11-07 (APK 3bb7a24)
 
 Declared acceptance criteria are additive and protected for the current task.
 Removing or rewriting an existing criterion fails before the visible plan changes.

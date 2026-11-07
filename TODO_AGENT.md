@@ -1,7 +1,8 @@
 # TODO — agent și harness
 
-Actualizat: **29.10.2026**. APK livrat în Download: **090b939**, cu AG-01–AG-55.
-Ultima instalare verificată prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
+Actualizat: **7.11.2026**. APK Ziva livrat în Download: **3bb7a24**, cu AG-01–AG-57.
+Distribuția standard este păstrată separat. [Dovezi actuale](PROGRES_SI_PLAN.md).
+Ultima instalare consemnată aici prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
 Bifele de acceptare nu se închid numai
 din compilare: gesturile fizice, aprobările și probele reale de workflow se
 confirmă separat. În noua rundă au trecut două scene și un mini-joc cu input
@@ -10,7 +11,22 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
-## AG-56 — Ziva independent, preview în surse / APK separat ulterior
+## AG-57 — rectificări ale auditului harness, în APK `3bb7a24`
+
+- [x] Criterii declarate protejate și aditive; probe noi pentru adăugări, plan neschimbat la refuz.
+- [x] Intenția de execuție nu poate fi schimbată în propunere după începere/reluare.
+- [x] `asset_key` stabil și chitanțe durabile; refuzul reformulării aceleiași generări.
+- [x] Finalizarea așteaptă rezultatul real Ziva; erorile, anularea și întrebările rămân blocaje.
+- [x] Cereri peer și rezultate persistente; refuz înaintea furnizorului dacă salvarea eșuează.
+- [x] Blocarea panoului ascuns, andocarea și coada corectate; cele 38 de eșecuri native rezolvate în CI.
+- [x] APK semnat, verificat și livrat; toate cele trei joburi CI verzi.
+- [ ] Acceptare Android instalat: tastatură/gesturi reale și colaborare cu două modele live.
+- [ ] Evaluarea acoperirii inițiale a criteriilor și identităților alese de model pe sarcini reale; executorul nu demonstrează echivalența semantică între chei diferite.
+
+[Contractul harness](docs/AI_HARNESS.md), [legătura Ziva](docs/AI_ZIVA_COLLABORATION.md)
+și [dovezile și limitele](PROGRES_SI_PLAN.md). DeepSeek Free a ajutat până la cota gratuită, fără cheia personală în OpenCode.
+
+## AG-56 — Ziva independent, APK separat livrat
 
 - [x] Secțiune Ziva separată, instalare opțională verificată (plugin oficial complet + Godot 4.7.2 Linux ARM64), proces propriu în editor headless și fereastră cu UI-ul oficial.
 - [x] Configurație `ziva-preview`: `com.jdscript.godotai.ziva.debug`, nume Godot AI Ziva și livrare care păstrează instalatorul standard.
@@ -18,7 +34,7 @@ repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă
 - [x] Serviciu separat care montează addon-ul, pornește Godot headless sub PRoot și publică portul numai după HTML 200 + identitatea MCP `ziva-godot` v3.3.2 + `get_project_info`.
 - [x] Dialog WebView în aceeași activitate, pentru a evita pauza editorului; comportamentul Android rămâne de testat.
 - [x] Eliminată puntea proprie `editor_mcp`/`.mcp.json`, împreună cu tokenul și fallback-ul de conectare.
-- [ ] Compilare și livrare **Godot-AI-Ziva-arm64-debug.apk**, păstrând APK-ul actual conform cererii utilizatorului.
+- [x] Compilare și livrare **Godot-AI-Ziva-debug.apk**, sursa `3bb7a24`, cu verificare exactă și păstrarea distribuției standard.
 - [ ] Probă pe dispozitiv: descărcare prin serviciu, primul import, WebView/autentificare și prompt → unealtă → rezultat cu un furnizor real.
 - [ ] Supraviețuirea serviciului `dataSync` sub politicile Android.
 
