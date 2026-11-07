@@ -11,6 +11,14 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
+## Meta și login ChatGPT — 7.11.2026, în surse
+
+- [x] Preset Meta distinct, Responses, credential separat, identitate Contributor păstrată.
+- [x] Catalog Meta live 200 și tur nativ unealtă → rezultat → răspuns final cu `muse-spark-1.3-contributor`.
+- [x] Callback OAuth independent de cadre, anulare/închidere și păstrarea înregistrării la reîncercare; runtime 1036/0.
+- [ ] Compilare CI complet verde și livrare verificată a APK-ului nou.
+- [ ] Login ChatGPT pe telefon; stabilit dacă browserul se blochează înainte de formular sau după autorizare.
+
 ## Corecții OmniRoute — 7.11.2026, în APK `428e625`
 
 - [x] Adresă vizibilă la reeditare, filtrare non-chat și citirea `context_length`.

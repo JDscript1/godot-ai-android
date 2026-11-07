@@ -9,6 +9,7 @@ const CATALOG = [
 	{"id": "openai", "name": "OpenAI", "kind": "responses", "url": "https://api.openai.com/v1", "prefix": "sk-proj-"},
 	{"id": "anthropic", "name": "Anthropic Claude", "kind": "anthropic", "url": "https://api.anthropic.com/v1", "prefix": "sk-ant-"},
 	{"id": "gemini", "name": "Google Gemini", "kind": "gemini", "url": "https://generativelanguage.googleapis.com/v1beta", "prefix": "AIza"},
+	{"id": "meta", "name": "Meta Model API", "kind": "responses", "url": "https://api.meta.ai/v1", "prefix": "", "default_model": "muse-spark-1.3-contributor"},
 	{"id": "deepseek", "name": "DeepSeek", "kind": "chat", "url": "https://api.deepseek.com", "prefix": ""},
 	{"id": "openrouter", "name": "OpenRouter", "kind": "chat", "url": "https://openrouter.ai/api/v1", "prefix": "sk-or-v1-"},
 	{"id": "qwen", "name": "Qwen International", "kind": "chat", "url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "prefix": ""},
@@ -256,6 +257,8 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 		if item.has("supportedGenerationMethods") and not "generateContent" in item["supportedGenerationMethods"]: continue
 		if str(item.get("type", "")) in ["embedding", "embeddings"]: continue
 		if issuer == "omniroute" and str(item.get("type", "chat")) not in ["", "chat"]: continue
+		var meta = meta_model_info(id) if issuer == "meta" else {}
+		if issuer == "meta" and (id.begins_with("muse-image-") or id.begins_with("muse-voice-") or id.begins_with("sam-")): continue
 		var capabilities: Dictionary = item.get("capabilities", {}).duplicate(true) if item.get("capabilities", {}) is Dictionary else {}
 		var architecture: Dictionary = item.get("architecture", {}) if item.get("architecture") is Dictionary else {}
 		var modalities = item.get("input_modalities", item.get("inputModalities", architecture.get("input_modalities", [])))
@@ -263,7 +266,14 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 		var supported: Dictionary = item.get("supported_parameters", {}) if item.get("supported_parameters", {}) is Dictionary else {}
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
-		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": model_context(item), "max_output_tokens": item.get("max_output_tokens", item.get("outputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")})
+		var model = {"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": model_context(item), "max_output_tokens": item.get("max_output_tokens", item.get("outputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")}
+		if not meta.is_empty():
+			# Meta /models currently returns IDs only. These are documented model
+			# capabilities, not an invented live price or availability fallback.
+			model["capabilities"].merge(meta["capabilities"], false)
+			if model["context"] <= 0: model["context"] = meta["context"]
+			model["efforts"] = meta["efforts"]
+		models.append(model)
 	if issuer in ["lmstudio", "ollama"]:
 		var metadata = await transport.request(root + ("/api/v0/models" if issuer == "lmstudio" else "/api/ps"), HTTPClient.METHOD_GET, headers(profile, key_override), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 3, "connect_timeout": 2})
 		if cancel.get("cancelled", false): return Common.failure("Verificare oprită.", "cancelled")
@@ -280,6 +290,15 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 				var capacity = int(reported_capacity) if reported_capacity is int or reported_capacity is float else 0
 				if capacity > 0: item["context"] = capacity
 	return Common.success(models)
+
+static func meta_model_info(id: String) -> Dictionary:
+	# https://dev.meta.ai/docs/models and /docs/muse-spark, checked 2026-11-07.
+	if id not in ["muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.3-contributor", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.1"]: return {}
+	var efforts = []
+	if id in ["muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.3-contributor"]:
+		efforts = ["minimal", "low", "medium", "high", "xhigh"]
+		if id != "muse-spark-1.3-contributor": efforts.append("max")
+	return {"context": 1048576, "capabilities": {"tools": true, "vision": true}, "efforts": efforts}
 
 static func model_context(model: Dictionary) -> int:
 	for field in ["context_window", "context_length", "inputTokenLimit"]:

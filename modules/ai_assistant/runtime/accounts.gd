@@ -10,64 +10,147 @@ var transport: RefCounted
 var vault: RefCounted
 var owner: Node
 var pending = false
+var browser_open: Callable # Optional host/test adapter; default remains the system browser.
+var active_callback: RefCounted
 
 func _init(node: Node = null, secret_store: RefCounted = null) -> void:
 	owner = node
 	transport = Transport.new(node)
 	vault = secret_store
 
-func login_chatgpt(profile: Dictionary, cancel: Dictionary, on_status: Callable = Callable()) -> Dictionary:
-	if pending: return Common.failure("Există deja o autentificare în curs.")
-	pending = true
-	var listener = TCPServer.new()
-	if listener.listen(0, "127.0.0.1") != OK:
-		pending = false
-		return Common.failure("Callbackul local nu poate fi pornit.")
-	var callback_uri = "http://127.0.0.1:%s/auth/callback" % listener.get_local_port()
-	var verifier = _base64url(Crypto.new().generate_random_bytes(48))
-	var state = _base64url(Crypto.new().generate_random_bytes(32))
-	var nonce = _base64url(Crypto.new().generate_random_bytes(32))
-	var client_id = str(profile.get("client_id", "dynamic_agent_client"))
-	var parameters = {"client_id": client_id, "ext_agent_host_id": profile.get("host_id", "urn:uuid:" + Common.uid()), "response_type": "code", "redirect_uri": callback_uri, "scope": "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct", "resource": RESOURCE, "state": state, "nonce": nonce, "code_challenge": _base64url(verifier.sha256_buffer()), "code_challenge_method": "S256"}
-	if client_id == "dynamic_agent_client": parameters["agent_name_hint"] = "Godot AI"
-	if on_status.is_valid(): on_status.call("Continuă autentificarea în browser. Revino aici după autorizare.")
-	var opened = OS.shell_open(ISSUER + "/api/accounts/authorize?" + _form(parameters))
-	if opened != OK:
-		listener.stop()
-		pending = false
-		return Common.failure("Browserul nu a putut fi deschis.")
-	var deadline = Time.get_ticks_msec() + 300000
-	var callback = {}
-	while not cancel.get("cancelled", false) and Time.get_ticks_msec() < deadline:
-		if listener.is_connection_available():
-			var peer = listener.take_connection()
+# Browser redirects must be answered even while Android pauses the render loop.
+# The worker owns its TCP server/peers and never touches SceneTree or UI nodes.
+class LoopbackCallback:
+	extends RefCounted
+	var server = TCPServer.new()
+	var worker = Thread.new()
+	var mutex = Mutex.new()
+	var stopped = false
+	var expected_state = ""
+	var deadline = 0
+	var finished: Dictionary = {}
+
+	func start(state: String, timeout_ms: int = 300000) -> Dictionary:
+		if worker.is_started() or state.is_empty(): return {"ok": false, "error": "Callback OAuth invalid."}
+		if server.listen(0, "127.0.0.1") != OK: return {"ok": false, "error": "Callbackul local nu poate fi pornit."}
+		expected_state = state
+		deadline = Time.get_ticks_msec() + timeout_ms
+		var uri = "http://127.0.0.1:%s/auth/callback" % server.get_local_port()
+		if worker.start(_receive) != OK:
+			server.stop()
+			return {"ok": false, "error": "Callbackul OAuth nu poate porni în fundal."}
+		return {"ok": true, "uri": uri}
+
+	func cancel() -> void:
+		mutex.lock()
+		stopped = true
+		mutex.unlock()
+
+	func cancelled() -> bool:
+		mutex.lock()
+		var value = stopped
+		mutex.unlock()
+		return value
+
+	func running() -> bool:
+		return worker.is_alive()
+
+	func finish() -> Dictionary:
+		if worker.is_started(): finished = worker.wait_to_finish()
+		return finished if not finished.is_empty() else {"ok": false, "code": "callback_unavailable", "error": "Callback OAuth indisponibil."}
+
+	func _receive() -> Dictionary:
+		var callback = {}
+		while not cancelled() and Time.get_ticks_msec() < deadline:
+			if not server.is_connection_available():
+				OS.delay_msec(10)
+				continue
+			var peer = server.take_connection()
 			var raw = PackedByteArray()
-			var peer_deadline = Time.get_ticks_msec() + 3000
-			while Time.get_ticks_msec() < peer_deadline and raw.size() < 16384 and not cancel.get("cancelled", false):
+			var peer_deadline = mini(deadline, Time.get_ticks_msec() + 3000)
+			while Time.get_ticks_msec() < peer_deadline and raw.size() < 16384 and not cancelled():
 				peer.poll()
-				if peer.get_available_bytes() > 0: raw.append_array(peer.get_data(peer.get_available_bytes())[1])
+				if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED: break
+				var count = mini(peer.get_available_bytes(), 16384 - raw.size())
+				if count > 0: raw.append_array(peer.get_data(count)[1])
 				if "\r\n\r\n" in raw.get_string_from_utf8(): break
-				await owner.get_tree().process_frame
-			var line = raw.get_string_from_utf8().get_slice("\r\n", 0)
+				OS.delay_msec(10)
+			var text = raw.get_string_from_utf8()
+			var line = text.get_slice("\r\n", 0)
 			var target = line.get_slice(" ", 1)
-			var valid_path = line.begins_with("GET ") and target.get_slice("?", 0) == "/auth/callback"
-			var parsed = _parse_query(target.get_slice("?", 1)) if valid_path else {}
-			var valid_state = parsed.has("state") and Crypto.new().constant_time_compare(str(parsed["state"]).to_utf8_buffer(), state.to_utf8_buffer())
-			var page = "Autentificare primită. Revino în Godot AI." if valid_state else "Callback invalid. Revino în Godot AI."
+			var valid_path = "\r\n\r\n" in text and line.begins_with("GET ") and target.get_slice("?", 0) == "/auth/callback"
+			var parsed = parse_query(target.get_slice("?", 1)) if valid_path else {}
+			var valid_state = not cancelled() and parsed.has("state") and Crypto.new().constant_time_compare(str(parsed["state"]).to_utf8_buffer(), expected_state.to_utf8_buffer())
+			var page = "Autorizare primită. Revino în Godot AI pentru finalizare." if valid_state else "Callback invalid. Revino în Godot AI."
 			var response = "HTTP/1.1 %s\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: %s\r\n\r\n%s" % ["200 OK" if valid_state else "400 Bad Request", page.to_utf8_buffer().size(), page]
 			peer.put_data(response.to_utf8_buffer())
 			peer.disconnect_from_host()
 			if valid_state:
 				callback = parsed
 				break
+		server.stop()
+		if not callback.is_empty(): return {"ok": true, "result": callback}
+		return {"ok": false, "code": "cancelled" if cancelled() else "auth_timeout", "error": "Autentificare oprită." if cancelled() else "Autentificarea a expirat. Reîncearcă și verifică pagina din browser."}
+
+	static func parse_query(query: String) -> Dictionary:
+		var output = {}
+		for part in query.split("&"):
+			var position = part.find("=")
+			if position >= 0:
+				var key = part.substr(0, position).uri_decode()
+				if output.has(key): return {}
+				output[key] = part.substr(position + 1).replace("+", " ").uri_decode()
+		return output
+
+func close_login() -> void:
+	if active_callback != null:
+		active_callback.cancel()
+		active_callback.finish()
+		active_callback = null
+
+func login_chatgpt(profile: Dictionary, cancel: Dictionary, on_status: Callable = Callable(), on_registration: Callable = Callable()) -> Dictionary:
+	if pending: return Common.failure("Există deja o autentificare în curs.")
+	pending = true
+	var verifier = _base64url(Crypto.new().generate_random_bytes(48))
+	var state = _base64url(Crypto.new().generate_random_bytes(32))
+	var nonce = _base64url(Crypto.new().generate_random_bytes(32))
+	var client_id = str(profile.get("client_id", "dynamic_agent_client"))
+	var receiver = LoopbackCallback.new()
+	var listening = receiver.start(state)
+	if not listening.get("ok", false):
+		pending = false
+		return listening
+	active_callback = receiver
+	var callback_uri = str(listening["uri"])
+	var parameters = {"client_id": client_id, "ext_agent_host_id": profile.get("host_id", "urn:uuid:" + Common.uid()), "response_type": "code", "redirect_uri": callback_uri, "scope": "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct", "resource": RESOURCE, "state": state, "nonce": nonce, "code_challenge": _base64url(verifier.sha256_buffer()), "code_challenge_method": "S256"}
+	if client_id == "dynamic_agent_client": parameters["agent_name_hint"] = "Godot AI"
+	if client_id != "dynamic_agent_client":
+		var saved: Variant = Common.parse_json(vault.read(str(profile["id"])))
+		if saved is Dictionary and saved.get("client_id") == client_id and saved.get("subject") == profile.get("subject") and not str(saved.get("id_token", "")).is_empty(): parameters["id_token_hint"] = saved["id_token"]
+	if on_status.is_valid(): on_status.call("Continuă autentificarea în browser. Revino aici după autorizare.")
+	var url = ISSUER + "/api/accounts/authorize?" + _form(parameters)
+	var opened: int = browser_open.call(url) if browser_open.is_valid() else OS.shell_open(url)
+	if opened != OK:
+		receiver.cancel()
+		receiver.finish()
+		active_callback = null
+		pending = false
+		return Common.failure("Browserul nu a putut fi deschis.")
+	while receiver.running():
+		if cancel.get("cancelled", false): receiver.cancel()
 		await owner.get_tree().process_frame
-	listener.stop()
+	var received = receiver.finish()
+	active_callback = null
 	pending = false
-	if callback.is_empty(): return Common.failure("Autentificare oprită sau expirată.", "cancelled")
+	if not received.get("ok", false): return received
+	if cancel.get("cancelled", false): return Common.failure("Autentificare oprită.", "cancelled")
+	var callback: Dictionary = received["result"]
+	if on_status.is_valid(): on_status.call("Autorizare primită. Verific identitatea contului…")
 	if callback.has("error"): return Common.failure("Autorizarea ChatGPT a fost refuzată: " + str(callback["error"]), "consent_denied")
 	var issued_id = str(callback.get("client_id", client_id))
-	if issued_id == "dynamic_agent_client" or (client_id != "dynamic_agent_client" and issued_id != client_id): return Common.failure("Înregistrarea OAuth nu a returnat clientul așteptat.")
-	if not callback.has("code"): return Common.failure("Lipsește codul de autorizare.")
+	if issued_id.is_empty() or issued_id == "dynamic_agent_client" or (client_id != "dynamic_agent_client" and issued_id != client_id): return Common.failure("Înregistrarea OAuth nu a returnat clientul așteptat.")
+	if str(callback.get("code", "")).is_empty(): return Common.failure("Lipsește codul de autorizare.")
+	if on_registration.is_valid() and not on_registration.call(issued_id): return Common.failure("Înregistrarea ChatGPT nu a putut fi salvată. Reîncearcă autentificarea.", "registration_save_failed")
 	var result = await transport.request(TOKEN_ENDPOINT, HTTPClient.METHOD_POST, PackedStringArray(["Content-Type: application/x-www-form-urlencoded"]), _form({"grant_type": "authorization_code", "client_id": issued_id, "code": callback["code"], "code_verifier": verifier, "redirect_uri": callback_uri, "resource": RESOURCE}), {"cancel": cancel})
 	if not result.get("ok", false): return Common.failure("Schimbul codului OAuth nu a reușit. Pornește o autentificare nouă.", "oauth_exchange_failed")
 	var tokens: Variant = result.get("json")
@@ -143,11 +226,7 @@ static func _form(values: Dictionary) -> String:
 	return "&".join(parts)
 
 static func _parse_query(query: String) -> Dictionary:
-	var output = {}
-	for part in query.split("&"):
-		var position = part.find("=")
-		if position >= 0: output[part.substr(0, position).uri_decode()] = part.substr(position + 1).replace("+", " ").uri_decode()
-	return output
+	return LoopbackCallback.parse_query(query)
 
 static func _base64url(bytes: PackedByteArray) -> String:
 	return Marshalls.raw_to_base64(bytes).replace("+", "-").replace("/", "_").trim_suffix("==").trim_suffix("=")

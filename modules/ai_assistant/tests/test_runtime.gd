@@ -15,6 +15,15 @@ class FakeVault:
 	func read(name: String) -> String: return str(values.get(name, ""))
 	func erase(name: String) -> bool: return values.erase(name)
 
+class RejectedOAuthTransport:
+	extends RefCounted
+	var events: Array = []
+	var requests: Array = []
+	func request(_url: String, _method: int, _headers: PackedStringArray, body: Variant, _options: Dictionary) -> Dictionary:
+		events.append("exchange")
+		requests.append(body)
+		return {"ok": false, "code": "invalid_grant", "error": "Fixture expired authorization code"}
+
 class UnreachableBlenderTransport:
 	extends RefCounted
 	func request(_url: String, _method: int, _headers: PackedStringArray, _body: Variant, _options: Dictionary) -> Dictionary:
@@ -362,6 +371,9 @@ func _run() -> void:
 		await _network_tests(node)
 		await _local_connection_tests(node)
 		await _omniroute_contract_tests(node)
+		await _meta_contract_tests(node)
+		await _oauth_callback_tests(node)
+		await _oauth_registration_tests(node)
 		await _cloud_generation_tests(node)
 		await _integration_tests(node)
 		await _store_tests(node)
@@ -2504,3 +2516,97 @@ func _manual_catalog_tests(providers: GDScript) -> void:
 	var explicit: Array = providers.merge_model_catalog([], [], "combo/new")
 	check(explicit.size() == 1 and explicit[0].get("manual", false) and explicit[0]["source"] == "manual", "A new explicit route is durable without a catalog entry")
 	check(providers.merge_model_catalog([], []).is_empty(), "An empty catalog without manual intent does not invent usable models")
+
+func _meta_contract_tests(node: Node) -> void:
+	var store = FakeVault.new()
+	store.store("meta-review", "meta-protocol-fixture-key")
+	store.store("deepseek-review", "deepseek-unrelated-key")
+	var client = scripts["providers"].new(node, store)
+	var preset: Dictionary = scripts["providers"].CATALOG.filter(func(entry: Dictionary) -> bool: return entry["id"] == "meta")[0]
+	check(preset["url"] == "https://api.meta.ai/v1" and preset["kind"] == "responses" and preset.get("default_model") == "muse-spark-1.3-contributor", "Meta is a dedicated cloud Responses provider with exact Contributor preference")
+	var profile = {"id": "meta-review", "issuer": "meta", "kind": "responses", "url": mock_url + "/meta-review/v1", "allow_http": true}
+	var catalog: Dictionary = await client.list_models(profile)
+	check(catalog.get("ok", false) and catalog.get("result", []).size() == 3, "Meta catalog accepts its own bearer and excludes non-chat hosted models")
+	if not catalog.get("ok", false): return
+	var contributor: Dictionary = catalog["result"].filter(func(item: Dictionary) -> bool: return item["id"] == "muse-spark-1.3-contributor")[0]
+	check(contributor["context"] == 1048576 and contributor["capabilities"].get("tools", false) and contributor["capabilities"].get("vision", false), "ID-only Meta entries retain the documented million-token budget and image/function capabilities")
+	check("xhigh" in contributor["efforts"] and not "max" in contributor["efforts"] and contributor["pricing"].is_empty(), "Contributor gets supported reasoning efforts without fabricated pricing")
+	var messages = [{"role": "user", "content": "Inspect the fixture scene"}]
+	var tools = [{"name": "godot_scene_tree", "description": "Read fixture scene", "parameters": {"type": "object", "properties": {}}}]
+	var first: Dictionary = await client.complete(profile, messages, tools, "muse-spark-1.3-contributor", "xhigh", {})
+	check(first.get("ok", false) and first.get("calls", []).size() == 1, "Meta accepts stateless Responses SSE with standard function tools and the exact Contributor model")
+	if not first.get("ok", false) or first.get("calls", []).is_empty(): return
+	check(first["calls"][0]["arguments"] == {} and first["message"].get("provider_items", []).any(func(item: Dictionary) -> bool: return item.get("type") == "reasoning" and item.get("encrypted_content") == "opaque-meta-fixture"), "Meta function arguments and opaque reasoning are preserved after streaming")
+	messages.append(first["message"])
+	messages.append({"role": "tool", "tool_call_id": first["calls"][0]["id"], "content": "{fixture scene}"})
+	var second: Dictionary = await client.complete(profile, messages, tools, "muse-spark-1.3-contributor", "xhigh", {})
+	check(second.get("ok", false) and second.get("message", {}).get("content") == "Meta fixture completed", "Meta replays encrypted reasoning plus the function result and returns the final assistant answer")
+	check(store.read("deepseek-review") == "deepseek-unrelated-key", "Using Meta never rotates or replaces a different provider key")
+
+func _oauth_callback_tests(node: Node) -> void:
+	var auth = scripts["accounts"]
+	var client = scripts["transport"].new(node)
+	var receiver = auth.LoopbackCallback.new()
+	var started: Dictionary = receiver.start("fixture-state", 3000)
+	check(started.get("ok", false) and str(started.get("uri", "")).begins_with("http://127.0.0.1:") and str(started.get("uri", "")).ends_with("/auth/callback"), "OAuth callback binds loopback before the browser starts")
+	if not started.get("ok", false): return
+	var port = int(str(started["uri"]).get_slice(":", 2).get_slice("/", 0))
+	await client.request(mock_url + "/oauth-callback-probe?port=%d&state=wrong&probe=wrong" % port, HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+	OS.delay_msec(200)
+	check(receiver.running(), "A callback with wrong state never completes the pending authorization")
+	await client.request(mock_url + "/oauth-callback-probe?port=%d&state=fixture-state&probe=valid" % port, HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+	# Deliberately stop main-thread frames: the browser must still get HTTP200.
+	OS.delay_msec(300)
+	check(not receiver.running(), "The OAuth browser callback completes while the Godot render thread is paused")
+	var result: Dictionary = receiver.finish()
+	check(result.get("ok", false) and result.get("result", {}).get("code") == "fixture-code" and result["result"].get("client_id") == "oaiapp_fixture", "Only a validated callback returns authorization data to the render thread")
+	var probe: Dictionary = await client.request(mock_url + "/oauth-callback-probe?mode=poll&probe=valid", HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+	check(probe.get("json", {}).get("status") == 200 and str(probe.get("json", {}).get("body", "")).contains("Revino"), "The independent browser receives a complete no-store callback response before app resume")
+	receiver = auth.LoopbackCallback.new()
+	receiver.start("cancel-state", 3000)
+	receiver.cancel()
+	result = receiver.finish()
+	check(not result.get("ok", false) and result.get("code") == "cancelled", "Cancelling joins the callback worker and releases its listener")
+	check(receiver.finish().get("code") == "cancelled", "Callback cleanup is idempotent when the editor closes during login")
+	receiver = auth.LoopbackCallback.new()
+	receiver.start("timeout-state", 50)
+	result = receiver.finish()
+	check(not result.get("ok", false) and result.get("code") == "auth_timeout", "Expired authorization returns an explicit timeout instead of waiting indefinitely")
+
+func _oauth_browser_probe(url: String, node: Node) -> void:
+	var auth = scripts["accounts"]
+	var params: Dictionary = auth._parse_query(url.get_slice("?", 1))
+	var port = int(str(params["redirect_uri"]).get_slice(":", 2).get_slice("/", 0))
+	var client = scripts["transport"].new(node)
+	await client.request(mock_url + "/oauth-callback-probe?port=%d&state=%s&probe=registration" % [port, str(params["state"]).uri_encode()], HTTPClient.METHOD_GET, [], null, {"allow_http": true})
+
+func _oauth_registration_tests(node: Node) -> void:
+	var store = FakeVault.new()
+	var auth = scripts["accounts"]
+	var account = auth.new(node, store)
+	var rejected = RejectedOAuthTransport.new()
+	account.transport = rejected
+	var opened: Array = []
+	account.browser_open = func(url: String) -> int:
+		opened.append(auth._parse_query(url.get_slice("?", 1)))
+		call_deferred("_oauth_browser_probe", url, node)
+		return OK
+	var profile = {"id": "oauth-registration-fixture", "host_id": "urn:uuid:fixture-persisted-host"}
+	var registration = {}
+	var persist = func(client_id: String) -> bool:
+		registration["client_id"] = client_id
+		rejected.events.append("registration")
+		return true
+	var result: Dictionary = await account.login_chatgpt(profile, {}, Callable(), persist)
+	check(result.get("code") == "oauth_exchange_failed" and registration.get("client_id") == "oaiapp_fixture" and rejected.events == ["registration", "exchange"], "OAuth persists the issued registration before an exchange that can fail or expire")
+	check(opened[0].get("client_id") == "dynamic_agent_client" and opened[0].get("ext_agent_host_id") == profile["host_id"] and opened[0].get("code_challenge_method") == "S256" and not profile.has("client_id"), "First sign-in binds PKCE to the persisted host without altering the active account")
+	profile["client_id"] = registration["client_id"]
+	profile["subject"] = "fixture-subject"
+	store.store(profile["id"], JSON.stringify({"client_id": profile["client_id"], "subject": "fixture-subject", "id_token": "fixture-vaulted-id-token"}))
+	result = await account.login_chatgpt(profile, {}, Callable(), persist)
+	check(result.get("code") == "oauth_exchange_failed" and opened[1].get("client_id") == "oaiapp_fixture" and opened[1].get("ext_agent_host_id") == opened[0].get("ext_agent_host_id") and not opened[1].has("agent_name_hint"), "Reauthorization reuses the retained client and host instead of registering another app")
+	check(opened[1].get("id_token_hint") == "fixture-vaulted-id-token" and store.read(profile["id"]).contains("fixture-vaulted-id-token"), "Returning sign-in uses the selected account's vaulted hint without replacing its credential on failure")
+	var prior_requests = rejected.requests.size()
+	result = await account.login_chatgpt(profile, {}, Callable(), func(_client_id: String) -> bool: return false)
+	check(result.get("code") == "registration_save_failed" and rejected.requests.size() == prior_requests, "A registration write failure cannot proceed to exchange or overwrite credentials")
+	check(auth._parse_query("state=one&state=two&code=fixture").is_empty(), "OAuth duplicate query keys are rejected rather than ambiguously overwriting state")

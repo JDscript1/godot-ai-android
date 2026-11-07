@@ -101,6 +101,45 @@ Sources: [LM Studio LAN hosting](https://lmstudio.ai/docs/developer/core/server/
 [Ollama model catalog](https://docs.ollama.com/api/tags),
 [Ollama loaded models](https://docs.ollama.com/api/ps).
 
+## Meta Model API
+
+Select **Meta Model API** in **Furnizori AI** and enter your Meta API key. The
+preset uses `https://api.meta.ai/v1` with the native Responses adapter, function
+tools and stateless encrypted reasoning replay. Its key is stored separately
+from DeepSeek and other providers; adding Meta does not rotate existing keys.
+
+A new connection prefers **Muse Spark 1.3 Contributor**
+(`muse-spark-1.3-contributor`) when returned by the authenticated model catalog.
+If it is unavailable, choose another model explicitly; the app does not silently
+substitute Standard or Wonder. Saving an existing explicit choice preserves it.
+The chat list excludes Meta image, speech and segmentation models. Known text
+models use Meta's documented 1,048,576-token context and image/function support;
+Contributor offers `minimal` through `xhigh`, without `none` or `max`. Unknown
+catalog IDs keep unknown metadata, and an unpublished price is not treated as free.
+
+On 7 November 2026, the real Meta catalog returned HTTP200 and the Godot provider
+completed a Contributor function-call/result/final-answer test. This verifies the
+native protocol; a phone test of the newly compiled APK remains separate.
+
+Sources: [Meta SDKs](https://dev.meta.ai/docs/sdks),
+[Responses API](https://dev.meta.ai/docs/protocols/responses),
+[Muse Spark versions](https://dev.meta.ai/docs/muse-spark).
+
+## ChatGPT browser return
+
+**Continue with ChatGPT** opens the system browser. After authorization, its
+loopback callback now responds independently of Godot's render loop, so covering
+the editor with the browser does not leave the callback waiting for a frame.
+Return to Godot AI to complete code exchange and identity verification. The
+stable host ID and issued client registration survive failed attempts; active
+account tokens are replaced only after validation. Closing the editor cancels
+and joins the listener. The browser form itself and a physical Android sign-in
+still need live validation; this fix does not establish the cause of a page that
+never reaches the login form. Claude, Copilot and Kimi still require their optional
+companion and have a separate login path.
+
+Contract: [OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
+
 ## OmniRoute across networks
 
 OmniRoute is available as a first-class **Local / self-hosted** provider. It uses

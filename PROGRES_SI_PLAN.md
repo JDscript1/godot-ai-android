@@ -8,6 +8,61 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Meta Model API și revenirea din login ChatGPT — 7.11.2026
+
+**Implementat în surse; APK nou în pregătire.**
+
+- „Meta Model API” este furnizor cloud distinct, cu emblema Meta, endpoint
+  `https://api.meta.ai/v1`, protocol Responses și cheie proprie în vault.
+- Sunt folosite unelte `function`, `store=false` și replay-ul criptat al
+  raționamentului. Nicio unealtă `custom` nu este injectată de harness.
+- O conexiune nouă preferă exact `muse-spark-1.3-contributor`, dacă este listat.
+  Dacă lipsește, conectarea cere alegerea explicită a altui model și nu substituie
+  automat Standard sau Wonder. O alegere explicită existentă este păstrată.
+- Modelele Meta de imagine, voce și segmentare sunt excluse din chat. Pentru
+  modelele text cunoscute, catalogul care publică doar ID-uri primește contextul
+  documentat de 1.048.576 tokeni și capabilități de unelte/imagine. Contributor
+  nu oferă `none` sau `max`. ID-urile viitoare rămân disponibile, cu metadate
+  necunoscute. Tarifele nu sunt inventate și Meta nu este etichetat gratuit/local.
+- Callbackul ChatGPT este citit și primește răspuns HTTP pe un fir separat de
+  randare. Browserul poate primi confirmarea când editorul nu produce cadre.
+  Workerul folosește doar loopback, limite de timp/octeți și stare de anulare
+  protejată; se închide și se așteaptă la ieșirea din editor.
+- Identificatorul gazdei se salvează înainte de deschiderea browserului;
+  identificatorul clientului emis se păstrează înaintea schimbului codului.
+  O încercare eșuată nu înlocuiește contul activ sau tokenurile, iar reîncercarea
+  refolosește înregistrarea. Hint-ul contului existent rămâne în vault și este
+  trimis numai autorizării oficiale; parametrii query duplicați sunt refuzați.
+
+**Verificări locale:** runtime **1036/0**, inclusiv callback HTTP reușit cu firul
+principal blocat intenționat, stare incorectă, timeout, anulare/închidere și
+înregistrare păstrată după `invalid_grant`. Formularul providers **127/0**, inclusiv prima conexiune a aplicației, și emblema
+Meta sunt verificate în `.ai-qa/meta-provider-20261107/`.
+
+**Probă Meta reală:** catalog HTTPS **200** și tur nativ Godot cu modelul exact
+`muse-spark-1.3-contributor`: apel `verify_marker` → rezultat → `META_TOOL_OK`.
+A fost folosită exclusiv cheia Meta existentă, fără copiere în profiluri sau
+loguri. Testul nu execută modificări în proiectul utilizatorului.
+
+DeepSeek Free prin OpenCode izolat (`opencode/deepseek-v4.1-flash-free`, exit 0)
+a contribuit la review. Au fost preluate protecția identității Contributor,
+persistența înregistrării și tratarea callbackului independent; dispoziția
+observațiilor este în `deepseek-disposition.json`. Cheia personală DeepSeek
+nu a fost folosită în OpenCode.
+
+**Limită importantă:** nu există încă o probă fizică Android ori o autentificare
+interactivă ChatGPT reușită pe telefon. Remediul tratează revenirea prin callback;
+nu demonstrează cauza unei pagini de browser care nu ajunge la formularul de
+login. Acea etapă rămâne de localizat cu utilizatorul. Claude/Copilot/Kimi
+păstrează autentificarea prin companion opțional, separat de SIWC nativ.
+
+Surse de contract: [Meta Responses](https://dev.meta.ai/docs/protocols/responses),
+[Meta Muse Spark](https://dev.meta.ai/docs/muse-spark),
+[OpenAI SIWC](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
+
+Jurnal: 7.11.2026 — adăugat furnizor Meta, probă reală Contributor cu unealtă,
+corectat callbackul și păstrarea înregistrării ChatGPT; compilarea urmează.
+
 ## Corecții ale integrării OmniRoute — 7.11.2026
 
 **Compilat, verificat și livrat din `428e62532f5a291b8d8338986e1caa7c13884225`.** Toate cele trei joburi

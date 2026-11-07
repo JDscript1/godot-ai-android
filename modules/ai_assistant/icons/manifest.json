@@ -14,6 +14,11 @@
     "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/gemini-color.svg",
     "sha256": "8ab0a9bafec11f7e69bcb9fc4ffd8f1bc927d1ddcbbb6ff36dee5ae8b5a9d602"
   },
+  "Provider_meta": {
+    "file": "lobe/meta-color.svg",
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/meta-color.svg",
+    "sha256": "adf9f2c1a646ccd3a37ca8c2e7e5985d64630cd633f4b95fba393d1d44e0578c"
+  },
   "Provider_deepseek": {
     "file": "lobe/deepseek-color.svg",
     "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ab8cbcc6ce806b923c547628132957c8a8b61509/packages/static-svg/icons/deepseek-color.svg",
@@ -224,6 +229,11 @@
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/monitor.svg",
     "sha256": "d1a443233345724859de8e4fb48968ba91e885e12ddbd710701548bd91b39428"
   },
+  "Provider_omniroute": {
+    "file": "lucide/route.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/route.svg",
+    "sha256": "fc169fd38a9963b016ad6d60fd72baa2b0ea8e0cec085bbc53287297c3d8121a"
+  },
   "Inspect": {
     "file": "lucide/scan-search.svg",
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/scan-search.svg",
@@ -379,14 +389,14 @@
     "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/clapperboard.svg",
     "sha256": "e4d78946cda7812f13c431c68b6d4d0077a92217c7f468667a203f237e247d7e"
   },
+  "Undo": {
+    "file": "lucide/undo-2.svg",
+    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/undo-2.svg",
+    "sha256": "efad2edbbd2be6038cc23fd64df2d012fad5cc6460dfbf227cfa3d990e9e897f"
+  },
   "Provider_llamacpp": {
     "file": "ggml/llama1-icon-transparent.svg",
     "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/e3797b184d428c7a019362612b76971f60af6670/media/llama1-icon-transparent.svg",
     "sha256": "611af871c3ba331afa3350d4c94e546607ccdd952c6dfd928dc94dc1e0f0b3ba"
-  },
-  "Provider_omniroute": {
-    "file": "lucide/route.svg",
-    "url": "https://raw.githubusercontent.com/lucide-icons/lucide/20aef31db93fe4d9f398dbb15b120d99c48eef95/icons/route.svg",
-    "sha256": "fc169fd38a9963b016ad6d60fd72baa2b0ea8e0cec085bbc53287297c3d8121a"
   }
 }

@@ -318,6 +318,7 @@ func _ready() -> void:
 	_refresh_all_prices.call_deferred()
 
 func _exit_tree() -> void:
+	if accounts != null and accounts.has_method("close_login"): accounts.close_login()
 	if peer_ready:
 		_peer_transport("ziva_agent_close")
 		peer_ready = false
@@ -2164,6 +2165,16 @@ func _provider_save_action() -> void:
 		var signature = _provider_form_signature()
 		await _discover_provider_draft()
 		if signature != _provider_form_signature() or not form.get("catalog_verified", false): return
+	# A new Meta profile must not silently substitute Standard/Wonder when the
+	# requested Contributor is unavailable. The user can explicitly choose a model.
+	if _provider_issuer()["id"] == "meta" and str(form.get("editing", "")).is_empty() and str(form.get("selected_model", "")).is_empty() and not form.get("models", []).any(func(item: Dictionary) -> bool: return item["id"] == "muse-spark-1.3-contributor"):
+		_status("Muse Spark 1.3 Contributor nu este disponibil pentru această cheie. Alege explicit un model din listă.")
+		return
+	# Capture user intent before saving refreshes the picker and can auto-select
+	# the first catalog entry for the very first provider.
+	var selected = str(form.get("selected_model", ""))
+	var editing_id = str(form.get("editing", ""))
+	if selected.is_empty() and not editing_id.is_empty() and _current_profile().get("id") == editing_id: selected = str(_selection().get("model", ""))
 	if not _save_provider(): return
 	var id = str(forms["provider"].get("editing", ""))
 	if not _profile_by_id(id).has("verified_at") or not forms["provider"].get("catalog_verified", false):
@@ -2172,8 +2183,8 @@ func _provider_save_action() -> void:
 	var profile = _profile_by_id(id)
 	var models: Array = profile.get("models", [])
 	if models.is_empty(): return
-	var selected = str(forms["provider"].get("selected_model", ""))
-	if selected.is_empty(): selected = str(_selection().get("model", "")) if _current_profile().get("id") == id else ""
+	var preferred = str(_provider_issuer().get("default_model", ""))
+	if selected.is_empty() and models.any(func(item: Dictionary) -> bool: return item["id"] == preferred): selected = preferred
 	if not models.any(func(item: Dictionary) -> bool: return item["id"] == selected):
 		var loaded = models.filter(func(item: Dictionary) -> bool: return item.get("loaded", false))
 		selected = str((loaded[0] if not loaded.is_empty() else models[0])["id"])
@@ -3192,19 +3203,37 @@ func _login_chatgpt() -> void:
 	if busy: return
 	busy = true
 	send_button.disabled = true
-	var profile = {"id": Common.uid(), "host_id": "urn:uuid:" + Common.uid(), "kind": "siwc", "url": Accounts.RESOURCE, "name": "ChatGPT", "models": []}
+	if str(config.get("chatgpt_host_id", "")).is_empty():
+		var host_id = ""
+		for saved in config["providers"]:
+			if saved.get("kind") == "siwc" and not str(saved.get("host_id", "")).is_empty():
+				host_id = str(saved["host_id"])
+				break
+		config["chatgpt_host_id"] = host_id if not host_id.is_empty() else "urn:uuid:" + Common.uid()
+		if Common.atomic_json(data_directory.path_join("config.json"), config) != OK:
+			config.erase("chatgpt_host_id")
+			busy = false
+			send_button.disabled = false
+			_status("Identitatea dispozitivului nu a putut fi salvată. Autentificarea nu a pornit.")
+			return
+	var profile = {"id": Common.uid(), "host_id": config["chatgpt_host_id"], "kind": "siwc", "url": Accounts.RESOURCE, "name": "ChatGPT", "models": []}
 	for saved in config["providers"]:
 		if saved.get("kind") == "siwc":
 			profile = saved.duplicate(true)
 			break
+	var registration: Variant = config.get("chatgpt_pending_registration", {})
+	if registration is Dictionary and not registration.is_empty() and (not profile.has("client_id") or registration.get("id") == profile["id"]):
+		profile = registration.duplicate(true)
 	cancel = {"cancelled": false}
-	var result = await accounts.login_chatgpt(profile, cancel, _status)
+	var save_registration = func(client_id: String) -> bool: return _record_chatgpt_registration(client_id, profile)
+	var result = await accounts.login_chatgpt(profile, cancel, _status, save_registration)
 	busy = false
 	send_button.disabled = false
 	if not result.get("ok", false):
 		_status(str(result.get("error", "Autentificare nereușită.")))
 		return
 	profile = result["result"]
+	config.erase("chatgpt_pending_registration")
 	_upsert("providers", profile)
 	var catalog = await providers.list_models(profile)
 	if catalog.get("ok", false):
@@ -3212,6 +3241,18 @@ func _login_chatgpt() -> void:
 		_upsert("providers", profile)
 	_status("ChatGPT conectat." if catalog.get("ok", false) else "ChatGPT conectat; catalogul modelelor necesită reîncercare.")
 	await _refresh_accounts()
+
+func _record_chatgpt_registration(client_id: String, profile: Dictionary) -> bool:
+	# Registration is public metadata; active accounts/tokens stay untouched until
+	# identity and the plan permission have both passed validation.
+	var registration = {"id": profile["id"], "host_id": profile["host_id"], "client_id": client_id, "kind": "siwc", "url": Accounts.RESOURCE, "name": "ChatGPT", "models": []}
+	if profile.has("subject"): registration["subject"] = profile["subject"]
+	var previous: Variant = config.get("chatgpt_pending_registration", null)
+	config["chatgpt_pending_registration"] = registration
+	if Common.atomic_json(data_directory.path_join("config.json"), config) == OK: return true
+	if previous == null: config.erase("chatgpt_pending_registration")
+	else: config["chatgpt_pending_registration"] = previous
+	return false
 
 func _save_companion() -> void:
 	var form: Dictionary = forms["companion"]
@@ -3288,6 +3329,7 @@ func _logout_account() -> void:
 	if id.begins_with("siwc:"):
 		id = id.trim_prefix("siwc:")
 		vault.erase(id)
+		if config.get("chatgpt_pending_registration", {}).get("id") == id: config.erase("chatgpt_pending_registration")
 		for index in range(config["providers"].size() - 1, -1, -1):
 			if config["providers"][index]["id"] == id: config["providers"].remove_at(index)
 		_save_config()

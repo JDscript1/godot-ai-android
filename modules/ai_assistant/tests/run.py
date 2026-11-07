@@ -14,6 +14,8 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.request
+import urllib.error
 import zlib
 
 
@@ -33,6 +35,7 @@ def glb():
 
 
 class Fixtures(http.server.BaseHTTPRequestHandler):
+    callback_probes = {}
     generation_submissions = {}
     conversion_posts = {}
     conversion_polls = {}
@@ -64,6 +67,30 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/meta-review/v1/models":
+            valid = self.headers.get("Authorization") == "Bearer meta-protocol-fixture-key"
+            self.reply({"data": [{"id": value} for value in ["muse-spark-1.3", "muse-image-1.0", "muse-spark-1.3-contributor", "sam-3.1", "muse-voice-transcribe-1.0", "muse-wonder-1.0"]]} if valid else {"error": "Unauthorized"}, 200 if valid else 401)
+            return
+        if location.path == "/oauth-callback-probe":
+            query = urllib.parse.parse_qs(location.query)
+            port = int(query.get("port", ["0"])[0])
+            state = query.get("state", [""])[0]
+            mode = query.get("mode", ["start"])[0]
+            probe = query.get("probe", ["default"])[0]
+            if mode == "start":
+                def callback():
+                    time.sleep(.05)
+                    request = urllib.request.Request(f"http://127.0.0.1:{port}/auth/callback?" + urllib.parse.urlencode({"state": state, "code": "fixture-code", "client_id": "oaiapp_fixture"}))
+                    try:
+                        with urllib.request.urlopen(request, timeout=2) as response:
+                            self.callback_probes[probe] = {"status": response.status, "body": response.read().decode()}
+                    except urllib.error.HTTPError as error:
+                        self.callback_probes[probe] = {"status": error.code}
+                    except Exception:
+                        self.callback_probes[probe] = {"status": 0}
+                threading.Thread(target=callback, daemon=True).start()
+            self.reply(self.callback_probes.get(probe, {"status": "pending"}))
+            return
         if location.path == "/omni-review/v1/models":
             valid = self.headers.get("Authorization") == "Bearer omniroute-protocol-fixture-key"
             self.reply({"object":"list", "data":[
@@ -222,6 +249,27 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             return
         payload = ({key: values[0] for key, values in urllib.parse.parse_qs(raw.decode()).items()} if self.headers.get("Content-Type", "").startswith("application/x-www-form-urlencoded") else json.loads(raw or b"{}"))
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/meta-review/v1/responses":
+            tools = payload.get("tools", [])
+            valid = self.headers.get("Authorization") == "Bearer meta-protocol-fixture-key" and payload.get("model") == "muse-spark-1.3-contributor" and payload.get("stream") is True and payload.get("store") is False and payload.get("include") == ["reasoning.encrypted_content"]
+            valid = valid and payload.get("reasoning", {}).get("effort") == "xhigh" and len(tools) == 1 and tools[0].get("type") == "function" and tools[0].get("name") == "godot_scene_tree"
+            history = payload.get("input", [])
+            returning = any(item.get("type") == "function_call_output" for item in history)
+            if returning:
+                valid = valid and any(item.get("type") == "reasoning" and item.get("encrypted_content") == "opaque-meta-fixture" and item.get("summary") == [] for item in history)
+                valid = valid and any(item.get("type") == "function_call_output" and item.get("call_id") == "meta-call" and item.get("output") == "{fixture scene}" for item in history)
+            if not valid:
+                self.reply({"error": "Wrong Meta authentication, Contributor model, reasoning replay or function tool contract"}, 400)
+                return
+            output = [{"id": "rs_meta", "type": "reasoning", "summary": [], "encrypted_content": "opaque-meta-fixture"}]
+            if returning:
+                output.append({"id": "msg_meta", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "Meta fixture completed"}]})
+                self.sse([{"type": "response.output_text.delta", "delta": "Meta fixture completed"}, {"type": "response.completed", "response": {"status": "completed", "output": output}}])
+            else:
+                call = {"id": "fc_meta", "type": "function_call", "call_id": "meta-call", "name": "godot_scene_tree", "arguments": "{}", "status": "completed"}
+                output.append(call)
+                self.sse([{"type": "response.function_call_arguments.delta", "item_id": "fc_meta", "delta": "{"}, {"type": "response.function_call_arguments.delta", "item_id": "fc_meta", "delta": "}"}, {"type": "response.completed", "response": {"status": "completed", "output": output}}])
+            return
         if location.path == "/omni-review/v1/chat/completions":
             valid = self.headers.get("Authorization") == "Bearer omniroute-protocol-fixture-key" and payload.get("model") == "ds/chat-fixture" and payload.get("stream") is True
             tools = payload.get("tools", [])
