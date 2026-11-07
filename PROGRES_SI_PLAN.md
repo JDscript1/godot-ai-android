@@ -8,6 +8,19 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Istoricul modificărilor, golirea jurnalului și panourile editorului — 7.11.2026
+
+**Implementat în surse și verificat local; compilarea și livrarea APK sunt în curs.**
+
+- Cardul „Modificări” este atașat mesajului explicativ al turei și apare în poziția lui cronologică din chat. Pornește restrâns și poate fi extins sau restrâns la cerere.
+- „Golește jurnalul…” cere confirmare, apoi golește `journal.json` și înregistrările `activity-*.jsonl` din proiect și copia configurată de export. Păstrează conversațiile, jurnalul de recuperare și fișierele fără legătură; începe o sesiune nouă de jurnal.
+- Butonul de fullscreen al editorului nu mai este reactivat forțat de agent într-o buclă. Starea butonului din chat urmărește modul nativ al editorului; panourile de diagnostic sunt restaurate la ieșirea din modul extins.
+- Verificări locale: runtime **1036/0**, prezentarea chat **171/0**, jurnal și rotație **125/0**, panouri **71/0**; `git diff --check`.
+
+Limită: randările de editor sunt probe pe Godot Linux/Xvfb, nu verificări pe telefonul Android. APK-ul se va livra după terminarea CI.
+
+Jurnal: 7.11.2026 — ordine cronologică și disclosure pentru modificări, golire sigură a jurnalelor și sincronizarea fullscreen-ului nativ.
+
 ## Rutarea profilurilor de generare imagine și 3D — 7.11.2026
 
 **Compilat, verificat și livrat din `be466bfa6629251a01d28490d9b2ee5a80e2e5c9`.** Toate cele trei joburi din [CI `42405476918`](https://github.com/JDscript1/godot-ai-android/actions/runs/42405476918) au trecut; [artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42405476918/artifacts/13586982273).

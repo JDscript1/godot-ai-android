@@ -92,11 +92,19 @@ func run(host: Node, panel: Control) -> void:
 	host._check(not "fixture-full-log-secret" in log_text and not "private-image-pixels" in log_text and matched[0]["result"]["bytes"].get("binary_omitted", false), "Detailed logs mask secrets and omit binary/image payloads")
 	var mirror = exported.path_join("godot-ai-" + panel.project_directory.get_file()).path_join(log_path.get_file())
 	host._check(FileAccess.file_exists(mirror) and FileAccess.get_file_as_string(mirror).contains(long_text), "Selected export directory receives full logs without reading the API vault")
+	var unrelated_log = panel.project_directory.path_join("logs").path_join("keep.txt")
+	FileAccess.open(unrelated_log, FileAccess.WRITE).store_string("keep")
+	var clear_button = panel.settings_window.find_children("*", "Button", true, false).filter(func(button: Button) -> bool: return button.text == "Golește jurnalul…")
+	host._check(clear_button.size() == 1, "Journal exposes a dedicated clear action")
+	panel._clear_journal()
+	host._check(panel.journal.is_empty() and panel.Common.read_json(panel.project_directory.path_join("journal.json"), [1]).is_empty(), "Clearing the journal resets its in-memory and persisted records")
+	host._check(not FileAccess.file_exists(log_path) and not FileAccess.file_exists(mirror) and FileAccess.get_file_as_string(unrelated_log) == "keep", "Clearing removes only activity JSONL files from project and export while preserving unrelated files")
 	panel.config["preferences"]["journal_export_directory"] = old_export
 	panel._append_detailed_log({"padding": "x".repeat(8 * 1024 * 1024)})
+	var fresh_log_path = panel.project_directory.path_join("logs").path_join("activity-%s-%04d.jsonl" % [panel.journal_session, panel.journal_part])
 	var previous_part = panel.journal_part
 	panel._append_detailed_log({"after_rotation": true})
-	host._check(panel.journal_part == previous_part + 1 and FileAccess.file_exists(log_path), "Full logs rotate into successive files while preserving older events")
+	host._check(panel.journal_part == previous_part + 1 and FileAccess.file_exists(fresh_log_path), "Full logs rotate into successive files while preserving older events")
 	host._check(not panel.chat.running_tools.visible, "Legacy Running Tools row stays hidden while idle")
 	panel._harness_event({"kind": "tool_started", "id": "qa-inline-save", "name": "godot_save_scene"})
 	var inline_group: Dictionary = panel.chat.response_groups[-1]

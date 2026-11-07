@@ -788,7 +788,9 @@ func _build_settings() -> void:
 	log_toolbar.add_child(journal_follow)
 	var copy_log = chat.icon_button(log_toolbar, "Copy", "Copiază jurnalul afișat", func() -> void: DisplayServer.clipboard_set(journal_console.text))
 	chat._compact_button(copy_log)
-	_button(_row(journal_tab), "Export automat…", _choose_journal_directory)
+	var journal_actions = _row(journal_tab)
+	_button(journal_actions, "Export automat…", _choose_journal_directory)
+	_button(journal_actions, "Golește jurnalul…", _confirm_clear_journal)
 	journal_console = CodeEdit.new()
 	journal_console.editable = false
 	journal_console.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
@@ -3045,6 +3047,43 @@ func _journal_value(value: Variant, depth: int = 0) -> Variant:
 		return clean
 	return _redact(value) if value is String else Common.json_safe(value)
 
+func _confirm_clear_journal() -> void:
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "Golește jurnalul"
+	dialog.dialog_text = "Ștergi toate înregistrările jurnalului acestui proiect, inclusiv fișierele activity exportate? Conversațiile și jurnalul de recuperare rămân intacte."
+	dialog.ok_button_text = "Șterge înregistrările"
+	settings_window.add_child(dialog)
+	dialog.confirmed.connect(func() -> void:
+		_clear_journal()
+		dialog.queue_free())
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered()
+
+func _clear_journal() -> void:
+	journal.clear()
+	journal_session = Common.uid()
+	journal_part = 0
+	journal_revision += 1
+	var stored = Common.atomic_json(project_directory.path_join("journal.json"), journal)
+	var logs = project_directory.path_join("logs")
+	_remove_activity_logs(logs)
+	var exported = str(config.get("preferences", {}).get("journal_export_directory", ""))
+	if not exported.is_empty(): _remove_activity_logs(exported.path_join("godot-ai-" + project_directory.get_file()))
+	if journal_console != null:
+		if journal_filter != null: journal_filter.clear()
+		journal_console.text = ""
+		journal_rendered_revision = journal_revision
+		journal_rendered_query = ""
+		journal_console.scroll_vertical = 0
+	if stored != OK: _status("Jurnalul a fost golit în memorie, dar fișierul local nu a putut fi actualizat.")
+	else: _status("Jurnalul proiectului a fost golit.")
+
+func _remove_activity_logs(directory: String) -> void:
+	if not DirAccess.dir_exists_absolute(directory): return
+	for name in DirAccess.get_files_at(directory):
+		if name.begins_with("activity-") and name.ends_with(".jsonl"):
+			DirAccess.remove_absolute(directory.path_join(name))
+
 func _append_detailed_log(entry: Dictionary) -> void:
 	if project_directory.is_empty(): return
 	if journal_session.is_empty(): journal_session = Common.uid()
@@ -3781,22 +3820,19 @@ func _process(_delta: float) -> void:
 	if not project_manager_mode and chat != null and is_visible_in_tree():
 		# Only the visible assistant owns this lock. Hidden panels must not adopt
 		# Ziva's distraction-free workspace or force it on a later editing tab.
-		# Expanded chat is a locked agent window: bottom panels must not shrink
-		# or raise it while the user keeps the lock active. Expanding again
-		# releases the lock and restores the previously selected panel.
+		# Follow the editor's native distraction-free control. Do not force it
+		# back on after the user toggles the editor's own fullscreen button.
+		var expanded = EditorInterface.is_distraction_free_mode_enabled()
+		if expanded != chat.workspace_expanded:
+			chat.set_workspace_expanded(expanded)
+			if not expanded:
+				_restore_dock_groups()
+				_restore_workspace_bottom_panel()
 		if chat.workspace_expanded:
-			if not EditorInterface.is_distraction_free_mode_enabled(): EditorInterface.set_distraction_free_mode(true)
 			var bottom = _editor_bottom_panel()
 			if bottom != null and bottom.get_current_tab() >= 0:
 				plugin.hide_bottom_panel()
-				_status("Fereastra agentului este blocată. Folosește butonul de extindere pentru a o debloca.")
-		else:
-			var expanded = EditorInterface.is_distraction_free_mode_enabled()
-			if expanded != chat.workspace_expanded:
-				chat.set_workspace_expanded(expanded)
-				if not expanded:
-					_restore_dock_groups()
-					_restore_workspace_bottom_panel()
+				_status("Fereastra agentului este extinsă. Folosește butonul de extindere pentru a restaura panourile.")
 	if not project_manager_mode and (current_placement != 0 or EditorInterface.is_distraction_free_mode_enabled()) and is_visible_in_tree():
 		var viewport_size = get_viewport().get_visible_rect().size
 		if viewport_size != dock_viewport_size:

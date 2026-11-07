@@ -4299,6 +4299,11 @@ func _workspace_panel_tests(output: String) -> void:
 		panel.chat.expand_button.pressed.emit()
 		await get_tree().create_timer(0.2).timeout
 		_check(panel.current_placement == side and bottom.get_current_tab_control() == diagnostic_tab, "Restoring a side chat recovers its position and diagnostic panel: " + str(side))
+	EditorInterface.set_distraction_free_mode(true)
+	await get_tree().create_timer(0.15).timeout
+	EditorInterface.set_distraction_free_mode(false)
+	await get_tree().create_timer(0.15).timeout
+	_check(not EditorInterface.is_distraction_free_mode_enabled() and not panel.chat.workspace_expanded and not panel.chat.expand_button.button_pressed, "Native editor fullscreen toggle stays authoritative and synchronizes the assistant button")
 	hide_bottom_panel()
 	remove_control_from_bottom_panel(diagnostic)
 	diagnostic.queue_free()
