@@ -7,10 +7,11 @@ editor services. It does not install or start Termux, Node.js, Python, a shell,
 Pi, OpenCode, or a separate agent server on the user's device.
 
 The original harness shipped in APK `12794c4`. The latest delivered Ziva APK is
-`428e625` (7 November 2026), including bidirectional native-agent/Ziva task
+`cd3076a` (7 November 2026), including bidirectional native-agent/Ziva task
 control, protected criteria and execution intent, durable generation identities,
 real delegation completion, compact current tool rows, Ziva interruption/input fixes,
 corrected OmniRoute catalogs, context metadata and durable manual model routes,
+Meta Responses with Contributor preference and frame-independent ChatGPT callbacks,
 corrected chat queue/docks, bounded empty-answer
 recovery and the keyboard-event guard. All three CI jobs passed. The
 APK was verified but not installed automatically. Normal execution has no fixed

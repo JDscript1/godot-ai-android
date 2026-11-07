@@ -11,7 +11,7 @@ tab at the top right of the editor, next to **Asset Store**. Its **Setări** but
 opens the same global configuration window.
 
 - **Furnizori:** select an issuer or paste a distinctive API key. Generic keys such
-  as `sk-...` require an issuer selection. The current source queries models automatically after saving and can refresh an empty catalog from chat. The delivered APK still requires the separate test/list-models action. Manual model
+  as `sk-...` require an issuer selection. The provider form verifies the key and discovers models through Connect; saved catalogs can be refreshed through Test or from chat. Manual model
   IDs remain available for servers without a listing endpoint. Cloud and local/self-hosted
   services/profiles have separate headings. Advanced hosting overrides support a
   self-hosted server behind a public HTTPS domain.
@@ -34,7 +34,7 @@ opens the same global configuration window.
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current APK is `a23d260`, including control/integrations/generation and
+The current verified Ziva APK is `cd3076a` (see [delivery evidence](../PROGRES_SI_PLAN.md)), including control/integrations/generation and
 [chat files, previews, editor control, Store and real diff](AI_CHAT_FILES_AND_EDITOR_CONTROL.md).
 It also includes the subsequent harness/local-connection fixes, activity drawer,
 3D preview controls, image-purpose rules and optional Termux/Blender setup.
@@ -119,7 +119,7 @@ catalog IDs keep unknown metadata, and an unpublished price is not treated as fr
 
 On 7 November 2026, the real Meta catalog returned HTTP200 and the Godot provider
 completed a Contributor function-call/result/final-answer test. This verifies the
-native protocol; a phone test of the newly compiled APK remains separate.
+native protocol; a phone test of the delivered APK remains separate.
 
 Sources: [Meta SDKs](https://dev.meta.ai/docs/sdks),
 [Responses API](https://dev.meta.ai/docs/protocols/responses),

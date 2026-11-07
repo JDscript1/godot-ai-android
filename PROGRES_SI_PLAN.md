@@ -10,7 +10,23 @@ drept funcție validată cu un serviciu real.
 
 ## Meta Model API și revenirea din login ChatGPT — 7.11.2026
 
-**Implementat în surse; APK nou în pregătire.**
+**Compilat, verificat și livrat din `cd3076a678fdb91fb2e3230df1bd5e174eced099`.** Toate cele trei joburi
+[CI `42387456015`](https://github.com/JDscript1/godot-ai-android/actions/runs/42387456015) au trecut. [Artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42387456015/artifacts/13579493524).
+
+- APK: **112.622.354 bytes**, `com.jdscript.godotai.ziva.debug`, ARM64.
+- SHA-256: `c668ef1d9b2d62cf956b591e9f91999b4c8dbc13d973ced6365136d6bb16100b`.
+- Înlocuit atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`,
+  cu checksum, după verificarea certificatului persistent, ZIP-ului, pachetului,
+  celor **44 de scripturi GDScript exacte**, adaptorului WebView,
+  claselor native și payloadurilor runtime/Linux.
+- CI upstream: desktop 1097/0, narrow 1097/0, wide 1097/0, phone_landscape 1097/0, phone_compact 1097/0.
+- CI editor nativ: desktop 1128/0, narrow 1128/0, wide 1128/0, phone_landscape 1128/0, phone_compact 1128/0.
+- Runtime CI **1036/0**, transport/client **18/0**, RPC Ziva **20/0**,
+  context **36/0**, DOM/focus simulat **48/0**; fără erori de script în CI.
+- Captura locală Meta și capturile native ale paginilor Furnizori/Abonamente
+  au fost inspectate. **APK-ul nu a fost instalat automat.** Proba Meta live
+  este prin transportul Godot din Termux; loginul interactiv ChatGPT și
+  comportamentul APK-ului instalat pe Android rămân neconfirmate.
 
 - „Meta Model API” este furnizor cloud distinct, cu emblema Meta, endpoint
   `https://api.meta.ai/v1`, protocol Responses și cheie proprie în vault.
@@ -61,7 +77,7 @@ Surse de contract: [Meta Responses](https://dev.meta.ai/docs/protocols/responses
 [OpenAI SIWC](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
 Jurnal: 7.11.2026 — adăugat furnizor Meta, probă reală Contributor cu unealtă,
-corectat callbackul și păstrarea înregistrării ChatGPT; compilarea urmează.
+corectat callbackul și păstrarea înregistrării ChatGPT; APK `cd3076a` verificat și livrat după CI complet verde.
 
 ## Corecții ale integrării OmniRoute — 7.11.2026
 

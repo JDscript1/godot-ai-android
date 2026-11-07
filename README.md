@@ -6,12 +6,13 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42380882087/artifacts/13577648124)
-(GitHub Actions artifact, source `428e625`, delivered 7 November 2026).
-This build includes corrected OmniRoute chat model discovery, context limits,
-editable saved endpoints and durable manual routes, plus native agent/Ziva
-collaboration. All three CI jobs passed; physical Android and live-model
-acceptance remain tracked in [the progress document](PROGRES_SI_PLAN.md).
+[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42387456015/artifacts/13579493524)
+(GitHub Actions artifact, source `cd3076a`, delivered 7 November 2026).
+This build adds Meta Model API with the exact Muse Spark 1.3 Contributor
+preference and native Responses tool calls, plus ChatGPT browser callback and
+registration recovery fixes. All three CI jobs passed; a live Contributor
+tool roundtrip passed. Interactive ChatGPT login and physical Android acceptance
+remain tracked in [the progress document](PROGRES_SI_PLAN.md).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
