@@ -1,6 +1,6 @@
 # Colaborarea dintre Godot AI și Ziva
 
-Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `c4b9431`, verificat și livrat.
+Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `499b59a`, verificat și livrat.
 Starea sursei, verificărilor și APK-ului livrat este
 în [PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 
@@ -9,7 +9,7 @@ folosește propriul model, propriile unelte și propriile permisiuni. Legătura 
 unește istoricul sau cheile API. Rezultatul confirmat al unui job este separat
 de simpla acceptare a mesajului.
 
-## Corecții în APK `c4b9431` — 7 noiembrie 2026
+## Corecții în APK `499b59a` — 7 noiembrie 2026
 
 Pentru o cerere doar despre pornirea/starea Ziva, ghidajul indică `ziva_status`,
 fără pornirea suplimentară a unei sarcini de model. `finish=aborted` este raportat ca întrerupere,
@@ -22,6 +22,14 @@ folosit pentru corelarea cererii; mesajele altor utilizatori/ture nu sunt prelua
 ascunderea tastaturii, iar compoziția IME se încheie înaintea acelei ascunderi.
 Verificările locale sunt automate; acceptarea pe tastatura fizică rămâne deschisă.
 Verificările CI și livrarea acestui APK sunt în documentul de progres.
+Verificările CI și livrarea acestui APK sunt în documentul de progres.
+
+### Pornirea Ziva după instalare
+
+Legătura privată folosește acum `/run/godot-ai-agent-link`, separat de mount-ul
+sesiunii `/run/godot-ai-ziva`. Astfel PRoot nu mai creează un mountpoint imbricat
+în `sessions/<uuid>/agent-link`, iar curățarea unei sesiuni vechi nu mai poate
+bloca o pornire nouă. Erorile de pornire sunt prefixate cu „Ziva nu a pornit:”.
 
 ## Din agentul nostru către Ziva
 

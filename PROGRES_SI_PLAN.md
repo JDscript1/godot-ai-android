@@ -30,11 +30,22 @@ pornire, iar mesajul brut ajungea în UI.
   doar un path brut.
 
 **Verificat local.** Runtime **984/0**; agent-link **18/0** (client GDScript
-real + mailbox Kotlin); Ziva chat RPC **20/0**; context **36/0**. Compilarea
-Android și proba fizică după instalare rămân separate.
+real + mailbox Kotlin); Ziva chat RPC **20/0**; context **36/0**.
+
+**Compilat, verificat și livrat din `499b59a08e1d5a04a326167df7dd204c03d0e326`.**
+Toate cele trei joburi ale [CI `42369200908`](https://github.com/JDscript1/godot-ai-android/actions/runs/42369200908)
+au trecut. [Artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42369200908/artifacts/13573187121).
+
+- APK: **112.616.894 bytes**, `com.jdscript.godotai.ziva.debug`, ARM64.
+- SHA-256: `ad38329a4d9dfe3b28fe0d641b9fb12d1f39b35046a95314ac29628fae572f11`.
+- Livrat în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk` și checksum,
+  după verificarea ZIP-ului, pachetului/ABI, certificatului persistent și
+  prezenței noii căi `godot-ai-agent-link` în DEX.
+- **APK-ul nu a fost instalat automat.** Pornirea pe telefon după reinstalare
+  rămâne proba care închide cazul; captura inițială era dinaintea acestui build.
 
 Jurnal: 7.11.2026 — eliminat mount-ul imbricat care putea bloca pornirea Ziva;
-curățare tolerantă și eroare inteligibilă; testele de legătură trec.
+curățare tolerantă, eroare inteligibilă și APK nou livrat după CI complet verde.
 
 ## Chat compact, comunicare și tastatură Ziva — 7.11.2026
 

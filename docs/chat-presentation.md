@@ -221,5 +221,5 @@ editor. Pe 5 noiembrie 2026 au trecut cu 143/0, 73/0, 82/0, 79/0, 81/0, 88/0,
 `.ai-qa/chat-ziva-live-20261105/`.
 
 Aceste probe folosesc Godot Linux în PRoot și rezultate deterministe. APK-ul
-Ziva `66cdb44` include aceste surse și a fost verificat, dar probele nu sunt o
+Ziva `499b59a` include aceste surse și a fost verificat, dar probele nu sunt o
 probă fizică Android și nu confirmă un furnizor live.
