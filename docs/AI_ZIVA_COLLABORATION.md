@@ -1,6 +1,7 @@
 # Colaborarea dintre Godot AI și Ziva
 
-Actualizat: 7 noiembrie 2026. Starea sursei, verificărilor și APK-ului livrat este
+Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `53a50e8`, verificat și livrat.
+Starea sursei, verificărilor și APK-ului livrat este
 în [PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 
 Cei doi agenți pot comunica și primi sarcini în același proiect salvat. Fiecare

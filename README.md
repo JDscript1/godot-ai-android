@@ -6,10 +6,10 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42312982797/artifacts/13548649869)
-(GitHub Actions artifact, source `54b092a`, delivered 7 November 2026).
-This includes corrected chat sizing and result states, compact activity, and
-bounded empty-answer recovery. The Android build and APK
+[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42316466533/artifacts/13550882528)
+(GitHub Actions artifact, source `53a50e8`, delivered 7 November 2026).
+This includes bidirectional Godot AI/Ziva communication and task control, corrected
+chat presentation, and bounded empty-answer recovery. The Android build and APK
 integrity checks passed, while known aggregate editor-layout failures remain
 tracked in [the progress document](PROGRES_SI_PLAN.md).
 

@@ -8,6 +8,42 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Livrare APK cu legătura dintre agenți — 7.11.2026
+
+**Compilat din `53a50e8adb96aa6dbe95191fd35728a621e6a453`** prin workflow-ul
+[Godot AI Android — `42316466533`](https://github.com/JDscript1/godot-ai-android/actions/runs/42316466533).
+Jobul Android a trecut; noua probă CI de comunicare a trecut înaintea randării.
+
+- APK: **112.612.190 bytes**, `com.jdscript.godotai.ziva.debug`, `4.7.2.stable`, ARM64.
+- SHA-256: `16eeef248699511caddc0c4403f10af40829bb27ba801bc22f6ed394a0d6d9bd`.
+- Livrat atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`, cu
+  checksum, după verificarea aceleiași semnături persistente ca instalatorul vechi.
+- Verificat artefactul: ZIP, pachet/ABI, certificat, toate cele **44 de surse
+  native GDScript** identice cu commitul, clientul `agent-link-client.gd` identic
+  cu sursa și clasa `AIZivaAgentLink` prezentă în DEX, manifest runtime și baza Linux.
+- Include pornire/stare/rezultat/anulare Ziva, legătura inversă pentru întrebări
+  Ask și sarcini, intervenții și anulare pe tur, coadă și rezultate corelate,
+  păstrarea ciornei și refuzul delegării circulare.
+- CI: runtime **949/0**, transport/client **18/0**, RPC **10/0**, context **36/0**.
+  Upstream desktop/narrow/wide: **1005/0** fiecare. Phone landscape păstrează
+  eșecul cunoscut al cozii. Editorul nativ: **1030 verificări / 38 eșecuri**, cu
+  aceleași etichete ca în buildul anterior. Fără erori GDScript sau etichete noi.
+- Workflow-ul agregat rămâne `failure` din cauza probelor de layout existente;
+  verificarea comunicării și succesul jobului Android sunt raportate separat.
+- **Nu a fost instalat automat.** Dialogul dintre două modele reale și ciclul
+  Android după instalare rămân de verificat pe dispozitiv. Catalogul MCP local
+  confirmă capabilitățile Ziva, fără să valideze noul APK deja instalat.
+
+Dovezi: `.ai-qa/agent-ziva-link-20261107/`, inclusiv `live-mcp-catalog.json`,
+logurile editor/runtime/JVM, `build/delivery.json`, `build/verification.json`,
+logurile CI și comparațiile cu buildul `54b092a`. Artefactul original este în
+`~/godot-ai-apk-stage/ziva-53a50e8/`. Utilizare și limite:
+[AI_ZIVA_COLLABORATION.md](docs/AI_ZIVA_COLLABORATION.md).
+
+Jurnal: 7.11.2026 — compilat, verificat și livrat APK-ul cu comunicare și control
+între agenți în ambele sensuri; confirmate sursele native, componenta Android și
+clientul transportului; fără instalare automată sau afirmație de acceptare live.
+
 ## Comunicare și control Godot AI ↔ Ziva — 7.11.2026
 
 **Implementat în surse.** Agentul nostru are pornire asincronă, stare, rezultat
