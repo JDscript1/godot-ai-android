@@ -5374,7 +5374,7 @@ func _ziva_task(args: Dictionary, wait_for_answer: bool = true) -> Dictionary:
 	var timeout_seconds = clampi(int(args.get("timeout_seconds", 600)), 30, 1800)
 	var request = {"prompt": _redact(prompt), "project_directory": ProjectSettings.globalize_path("res://").trim_suffix("/"), "timeout_seconds": timeout_seconds}
 	if peer_ready:
-		request["prompt"] += "\n\n[Godot AI collaboration] You can inspect the host agent using execute_script: var peer = load(\"/run/godot-ai-ziva/agent-link/client.gd\").new(); print(JSON.stringify(peer.request(\"status\"))). When it awaits your result, return your findings instead of queuing a task back to it."
+		request["prompt"] += "\n\n[Godot AI collaboration] You can inspect the host agent using execute_script: var peer = load(\"/run/godot-ai-agent-link/client.gd\").new(); print(JSON.stringify(peer.request(\"status\"))). When it awaits your result, return your findings instead of queuing a task back to it."
 	if not str(args.get("chat_id", "")).is_empty(): request["chat_id"] = str(args["chat_id"])
 	var started = _ziva_request("ziva_chat_send", request)
 	if not started.get("ok", false): return started

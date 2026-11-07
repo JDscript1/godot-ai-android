@@ -136,7 +136,13 @@ class AIZivaService : Service() {
                 }
             }
             for (previous in privateDirectory("sessions").listFiles().orEmpty()) {
-                if (previous.name.matches(Regex("[a-f0-9-]{36}")) && !Files.isSymbolicLink(previous.toPath())) AILinuxRuntimeFiles.deleteTree(previous)
+                if (previous.name.matches(Regex("[a-f0-9-]{36}")) && !Files.isSymbolicLink(previous.toPath())) {
+                    try { AILinuxRuntimeFiles.deleteTree(previous) } catch (_: Exception) {
+                        // An orphaned PRoot mountpoint may survive an app update.
+                        // Each session has a fresh nonce, so stale private data
+                        // must never prevent the next editor from starting.
+                    }
+                }
             }
             synchronized(lock) { state.remove("ui_port"); state.remove("guest_pid"); state.remove("guest_start"); AIZivaRuntime.save(this, state) }
             val runtime = AILinuxRuntime.core(this, ::cancelled)
@@ -270,7 +276,8 @@ class AIZivaService : Service() {
             }
         } catch (error: Exception) {
             finalStatus = if (cancelled()) "stopped" else "error"
-            finalMessage = if (cancelled()) "Ziva oprit" else (error.message?.take(240) ?: "Ziva nu a pornit.")
+            finalMessage = if (cancelled()) "Ziva oprit"
+            else "Ziva nu a pornit: " + (error.message?.take(200) ?: "eroare necunoscută.")
         } finally {
             terminate()
             try {

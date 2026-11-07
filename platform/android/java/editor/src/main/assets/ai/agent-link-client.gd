@@ -1,6 +1,6 @@
 extends RefCounted
 ## Called by Ziva's execute_script in its own subprocess; never blocks the host editor.
-var directory = "/run/godot-ai-ziva/agent-link"
+var directory = "/run/godot-ai-agent-link"
 
 func request(action: String, arguments: Dictionary = {}) -> Dictionary:
 	var connection: Variant = JSON.parse_string(FileAccess.get_file_as_string(directory.path_join("connection.json")))

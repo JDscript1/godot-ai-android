@@ -8,6 +8,34 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Reparație pornire Ziva după instalare — 7.11.2026
+
+**Defect raportat pe dispozitiv.** După instalarea APK-ului, tabul Ziva afișa
+doar starea „Ziva” și un path brut de forma
+`.../ai-ziva/sessions/<uuid>/agent-link`, fără interfața oficială.
+
+**Cauze identificate în sursă.** Legătura privată dintre agenți era montată la
+`/run/godot-ai-ziva/agent-link`, adică în interiorul altui mount de sesiune
+(`/run/godot-ai-ziva`). PRoot putea lăsa un mountpoint în
+`sessions/<uuid>/agent-link`. La pornirea următoare, curățarea sesiilor vechi
+nu izola eroarea: o singură cale rămasă și neștearsă putea opri întreaga
+pornire, iar mesajul brut ajungea în UI.
+
+**Corectat în surse.**
+- Legătura folosește acum un mount separat, `/run/godot-ai-agent-link`, în afara
+  sesiunii Ziva. Clientul, contextul AGENTS și documentația folosesc aceeași cale.
+- Curățarea sesiilor vechi este best-effort; o rădăcină PRoot rămasă nu mai
+  blochează o sesiune nouă cu UUID propriu.
+- Eroarea de pornire este prefixată cu „Ziva nu a pornit:” în loc să afișeze
+  doar un path brut.
+
+**Verificat local.** Runtime **984/0**; agent-link **18/0** (client GDScript
+real + mailbox Kotlin); Ziva chat RPC **20/0**; context **36/0**. Compilarea
+Android și proba fizică după instalare rămân separate.
+
+Jurnal: 7.11.2026 — eliminat mount-ul imbricat care putea bloca pornirea Ziva;
+curățare tolerantă și eroare inteligibilă; testele de legătură trec.
+
 ## Chat compact, comunicare și tastatură Ziva — 7.11.2026
 
 **Compilat, verificat și livrat: `c4b94310c4ef86bcff9b708a419ca002340f5331`.** Toate cele trei joburi

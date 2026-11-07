@@ -8,7 +8,7 @@ import java.nio.file.Files
 /** Private per-project mailbox shared with Ziva; no public listener or project files. */
 class AIZivaAgentLink(private val directory: File) {
     companion object {
-        const val GUEST = "/run/godot-ai-ziva/agent-link"
+        const val GUEST = "/run/godot-ai-agent-link"
         private val ID = Regex("[a-f0-9]{32}")
         private const val MAX_BYTES = 64 * 1024
     }

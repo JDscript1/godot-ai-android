@@ -64,7 +64,7 @@ primește scripturi de integrare. Ziva îl apelează prin unealta sa verificată
 `execute_script`, de exemplu:
 
 ```gdscript
-var peer = load("/run/godot-ai-ziva/agent-link/client.gd").new()
+var peer = load("/run/godot-ai-agent-link/client.gd").new()
 print(JSON.stringify(peer.request("status")))
 ```
 

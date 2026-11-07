@@ -165,7 +165,7 @@ object AIZivaProjectContext {
 
             # Communicating with the Godot AI agent
             The host agent is a separate collaborator in the Android editor, sharing this saved project.
-            Use execute_script with: var peer = load("/run/godot-ai-ziva/agent-link/client.gd").new(); print(JSON.stringify(peer.request("status")))
+            Use execute_script with: var peer = load("/run/godot-ai-agent-link/client.gd").new(); print(JSON.stringify(peer.request("status")))
             Calls return immediately with bounded results; long work returns a job_id. Actions:
             query {text}: ask the host model in its read-only Ask mode.
             task {text}: ask it to perform a task using its normal permissions and tools.
