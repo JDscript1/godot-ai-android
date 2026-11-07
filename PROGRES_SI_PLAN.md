@@ -8,6 +8,48 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Chat compact, comunicare și tastatură Ziva — 7.11.2026
+
+**Corectat în surse; APK-ul nou urmează după verificările CI.**
+
+- Apelurile de unelte au un singur rând curent. Următorul apare după încheierea
+  celui care rulează; contorul deschide istoricul complet, cu rezultate și durate.
+- Citirea exclusivă a stării Ziva este descrisă explicit ca `ziva_status`, fără
+  sarcină de model ori inspecție de scenă suplimentară pentru o simplă verificare.
+- Răspunsul oficial cu `finish=aborted` este întrerupt, nu finalizat cu succes;
+  un răspuns final gol sau `finish=error` raportează eroare. Anularea în timpul
+  rezolvării conversației nu mai trimite ulterior promptul; anularea din timpul
+  trimiterii se verifică din nou după răspunsul RPC.
+- Gazda nu mai modifică selecția/cursorul Lexical și nu mai întrerupe IME la
+  `pointerdown` pe Trimite. Ascunderea tastaturii urmează handlerului formularului
+  și așteaptă încheierea compoziției. Actualizarea cadrului WebView nu mai repetă
+  `onResume()` pentru fiecare modificare de geometrie.
+
+**Probe locale:** runtime **984/0**; prezentare phone compact **168/0**;
+inspecții phone compact **81/0**; client/mailbox **18/0**, RPC Ziva **20/0**,
+context **36/0**; integrarea editor Ziva **140/0**; DOM/focus **48/0** cu gesturi simulate.
+Noua probă DOM eșuează pe sursa veche la păstrarea focusului în `pointerdown` pe Trimite.
+Noua probă RPC eșuează pe clientul vechi la răspunsul `aborted`
+și trece pe corecție. Captura `tools-compact-final/.../chat-response-operations.png`
+a fost inspectată și arată un singur rând, plus contorul istoricului.
+
+**Inspecție Ziva live, numai citire:** cererea agentului nostru a ajuns la Ziva;
+mesajul asociat are șase unelte încheiate, apoi `aborted`, fără răspuns text.
+Aceasta confirmă transportul și întreruperea acelui tur, nu cauza întreruperii
+sau mesajul exact din a doua captură încă neidentificată. Nu s-au trimis prompturi
+către furnizori în această inspecție. Contextul suplimentar este `synthetic` și
+modelul implicit este `ziva/smart`; nu s-a relaxat corelarea mesajelor după presupuneri.
+
+DeepSeek **`opencode/deepseek-v4.1-flash-free`** a contribuit la audit prin OpenCode
+izolat; cheia personală DeepSeek nu a fost folosită. Tentativa sa de a genera
+testele a atins limita de răspuns (`length`, 32.000 tokeni de raționament, fără
+patch) și a fost oprită; suita DOM a fost finalizată local și reinclusă în CI.
+Review-ul final delegat rămâne separat de rezultatele locale măsurate.
+Tastarea, autocorectarea și atingerea butonului pe APK-ul instalat rămân probe
+fizice separate. ADB nu vede un dispozitiv conectat în această sesiune.
+Dovezi: `.ai-qa/phone-chat-ziva-20261107/` (loguri, randări, RPC sanitizat,
+review DeepSeek și regresia față de sursa veche).
+
 ## Livrare APK cu rectificările harness — 7.11.2026
 
 **Compilat, verificat și livrat din `3bb7a244dd2547a479ffbe6e34bf40adf635d061`.** Toate cele trei joburi ale
@@ -4962,6 +5004,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **7.11.2026 — chat compact și Ziva, în surse:** un rând activ cu istoric, raportare corectă pentru `aborted`, protecție la anulare și eliminarea intervențiilor gazdei în cursor/IME. Runtime 984/0, prezentare 168/0, inspecții 81/0, RPC 20/0; APK în pregătire, testarea fizică rămâne separată.
 
 - **7.11.2026 — APK `3bb7a24` cu rectificările harness livrat.** Toate cele trei joburi CI au trecut; criterii, generări și delegări întărite, cele 38 de eșecuri native rezolvate, artefactul verificat exact înainte de înlocuirea Ziva din Downloads. Testele fizice rămân separate.
 

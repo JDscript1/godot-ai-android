@@ -37,7 +37,9 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	panel._chat_tool_event({"kind": "tool_result", "id": "search", "name": "godot_search_code", "arguments": {"query": "move_player"}, "result": {"ok": true, "result": {"matches": [{"path": path, "line": 42, "column": 6, "text": "func move_player():", "before": [{"line": 41, "text": "# movement"}], "after": [{"line": 43, "text": "\tvelocity = direction * speed"}]}]}}}, metadata)
 	chat.append_message("assistant", "Am citit mișcarea și am găsit funcția în [script](res://ai_inspection_probe.gd:42:6).", metadata.merged({"id": "inspect-answer"}))
 	var group: Dictionary = chat.response_groups[-1]
-	check(group["operations"].size() == 2 and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree() and operation["node"].get_parent() == group["content"]), "Inspection tool calls render inline in the conversation")
+	check(group["operations"].size() == 2 and not group["operations"][0]["node"].visible and group["operations"][1]["node"].is_visible_in_tree(), "Inspection calls use one current row with earlier results retained")
+	group["operations"][-1]["history_button"].pressed.emit()
+	check(group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree()), "Opening inspection history exposes both original tool results")
 	var read_operation: Dictionary = group["operations"][0]
 	check(not read_operation["details"].visible and read_operation["details"].get_child_count() == 0, "Collapsed read operations defer construction of source previews")
 	read_operation["header"].pressed.emit()

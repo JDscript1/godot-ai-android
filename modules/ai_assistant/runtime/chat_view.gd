@@ -1680,13 +1680,14 @@ func _response_group(metadata: Dictionary) -> Dictionary:
 	footer.add_theme_constant_override("h_separation", int(8 * scale))
 	footer.add_theme_constant_override("v_separation", int(4 * scale))
 	card.add_child(footer)
-	var group = {"index": response_groups.size(), "row": row, "card": card, "state": state, "content": content, "files": files, "footer": footer, "records": [], "operations": [], "turn": turn, "epoch": response_epoch, "outcome": str(metadata.get("run_status", ""))}
+	var group = {"index": response_groups.size(), "row": row, "card": card, "state": state, "content": content, "files": files, "footer": footer, "records": [], "operations": [], "tools_expanded": false, "turn": turn, "epoch": response_epoch, "outcome": str(metadata.get("run_status", ""))}
 	response_groups.append(group)
 	for previous in response_groups.slice(0, -1):
 		if not turn.is_empty() and previous["turn"] == turn: _sync_response(previous)
 	return group
 
 func _sync_response(group: Dictionary) -> void:
+	_sync_tool_rows(group)
 	var primary: Dictionary = {}
 	var latest = true
 	for other in response_groups.slice(int(group["index"]) + 1):
@@ -1796,7 +1797,21 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	header.add_theme_stylebox_override("hover", _compact_style(Color("202634")))
 	header.add_theme_stylebox_override("pressed", _compact_style(Color("262e3d")))
 	header.add_theme_font_size_override("font_size", int(12 * scale))
-	body.add_child(header)
+	var header_row = HBoxContainer.new()
+	header_row.add_theme_constant_override("separation", int(4 * scale))
+	body.add_child(header_row)
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_row.add_child(header)
+	var history_button = Button.new()
+	history_button.name = "ToolHistory"
+	history_button.text = "1 ▾"
+	_compact_button(history_button)
+	header_row.add_child(history_button)
+	history_button.pressed.connect(func() -> void:
+		_preserve_reader()
+		group["tools_expanded"] = not group.get("tools_expanded", false)
+		_sync_tool_rows(group)
+		_follow.call_deferred())
 	var summary = label(body, "")
 	summary.name = "ToolCallSummary"
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1811,6 +1826,7 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 	body.add_child(details)
 	operation["node"] = panel
 	operation["header"] = header
+	operation["history_button"] = history_button
 	operation["summary"] = summary
 	operation["details"] = details
 	operation["feed"] = {"kind": "tool", "title": str(operation.get("title", operation.get("name", ""))), "state": "running", "detail": ""}
@@ -1823,11 +1839,29 @@ func _create_tool_row(group: Dictionary, operation: Dictionary) -> void:
 		_update_tool_row(operation)
 		_follow.call_deferred())
 
+func _sync_tool_rows(group: Dictionary) -> void:
+	var operations: Array = group["operations"]
+	if operations.is_empty(): return
+	var current: Dictionary = operations[-1]
+	# A queued/overlapping call must not displace one that is still executing.
+	for operation in operations:
+		if operation["state"] == "running":
+			current = operation
+			break
+	var expanded = bool(group.get("tools_expanded", false))
+	for operation in operations:
+		var selected = is_same(operation, current)
+		operation["node"].visible = expanded or selected
+		var toggle: Button = operation["history_button"]
+		toggle.visible = selected and operations.size() > 1
+		toggle.text = str(operations.size()) + (" ▴" if expanded else " ▾")
+		toggle.tooltip_text = ("Restrânge" if expanded else "Vezi") + " istoricul celor " + str(operations.size()) + " apeluri"
+
 func _update_tool_row(operation: Dictionary) -> void:
 	if not operation.has("header") or not is_instance_valid(operation["header"]): return
 	var state = str(operation.get("state", "running"))
 	var icons = {"running": "◌", "completed": "✓", "failed": "!", "unknown": "?", "cancelled": "Ⅱ"}
-	var parts: Array[String] = [str(operation.get("title", operation.get("name", "Tool")))]
+	var parts: Array[String] = [str(operation.get("title", operation.get("name", "Tool"))).replace("\n", " ").replace("\r", " ")]
 	var path = str(operation.get("path", ""))
 	var filename = path.get_file().strip_edges()
 	if filename not in ["", ".", ".."]: parts.append(filename)

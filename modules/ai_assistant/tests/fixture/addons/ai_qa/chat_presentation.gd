@@ -26,6 +26,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	# Compact history intentionally hides the conversation; start this scenario
 	# on the messages before measuring widgets or dispatching touch gestures.
 	chat.show_history(false)
+	await compact_tool_checks()
 	await rectification_checks()
 	chat.clear_messages()
 	chat.append_message("user", "Construiește o poiană cu o potecă și copaci.", {"id": "presentation-user", "turn_id": "presentation"})
@@ -61,7 +62,9 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	check(chat.message_records[1]["row"].is_visible_in_tree(), "Searching an earlier update keeps it visible in the conversation")
 	chat._show_find(false)
 	chat._jump_to_latest()
-	check(group["operations"].size() == 2 and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree() and operation["node"].get_parent() == group["content"]), "Tool calls render inline in the task response")
+	check(group["operations"].size() == 2 and not group["operations"][0]["node"].visible and group["operations"][1]["node"].is_visible_in_tree(), "The task response shows only its current call before history is opened")
+	group["operations"][-1]["history_button"].pressed.emit()
+	check(group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree() and operation["node"].get_parent() == group["content"]), "The tool history preserves both inline results and their original positions")
 	var failed_operation: Dictionary = group["operations"][0]
 	var completed_operation: Dictionary = group["operations"][1]
 	check(failed_operation["state"] == "failed" and failed_operation["details"].visible, "Failed tool calls stay visible and open their details")
@@ -91,6 +94,8 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	check(group["row"].size.x <= chat.scroll.size.x + 1, "Grouped responses fit the actual narrow workspace")
 	check(group["footer"] is HFlowContainer and record["metrics_label"].get_parent() == group["footer"] and group["footer"].size.x <= chat.scroll.size.x + 1, "Actions and measured usage share a wrapping footer within the conversation width")
 	check(group["content"].get_theme_constant("separation") >= int(14 * scale) and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].size.x <= chat.scroll.size.x + 1 and operation["header"].custom_minimum_size.y >= 30 * scale), "Inline tool cards preserve spacing, width and a readable tap target")
+	group["operations"][-1]["history_button"].pressed.emit()
+	await pause()
 	capture("chat-response-grouped")
 	capture("chat-response-operations")
 	# File cards attach to this response, with neither a second identity nor an auto-open.
@@ -213,7 +218,10 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	chat.clear_messages()
 	for index in 37: tool("many-" + str(index))
 	group = chat.response_groups[0]
-	check(group["operations"].size() == 37 and group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree() and operation["node"].get_parent() == group["content"]), "Every tool call remains inline in a long history")
+	check(group["operations"].size() == 37 and group["operations"].filter(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree()).size() == 1, "A long tool history retains every call while showing one current row")
+	group["operations"][-1]["history_button"].pressed.emit()
+	check(group["operations"].all(func(operation: Dictionary) -> bool: return operation["node"].is_visible_in_tree() and operation["node"].get_parent() == group["content"]), "Expanding a long history exposes all 37 original inline calls")
+	group["operations"][-1]["history_button"].pressed.emit()
 	check(group["operations"][0]["node"].get_index() < group["operations"][-1]["node"].get_index(), "Tool call history preserves chronological order")
 	chat.show_tool_event({"id": "uncertain-job", "kind": "tool_result", "name": "asset_generate", "result": {"ok": false, "code": "submission_unknown", "error": "Sarcina poate exista la furnizor."}}, origin)
 	check(group["operations"][-1]["state"] == "unknown" and group["operations"][-1]["header"].text.contains("?"), "An uncertain paid submission is distinguished from confirmed success and definite failure")
@@ -338,4 +346,29 @@ func rectification_checks() -> void:
 	check(chat.work_live and chat.work_turn == "rectification-next", "Finishing an older response cannot stop a newer request")
 	chat.finish_work("rectification-next", "cancelled")
 	chat.reset_work()
+	chat.clear_messages()
+
+func compact_tool_checks() -> void:
+	chat.clear_messages()
+	var origin = {"turn_id": "compact-tools"}
+	chat.show_tool_event({"kind": "tool_started", "id": "a", "name": "godot_files"}, origin, "Inspect files")
+	var group: Dictionary = chat.response_groups[-1]
+	var first: Dictionary = group["operations"][0]
+	check(first["node"].is_visible_in_tree() and not first["history_button"].visible, "The first executing call occupies one row without an empty history toggle")
+	chat.show_tool_event({"kind": "tool_started", "id": "b", "name": "godot_scene_tree"}, origin, "Inspect scene")
+	var second: Dictionary = group["operations"][1]
+	check(first["node"].visible and not second["node"].visible, "A later started call cannot displace one that has not finished")
+	chat.show_tool_event({"kind": "tool_result", "id": "a", "name": "godot_files", "result": {"ok": true}, "duration_ms": 40}, origin)
+	check(not first["node"].visible and second["node"].visible and second["state"] == "running", "The single current row advances only after the preceding call finishes")
+	chat.show_tool_event({"kind": "tool_result", "id": "b", "name": "godot_scene_tree", "result": {"ok": true}, "duration_ms": 70}, origin)
+	check(second["node"].visible and second["state"] == "completed" and second["duration_ms"] == 70, "Completion preserves the final call and its measured duration")
+	second["history_button"].pressed.emit()
+	check(first["node"].visible and second["node"].visible and first["duration_ms"] == 40, "The explicit history control restores every prior result without rerunning it")
+	second["history_button"].pressed.emit()
+	check(not first["node"].visible and second["node"].visible, "Closing tool history returns to one row")
+	await pause()
+	check(second["header"].get_global_rect().end.x <= chat.scroll.get_global_rect().end.x + 1 and second["history_button"].get_global_rect().end.x <= chat.scroll.get_global_rect().end.x + 1, "The current tool title and history counter fit the compact conversation width")
+	chat.show_tool_event({"kind": "tool_result", "id": "c", "name": "godot_get", "result": {"ok": false, "code": "fixture_error", "error": "Measured failure"}}, origin)
+	var failed: Dictionary = group["operations"][-1]
+	check(failed["node"].is_visible_in_tree() and failed["state"] == "failed" and failed["details"].visible and not second["node"].visible, "A failed current call exposes its actual error while earlier calls stay collapsed")
 	chat.clear_messages()

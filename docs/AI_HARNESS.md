@@ -242,20 +242,31 @@ into view. It does not load older messages that are not yet in the conversation
 view. While generation is running, 15 seconds without streamed output shows a
 client-side stall warning; the next output or the end of the turn clears it.
 
-### Inline execution timeline (source, 2026-11-05)
+### Compact tool execution (source, 2026-11-07)
 
-Every assistant update in a task remains visible in chronological order; the
-chat no longer moves earlier text into a hidden progress container. Tool calls
-are rendered as inset timeline rows in the same response card. A row is created
-on `tool_started`, updated in place on `tool_result`, and remains after the turn
-ends and after the conversation is restored. The header carries the tool label,
-state icon and duration; a short facts/error summary stays visible. Arguments
-and provider payloads are not copied into the row. Expanded details reuse the
-existing redacted inspection previews and remain collapsed by default for
-successful calls; failed and unknown calls open automatically. Repeated
-provider call IDs create separate restored rows instead of overwriting earlier
-history. The legacy `Running Tools` label remains hidden so tool state has a
-single durable presentation path.
+Assistant messages remain visible in chronological order. Tool calls retain
+separate records in the same response card, but only the current row is shown.
+A later overlapping start cannot replace an unfinished operation; completion
+advances the row. A counter opens all original results and timings on demand,
+without rerunning tools. Closing history restores one row. The header carries
+the label, state and measured duration; failed or uncertain current operations
+expose their actual error. Details use existing redacted previews. Repeated
+provider call IDs keep separate records, including after conversation restore.
+The legacy `Running Tools` label remains hidden.
+
+The Ziva client treats an official `aborted` finish as interrupted and an empty
+final answer or `error` finish as failure. Cancelling during chat resolution
+cannot submit a delayed prompt; cancelling during send is checked again after
+the RPC response. A liveness-only request uses `ziva_status` without a model task.
+
+The host WebView adapter leaves text and selection to Lexical/Android IME.
+It preserves Send pointerdown/click focus until the official form handler runs,
+defers dismissal to a microtask and waits for active composition to finish.
+New explicit editing cancels stale dismissal. Startup autofocus, SPA adaptation
+and microphone cleanup remain covered. Node/linkedom are development-only
+regression tools; the APK does not depend on them. Simulated DOM checks do not
+prove physical Android typing. Current source/build/delivery status is in
+[the progress record](../PROGRES_SI_PLAN.md).
 
 The dedicated QA scenario `chat` exercises these paths in the real editor:
 latest-turn-only Undo/Resend gating, file restoration and history truncation,

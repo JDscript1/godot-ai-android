@@ -32,6 +32,7 @@ object AIZivaChat {
         @Volatile var tools = 0
         @Volatile var waiting: JSONObject? = null
         @Volatile var cancelled = false
+        @Volatile var submissionStarted = false
         val startedAt = System.currentTimeMillis()
         val deadline = startedAt + timeoutMs
         @Volatile var finishedAt = 0L
@@ -72,13 +73,13 @@ object AIZivaChat {
     fun cancel(jobId: String, projectId: String = ""): JSONObject {
         val job = jobs[jobId] ?: return failure("Sarcina Ziva nu mai există.", "ziva_job_unknown")
         if (projectId.isNotEmpty() && job.projectId != projectId) return failure("Cererea Ziva aparține altui proiect.", "ziva_other_project")
-        if (job.finishedAt > 0L) return poll(jobId, projectId)
-        job.cancelled = true
-        if (job.finishedAt == 0L) {
+        synchronized(job) {
+            if (job.finishedAt > 0L) return poll(jobId, projectId)
+            job.cancelled = true
             job.state = "cancelled"
             job.finishedAt = System.currentTimeMillis()
         }
-        abort(job)
+        if (job.submissionStarted) abort(job)
         return JSONObject().put("ok", true).put("job_id", job.id).put("state", job.state)
     }
 
@@ -89,13 +90,23 @@ object AIZivaChat {
             val id = chat.optString("id", "").ifBlank { job.chatId }
             if (id.isBlank()) throw RpcFailure("Conversația Ziva nu are identificator.")
             job.chatId = id
+            // Resolution can block in RPC while the user cancels. Never submit
+            // a prompt after that cancellation or abort unrelated chat work.
+            if (job.cancelled) { finish(job, "cancelled", null); return }
             val selection = chat.optJSONObject("modelSelection") ?: defaultSelection(job.port)
+            if (job.cancelled) { finish(job, "cancelled", null); return }
             val started = System.currentTimeMillis()
+            synchronized(job) {
+                if (job.cancelled) { finish(job, "cancelled", null); return }
+                job.submissionStarted = true
+            }
             rpc(job.port, "chats/sendPrompt", JSONObject()
                 .put("chatId", id)
                 .put("parts", JSONArray().put(JSONObject().put("type", "text").put("text", job.prompt)
                     .put("time", JSONObject().put("started", started))))
                 .put("modelSelection", selection))
+            // An abort issued during the send can reach the sidecar too early.
+            if (job.cancelled) { abort(job); finish(job, "cancelled", null); return }
             awaitTurn(job, started)
         } catch (error: RpcFailure) {
             finish(job, "error", error.message?.take(600) ?: "Comunicarea cu Ziva a eșuat.")
@@ -162,6 +173,7 @@ object AIZivaChat {
                 if (++misses >= 5) throw RpcFailure("Sesiunea Ziva nu mai răspunde: ${error.message}")
                 continue
             }
+            if (job.cancelled) { finish(job, "cancelled", null); return }
             val pending = snapshot.optJSONObject("pending")
             val permission = pending?.optJSONArray("permissions")?.optJSONObject(0)
             if (permission != null) {
@@ -206,10 +218,26 @@ object AIZivaChat {
             }
             val created = info.optJSONObject("time")?.optLong("created", 0L) ?: 0L
             val completed = info.optJSONObject("time")?.optLong("completed", 0L) ?: 0L
-            if (created > 0 && completed > 0 && statusType == "idle" &&
-                info.optString("finish") !in setOf("tool-calls", "tool_calls", "tool_use")) {
+            val reason = info.optString("finish", "")
+            if (completed > 0 && reason == "aborted") {
                 job.answer = textOf(turn)
-                job.finish = info.optString("finish", "")
+                job.finish = reason
+                finish(job, "cancelled", "Ziva a întrerupt răspunsul; sarcina nu este confirmată ca finalizată.")
+                return
+            }
+            if (completed > 0 && reason == "error") {
+                job.finish = reason
+                finish(job, "error", "Ziva a încheiat răspunsul cu o eroare.")
+                return
+            }
+            if (created > 0 && completed > 0 && statusType == "idle" &&
+                reason !in setOf("tool-calls", "tool_calls", "tool_use")) {
+                job.answer = textOf(turn)
+                job.finish = reason
+                if (job.answer.isBlank()) {
+                    finish(job, "error", "Ziva a încheiat turul fără un răspuns text; rezultatul sarcinii nu poate fi confirmat.")
+                    return
+                }
                 finish(job, "completed", null)
                 return
             }
@@ -273,9 +301,12 @@ object AIZivaChat {
     }
 
     private fun finish(job: Job, state: String, error: String?) {
-        job.state = state
-        job.error = error
-        job.finishedAt = System.currentTimeMillis()
+        synchronized(job) {
+            if (job.cancelled && state != "cancelled") return
+            job.state = state
+            job.error = error
+            job.finishedAt = System.currentTimeMillis()
+        }
     }
 
     private fun abort(job: Job) {

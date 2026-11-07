@@ -9,6 +9,20 @@ folosește propriul model, propriile unelte și propriile permisiuni. Legătura 
 unește istoricul sau cheile API. Rezultatul confirmat al unui job este separat
 de simpla acceptare a mesajului.
 
+## Corecții în surse — 7 noiembrie 2026
+
+O cerere doar despre pornirea/starea Ziva folosește `ziva_status`; nu pornește
+suplimentar o sarcină de model. `finish=aborted` este raportat ca întrerupere,
+nu succes, chiar dacă Ziva a executat deja unelte. Finalizarea fără text sau cu
+`finish=error` raportează eroare. Contextul `synthetic` este exclus din textul
+folosit pentru corelarea cererii; mesajele altor utilizatori/ture nu sunt preluate.
+
+În fila Ziva, gazda nu mai repară manual cursorul și nu întrerupe focusul la
+începutul apăsării pe Trimite. Handlerul oficial citește ciorna înainte de
+ascunderea tastaturii, iar compoziția IME se încheie înaintea acelei ascunderi.
+Verificările locale sunt automate; acceptarea pe tastatura fizică rămâne deschisă.
+Starea APK-ului nou este urmărită în documentul de progres.
+
 ## Din agentul nostru către Ziva
 
 Exemple de cereri în chat:

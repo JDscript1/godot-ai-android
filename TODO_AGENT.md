@@ -11,6 +11,14 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
+## Chat compact și corecții Ziva — 7.11.2026, în surse
+
+- [x] Un singur rând curent, avans după finalizare, istoric complet accesibil; prezentare compactă 168/0 și inspecții 81/0.
+- [x] `aborted`, răspuns gol și eroare fără fals succes; anulare în timpul rezolvării/trimiterii; RPC local 20/0, regresie demonstrată pe sursa veche.
+- [x] Fără reparații manuale de cursor/IME; Trimite după handlerul oficial, compoziție păstrată; DOM simulat 48/0 și probă veche eșuată.
+- [ ] Compilarea și verificarea artefactului nou înainte de înlocuirea Ziva din Download.
+- [ ] Tastare/autocorectare, atingere Trimite și comunicare pe APK instalat; cauza exactă a întreruperii Ziva din captura neidentificată.
+
 ## AG-57 — rectificări ale auditului harness, în APK `3bb7a24`
 
 - [x] Criterii declarate protejate și aditive; probe noi pentru adăugări, plan neschimbat la refuz.

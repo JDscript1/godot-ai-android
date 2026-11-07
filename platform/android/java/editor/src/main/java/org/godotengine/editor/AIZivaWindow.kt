@@ -63,11 +63,12 @@ object AIZivaWindow {
             }
             if (port != uiPort) { disposeWeb(); port = uiPort }
             if (web == null) create(activity, uiPort)
+            val wasShown = shown
             bounds = rectangle.copyOf()
             shown = true
             position()
             if (reload) web?.reload()
-            web?.onResume()
+            if (!wasShown) web?.onResume()
         }
     }
 

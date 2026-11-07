@@ -6,93 +6,74 @@
     'textarea,input:not([type]),input[type="text"],input[type="search"],input[type="password"],input[type="email"],input[type="url"],input[type="number"],input[type="tel"],[contenteditable="true"]') : null;
   let editing = false;
   let composing = false;
-  let insertion = null;
-  let tabUntil = 0;
-  // Do not replace HTMLElement.focus: Lexical and Android IME restore focus and
-  // selection while composing. Authorize an editing session rather than a DOM
-  // node, which can be replaced by the official frontend during a render.
+  let editEpoch = 0;
+  let pendingDismiss = null;
+  // Lexical and the Android IME own text and selection. The host only gates
+  // unsolicited startup focus and dismisses after an activation has finished.
   const blur = () => {
     editing = false;
     composing = false;
-    insertion = null;
+    pendingDismiss = null;
+    editEpoch++;
     tabUntil = 0;
     const active = editable(document.activeElement);
     if (active) active.blur();
   };
+  let tabUntil = 0;
+  const authorize = () => { editing = true; editEpoch++; pendingDismiss = null; };
+  const dismissAfterActivation = () => {
+    const epoch = editEpoch;
+    pendingDismiss = epoch;
+    queueMicrotask(() => {
+      if (pendingDismiss !== epoch || editEpoch !== epoch || composing) return;
+      blur();
+    });
+  };
+  const composerControl = node => node instanceof Element &&
+    !!node.closest('form')?.querySelector('[data-testid="composer-input"]');
   window.__godotZivaDismissKeyboard = blur;
   document.addEventListener('pointerdown', event => {
     if (!event.isTrusted) return;
     const label = event.target instanceof Element ? event.target.closest('label') : null;
     const field = editable(event.target) || editable(label?.control);
-    if (field) editing = true;
-    else blur();
+    if (field) authorize();
+    // Send must see the committed draft before focus/IME teardown. Never blur
+    // during pointerdown: a keyboard resize can cancel that same button tap.
+    else if (!composerControl(event.target)) editing = false;
   }, true);
   document.addEventListener('keydown', event => {
-    if (event.isTrusted && event.key === 'Tab') tabUntil = performance.now() + 1000;
+    if (event.isTrusted && event.key === 'Tab') {
+      editEpoch++; pendingDismiss = null; tabUntil = performance.now() + 1000;
+    }
   }, true);
   document.addEventListener('compositionstart', event => {
-    if (editable(event.target) && editing) { composing = true; insertion = null; }
+    if (editable(event.target)) composing = true;
   }, true);
-  document.addEventListener('compositionend', () => { composing = false; }, true);
+  document.addEventListener('compositionend', () => {
+    composing = false;
+    if (pendingDismiss !== null) dismissAfterActivation();
+  }, true);
   document.addEventListener('focusin', event => {
     const field = editable(event.target);
     if (field && !editing && !composing && performance.now() > tabUntil) field.blur();
   }, true);
-  document.addEventListener('submit', blur, true);
+  // Bubble after the official form handler has read its model. A composition
+  // still in progress retains its IME session until compositionend.
+  document.addEventListener('submit', event => {
+    if (event.target instanceof Element &&
+        event.target.querySelector('[data-testid="composer-input"]')) dismissAfterActivation();
+  });
   document.addEventListener('click', event => {
+    if (!event.isTrusted) return;
     const field = editable(event.target);
-    if (event.isTrusted && field) {
-      editing = true;
-      if (document.activeElement !== field) field.focus({preventScroll:true});
-    }
-    if (event.target instanceof Element && event.target.closest(
-      '[data-testid="composer-send"],[data-testid="open-settings-button"]')) blur();
-  }, true);
+    if (field) authorize();
+    else if (!composerControl(event.target)) dismissAfterActivation();
+    // No synthetic focus(), text rewrite or DOM Range repair. In particular,
+    // auto-correction and insertCompositionText stay inside Lexical's model.
+  });
   window.__godotZivaWantsKeyboard = () => !!editable(document.activeElement) &&
     (editing || composing || performance.now() <= tabUntil);
   blur();
-
-  // Some Android WebView/IME combinations insert the correct text, then reset
-  // its selection to zero before Lexical's input handler sees it. Restore only
-  // that invalid selection: never rewrite text, move a valid caret, or alter
-  // an ongoing composition. Target ranges preserve insertion/replacement in
-  // the middle of a draft, including backward selections.
-  const composer = node => node instanceof Element ? node.closest(
-    '[data-testid="composer-input"][contenteditable="true"]') : null;
-  document.addEventListener('beforeinput', event => {
-    insertion = null;
-    const root = composer(event.target);
-    const selection = window.getSelection?.();
-    if (!root || !event.isTrusted || event.inputType !== 'insertText' ||
-        event.isComposing || composing || typeof event.data !== 'string' ||
-        !event.data || !selection) return;
-    const range = event.getTargetRanges?.()[0];
-    const node = range?.startContainer || selection.anchorNode;
-    const endNode = range?.endContainer || selection.focusNode;
-    if (node?.nodeType !== 3 || endNode !== node || !root.contains(node)) return;
-    const start = range ? range.startOffset : Math.min(selection.anchorOffset, selection.focusOffset);
-    const end = range ? range.endOffset : Math.max(selection.anchorOffset, selection.focusOffset);
-    const previous = node.nodeValue;
-    if (typeof previous !== 'string' || start < 0 || end < start || end > previous.length) return;
-    insertion = {root, node, start, end, previous, text:event.data};
-  }, true);
-  document.addEventListener('input', event => {
-    const pending = insertion;
-    insertion = null;
-    if (!pending || !event.isTrusted || composer(event.target) !== pending.root ||
-        event.inputType !== 'insertText' || event.isComposing || composing ||
-        event.data !== pending.text || !pending.root.contains(pending.node)) return;
-    const selection = window.getSelection?.();
-    const expected = pending.previous.slice(0, pending.start) + pending.text +
-      pending.previous.slice(pending.end);
-    if (pending.node.nodeValue !== expected || !selection?.isCollapsed ||
-        selection.anchorNode !== pending.node || selection.anchorOffset !== 0) return;
-    const range = document.createRange();
-    range.setStart(pending.node, pending.start + pending.text.length);
-    range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }, true);
 
   // The official frontend owns recording and transcription. The host only
   // releases its streams on tab hide/navigation/background, including a pending

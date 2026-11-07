@@ -1,5 +1,18 @@
 # Audit interfață AI — 22 octombrie 2026
 
+## Un singur apel curent și tastatură Ziva — 7 noiembrie 2026
+
+Sursele afișează un singur rând curent pentru uneltele aceluiași răspuns.
+Tranziția urmează rezultatul real al apelului precedent; contorul deschide
+istoricul complet cu rezultate/durate. Textele asistentului rămân vizibile.
+Prezentare compactă 168/0, inspecții 81/0; capturile finale au fost inspectate.
+
+Gazda Ziva nu mai modifică selecția Lexical și nu închide focusul în capture
+pentru apăsarea pe Trimite. DOM/focus 48/0 verifică ordinea handlerelor,
+compoziția, anularea ascunderii amânate, navigarea SPA și eliberarea microfonului.
+Aceeași probă reproduce eroarea de focus pe sursa veche. Verificarea tastării
+și trimiterea fizică pe noul APK rămân separate; [starea livrării](../PROGRES_SI_PLAN.md).
+
 ## Timeline inline și mesaje persistente — 5 noiembrie 2026
 
 Conversația păstrează acum toate mesajele assistant, inclusiv explicațiile

@@ -68,6 +68,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - name: Test Ziva mobile focus and input ownership
+        run: |
+          npm ci --ignore-scripts --prefix tools/embedded-runtime/tests
+          node tools/embedded-runtime/tests/ziva-mobile-dom.mjs
       - name: Test companion
         working-directory: tools/ai-companion
         run: |
