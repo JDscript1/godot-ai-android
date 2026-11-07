@@ -110,6 +110,15 @@ machine running OmniRoute. The **Permite HTTP** option is enabled for this local
 preset, and **Opțiuni avansate** exposes a manual model ID when `/v1/models` cannot
 describe the route.
 
+For OmniRoute, the chat picker keeps chat routes and combos while excluding
+image/audio/rerank-only endpoints. The catalog's `context_length` supplies the
+context budget. A manual route remains saved across catalog refreshes, including
+a route temporarily appearing and later disappearing from discovery. Fresh catalog
+metadata still updates it. Reopening a saved OmniRoute connection keeps the API
+address editable. An authenticated empty catalog permits an explicit manual route;
+without a manual choice it remains unavailable. Changing the server starts a
+separate catalog scope and does not inherit the old server's manual routes.
+
 When the two devices are not on the same Wi-Fi network, a private LAN address will
 not work. Prefer a private overlay network such as Tailscale and use its
 `100.64.0.0/10` address. Addresses in that range are grouped as local/self-hosted,

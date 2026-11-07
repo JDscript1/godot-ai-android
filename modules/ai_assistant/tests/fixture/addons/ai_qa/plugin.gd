@@ -2856,6 +2856,7 @@ func _provider_connection_tests(output: String) -> void:
 	if original.is_empty(): panel._new_provider()
 	else: panel._edit_provider(0)
 	panel.settings_window.hide()
+	await load("res://addons/ai_qa/omniroute.gd").new().run(self, panel, output)
 
 func _configuration_screenshots(output: String) -> void:
 	panel.chat.set_context(8192, 32768, 430)

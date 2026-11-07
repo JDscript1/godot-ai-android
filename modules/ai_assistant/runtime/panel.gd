@@ -1999,6 +1999,9 @@ func _discover_provider_draft() -> void:
 	if epoch != provider_epoch: return
 	provider_draft_loading = false
 	_update_settings_controls()
+	if result.get("ok", false) and result.get("result") is Array:
+		var saved = _profile_by_id(str(profile["id"])) # Only the same issuer/endpoint gets a saved ID.
+		result["result"] = Providers.merge_model_catalog(result["result"], saved.get("models", []), str(form["manual_model"].text))
 	if not result.get("ok", false) or not result.get("result") is Array or result["result"].is_empty():
 		var error = Providers.connection_error(profile, result, OS.has_feature("android")) if not result.get("ok", false) else "Furnizorul nu a returnat modele disponibile."
 		form["catalog_status"].text = Common.redact(_redact(error), [secret]) if not secret.is_empty() else _redact(error)
@@ -2140,7 +2143,7 @@ func _save_provider() -> bool:
 	p["key"].clear()
 	provider_form_loading = false
 	var manual = str(p["manual_model"].text).strip_edges()
-	if not manual.is_empty() and not models.any(func(item: Dictionary) -> bool: return item["id"] == manual): models.append({"id": manual, "name": manual, "source": "manual", "capabilities": {}})
+	models = Providers.merge_model_catalog(models, [], manual)
 	var vision_overrides: Dictionary = p.get("vision_pending", {}).duplicate(true)
 	if not previous.is_empty() and not same_connection: vision_overrides = {}
 	var profile = {"id": id, "name": str(p["name"].text).strip_edges() if not str(p["name"].text).strip_edges().is_empty() else issuer["name"], "issuer": issuer["id"], "kind": issuer["kind"], "url": url, "allow_http": p["allow_http"].button_pressed, "models": models, "vision_overrides": vision_overrides}
@@ -2185,7 +2188,7 @@ func _edit_provider(index: int) -> void:
 	forms["provider"]["hosting"].select({"cloud": 1, "local": 2}.get(str(profile.get("hosting", "")), 0))
 	forms["provider"]["key"].placeholder_text = "Cheie salvată · lasă gol pentru păstrare" if not vault.read(str(profile["id"])).is_empty() else "Introdu cheia API"
 	provider_advanced.visible = profile.get("issuer") in ["custom", "omniroute"]
-	forms["provider"]["groups"]["url"].visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "custom"]
+	forms["provider"]["groups"]["url"].visible = profile.get("issuer") in ["ollama", "lmstudio", "llamacpp", "omniroute", "custom"]
 	forms["provider"]["models"] = profile.get("models", []).duplicate(true)
 	forms["provider"]["selected_model"] = str(_selection().get("model", "")) if _current_profile().get("id") == profile["id"] else ""
 	forms["provider"]["catalog_status"].text = "%s modele · tarife actualizate automat la 6 ore" % profile.get("models", []).size()
@@ -2209,6 +2212,8 @@ func _test_provider(profile_id: String = "") -> bool:
 			result = await accounts.ensure_access(profile, {})
 			if result.get("ok", false): result = await providers.list_models(profile)
 		else: result = await providers.list_models(profile)
+		if result.get("ok", false) and result.get("result") is Array:
+			result["result"] = Providers.merge_model_catalog(result["result"], profile.get("models", []))
 		if result.get("ok", false) and (not result.get("result") is Array or result["result"].is_empty()):
 			result = Common.failure("Furnizorul a răspuns, dar nu a returnat modele disponibile pentru această conexiune.", "empty_model_catalog")
 		provider_testing = false

@@ -269,6 +269,7 @@ func _run() -> void:
 		var default_endpoint = providers.endpoint({"issuer": entry["id"]})
 		check(default_endpoint.get("ok", false) and default_endpoint.get("result") == entry["url"], "Known cloud provider restores its catalog endpoint: " + str(entry["id"]))
 	check(providers.endpoint({"issuer": "deepseek", "url": ""}).get("result") == "https://api.deepseek.com", "An empty saved DeepSeek endpoint recovers its official catalog URL")
+	_manual_catalog_tests(providers)
 	var omniroute = providers.CATALOG.filter(func(entry: Dictionary) -> bool: return entry["id"] == "omniroute")
 	check(omniroute.size() == 1 and omniroute[0]["name"] == "OmniRoute" and omniroute[0]["url"] == "http://127.0.0.1:20128/v1" and omniroute[0].get("local", false), "OmniRoute has a first-class local OpenAI-compatible preset")
 	check(providers.endpoint({"issuer": "omniroute", "url": "100.101.102.103:20128", "allow_http": true}).get("result") == "http://100.101.102.103:20128/v1", "OmniRoute accepts a Tailscale address and restores its API path")
@@ -360,6 +361,7 @@ func _run() -> void:
 	if not mock_url.is_empty():
 		await _network_tests(node)
 		await _local_connection_tests(node)
+		await _omniroute_contract_tests(node)
 		await _cloud_generation_tests(node)
 		await _integration_tests(node)
 		await _store_tests(node)
@@ -2451,3 +2453,48 @@ func _store_tests(node: Node) -> void:
 				check(scripts["store"]._android_native_support(release_reader, release_manifest["result"]).get("ok", false), "Actual Terrain3D release contains a referenced Android ARM64 GDExtension")
 				release_reader.close()
 	for definition in scripts["store"].definitions(): check(scripts["tool_registry"].new([definition]).error.is_empty(), "Store tool schema is discoverable: " + str(definition["name"]))
+
+func _omniroute_contract_tests(node: Node) -> void:
+	var store = FakeVault.new()
+	store.store("omni-review", "omniroute-protocol-fixture-key")
+	var client = scripts["providers"].new(node, store)
+	var profile = {"id": "omni-review", "issuer": "omniroute", "kind": "chat", "url": mock_url + "/omni-review", "allow_http": true}
+	var resolved: Dictionary = scripts["providers"].endpoint(profile)
+	check(resolved.get("result") == mock_url + "/omni-review/v1", "OmniRoute preserves the explicit server port and proxy path")
+	var catalog: Dictionary = await client.list_models(profile)
+	check(catalog.get("ok", false), "OmniRoute catalog is fetched using the gateway bearer key")
+	if not catalog.get("ok", false): return
+	var models: Array = catalog["result"]
+	var ids = models.map(func(model: Dictionary) -> String: return str(model["id"]))
+	check(not "images/image-fixture" in ids and not "audio/speech-fixture" in ids and not "rank/rerank-fixture" in ids, "OmniRoute chat selector excludes image, audio and rerank-only catalog entries")
+	var chats = models.filter(func(model: Dictionary) -> bool: return model["id"] == "ds/chat-fixture")
+	check(chats.size() == 1 and chats[0]["context"] == 262144, "OmniRoute context_length is retained for proactive compaction")
+	check(chats.size() == 1 and chats[0]["capabilities"].get("vision", false), "OmniRoute vision metadata remains available")
+	check("combo-fixture" in ids, "OmniRoute combos remain selectable with the original route identity")
+	var messages = [{"role": "user", "content": "Inspect the fixture scene"}]
+	var tools = [{"name": "godot_scene_tree", "description": "Read fixture scene", "parameters": {"type": "object", "properties": {}}}]
+	var first: Dictionary = await client.complete(profile, messages, tools, "ds/chat-fixture", "", {})
+	check(first.get("ok", false) and first.get("finish") == "tool_calls", "OmniRoute accepts the chat/function-tool request and streamed finish")
+	if not first.get("ok", false) or first.get("calls", []).is_empty(): return
+	check(first["calls"].size() == 1 and first["calls"][0]["name"] == "godot_scene_tree" and first["calls"][0]["arguments"] == {}, "OmniRoute fragmented SSE tool arguments reconstruct correctly")
+	messages.append(first["message"])
+	messages.append({"role": "tool", "tool_call_id": first["calls"][0]["id"], "content": "{fixture scene}"})
+	var second: Dictionary = await client.complete(profile, messages, tools, "ds/chat-fixture", "", {})
+	check(second.get("ok", false) and second.get("message", {}).get("content") == "OmniRoute fixture completed", "OmniRoute tool result roundtrip yields the final assistant response")
+
+func _manual_catalog_tests(providers: GDScript) -> void:
+	var previous = [{"id": "combo/manual", "name": "My route", "source": "manual", "capabilities": {"vision": true}}, {"id": "stale-auto", "source": "live"}]
+	var live = [{"id": "combo/manual", "source": "live", "context": 262144, "capabilities": {"vision": false}}, {"id": "new-auto", "source": "live"}]
+	var merged: Array = providers.merge_model_catalog(live, previous)
+	check(merged.size() == 2 and merged[0].get("manual", false) and merged[0]["context"] == 262144 and not merged[0]["capabilities"]["vision"], "Manual identity keeps fresh catalog metadata when its route becomes discoverable")
+	check(not previous[0].has("manual") and not live[0].has("manual"), "Catalog merge leaves saved and incoming snapshots unchanged")
+	merged = providers.merge_model_catalog([{"id": "next-auto", "source": "live"}], merged)
+	check(merged.size() == 2 and merged.any(func(item: Dictionary) -> bool: return item["id"] == "combo/manual" and item.get("manual", false)), "Manual intent survives a listed then unlisted catalog transition")
+	check(not merged.any(func(item: Dictionary) -> bool: return item["id"] in ["new-auto", "stale-auto"]), "Refresh removes obsolete automatic models without retaining a stale catalog")
+	var empty: Array = providers.merge_model_catalog([], merged)
+	check(empty.size() == 1 and empty[0]["id"] == "combo/manual", "An empty successful catalog still retains an explicitly configured route")
+	var existing: Array = providers.merge_model_catalog(live, [], " combo/manual ")
+	check(existing.size() == 2 and existing[0].get("manual", false) and existing[0]["source"] == "live", "Entering an already listed model records manual intent without duplicating or relabeling catalog data")
+	var explicit: Array = providers.merge_model_catalog([], [], "combo/new")
+	check(explicit.size() == 1 and explicit[0].get("manual", false) and explicit[0]["source"] == "manual", "A new explicit route is durable without a catalog entry")
+	check(providers.merge_model_catalog([], []).is_empty(), "An empty catalog without manual intent does not invent usable models")

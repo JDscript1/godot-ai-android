@@ -255,6 +255,7 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 		if id.is_empty(): continue
 		if item.has("supportedGenerationMethods") and not "generateContent" in item["supportedGenerationMethods"]: continue
 		if str(item.get("type", "")) in ["embedding", "embeddings"]: continue
+		if issuer == "omniroute" and str(item.get("type", "chat")) not in ["", "chat"]: continue
 		var capabilities: Dictionary = item.get("capabilities", {}).duplicate(true) if item.get("capabilities", {}) is Dictionary else {}
 		var architecture: Dictionary = item.get("architecture", {}) if item.get("architecture") is Dictionary else {}
 		var modalities = item.get("input_modalities", item.get("inputModalities", architecture.get("input_modalities", [])))
@@ -262,7 +263,7 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 		var supported: Dictionary = item.get("supported_parameters", {}) if item.get("supported_parameters", {}) is Dictionary else {}
 		if item.get("supported_parameters", null) is Array: capabilities["tools"] = "tools" in item["supported_parameters"]
 		if supported.has("tools"): capabilities["tools"] = supported["tools"]
-		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": item.get("context_window", item.get("inputTokenLimit", 0)), "max_output_tokens": item.get("max_output_tokens", item.get("outputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")})
+		models.append({"id": id, "name": str(item.get("display_name", item.get("displayName", item.get("name", id)))), "capabilities": capabilities, "context": item.get("context_window", item.get("context_length", item.get("inputTokenLimit", 0))), "max_output_tokens": item.get("max_output_tokens", item.get("outputTokenLimit", 0)), "efforts": item.get("effort", {}).get("supported_levels", []) if item.get("effort", {}) is Dictionary else [], "source": "live", "pricing": ModelPricing.from_api(item, issuer, url + "/models")})
 	if issuer in ["lmstudio", "ollama"]:
 		var metadata = await transport.request(root + ("/api/v0/models" if issuer == "lmstudio" else "/api/ps"), HTTPClient.METHOD_GET, headers(profile, key_override), null, {"allow_http": profile.get("allow_http", false), "cancel": cancel, "timeout": 3, "connect_timeout": 2})
 		if cancel.get("cancelled", false): return Common.failure("Verificare oprită.", "cancelled")
@@ -279,6 +280,32 @@ func list_models(profile: Dictionary, cancel: Dictionary = {}, key_override: Str
 				var capacity = int(reported_capacity) if reported_capacity is int or reported_capacity is float else 0
 				if capacity > 0: item["context"] = capacity
 	return Common.success(models)
+
+static func merge_model_catalog(catalog: Array, previous: Array, manual_id: String = "") -> Array:
+	# Catalog metadata can change; an explicit manual choice remains durable even
+	# when a route temporarily appears in discovery and later disappears again.
+	var models = catalog.duplicate(true)
+	var by_id = {}
+	for model in models:
+		if model is Dictionary:
+			by_id[str(model.get("id", ""))] = model
+			if model.get("source") == "manual": model["manual"] = true
+	for model in previous:
+		if not model is Dictionary or not (model.get("manual", false) or model.get("source") == "manual"): continue
+		var id = str(model.get("id", ""))
+		if id.is_empty(): continue
+		if by_id.has(id):
+			by_id[id]["manual"] = true
+		else:
+			var retained = model.duplicate(true)
+			retained["manual"] = true
+			models.append(retained)
+			by_id[id] = retained
+	var id = manual_id.strip_edges()
+	if not id.is_empty():
+		if by_id.has(id): by_id[id]["manual"] = true
+		else: models.append({"id": id, "name": id, "source": "manual", "manual": true, "capabilities": {}})
+	return models
 
 func complete(profile: Dictionary, messages: Array, tools: Array, model: String, effort: String, cancel: Dictionary, on_delta: Callable = Callable(), max_output_tokens: int = 0) -> Dictionary:
 	var credential_error = _credential_error(profile)

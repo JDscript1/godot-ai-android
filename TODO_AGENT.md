@@ -11,6 +11,14 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
+## Corecții OmniRoute — 7.11.2026, în surse
+
+- [x] Adresă vizibilă la reeditare, filtrare non-chat și citirea `context_length`.
+- [x] Model manual păstrat prin Testează, ciornă și refresh; metadate actualizate, fără duplicare ori transfer la alt endpoint.
+- [x] Runtime 1008/0 și UI providers 110/0; aceeași probă UI reproduce 9 eșecuri pe sursa veche.
+- [ ] Compilare CI complet verde și livrare verificată a noului APK Ziva.
+- [ ] Inferență pe OmniRoute real, conexiune prin Tailscale și acceptare fizică Android.
+
 ## Chat compact, Ziva și OmniRoute — 7.11.2026, în APK `a346246`
 
 - [x] Un singur rând curent, avans după finalizare, istoric complet accesibil; prezentare compactă 168/0 și inspecții 81/0.

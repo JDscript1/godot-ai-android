@@ -64,6 +64,17 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/omni-review/v1/models":
+            valid = self.headers.get("Authorization") == "Bearer omniroute-protocol-fixture-key"
+            self.reply({"object":"list", "data":[
+                {"id":"ds/chat-fixture", "type":"chat", "context_length":262144, "max_output_tokens":8192, "capabilities":{"tool_calling":True,"vision":True}},
+                {"id":"images/image-fixture", "type":"image", "output_modalities":["image"]},
+                {"id":"audio/speech-fixture", "type":"audio", "subtype":"speech"},
+                {"id":"vectors/embed-fixture", "type":"embedding"},
+                {"id":"rank/rerank-fixture", "type":"rerank"},
+                {"id":"combo-fixture", "owned_by":"combo", "context_length":131072}
+            ]} if valid else {"error":"Unauthorized"}, 200 if valid else 401)
+            return
         if location.path in ["/drip", "/idle-drip"]:
             chunks = [("data: " + json.dumps({"tick": index}) + "\n\n").encode() for index in range(4)]
             self.send_response(200)
@@ -211,6 +222,25 @@ class Fixtures(http.server.BaseHTTPRequestHandler):
             return
         payload = ({key: values[0] for key, values in urllib.parse.parse_qs(raw.decode()).items()} if self.headers.get("Content-Type", "").startswith("application/x-www-form-urlencoded") else json.loads(raw or b"{}"))
         location = urllib.parse.urlparse(self.path)
+        if location.path == "/omni-review/v1/chat/completions":
+            valid = self.headers.get("Authorization") == "Bearer omniroute-protocol-fixture-key" and payload.get("model") == "ds/chat-fixture" and payload.get("stream") is True
+            tools = payload.get("tools", [])
+            valid = valid and len(tools) == 1 and tools[0].get("type") == "function" and tools[0].get("function", {}).get("name") == "godot_scene_tree"
+            if not valid:
+                self.reply({"error":"Wrong OmniRoute auth/model/path/tool wire request"},400)
+                return
+            messages = payload.get("messages", [])
+            if messages and messages[-1].get("role") == "tool":
+                if messages[-1].get("tool_call_id") != "omni-fixture-call":
+                    self.reply({"error":"Tool call identity changed"},400)
+                    return
+                self.sse([{"choices":[{"index":0,"delta":{"content":"OmniRoute fixture completed"},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":5}}])
+            else:
+                self.sse([
+                    {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"omni-fixture-call","type":"function","function":{"name":"godot_scene_tree","arguments":"{"}}]},"finish_reason":None}]},
+                    {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]},"finish_reason":"tool_calls"}]}
+                ])
+            return
         if location.path == "/runware":
             authorized = self.headers.get("Authorization") == "Bearer generation-fixture-key"
             task = payload[0] if isinstance(payload, list) and len(payload) == 1 else {}
