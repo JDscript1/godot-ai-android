@@ -7,6 +7,10 @@ var revision = 0
 var criteria: Array = []
 var evidence = {}
 var passed = {}
+## Criteria are stable for the lifetime of a user task. New requirements may be
+## appended, but the model cannot replace, weaken or remove an existing one.
+var declaration = 0
+var _declared_at = {}
 
 static func criteria_schema() -> Dictionary:
 	return {"type": "array", "maxItems": 24, "items": Common.schema({"id": {"type": "string", "minLength": 1, "maxLength": 48}, "description": {"type": "string", "minLength": 1, "maxLength": 600}, "kind": {"type": "string", "enum": ["inspection", "syntax", "runtime", "interaction", "visual"]}, "paths": {"type": "array", "maxItems": 20, "items": Common.string_field()}, "check": Common.schema({"pointer": {"type": "string", "maxLength": 300, "description": "JSON pointer inside a tool's result, e.g. /properties/score."}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "nonempty"]}, "expected": {}}, ["pointer", "op"])}, ["id", "description", "kind"])}
@@ -19,24 +23,68 @@ func reset() -> void:
 	criteria.clear()
 	evidence.clear()
 	passed.clear()
+	declaration = 0
+	_declared_at.clear()
+
+## Check a criteria update against the protected set without changing any state.
+## The panel uses this before planner.update so a rejected update cannot be
+## partially applied.
+func prevalidate(items: Array) -> Dictionary:
+	var plan = _plan(items)
+	if not plan.get("ok", false): return plan
+	return Common.success({"criteria": plan["criteria"].size(), "added": plan["added"].duplicate()})
 
 func declare(items: Array) -> Dictionary:
+	var plan = _plan(items)
+	if not plan.get("ok", false): return plan
+	var additions: Array = plan["added"]
+	if additions.is_empty(): return Common.success({"criteria": criteria.size()})
+	declaration += 1
+	for id in additions: _declared_at[str(id)] = declaration
+	criteria = plan["criteria"]
+	return Common.success({"criteria": criteria.size(), "added": additions.duplicate()})
+
+func _plan(items: Array) -> Dictionary:
 	if items.size() > 24: return Common.failure("Cel mult 24 de criterii.", "invalid_criteria")
 	var identifiers = {}
+	var incoming = []
 	for item in items:
-		if not item is Dictionary or str(item.get("id", "")).is_empty() or identifiers.has(item["id"]): return Common.failure("Criteriile necesită identificatori unici.", "invalid_criteria")
+		if not item is Dictionary or str(item.get("id", "")).is_empty() or identifiers.has(str(item["id"])): return Common.failure("Criteriile necesită identificatori unici.", "invalid_criteria")
 		if item.get("kind") not in ["inspection", "syntax", "runtime", "interaction", "visual"] or not item.get("description") is String or item["description"].strip_edges().is_empty() or not item.get("paths", []) is Array: return Common.failure("Format de criteriu invalid.", "invalid_criteria")
-		identifiers[item["id"]] = true
+		identifiers[str(item["id"])] = true
 		if item.get("kind") in ["runtime", "interaction"] and not item.get("check") is Dictionary: return Common.failure("Criteriul comportamental necesită check cu valoare măsurată.", "invalid_criteria")
+		var criterion = {"id": str(item["id"]), "description": item["description"], "kind": str(item["kind"]), "paths": []}
 		if item.has("check"):
-			if not item["check"] is Dictionary or not item["check"].get("pointer") is String or item["check"].get("op") not in ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "nonempty"] or (item["check"]["op"] != "nonempty" and not item["check"].has("expected")): return Common.failure("Condiție de verificare invalidă.", "invalid_criteria")
+			if not item["check"] is Dictionary: return Common.failure("Condiție de verificare invalidă.", "invalid_criteria")
+			var check: Dictionary = item["check"]
+			var operation = str(check.get("op", ""))
+			if not (check.get("pointer") is String) or operation not in ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "nonempty"] or (operation != "nonempty" and not check.has("expected")): return Common.failure("Condiție de verificare invalidă.", "invalid_criteria")
+			criterion["check"] = check.duplicate(true)
 		for path in item.get("paths", []):
-			if Common.project_path(str(path)).is_empty(): return Common.failure("Cale de criteriu invalidă.", "invalid_criteria")
-	if criteria != items:
-		criteria = items.duplicate(true)
-		evidence.clear()
-		passed.clear()
-	return Common.success({"criteria": criteria.size()})
+			var normalized = Common.project_path(str(path))
+			if normalized.is_empty(): return Common.failure("Cale de criteriu invalidă.", "invalid_criteria")
+			criterion["paths"].append(normalized)
+		incoming.append(criterion)
+	var existing = {}
+	for criterion in criteria: existing[str(criterion["id"])] = true
+	var supplied = {}
+	for criterion in incoming: supplied[str(criterion["id"])] = criterion
+	var ordered = []
+	var additions = []
+	for criterion in criteria:
+		var id = str(criterion["id"])
+		if not supplied.has(id): return Common.failure("Criteriul deja declarat nu poate fi eliminat: " + id, "criteria_protected")
+		if not _same_criterion(supplied[id], criterion): return Common.failure("Criteriul deja declarat nu poate fi reformulat sau slăbit: " + id, "criteria_protected")
+		ordered.append(criterion.duplicate(true))
+	for criterion in incoming:
+		var id = str(criterion["id"])
+		if existing.has(id): continue
+		ordered.append(criterion.duplicate(true))
+		additions.append(id)
+	return {"ok": true, "criteria": ordered, "added": additions}
+
+static func _same_criterion(left: Dictionary, right: Dictionary) -> bool:
+	return str(left.get("id", "")) == str(right.get("id", "")) and str(left.get("description", "")) == str(right.get("description", "")) and str(left.get("kind", "")) == str(right.get("kind", "")) and left.get("paths", []) == right.get("paths", []) and left.get("check", null) == right.get("check", null)
 
 func changed() -> void:
 	revision += 1
@@ -91,7 +139,7 @@ func observe(name: String, args: Dictionary, result: Dictionary) -> Dictionary:
 		if criterion.get("check") is Dictionary: values[criterion["id"]] = _pointer(data, str(criterion["check"].get("pointer", "")))
 	var id = Common.uid()
 	if evidence.size() >= 100: evidence.erase(evidence.keys()[0])
-	evidence[id] = {"id": id, "tool": name, "kinds": kinds, "paths": paths, "revision": revision, "hashes": hashes, "values": values}
+	evidence[id] = {"id": id, "tool": name, "kinds": kinds, "paths": paths, "revision": revision, "declaration": declaration, "hashes": hashes, "values": values}
 	return {"id": id, "kinds": kinds, "revision": revision}
 
 func check(id: String, ids: Array) -> Dictionary:
@@ -100,18 +148,26 @@ func check(id: String, ids: Array) -> Dictionary:
 	var criterion: Dictionary = matches[0]
 	var covered = []
 	var accepted = false
+	var stale = false
+	var declared_at = int(_declared_at.get(id, 0))
 	for key in ids:
 		if not evidence.has(key): return Common.failure("Dovadă necunoscută sau invalidată. Rulează verificarea din nou.", "evidence_stale")
 		var proof: Dictionary = evidence[key]
 		if proof["revision"] != revision: return Common.failure("Proiectul s-a modificat după verificare.", "evidence_stale")
 		for path in proof["hashes"]:
 			if proof["hashes"][path] == "unverified_large" or _file_hash(path) != proof["hashes"][path]: return Common.failure("Fișier modificat sau prea mare pentru această probă: " + path, "evidence_stale")
+		# Evidence collected before this criterion existed must not accidentally
+		# satisfy it, even when kind and paths would otherwise match.
+		if int(proof.get("declaration", 0)) < declared_at:
+			stale = true
+			continue
 		if criterion["kind"] not in proof["kinds"]: continue
 		covered.append_array(proof["paths"])
 		if criterion.has("check"):
 			var value: Dictionary = proof["values"].get(id, {})
 			accepted = accepted or (value.get("found", false) and _compare(value.get("value"), criterion["check"]))
 		else: accepted = true
+	if stale and not accepted: return Common.failure("Dovada a fost colectată înainte de declararea acestui criteriu. Rulează verificarea din nou.", "evidence_stale")
 	for target in criterion.get("paths", []):
 		if criterion["kind"] in ["inspection", "syntax"] and Common.project_path(str(target)) not in covered: return Common.failure("Dovada nu acoperă fișierul cerut: " + str(target), "evidence_scope")
 	if not accepted: return Common.failure("Dovezile nu satisfac tipul sau condiția criteriului.", "criterion_failed")

@@ -8,6 +8,70 @@ etapă importantă: implementare, verificare, compilare sau livrare. „Implemen
 sunt stări distincte. Un plan sau un test cu furnizor simulat nu este prezentat
 drept funcție validată cu un serviciu real.
 
+## Rectificări ale auditului harness — 7.11.2026
+
+**Implementat și verificat local în surse; încă necompilat în noul APK.**
+
+- Criteriile deja declarate sunt protejate împotriva eliminării ori reformulării;
+  adăugările păstrează probele vechi valide, dar cer probe noi pentru criteriul
+  adăugat. Respingerea nu schimbă parțial planul. Execuția începută nu poate fi
+  redenumită propunere ca să evite verificarea, nici după replanificare/reluare.
+- Joburile Ziva pornite de un tur sunt dependențe obligatorii. Bariera așteaptă
+  rezultatul real fără ture consumate cu reamintiri și cere un răspuns nou al
+  modelului. Permisiunile, întrebările, erorile, anularea, stările necunoscute sau
+  rezultatele încă necitite nu trec drept succes. Reluarea nu retrimite joburi.
+- Cererile inversate sunt salvate privat înaintea confirmării și înaintea
+  pornirii furnizorului. Rezultatele și identitățile cererilor au chitanțe
+  durabile inclusiv după evacuarea cache-ului. Joburile întrerupte nu își reiau
+  automat modificările. Salvarea eșuată a cozii sau jurnalului refuză pornirea.
+- Generarea prin unealtă cere `asset_key`, identitatea stabilă a resursei cerute.
+  Reformularea sau schimbarea furnizorului pentru aceeași resursă este refuzată
+  de buclă și de jurnalul durabil, inclusiv după restart. Aceasta nu reprezintă
+  identificare semantică între chei diferite alese de model.
+- Un panou ascuns nu mai preia blocarea fullscreen a altei file. Activarea unui
+  amplasament existent revine din Ziva la fila potrivită. Coada scurtă rezervă
+  un card complet și spațiu pentru conversație, fără tăierea comenzilor.
+
+**Verificări locale efectuate:** runtime **984/0**; editor Ziva/legătură/barieră/
+refuzuri de jurnal **140/0**; workspace **70/0**; chat phone landscape **82/0**;
+noua probă UI phone landscape **58/0**. Aceeași probă pe sursa anterioară
+reproduce **58 verificări / 3 eșecuri**; proba intenției de execuție trece de la
+**9/5** pe sursa veche la **9/0**. Proba originală de eliminare a victoriei
+păstrează acum criteriul și răspunde `criteria_protected`. Nu s-au făcut
+vizualizări/generări cloud plătite pentru aceste teste. Buildul nativ C++ și
+cele 38 de aserțiuni vechi de andocare necesită următoarea rulare CI; trecerea
+fixture-ului upstream nu este prezentată drept confirmare a acelui build.
+
+**Delegare cerută de utilizator:** OpenCode nativ Termux `2.0.31`, instalat
+izolat din [distribuția Termux](https://github.com/Hope2333/opencode-termux), cu
+SHA-256 verificat. Model exclusiv `opencode/deepseek-v4.1-flash-free`, HOME/XDG
+izolate, fără credențiale ale utilizatorului moștenite și cu update dezactivat.
+DeepSeek a încheiat criteriile cu **969/0**, a furnizat cod parțial pentru
+legătură și a analizat generarea/interfața. Cota gratuită a oprit celelalte
+sesiuni cu **429 `provider.quota`**; integrarea, corecțiile și probele au fost
+continuate de agentul principal. Costul raportat de pașii OpenCode este zero;
+nu s-a trecut la cheia personală ori la un model plătit.
+
+Dovezi: `.ai-qa/harness-fixes-20261107/`, `delegation-summary.json`, logurile
+runtime/editor, `layout-before/`, `layout-after/`, `peer-storage-tests/`,
+`planner-before-complete.log`, `planner_probe-complete.log` și
+`core-after-acceptance.json`. Contractele actualizate sunt în
+[AI_HARNESS.md](docs/AI_HARNESS.md) și
+[AI_ZIVA_COLLABORATION.md](docs/AI_ZIVA_COLLABORATION.md).
+
+**Limite păstrate explicit:** setul inițial de criterii și identitățile logice
+sunt alese de model; nu pretindem acoperire semantică completă a cererii.
+Schimbarea reală a scopului se face printr-o cerere nouă a utilizatorului;
+intervenția generică nu șterge automat cerințe protejate. Această iterație nu
+adaugă un control separat pentru detașarea în fundal a delegărilor necesare.
+Răspunsurile peer au buget de 128.000 caractere și semnalizează trunchierea.
+Nu s-a reintrodus un plafon global de pași. Acceptarea live cu două modele pe
+Android și instalarea fizică rămân distincte de probele deterministe.
+
+Jurnal: 7.11.2026 — întărite criteriile, intenția de execuție, identitatea
+resurselor generate și finalizarea/persistența delegărilor; reproduse și
+corectate trei regresii UI, cu asistență DeepSeek Free până la epuizarea cotei.
+
 ## Livrare APK cu legătura dintre agenți — 7.11.2026
 
 **Compilat din `53a50e8adb96aa6dbe95191fd35728a621e6a453`** prin workflow-ul
@@ -4840,6 +4904,8 @@ Certificatul de dezvoltare a rămas neschimbat:
   folosesc endpointuri de modele deja pornite.
 
 ## Jurnalul etapelor
+
+- **7.11.2026:** rectificări audit în surse: criterii și intenție protejate, dependențe Ziva, chitanțe peer și identități de generare; runtime 984/0, peer 140/0, UI nou 58/0 după 3 eșecuri reproduse pe sursa veche; delegare DeepSeek Free, apoi continuare locală după 429.
 
 - **30.10.2026:** AG-66 în surse: reparații cu dovezi, impact, recuperare, scenarii, experimente, asseturi, profilare și specialiști. Fără APK/push; verificări și limite în secțiunea AG-66.
 

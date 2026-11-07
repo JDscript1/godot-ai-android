@@ -14,6 +14,47 @@ APK was verified but not installed automatically. Normal execution has no fixed
 step limit. Delivery evidence is tracked in
 [the project progress record](../PROGRES_SI_PLAN.md).
 
+## Audit corrections, 2026-11-07 (source)
+
+Declared acceptance criteria are additive and protected for the current task.
+Removing or rewriting an existing criterion fails before the visible plan changes.
+Adding a requirement preserves previous passing evidence, but evidence collected
+before the new declaration cannot verify the added criterion. Restart preserves
+requirements and discards live observations. Once execution starts, a model cannot
+recast unfinished implementation as a completed proposal, including after replanning
+or resume. A real new user task can start a different acceptance scope; natural
+language steering does not silently reset it. These checks protect declared criteria;
+they do not prove that the model initially covered every semantic user requirement.
+
+`asset_generate` requires `asset_key`, a stable logical output such as `car_sprite`
+or `car_mesh`. The native loop and durable effect journal reject different prompts,
+providers or variants submitted for the same key in the same task. Exact retries
+recover the existing receipt; uncertain submissions are not repeated. A separately
+requested output/variant uses its own key. The executor does not claim semantic
+matching between different model-selected keys. The manual generation form remains
+an explicit user action and does not require typing an internal key.
+
+Ziva jobs started by a native turn are required dependencies. A completion barrier
+awaits actual polling without consuming model reminder rounds, supplies the result
+to a new model request, and requires completed/ingested state before success. Errors,
+cancellation, questions, permission waits and unknown states cannot pass as success.
+Repeated completion reads invalidate local evidence only once. Resume preserves job
+ownership without resubmitting an external task. The model cannot detach required
+work by setting a background flag; a separate user-authorized background action is
+not provided in this iteration.
+
+Incoming peer jobs are journaled per project before acknowledgement and before a
+native provider can run. Completed answers and request identities survive restart
+and bounded cache eviction through private receipts. Running jobs recover as
+interrupted rather than replaying project mutations. Corrupt/unwritable job or queue
+state refuses new dispatch. Reusing a request ID for different content is rejected.
+See [the peer contract](AI_ZIVA_COLLABORATION.md).
+
+The editor also prevents hidden assistant panels from adopting another tab's
+fullscreen lock. Compact queues reserve a full card and a conversation minimum,
+allowing the editor to reclaim space from resizable diagnostics. Source, fixture
+checks, native CI and APK delivery are recorded separately in the progress log.
+
 ## Empty final answers, 2026-11-07
 
 A successful provider response with no visible answer and no remaining tool calls

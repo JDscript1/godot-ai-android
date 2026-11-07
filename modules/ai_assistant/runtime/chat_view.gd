@@ -2423,7 +2423,9 @@ func show_queue(items: Array, paused: bool = false, working: bool = false) -> vo
 	queue_scroll = null
 	queue_rows = null
 	queue_panel.visible = not items.is_empty()
-	if items.is_empty(): return
+	if items.is_empty():
+		_layout_queue.call_deferred()
+		return
 	var scale = EditorInterface.get_editor_scale()
 	var header = HBoxContainer.new()
 	header.add_theme_constant_override("separation", int(4 * scale))
@@ -2480,8 +2482,18 @@ func show_queue(items: Array, paused: bool = false, working: bool = false) -> vo
 	_layout_queue.call_deferred()
 
 func _layout_queue() -> void:
-	if queue_scroll == null or queue_rows == null or not queue_panel.visible: return
+	if scroll == null or queue_panel == null: return
+	var conversation = scroll.get_parent() as Control
+	if not queue_panel.visible:
+		conversation.custom_minimum_size.y = 0
+		return
+	if queue_scroll == null or queue_rows == null: return
 	var scale = EditorInterface.get_editor_scale()
+	var conversation_floor = ceilf(minf(80 * scale, size.y * 0.15))
+	conversation.custom_minimum_size.y = conversation_floor
+	var row_floor = 0.0
+	for card in queue_rows.get_children():
+		if card is Control: row_floor = maxf(row_floor, card.get_combined_minimum_size().y)
 	var fixed_height = queue_panel.get_child(0).get_combined_minimum_size().y
 	var visible_children = 0
 	for child in root_column.get_children():
@@ -2489,9 +2501,11 @@ func _layout_queue() -> void:
 		visible_children += 1
 		if child != scroll.get_parent() and child != queue_panel: fixed_height += child.get_combined_minimum_size().y
 	fixed_height += maxi(0, visible_children - 1) * root_column.get_theme_constant("separation") + queue_panel.get_theme_constant("separation")
-	var room = maxf(0, size.y - fixed_height - minf(80 * scale, size.y * 0.15))
+	var room = maxf(0, size.y - fixed_height - conversation_floor)
 	# Scroll offsets are integer pixels; a fractional page can clip the last row.
-	var cap = floorf(minf(room, minf(160 * scale, size.y * 0.22)))
+	# Reclaim space from a resizable diagnostic panel before clipping a card.
+	# The conversation and one full row both contribute to the actual minimum.
+	var cap = maxf(ceilf(row_floor), floorf(minf(room, minf(160 * scale, size.y * 0.22))))
 	var height = minf(cap, queue_rows.get_combined_minimum_size().y)
 	queue_scroll.visible = height > 0
 	if not is_equal_approx(queue_scroll.custom_minimum_size.y, height): queue_scroll.custom_minimum_size.y = height

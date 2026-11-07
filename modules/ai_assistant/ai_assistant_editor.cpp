@@ -654,7 +654,22 @@ void AIAssistantEditorPlugin::_main_screen_changed(const String &p_name) {
 
 void AIAssistantEditorPlugin::set_chat_placement(int p_placement) {
 	ERR_FAIL_COND(p_placement < 0 || p_placement > 2);
-	if (!panel || chat_placement == p_placement) {
+	if (!panel) {
+		return;
+	}
+	if (chat_placement == p_placement) {
+		// Activating an existing placement still leaves an exclusive main tab.
+		EditorMainScreen *main_screen = EditorNode::get_singleton()->get_editor_main_screen();
+		if (p_placement == 0) {
+			main_screen->select_by_name(get_plugin_name());
+		} else if (chat_dock) {
+			chat_dock->make_visible();
+			EditorPlugin *selected = main_screen->get_selected_plugin();
+			if (selected == this || (selected && selected->get_plugin_name() == "Ziva")) {
+				main_screen->select_by_name(dock_workspace);
+			}
+		}
+		panel->show();
 		return;
 	}
 	if (chat_dock) {
@@ -680,7 +695,8 @@ void AIAssistantEditorPlugin::set_chat_placement(int p_placement) {
 		chat_dock->add_child(panel);
 		add_dock(chat_dock);
 		chat_dock->make_visible();
-		if (main_screen->get_selected_plugin() == this) {
+		EditorPlugin *selected = main_screen->get_selected_plugin();
+		if (selected == this || (selected && selected->get_plugin_name() == "Ziva")) {
 			main_screen->select_by_name(dock_workspace);
 		}
 	}

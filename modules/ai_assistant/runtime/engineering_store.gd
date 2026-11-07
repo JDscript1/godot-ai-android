@@ -41,17 +41,21 @@ static func valid_id(id: String) -> bool:
 
 static func effect_key(turn: String, call: Dictionary) -> String:
 	var name = str(call.get("name", ""))
+	if name == "asset_generate" and valid_id(str(call.get("arguments", {}).get("asset_key", ""))): return (turn + ":asset_intent:" + str(call["arguments"]["asset_key"])).sha256_text()
 	var identity = "" if name in ["asset_generate", "asset_remove_background", "github_create_issue"] else str(call.get("id", ""))
 	return (turn + ":" + name + ":" + identity + ":" + JSON.stringify(call.get("arguments", {}), "", true)).sha256_text()
 
 func begin_effect(turn: String, call: Dictionary) -> Dictionary:
 	if not load_error.is_empty(): return Common.failure(load_error, "recovery_required")
+	if call.get("name") == "asset_generate" and not valid_id(str(call.get("arguments", {}).get("asset_key", ""))): return Common.failure("Folosește asset_key pentru resursa logică cerută; păstrează aceeași cheie la reluare.", "generation_intent_required")
 	var key = effect_key(turn, call)
+	var request_hash = JSON.stringify(call.get("arguments", {}), "", true).sha256_text()
 	var previous: Dictionary = data["effects"].get(key, {})
 	if previous.is_empty():
 		var archived: Variant = Common.read_json(directory.path_join("effect_receipts").path_join(key + ".json"), {}) if not directory.is_empty() else {}
 		if archived is Dictionary and archived.get("turn") == turn and archived.get("tool") == call.get("name") and archived.get("state") == "completed": previous = archived
 	if not previous.is_empty():
+		if call.get("name") == "asset_generate" and previous.get("request_hash", request_hash) != request_hash: return Common.failure("Resursa logică are deja o generare în acest turn. Inspectează jobul existent; reformularea promptului sau schimbarea profilului nu autorizează încă o generare.", "generation_intent_conflict").merged({"recovery": previous.get("recovery", {})})
 		if previous.get("state") == "completed" and previous.get("result") is Dictionary: return {"ok": true, "replayed": true, "result": previous["result"].duplicate(true)}
 		return {"ok": false, "code": "execution_unknown", "error": "O execuție anterioară nu are confirmare durabilă. Inspectează proiectul sau jobul existent înainte de repetare.", "effect": key, "tool": previous.get("tool", ""), "recovery": previous.get("recovery", {})}
 	if data["effects"].size() >= 900:
@@ -64,7 +68,7 @@ func begin_effect(turn: String, call: Dictionary) -> Dictionary:
 				if Common.atomic_json(directory.path_join("effect_receipts").path_join(str(old_key) + ".json"), row) != OK: return Common.failure("Chitanțele efectelor nu pot fi arhivate.", "checkpoint_failed")
 				data["effects"].erase(old_key)
 	if data["effects"].size() >= 1000: return Common.failure("Jurnalul are prea multe efecte incerte sau active. Inspectează recuperarea sarcinilor înainte de operații noi.", "journal_capacity")
-	data["effects"][key] = {"turn": turn, "tool": str(call.get("name", "")), "call_id": str(call.get("id", "")), "state": "pending", "started": Time.get_unix_time_from_system()}
+	data["effects"][key] = {"turn": turn, "tool": str(call.get("name", "")), "call_id": str(call.get("id", "")), "state": "pending", "request_hash": request_hash, "started": Time.get_unix_time_from_system()}
 	if not save():
 		data["effects"].erase(key)
 		return Common.failure("Operația nu a început: jurnalul durabil nu a putut fi salvat.", "checkpoint_failed")
@@ -98,7 +102,7 @@ static func _recovery(result: Dictionary) -> Dictionary:
 	var recovery = {}
 	var value: Variant = result.get("result", {})
 	if value is Dictionary:
-		for field in ["id", "job", "external_id", "task_id", "path", "file", "status", "imported_path"]:
+		for field in ["id", "job", "job_id", "external_id", "task_id", "path", "file", "status", "imported_path"]:
 			if value.has(field) and value[field] is String: recovery[field] = value[field]
 	return recovery
 

@@ -255,6 +255,7 @@ func _run() -> void:
 		scripts[name] = script
 	var common = scripts["common"]
 	var providers = scripts["providers"]
+	load(source_directory.path_join("tests/test_planner_contract.gd")).new().run(scripts["planner"], check)
 	check(common.project_path("res://../outside.txt").is_empty(), "Reject project traversal")
 	check(common.project_path("res://.godot/cache").is_empty(), "Reject editor-private project paths")
 	check(common.project_path("res://scripts/player.gd") == "res://scripts/player.gd", "Accept project file")
@@ -1283,6 +1284,7 @@ func _intelligence_tests(node: Node) -> void:
 	restored_verifier.restore(verifier.snapshot())
 	check(restored_verifier.criteria.size() == 2 and restored_verifier.passed.is_empty(), "Resuming keeps acceptance requirements but requires fresh observations")
 	check(not verifier.declare([score_criterion, score_criterion]).get("ok", true) and verifier.criteria.size() == 2, "Invalid criteria updates cannot replace the previous valid requirements")
+	_verification_protection_tests(path)
 	check(scripts["verification"]._pointer({"a/b": {"~value": [2]}}, "/a~1b/~0value/0").get("value") == 2 and not scripts["verification"]._pointer({}, "/absent").get("found", true), "Evidence pointers support escaped keys and reject missing measurements")
 	check(not scripts["verification"]._compare("3", {"op": "gte", "expected": 3}), "Numeric acceptance comparisons reject string coercion")
 	check(not scripts["verification"]._compare("text", {"op": "contains", "expected": {"invalid": true}}), "Mismatched assertion types fail cleanly instead of throwing an engine error")
@@ -1304,6 +1306,70 @@ func _intelligence_tests(node: Node) -> void:
 	DirAccess.remove_absolute(path)
 	DirAccess.remove_absolute(scene_path)
 	DirAccess.remove_absolute(directory)
+
+func _verification_protection_tests(path: String) -> void:
+	var verification = scripts["verification"]
+	var common = scripts["common"]
+	var parser = verification.new()
+	var startup = {"id": "startup", "description": "The project opens and the script parses", "kind": "inspection", "paths": [path]}
+	var victory = {"id": "victory", "description": "Collecting every token ends in victory", "kind": "interaction", "paths": [path], "check": {"pointer": "/after/won", "op": "eq", "expected": true}}
+	var restart = {"id": "restart", "description": "Restart clears the collected score", "kind": "interaction", "paths": [path], "check": {"pointer": "/after/score", "op": "eq", "expected": 0}}
+	check(parser.declare([victory, restart]).get("ok", false), "Victory and restart requirements are declared before any evidence")
+	# Before protection, these two updates replaced the acceptance set and the
+	# model could finish after a trivial startup inspection.
+	var dropped = parser.declare([startup])
+	check(not dropped.get("ok", false) and dropped.get("code") == "criteria_protected" and parser.criteria.size() == 2, "An update that drops victory and restart is rejected instead of replacing the acceptance set")
+	var weakened = victory.duplicate(true)
+	weakened["check"]["expected"] = false
+	var rewritten = parser.declare([weakened, restart])
+	check(not rewritten.get("ok", false) and rewritten.get("code") == "criteria_protected" and parser.criteria.size() == 2, "An update that weakens an existing check is rejected before any requirement changes")
+	var renamed = victory.duplicate(true)
+	renamed["description"] = "Collect one token"
+	check(not parser.declare([renamed, restart]).get("ok", false) and verification._same_criterion(parser.criteria[0], victory), "Rewriting an existing criterion description is rejected")
+	var stable = parser.snapshot()
+	var extra = {"id": "extra", "description": "Extra inspection", "kind": "inspection", "paths": [path]}
+	var invalid_runtime = {"id": "broken", "description": "Broken runtime", "kind": "runtime", "paths": [path]}
+	var invalid = parser.declare([victory, restart, extra, invalid_runtime])
+	check(not invalid.get("ok", false) and invalid.get("code") == "invalid_criteria" and parser.snapshot() == stable, "One invalid added criterion rejects the whole additive update without mutation")
+	var invalid_check = {"id": "invalid-check", "description": "Invalid comparison", "kind": "inspection", "paths": [path], "check": {"pointer": "", "op": "invented", "expected": true}}
+	stable = parser.snapshot()
+	var malformed = parser.declare([victory, restart, invalid_check])
+	check(not malformed.get("ok", false) and malformed.get("code") == "invalid_criteria" and parser.snapshot() == stable, "An unknown comparison operator rejects the update without mutation")
+	var current = FileAccess.get_file_as_string(path)
+	var old_read = parser.observe("godot_read_file", {"path": path}, common.success(current))
+	var win = parser.observe("playtest_act", {}, common.success({"until_met": true, "after": {"won": true, "score": 3}}))
+	check(not old_read.is_empty() and not win.is_empty(), "Pre-change observations issue both inspection and interaction evidence")
+	check(parser.check("victory", [win["id"]]).get("ok", false) and parser.passed.has("victory"), "A measured victory result verifies the declared interaction criterion")
+	var before_add = parser.snapshot()
+	var preview = parser.prevalidate([startup, victory, restart])
+	check(preview.get("ok", false) and parser.snapshot() == before_add, "Prevalidating an additive update checks the protected set without mutating state")
+	var added = parser.declare([startup, victory, restart])
+	var ids = parser.criteria.map(func(item: Dictionary) -> String: return item["id"])
+	check(added.get("ok", false) and ids == ["victory", "restart", "startup"], "Additive updates append new criteria while preserving the original requirement order")
+	check(parser.passed.has("victory") and parser.check("victory", [win["id"]]).get("ok", false), "Adding an independent requirement preserves existing passing evidence")
+	check(parser.check("startup", [old_read["id"]]).get("code") == "evidence_stale", "An inspection proof collected before startup was declared cannot satisfy that new criterion")
+	var fresh = parser.observe("godot_read_file", {"path": path}, common.success(current))
+	check(not fresh.is_empty() and parser.check("startup", [fresh["id"]]).get("ok", false), "Fresh post-declaration evidence verifies the newly added startup criterion")
+	check(parser.problem().contains("Restart"), "Verifying a trivial startup criterion still leaves the protected restart requirement blocking completion")
+	stable = parser.snapshot()
+	var removed = parser.declare([victory, startup, extra])
+	check(not removed.get("ok", false) and removed.get("code") == "criteria_protected" and parser.snapshot() == stable, "Removing one protected criterion rejects the whole update, including its valid addition")
+	stable = parser.snapshot()
+	var changed_victory = victory.duplicate(true)
+	changed_victory["check"]["expected"] = false
+	var mixed = parser.declare([changed_victory, restart, startup, extra])
+	check(not mixed.get("ok", false) and mixed.get("code") == "criteria_protected" and parser.snapshot() == stable, "Rewriting one protected criterion rejects an otherwise valid additive update atomically")
+	var saved = parser.snapshot()
+	var resumed = verification.new()
+	resumed.restore(saved)
+	var resumed_ids = resumed.criteria.map(func(item: Dictionary) -> String: return item["id"])
+	check(resumed_ids == ["victory", "restart", "startup"] and resumed.evidence.is_empty() and resumed.passed.is_empty(), "Restart preserves protected requirements and clears all runtime evidence")
+	check(resumed.check("victory", [win["id"]]).get("code") == "evidence_stale", "Evidence IDs from the previous process cannot verify restored criteria")
+	check(not resumed.declare([startup]).get("ok", false) and resumed.criteria.size() == 3, "Restored protected requirements remain immutable")
+	var next_task = verification.new()
+	next_task.declare([victory, restart])
+	next_task.reset()
+	check(next_task.criteria.is_empty() and next_task.evidence.is_empty() and next_task.passed.is_empty() and next_task.declare([startup]).get("ok", false), "An explicit new user task reset can replace the previous acceptance scope")
 
 func _responses_continuation_tests(node: Node) -> void:
 	for kind in ["responses", "siwc"]:
@@ -1660,7 +1726,7 @@ func _harness_tests(node: Node) -> void:
 func _behavior_tests(node: Node) -> void:
 	var core = scripts["harness"].new(node)
 	var definitions = scripts["assets"].new(node, FakeVault.new()).definitions()
-	var first = {"id": "generate-1", "name": "asset_generate", "arguments": {"profile": "mesh-fixture", "prompt": "A wooden box"}}
+	var first = {"id": "generate-1", "name": "asset_generate", "arguments": {"asset_key": "wooden_box", "profile": "mesh-fixture", "prompt": "A wooden box"}}
 	var repeated = first.duplicate(true)
 	repeated["id"] = "generate-2"
 	var host = HarnessHost.new()
@@ -1670,6 +1736,18 @@ func _behavior_tests(node: Node) -> void:
 	var options = {"id": "generation-turn", "metadata": {"turn_id": "generation-turn"}, "messages": messages, "tools": definitions, "deduplicate_tools": ["asset_generate"]}
 	var result = await core.run(options, host.hooks())
 	check(result.get("ok", false) and host.executed.size() == 1, "The same paid generation with a fresh provider call ID reuses its existing job")
+	host = HarnessHost.new()
+	var rephrased = first.duplicate(true)
+	rephrased["id"] = "generate-rephrased"
+	rephrased["arguments"]["prompt"] = "A box made of wood"
+	host.replies = [_agent_response("", [rephrased]), _agent_response("Reuse the existing logical output")]
+	result = await core.run(options, host.hooks())
+	var refusal: Dictionary = scripts["common"].parse_json(str(messages.filter(func(message: Dictionary) -> bool: return message.get("tool_call_id") == "generate-rephrased")[0]["content"]))
+	check(host.executed.is_empty() and refusal.get("code") == "generation_intent_conflict", "Rephrasing an already generated logical output cannot submit another paid request after resume")
+	var missing = first.duplicate(true)
+	missing["arguments"].erase("asset_key")
+	var generate_definition: Dictionary = definitions.filter(func(tool: Dictionary) -> bool: return tool["name"] == "asset_generate")[0]
+	check(not scripts["tool_registry"].validate(generate_definition, missing["arguments"]).get("ok", false), "The real generation schema requires an explicit stable logical output key")
 	host = HarnessHost.new()
 	var resumed = first.duplicate(true)
 	resumed["id"] = "generate-resumed"
@@ -1687,6 +1765,7 @@ func _behavior_tests(node: Node) -> void:
 	var variant = repeated.duplicate(true)
 	variant["id"] = "generate-variant"
 	variant["arguments"]["variant"] = "second-requested-box"
+	variant["arguments"]["asset_key"] = "second_requested_box"
 	host.replies = [_agent_response("", [first, variant]), _agent_response("Two requested variants")]
 	result = await core.run({"tools": definitions, "deduplicate_tools": ["asset_generate"]}, host.hooks())
 	check(result.get("ok", false) and host.executed.size() == 2, "An explicit variant distinguishes multiple requested outputs from accidental generation retries")

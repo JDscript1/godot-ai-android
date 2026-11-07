@@ -434,6 +434,10 @@ func _run() -> void:
 		await _activity_drawer_tests()
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		return
+	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "layout_safety":
+		await load(get_script().resource_path.get_base_dir().path_join("layout_safety.gd")).new().run(self, panel, OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
+		return
 	if OS.get_environment("GODOT_AI_QA_SCENARIO") == "workspace":
 		await _workspace_panel_tests(OS.get_environment("GODOT_AI_QA_OUTPUT"))
 		_finish_report(OS.get_environment("GODOT_AI_QA_OUTPUT"))
@@ -472,6 +476,7 @@ func _run() -> void:
 	await _linux_runtime_tests("")
 	await _ziva_tests("")
 	await _workspace_panel_tests("")
+	await load(get_script().resource_path.get_base_dir().path_join("layout_safety.gd")).new().run(self, panel, OS.get_environment("GODOT_AI_QA_OUTPUT"))
 	await _handoff_tests()
 	await _generated_preview_tests()
 	await _layout_tests()
@@ -1155,6 +1160,15 @@ func _intelligence_editor_tests() -> void:
 	var criteria = [{"id": "content", "description": "Saved content is ready", "kind": "inspection", "paths": [path], "check": {"pointer": "/lines/0/text", "op": "eq", "expected": "ready"}}]
 	var declared = await panel._execute_call("task_update", {"tasks": [{"step": "Write and verify content", "status": "in_progress"}], "phase": "executing", "criteria": criteria})
 	_check(declared.get("ok", false) and panel.verification.criteria.size() == 1, "A real task_update declares concrete acceptance requirements")
+	var protected_plan: Dictionary = panel.planner.snapshot()
+	var dropped = await panel._execute_call("task_update", {"tasks": ["Different plan"], "phase": "planning", "criteria": []})
+	_check(dropped.get("code") == "criteria_protected" and panel.planner.snapshot() == protected_plan and panel.verification.criteria.size() == 1, "Rejected task_update removal cannot partially replace the visible plan or its requirements")
+	var weaker = criteria.duplicate(true)
+	weaker[0]["check"]["expected"] = "anything"
+	var weakened = await panel._execute_call("task_update", {"tasks": ["Different plan"], "phase": "planning", "criteria": weaker})
+	_check(weakened.get("code") == "criteria_protected" and panel.planner.snapshot() == protected_plan, "The real dispatcher rejects weaker acceptance checks before planner mutation")
+	var recast = await panel._execute_call("task_update", {"tasks": ["Unverified work"], "phase": "completed", "intent": "propose"})
+	_check(recast.get("code") == "intent_locked" and panel.planner.snapshot() == protected_plan, "The real dispatcher cannot recast an execution as a proposal to bypass verification")
 	var written = await panel._execute_call("godot_write_file", {"path": path, "text": "ready\n"})
 	_check(written.get("ok", false) and panel.project_knowledge.dirty and panel.verification.passed.is_empty(), "Actual project writes invalidate knowledge and acceptance evidence")
 	panel.turn_has_mutations = true
@@ -1166,7 +1180,7 @@ func _intelligence_editor_tests() -> void:
 	_check(not proof.is_empty(), "A real file inspection issues executor-owned acceptance evidence")
 	var checked = await panel._execute_call("task_check", {"criterion": "content", "evidence": [proof]})
 	_check(checked.get("ok", false) and panel._completion_problem().is_empty(), "The actual saved content satisfies the declared JSON-pointer assertion")
-	var completed = await panel._execute_call("task_update", {"tasks": [{"step": "Write and verify content", "status": "completed"}], "phase": "completed", "verification": "Actual content inspected"})
+	var completed = await panel._execute_call("task_update", {"tasks": [{"step": "Write and verify content", "status": "completed"}], "phase": "completed", "criteria": criteria, "verification": "Actual content inspected"})
 	_check(completed.get("ok", false), "A completed plan is accepted only after matching criterion evidence")
 	var output = OS.get_environment("GODOT_AI_QA_OUTPUT")
 	if not output.is_empty():
@@ -3955,7 +3969,8 @@ class FixtureZivaBridge:
 			"ziva_install": state.merge({"status": "installing", "message": "Descarc Ziva…", "busy": true}, true)
 			"ziva_check_updates": state["updates"] = {"available": true, "message": "Versiune oficială disponibilă: v3.3.3"}
 			"ziva_chat_send":
-				chat["job"] = "fixture-ziva-job"
+				chat["sequence"] = int(chat.get("sequence", 0)) + 1
+				chat["job"] = "fixture-ziva-job-" + str(chat["sequence"])
 				chat["state"] = "running"
 				chat["answer"] = ""
 				chat["error"] = ""
@@ -3966,8 +3981,8 @@ class FixtureZivaBridge:
 				if not chat["scripted"].is_empty(): chat.merge(chat["scripted"].pop_front(), true)
 				return {"ok": true, "job_id": chat["job"], "state": chat["state"], "answer": chat["answer"], "error": chat["error"], "waiting": chat["waiting"], "tools": chat["tools"], "chat_id": "fixture-ziva-chat", "message_id": "fixture-ziva-message"}
 			"ziva_chat_cancel":
-				chat["state"] = "cancelled"
-				return {"ok": true, "job_id": chat["job"], "state": "cancelled"}
+				if chat["state"] != "completed": chat["state"] = "cancelled"
+				return {"ok": true, "job_id": chat["job"], "state": chat["state"], "answer": chat["answer"], "tools": chat["tools"]}
 		return {"ok": true}
 
 func _ziva_delegation_tests(bridge: FixtureZivaBridge) -> void:

@@ -59,18 +59,27 @@ static func run(scripts: Dictionary, tree: SceneTree, check: Callable) -> void:
 	var private = OS.get_user_data_dir().path_join("engineering-" + common.uid())
 	var state = scripts["engineering_store"].new()
 	state.configure(private)
-	var call = {"id": "provider-call-1", "name": "asset_generate", "arguments": {"profile": "tree", "prompt": "one tree"}}
+	var call = {"id": "provider-call-1", "name": "asset_generate", "arguments": {"asset_key": "tree", "profile": "tree", "prompt": "one tree"}}
 	check.call(state.begin_effect("turn1", call).get("ok", false), "Effect intent persists before execution")
 	var restarted = scripts["engineering_store"].new()
 	restarted.configure(private)
 	check.call(restarted.begin_effect("turn1", call).get("code") == "execution_unknown", "Restart does not replay an uncertain paid effect")
 	var another_call = call.merged({"id": "provider-call-2"}, true)
 	check.call(restarted.begin_effect("turn1", another_call).get("code") == "execution_unknown", "Changing a provider call ID cannot duplicate the same paid request")
+	var paraphrased = another_call.duplicate(true)
+	paraphrased["arguments"]["prompt"] = "a single tree"
+	check.call(restarted.begin_effect("turn1", paraphrased).get("code") == "generation_intent_conflict", "A durable generation intent rejects a reworded prompt even when the original submission is uncertain")
+	paraphrased["arguments"]["profile"] = "another-provider"
+	check.call(restarted.begin_effect("turn1", paraphrased).get("code") == "generation_intent_conflict", "Switching providers cannot repeat the same logical generation intent")
+	var missing_intent = call.duplicate(true)
+	missing_intent["arguments"].erase("asset_key")
+	check.call(restarted.begin_effect("turn1", missing_intent).get("code") == "generation_intent_required", "The durable executor refuses generation without a logical output identity")
 	check.call(restarted.finish_effect("turn1", call, {"ok": false, "code": "submission_unknown", "result": {"id": "saved-job"}}), "Uncertain provider outcome retains exact recovery identity")
 	var effect_id = restarted.effect_key("turn1", call)
 	check.call(restarted.data["effects"][effect_id]["recovery"]["id"] == "saved-job", "Recovery identity comes from the actual tool result")
 	check.call(restarted.reconcile(effect_id, {"ok": true, "result": {"id": "saved-job", "status": "completed"}}).get("ok", false), "Observed existing result can complete the journal")
 	check.call(restarted.begin_effect("turn1", another_call).get("replayed", false), "Reconciled paid operation returns its saved result")
+	check.call(restarted.begin_effect("turn1", paraphrased).get("code") == "generation_intent_conflict", "A confirmed intent also rejects paid regeneration after restart")
 	check.call(restarted.begin_effect("turn2", another_call).get("ok", false), "A later explicitly requested turn can generate a new asset")
 	var ordinary = {"id": "write1", "name": "godot_write_file", "arguments": {"path": "res://x.gd", "text": "a"}}
 	check.call(restarted.begin_effect("turn1", ordinary).get("ok", false), "Ordinary write is journaled")

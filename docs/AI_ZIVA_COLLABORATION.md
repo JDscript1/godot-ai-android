@@ -24,6 +24,13 @@ Harness-ul oferă `ziva_status`, `ziva_task_start`, `ziva_task_status`,
 conversații cunoscute este posibilă prin `chat_id` când conversația este liberă.
 O a doua sarcină simultană în aceeași conversație este refuzată explicit.
 
+În sursa din această iterație, joburile pornite de un tur devin dependențe
+obligatorii. Bariera de finalizare așteaptă rezultatul real, îl transmite modelului
+și respinge verdictul de succes dacă jobul încă rulează, a eșuat, a fost anulat
+sau așteaptă permisiune/întrebare. Citirea repetată a aceluiași rezultat nu
+invalidează din nou probele locale. Un flag de fundal scris de model nu elimină
+această obligație. Reluarea păstrează identitatea jobului fără retrimitere automată.
+
 Citirea stării arată și întrebările/permisiunile pe care Ziva le așteaptă.
 Utilizatorul le rezolvă în Ziva. Agentul nostru nu aprobă acele dialoguri.
 Anularea unui job încheiat nu oprește o cerere nouă din aceeași conversație.
@@ -59,9 +66,13 @@ print(JSON.stringify(peer.request("status")))
 Răspunsurile folosesc `{ok, result}` sau `{ok:false, code, error}`. Un job primit
 poate fi `queued`, `running`, `completed`, `failed`, `cancelled`, `blocked` sau
 `limited`. `next_offset` indică următorul fragment; `-1` indică sfârșitul.
-Joburile legăturii sunt urmărite în sesiunea curentă a editorului. După
-repornire, un identificator vechi poate fi necunoscut; acesta nu devine dovadă
-că cererea a fost executată sau reluată.
+În sursa actualizată, joburile sunt salvate în directorul privat al proiectului.
+Rezultatele și identitățile cererilor rămân disponibile după repornire, inclusiv
+prin chitanțe arhivate după evacuarea din cache. Un job care rula revine ca
+`interrupted`; nu își reia automat modificările. Un jurnal deteriorat ori o
+salvare eșuată refuză pornirea. Refolosirea unui request_id cu alt text sau altă
+acțiune este un conflict. Răspunsurile sunt păstrate cu un buget de 128.000 de
+caractere; paginarea acoperă fragmentul păstrat.
 
 O cerere nouă așteaptă dacă agentul lucrează deja. O coadă oprită rămâne oprită.
 O intervenție sau anulare cu `turn_id` vechi este refuzată. Ciorna utilizatorului
