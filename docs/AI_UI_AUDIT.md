@@ -51,7 +51,7 @@ Butonul plutitor de salt se ascunde când ar acoperi un buton acționabil, astfe
 Verificat pe Godot 4.7 headless/VNC: runtime 945/0, `presentation` 143/0,
 `activity` 73/0, `chat` 82/0, `inspections` 79/0, `planning` 81/0, `ziva` 88/0,
 `workspace` 70/0 și `controls` 82/0 pe fixture proaspăt. Dovezi:
-`.ai-qa/chat-ziva-live-20261105/`. APK-ul Ziva `499b59a` a fost compilat și
+`.ai-qa/chat-ziva-live-20261105/`. APK-ul Ziva `a346246` a fost compilat și
 verificat; clipboard-ul Android, tastatura, emoji și puntea Ziva live rămân
 verificări fizice separate.
 

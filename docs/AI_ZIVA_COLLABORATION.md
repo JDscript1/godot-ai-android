@@ -1,6 +1,6 @@
 # Colaborarea dintre Godot AI și Ziva
 
-Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `499b59a`, verificat și livrat.
+Actualizat: 7 noiembrie 2026. Inclus în APK-ul Ziva `a346246`, verificat și livrat.
 Starea sursei, verificărilor și APK-ului livrat este
 în [PROGRES_SI_PLAN.md](../PROGRES_SI_PLAN.md).
 
@@ -9,7 +9,7 @@ folosește propriul model, propriile unelte și propriile permisiuni. Legătura 
 unește istoricul sau cheile API. Rezultatul confirmat al unui job este separat
 de simpla acceptare a mesajului.
 
-## Corecții în APK `499b59a` — 7 noiembrie 2026
+## Corecții în APK `a346246` — 7 noiembrie 2026
 
 Pentru o cerere doar despre pornirea/starea Ziva, ghidajul indică `ziva_status`,
 fără pornirea suplimentară a unei sarcini de model. `finish=aborted` este raportat ca întrerupere,

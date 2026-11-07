@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **7.11.2026**. APK Ziva livrat în Download: **499b59a**, cu AG-01–AG-57.
+Actualizat: **7.11.2026**. APK Ziva livrat în Download: **a346246**, cu AG-01–AG-57.
 Distribuția standard este păstrată separat. [Dovezi actuale](PROGRES_SI_PLAN.md).
 Ultima instalare consemnată aici prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
 Bifele de acceptare nu se închid numai
@@ -11,13 +11,14 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
-## Chat compact și corecții Ziva — 7.11.2026, în APK `499b59a`
+## Chat compact, Ziva și OmniRoute — 7.11.2026, în APK `a346246`
 
 - [x] Un singur rând curent, avans după finalizare, istoric complet accesibil; prezentare compactă 168/0 și inspecții 81/0.
 - [x] `aborted`, răspuns gol și eroare fără fals succes; anulare în timpul rezolvării/trimiterii; RPC local 20/0, regresie demonstrată pe sursa veche.
 - [x] Fără reparații manuale de cursor/IME; Trimite după handlerul oficial, compoziție păstrată; DOM simulat 48/0 și probă veche eșuată.
 - [x] Compilat, verificat și livrat în Download după trei joburi CI verzi; semnătură persistentă și surse exacte.
-- [ ] Tastare/autocorectare, atingere Trimite și comunicare pe APK instalat; confirmarea pornirii Ziva după reinstalarea buildului `499b59a`.
+- [x] Preset OmniRoute, port 20128, adrese Tailscale și emblema distinctă; runtime 991/0 și editor providers 94/0.
+- [ ] Tastare/autocorectare, atingere Trimite și comunicare pe APK instalat; confirmarea pornirii Ziva după reinstalarea buildului `a346246` și o probă reală OmniRoute prin Tailscale.
 
 ## AG-57 — rectificări ale auditului harness, în APK `3bb7a24`
 

@@ -26,11 +26,22 @@ disponibile pentru model manual și pentru HTTP local.
   Tailscale între rețele diferite; `/healthz` și `/v1/models` sunt verificările
   separate de catalogul de modele.
 
-**Verificat local.** Runtime **991/0**, scenariul editor `providers` **94/0**.
-Compilarea Android și proba fizică cu un server OmniRoute real rămân separate.
+**Verificat local.** Runtime **991/0**, scenariul editor `providers` **94/0**;
+emblema OmniRoute și intrarea din catalog au fost inspectate.
 
-Jurnal: 7.11.2026 — adăugat preset OmniRoute, normalizare pentru Tailscale și
-protecție explicită pentru expunerea remote.
+**Compilat, verificat și livrat din `a3462466427006546710ac97d23cba3335300a33`.**
+Toate cele trei joburi ale [CI `42373287835`](https://github.com/JDscript1/godot-ai-android/actions/runs/42373287835)
+au trecut. [Artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42373287835/artifacts/13574324319).
+
+- APK: **112.617.406 bytes**, `com.jdscript.godotai.ziva.debug`, ARM64.
+- SHA-256: `8a6a0e34409a789979796d062f13ee7d05631e2d53dda86b0060469c7496f631`.
+- Livrat în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk` și checksum,
+  după verificarea ZIP-ului, pachetului/ABI și certificatului persistent.
+- **APK-ul nu a fost instalat automat.** O probă cu server OmniRoute real,
+  `/healthz`, catalogul `/v1/models`, un tur chat și tool calling rămâne separată.
+
+Jurnal: 7.11.2026 — adăugat preset OmniRoute, normalizare pentru Tailscale,
+protecție explicită pentru expunerea remote și APK livrat după CI complet verde.
 
 ## Reparație pornire Ziva după instalare — 7.11.2026
 
