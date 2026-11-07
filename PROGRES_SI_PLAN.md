@@ -10,7 +10,24 @@ drept funcție validată cu un serviciu real.
 
 ## Corecții ale integrării OmniRoute — 7.11.2026
 
-**Implementat în surse și verificat local; compilarea APK-ului nou urmează.**
+**Compilat, verificat și livrat din `428e62532f5a291b8d8338986e1caa7c13884225`.** Toate cele trei joburi
+[CI `42380882087`](https://github.com/JDscript1/godot-ai-android/actions/runs/42380882087) au trecut. [Artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42380882087/artifacts/13577648124).
+
+- APK: **112.620.018 bytes**, `com.jdscript.godotai.ziva.debug`, ARM64.
+- SHA-256: `38cdb73200a950bf8e74413db5d1c8cbde7f24f92d51d732e80f35f1c283286a`.
+- Înlocuit atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk`,
+  cu checksum, după verificarea certificatului persistent, ZIP-ului, pachetului,
+  celor **44 de scripturi GDScript exacte**, adaptorului WebView,
+  claselor native, manifestelor runtime și pachetului Linux.
+- CI upstream: desktop 1082/0, narrow 1082/0, wide 1082/0, phone_landscape 1082/0, phone_compact 1082/0.
+- CI editor nativ: desktop 1113/0, narrow 1113/0, wide 1113/0, phone_landscape 1113/0, phone_compact 1113/0.
+- Runtime CI **1013/0**; transport/client **18/0**, RPC Ziva **20/0**,
+  context **36/0**, DOM/focus simulat **48/0**. Rapoartele CI nu au erori de script.
+- Inspectate captura locală `providers-reviewed/phone_compact/omniroute-saved.png`
+  și capturile native `release-rendered/.../settings-providers.png`. Suita completă
+  CI rulează verificările OmniRoute fără captura dedicată scenariului `providers`.
+  **APK-ul nu a fost instalat automat.** Inferența pe OmniRoute real, Tailscale
+  și comportamentul fizic Android rămân de verificat separat.
 
 - Conexiunea OmniRoute salvată păstrează câmpul de adresă vizibil la reeditare.
 - Catalogul pentru chat exclude modelele OmniRoute de imagine, audio, rerank și
@@ -49,7 +66,7 @@ sunt în `.ai-qa/omniroute-review-20261107/`.
 
 Jurnal: 7.11.2026 — corectate cele patru probleme OmniRoute în surse, adăugate
 regresii de protocol și de formular; runtime 1013/0, UI final 113/0 după 9 eșecuri reproduse
-pe sursa veche. APK în pregătire, livrarea se face după CI și verificarea artefactului.
+pe sursa veche. APK `428e625` verificat și livrat după CI complet verde; acceptarea live/fizică rămâne separată.
 
 ## OmniRoute ca furnizor AI — 7.11.2026
 

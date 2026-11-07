@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **7.11.2026**. APK Ziva livrat în Download: **a346246**, cu AG-01–AG-57.
+Actualizat: **7.11.2026**. APK Ziva livrat în Download: **428e625**, cu AG-01–AG-57.
 Distribuția standard este păstrată separat. [Dovezi actuale](PROGRES_SI_PLAN.md).
 Ultima instalare consemnată aici prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
 Bifele de acceptare nu se închid numai
@@ -11,12 +11,12 @@ apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
 
-## Corecții OmniRoute — 7.11.2026, în surse
+## Corecții OmniRoute — 7.11.2026, în APK `428e625`
 
 - [x] Adresă vizibilă la reeditare, filtrare non-chat și citirea `context_length`.
 - [x] Model manual păstrat prin Testează, ciornă și refresh; metadate actualizate, fără duplicare ori transfer la alt endpoint.
 - [x] Runtime 1013/0 și UI providers 113/0; proba inițială UI reproduce 9 eșecuri pe sursa veche.
-- [ ] Compilare CI complet verde și livrare verificată a noului APK Ziva.
+- [x] APK `428e625` compilat, verificat și livrat după trei joburi CI verzi.
 - [ ] Inferență pe OmniRoute real, conexiune prin Tailscale și acceptare fizică Android.
 
 ## Chat compact, Ziva și OmniRoute — 7.11.2026, în APK `a346246`

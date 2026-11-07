@@ -6,12 +6,12 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42373287835/artifacts/13574324319)
-(GitHub Actions artifact, source `a346246`, delivered 7 November 2026).
-This includes protected acceptance criteria, durable generation identities and
-agent collaboration, a single current tool row, Ziva completion/input fixes, and a corrected Ziva startup mount and an OmniRoute provider preset.
-All three CI jobs passed; physical Android and live-model acceptance remain tracked in
-[the progress document](PROGRES_SI_PLAN.md).
+[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42380882087/artifacts/13577648124)
+(GitHub Actions artifact, source `428e625`, delivered 7 November 2026).
+This build includes corrected OmniRoute chat model discovery, context limits,
+editable saved endpoints and durable manual routes, plus native agent/Ziva
+collaboration. All three CI jobs passed; physical Android and live-model
+acceptance remain tracked in [the progress document](PROGRES_SI_PLAN.md).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
