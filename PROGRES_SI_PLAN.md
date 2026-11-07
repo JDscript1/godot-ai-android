@@ -52,6 +52,18 @@ cu lista istoricului deschisă, care ascunde intenționat conversația. Capturil
 scenarii deschide acum conversația prin `show_history(false)`; aserțiunile sunt
 păstrate. APK-ul primei rulări nu este livrat înaintea verificării corecției.
 
+A doua rulare, [42353520373](https://github.com/JDscript1/godot-ai-android/actions/runs/42353520373),
+a redus eșecurile phone compact de la 17 la 4. Proba de inspecție derula înainte
+ca sursa afișată la cerere să termine layoutul; tapul ajungea pe butonul
+istoricului și ascundea conversația pentru diagrame. Scenariul așteaptă acum
+layoutul, oprește urmărirea automată și verifică explicit că punctul este în
+viewport înainte de input. Proba locală izolată reproduce **79/4** înainte și
+**80/0** după corecție; `inspection-touch-target.json` păstrează geometria reală.
+Proba de prezentare cu istoric deschis reproduce **157/16 → 158/0**.
+Aceste modificări suplimentare sunt în fixture; codul livrabil al aplicației
+rămâne identic cu implementarea din `5b6fba618a`.
+
+
 
 **Delegare cerută de utilizator:** OpenCode nativ Termux `2.0.31`, instalat
 izolat din [distribuția Termux](https://github.com/Hope2333/opencode-termux), cu

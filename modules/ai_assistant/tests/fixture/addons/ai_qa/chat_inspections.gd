@@ -54,11 +54,18 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	var link: RichTextLabel = details.find_child("InspectionPath", true, false)
 	link.meta_clicked.emit({"path": path, "line": 42, "column": 1})
 	check(requested.size() == 1 and requested[0] == {"name": "project_open", "args": {"path": path, "line": 42, "column": 1}}, "Read card project links route to native navigation, never the OS URL handler")
+	# Expanding the lazy read card schedules layout and automatic follow.
+	# Settle it before choosing a scroll offset, otherwise a narrow-screen tap
+	# can land on the history button above an off-screen source link.
+	chat.follow_bottom = false
+	await pause()
 	chat.scroll.ensure_control_visible(link)
 	await pause()
 	var link_touch = InputEventScreenTouch.new()
 	link_touch.index = 9
 	link_touch.position = link.get_global_rect().position + Vector2(6, 8) * EditorInterface.get_editor_scale()
+	check(link.is_visible_in_tree() and chat.scroll.get_global_rect().has_point(link_touch.position), "The source-link touch target is inside the visible conversation after lazy-card layout")
+	panel.Common.atomic_json(OS.get_environment("GODOT_AI_QA_OUTPUT").path_join("inspection-touch-target.json"), {"point": str(link_touch.position), "link": str(link.get_global_rect()), "scroll": str(chat.scroll.get_global_rect()), "history_visible": chat.sidebar.visible})
 	link_touch.pressed = true
 	chat.get_viewport().push_input(link_touch, true)
 	link_touch.pressed = false
