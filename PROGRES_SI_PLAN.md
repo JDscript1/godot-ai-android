@@ -10,24 +10,19 @@ drept funcție validată cu un serviciu real.
 
 ## Rutarea profilurilor de generare imagine și 3D — 7.11.2026
 
-**Implementat în surse, încă necompilat și nelivrat.** Executorul acceptă acum
-ID-ul, numele sau modelul exact al profilului, plus selectorii `image`/`mesh`
-când există un singur profil de acel tip. Dacă selecția lipsește ori este
-ambiguă, eroarea include profilurile salvate fără secrete.
+**Compilat, verificat și livrat din `be466bfa6629251a01d28490d9b2ee5a80e2e5c9`.** Toate cele trei joburi din [CI `42405476918`](https://github.com/JDscript1/godot-ai-android/actions/runs/42405476918) au trecut; [artefact Ziva](https://github.com/JDscript1/godot-ai-android/actions/runs/42405476918/artifacts/13586982273).
 
-Instrucțiunile active ale agentului îl învață să facă mesh direct când există
-un profil 3D fără profil de imagine; când ambele tipuri sunt configurate,
-generează mai întâi o imagine izolată `reference_3d`, așteaptă și verifică
-rezultatul, apoi trimite calea reală a imaginii profilului mesh. Profilurile
-și destinațiile existente rămân configurate în proiectul utilizatorului.
+- APK `com.jdscript.godotai.ziva.debug`, ARM64, **112.623.514 bytes**.
+- SHA-256: `1597c26e3e06b2def63fbb9581329c02889cbef00a20712187dbabfbc788f9c8`.
+- Certificatul persistent, integritatea ZIP-ului, ABI-ul, payloadurile și toate cele **44 de scripturi** încorporate au fost verificate.
+- Înlocuit atomic în `/storage/emulated/0/Download/Godot-AI-Ziva-debug.apk` cu checksum alăturat. Folderul Download conține acum un singur installer al fork-ului. APK-ul nu a fost instalat automat.
+- Executorul acceptă ID-ul, numele sau modelul exact al profilului, ori `image`/`mesh` când selecția este unică. La profil absent sau ambiguu oferă lista profilurilor salvate, fără chei.
+- Pentru cerere 3D, agentul alege mesh direct dacă nu există profil de imagine. Dacă există ambele, generează și verifică imaginea izolată `reference_3d`, apoi o trimite mesh-ului ca referință. Nu mai trebuie cerut explicit acest flux.
+- CI runtime, randarea editorului nativ și compilarea/verificarea Android au trecut. Verificarea locală suplimentară: `git diff --check`.
 
-Verificare locală executată: `git diff --check`. Nu au fost rulate teste runtime,
-nu s-a compilat APK și nu s-a apelat vreun furnizor; disponibilitatea live a
-cheilor Refract/Trellis2 rămâne neverificată. Următorul pas pentru distribuție
-este buildul Ziva CI și verificarea APK-ului rezultat.
+**Limite:** nu s-au folosit cheile Refract/Trellis2 și nu s-a verificat generarea live; CI nu apelează servicii facturabile. Nu există probă Android fizică. Următoarea confirmare funcțională este o generare pe telefon cu profilurile utilizatorului.
 
-Jurnal: 7.11.2026 — reparată rezolvarea profilurilor pentru apelurile agentului
-și adăugată rutarea automată imagine-de-referință → mesh.
+Jurnal: 7.11.2026 — reparată rezolvarea profilurilor, adăugată rutarea imagine → mesh, trecut CI și livrat APK-ul Ziva `be466bf`.
 
 ## Meta Model API și revenirea din login ChatGPT — 7.11.2026
 

@@ -1,6 +1,6 @@
 # TODO — agent și harness
 
-Actualizat: **7.11.2026**. APK Ziva livrat în Download: **cd3076a**, cu AG-01–AG-57.
+Actualizat: **7.11.2026**. APK Ziva livrat în Download: **be466bf**, cu AG-01–AG-57.
 Distribuția standard este păstrată separat. [Dovezi actuale](PROGRES_SI_PLAN.md).
 Ultima instalare consemnată aici prin jurnalul dispozitivului: **47cc26e**, la 28.10.2026.
 Bifele de acceptare nu se închid numai
@@ -10,6 +10,13 @@ real prin unelte, inclusiv **46 cereri**. Continue a expus o eroare DeepSeek,
 apoi a trecut cu adaptorul corectat temporar: **58 cereri**, același turn după
 repornirea editorului. Layoutul îngust a fost reparat de agent în altă probă de
 **59 cereri**. [Raport și următoarele 12 probe](docs/AI_AGENT_STABILITY_20261027.md).
+
+## Profiluri de generare și rutare imagine → mesh — 7.11.2026, în APK `be466bf`
+
+- [x] Rezolvare profil după ID, nume sau model; selecție sigură `image`/`mesh` când există un singur profil.
+- [x] Agentul generează întâi referința `reference_3d` dacă există profiluri de imagine și mesh; profilul mesh singur este folosit direct.
+- [x] CI runtime, editor nativ și Android trecut; APK verificat și livrat în Download.
+- [ ] Confirmare fizică pe Android cu cheile Refract/Trellis2 ale utilizatorului; cheile și serviciile nu au fost apelate în build.
 
 ## Meta și login ChatGPT — 7.11.2026, în APK `cd3076a`
 

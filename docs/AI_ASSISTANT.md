@@ -24,6 +24,9 @@ opens the same global configuration window.
   Runware's public catalog lists model IDs; it does not validate your credentials.
   Its image form supports text-to-image. For 3D, TRELLIS.2 requires a reference image;
   Rodin, Meshy, Tripo and Hunyuan accept text or the supported reference binding.
+  The agent resolves a saved profile by ID, name or model and automatically generates
+  an isolated reference image first when both image and mesh profiles are configured.
+  A mesh-only setup is used directly without invoking image generation.
   Models requiring extra inputs, such as a segmentation mask, need a configured
   ComfyUI workflow. A cancelled wait retains the remote job for later retrieval.
 - **MCP:** add a Streamable HTTP endpoint and optional Bearer token. For stdio,
@@ -34,7 +37,7 @@ opens the same global configuration window.
   [integrations](AI_INTEGRATIONS.md).
 - **AGENT.MD:** edit project memory in `AGENT.md`; existing `AGENTS.md` is preserved.
 
-The current verified Ziva APK is `cd3076a` (see [delivery evidence](../PROGRES_SI_PLAN.md)), including control/integrations/generation and
+The current verified Ziva APK is `be466bf` (see [delivery evidence](../PROGRES_SI_PLAN.md)), including control/integrations/generation and
 [chat files, previews, editor control, Store and real diff](AI_CHAT_FILES_AND_EDITOR_CONTROL.md).
 It also includes the subsequent harness/local-connection fixes, activity drawer,
 3D preview controls, image-purpose rules and optional Termux/Blender setup.

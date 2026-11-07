@@ -6,13 +6,13 @@ MCP, generation profiles and an optional personal subscription companion.
 Open the **AI Assistant** tab next to **Asset Store**, or
 **Editor Settings → General → AI Assistant**, to configure it.
 
-[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42387456015/artifacts/13579493524)
-(GitHub Actions artifact, source `cd3076a`, delivered 7 November 2026).
-This build adds Meta Model API with the exact Muse Spark 1.3 Contributor
-preference and native Responses tool calls, plus ChatGPT browser callback and
-registration recovery fixes. All three CI jobs passed; a live Contributor
-tool roundtrip passed. Interactive ChatGPT login and physical Android acceptance
-remain tracked in [the progress document](PROGRES_SI_PLAN.md).
+[Download the verified Android ARM64 Ziva preview APK](https://github.com/JDscript1/godot-ai-android/actions/runs/42405476918/artifacts/13586982273)
+(GitHub Actions artifact, source `be466bf`, delivered 7 November 2026).
+This build resolves generation profiles by ID, name or model and automatically
+routes 3D requests through an image reference when both image and mesh profiles
+are configured. Meta Model API, ChatGPT callback recovery and prior harness fixes
+are included. All three CI jobs passed; live Refract/Trellis2 generation and
+physical Android acceptance remain tracked in [the progress document](PROGRES_SI_PLAN.md).
 
 See [AI Assistant setup and verification](docs/AI_ASSISTANT.md). This is an early
 development build; live subscription/generation and physical Android validation
