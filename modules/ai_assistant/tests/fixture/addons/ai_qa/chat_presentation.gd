@@ -18,6 +18,26 @@ func tool(id: String, ok: bool = true) -> void:
 	panel._chat_tool_event({"kind": "tool_started", "id": id, "name": "godot_script_diagnostics", "arguments": {"key": "never-display-this-key"}}, origin)
 	panel._chat_tool_event({"kind": "tool_result", "id": id, "name": "godot_script_diagnostics", "duration_ms": 145, "executed": true, "result": {"ok": ok, "code": "" if ok else "parse_error", "error": "" if ok else "Linia 12: tip incompatibil. Scriptul necesită corectare.", "result": {"path": "res://scripts/forest.gd", "valid": ok}}}, origin)
 
+func change_timeline_checks() -> void:
+	chat.clear_messages()
+	var origin = {"turn_id": "qa-change-order", "id": "qa-tool-only"}
+	chat.append_message("assistant", "", origin)
+	var group: Dictionary = chat.response_groups[-1]
+	var changes = [{"path": "res://example.gd", "state": "Modificat", "diff": "+nou"}]
+	chat.show_changes("qa-change-order", changes)
+	var card: Control = chat.change_cards["qa-change-order"]
+	var answer = chat.append_message("assistant", "Am actualizat scriptul.", origin.merged({"id": "qa-change-explanation"}, true))
+	await pause()
+	check(card.is_visible_in_tree() and card.get_parent() == group["content"], "A tool-only assistant message cannot hide its change summary")
+	check(card.get_index() < answer.get_meta("message")["row"].get_index(), "Changes keep their original position before a later explanation")
+	card.get_node("ChangeToggle").pressed.emit()
+	changes.append({"path": "res://second.gd", "state": "Creat", "diff": "+altul"})
+	chat.show_changes("qa-change-order", changes)
+	check(card.get_node("ChangeDetails").visible, "A live summary update preserves the user's expanded state")
+	chat.append_message("user", "Cererea următoare", {"turn_id": "qa-next-turn", "id": "qa-next-user"})
+	chat.append_message("assistant", "Următorul rezultat", {"turn_id": "qa-next-turn", "id": "qa-next-answer"})
+	check(card.get_parent() == group["content"] and group["row"].get_index() < chat.response_groups[-1]["row"].get_index(), "Older changes stay with their original response after a new turn")
+
 func run(qa: EditorPlugin, target: Control) -> void:
 	host = qa
 	panel = target
@@ -28,6 +48,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	chat.show_history(false)
 	await compact_tool_checks()
 	await rectification_checks()
+	await change_timeline_checks()
 	chat.clear_messages()
 	chat.append_message("user", "Construiește o poiană cu o potecă și copaci.", {"id": "presentation-user", "turn_id": "presentation"})
 	var user_record: Dictionary = chat.message_records[0]
@@ -88,7 +109,7 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	var changes_card: Control = chat.change_cards["presentation"]
 	var change_toggle: Button = changes_card.find_child("ChangeToggle", true, false)
 	var change_details: Control = changes_card.find_child("ChangeDetails", true, false)
-	check(changes_card.get_parent() == record["column"] and not change_details.visible, "Change summary follows its assistant explanation in history and starts collapsed")
+	check(changes_card.get_parent() == group["content"] and not change_details.visible, "Change summary belongs to the response timeline and starts collapsed")
 	change_toggle.pressed.emit()
 	check(change_details.visible and change_toggle.text.contains("Ascunde"), "Change summary expands on demand")
 	change_toggle.pressed.emit()

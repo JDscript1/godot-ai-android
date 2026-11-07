@@ -3056,12 +3056,13 @@ func show_changes(turn: String, changes: Array) -> void:
 	if not change_cards.has(turn) or not is_instance_valid(change_cards[turn]):
 		var card = VBoxContainer.new()
 		var target: Control = thread
-		# Keep summaries in transcript order, with the assistant reply for this turn.
-		for record in message_records:
-			if record["role"] == "assistant" and str(record["metadata"].get("turn_id", "")) == turn:
-				target = record["column"]
-		if target == thread: thread.add_child(card)
-		else: target.add_child(card)
+		# Use the response timeline rather than a message row: tool-only
+		# assistant messages are hidden, and later explanations follow this card.
+		for group in response_groups:
+			if group["turn"] == turn: target = group["content"]
+		if target == thread and turn.ends_with("-proposal") and not response_groups.is_empty():
+			target = response_groups[-1]["content"]
+		target.add_child(card)
 		change_cards[turn] = card
 	var card: VBoxContainer = change_cards[turn]
 	var signature = JSON.stringify(changes).sha256_text()
@@ -3072,10 +3073,11 @@ func show_changes(turn: String, changes: Array) -> void:
 	for child in card.get_children(): card.remove_child(child); child.queue_free()
 	var details = VBoxContainer.new()
 	details.name = "ChangeDetails"
-	details.hide()
+	details.visible = bool(card.get_meta("expanded", false))
 	var toggle: Button
-	toggle = button(card, ("Propunere" if turn.ends_with("-proposal") else "Modificări") + " · %d · Arată" % changes.size(), func() -> void:
+	toggle = button(card, ("Propunere" if turn.ends_with("-proposal") else "Modificări") + " · %d · %s" % [changes.size(), "Ascunde" if details.visible else "Arată"], func() -> void:
 		details.visible = not details.visible
+		card.set_meta("expanded", details.visible)
 		var active_toggle := card.get_node("ChangeToggle") as Button
 		active_toggle.text = ("Propunere" if turn.ends_with("-proposal") else "Modificări") + " · %d · %s" % [changes.size(), "Ascunde" if details.visible else "Arată"]
 	)

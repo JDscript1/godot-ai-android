@@ -12,10 +12,10 @@ drept funcție validată cu un serviciu real.
 
 **Implementat în surse și verificat local; compilarea și livrarea APK sunt în curs.**
 
-- Cardul „Modificări” este atașat mesajului explicativ al turei și apare în poziția lui cronologică din chat. Pornește restrâns și poate fi extins sau restrâns la cerere.
-- „Golește jurnalul…” cere confirmare, apoi golește `journal.json` și înregistrările `activity-*.jsonl` din proiect și copia configurată de export. Păstrează conversațiile, jurnalul de recuperare și fișierele fără legătură; începe o sesiune nouă de jurnal.
-- Butonul de fullscreen al editorului nu mai este reactivat forțat de agent într-o buclă. Starea butonului din chat urmărește modul nativ al editorului; panourile de diagnostic sunt restaurate la ieșirea din modul extins.
-- Verificări locale: runtime **1036/0**, prezentarea chat **171/0**, jurnal și rotație **125/0**, panouri **71/0**; `git diff --check`.
+- Cardul „Modificări” apare în fluxul cronologic al răspunsului, la prima modificare observată, înaintea explicațiilor ulterioare. Rămâne vizibil și când mesajul intern al agentului este gol. Pornește restrâns, iar actualizările păstrează alegerea utilizatorului de a-l extinde.
+- „Golește jurnalul…” cere confirmare, apoi golește `journal.json` și înregistrările `activity-*.jsonl` din proiect și copia configurată de export. Golește și diagnosticele Blender afișate în jurnal. Păstrează conversațiile, jurnalul de recuperare și fișierele fără legătură; începe o sesiune nouă de jurnal.
+- Butonul de fullscreen al editorului nu mai este reactivat forțat de agent într-o buclă. Starea butonului din chat urmărește modul nativ al editorului; panourile de diagnostic și poziția laterală inițială sunt restaurate la ieșirea din modul extins, inclusiv prin controlul nativ.
+- Verificări locale: runtime **1038/0**, prezentarea chat **175/0**, jurnal și rotație **126/0**, panouri **71/0**; `git diff --check`.
 
 Limită: randările de editor sunt probe pe Godot Linux/Xvfb, nu verificări pe telefonul Android. APK-ul se va livra după terminarea CI.
 

@@ -891,13 +891,16 @@ func _expand_workspace(force: bool = false) -> void:
 		_queue_dock_layout()
 	else:
 		EditorInterface.set_distraction_free_mode(false)
-		_restore_dock_groups()
-		_restore_workspace_bottom_panel()
-		if expanded_dock != 0:
-			var restore = expanded_dock
-			expanded_dock = 0
-			_set_placement(restore, false)
+		_restore_workspace_layout()
 	chat.set_workspace_expanded(EditorInterface.is_distraction_free_mode_enabled())
+
+func _restore_workspace_layout() -> void:
+	_restore_dock_groups()
+	_restore_workspace_bottom_panel()
+	if expanded_dock != 0 and not busy and not speech.listening and not speech.transcribing:
+		var restore = expanded_dock
+		expanded_dock = 0
+		_set_placement(restore, false)
 
 func _editor_bottom_panel() -> TabContainer:
 	var center = EditorInterface.get_base_control().find_child("DockVSplitCenter", true, false)
@@ -3050,7 +3053,7 @@ func _journal_value(value: Variant, depth: int = 0) -> Variant:
 func _confirm_clear_journal() -> void:
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Golește jurnalul"
-	dialog.dialog_text = "Ștergi toate înregistrările jurnalului acestui proiect, inclusiv fișierele activity exportate? Conversațiile și jurnalul de recuperare rămân intacte."
+	dialog.dialog_text = "Ștergi jurnalul acestui proiect, fișierele activity exportate și diagnosticele Blender afișate? Conversațiile și jurnalul de recuperare rămân intacte."
 	dialog.ok_button_text = "Șterge înregistrările"
 	settings_window.add_child(dialog)
 	dialog.confirmed.connect(func() -> void:
@@ -3065,6 +3068,7 @@ func _clear_journal() -> void:
 	journal_part = 0
 	journal_revision += 1
 	var stored = Common.atomic_json(project_directory.path_join("journal.json"), journal)
+	if integrations != null and integrations.termux != null: integrations.termux.clear_log()
 	var logs = project_directory.path_join("logs")
 	_remove_activity_logs(logs)
 	var exported = str(config.get("preferences", {}).get("journal_export_directory", ""))
@@ -3825,9 +3829,9 @@ func _process(_delta: float) -> void:
 		var expanded = EditorInterface.is_distraction_free_mode_enabled()
 		if expanded != chat.workspace_expanded:
 			chat.set_workspace_expanded(expanded)
-			if not expanded:
-				_restore_dock_groups()
-				_restore_workspace_bottom_panel()
+			if not expanded: _restore_workspace_layout()
+		elif not expanded and expanded_dock != 0 and not busy and not speech.listening and not speech.transcribing:
+			_restore_workspace_layout()
 		if chat.workspace_expanded:
 			var bottom = _editor_bottom_panel()
 			if bottom != null and bottom.get_current_tab() >= 0:

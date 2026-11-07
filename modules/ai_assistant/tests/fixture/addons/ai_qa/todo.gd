@@ -96,7 +96,15 @@ func run(host: Node, panel: Control) -> void:
 	FileAccess.open(unrelated_log, FileAccess.WRITE).store_string("keep")
 	var clear_button = panel.settings_window.find_children("*", "Button", true, false).filter(func(button: Button) -> bool: return button.text == "Golește jurnalul…")
 	host._check(clear_button.size() == 1, "Journal exposes a dedicated clear action")
+	var original_backend = panel.integrations.termux
+	var log_backend = host.embedded["termux_blender"].new(panel)
+	log_backend.configure(panel.project_directory.path_join("qa-blender-global"), panel.project_directory.path_join("qa-blender-project"))
+	log_backend.job_log = "Fixture Blender output"
+	log_backend._save_log()
+	panel.integrations.termux = log_backend
 	panel._clear_journal()
+	host._check(log_backend.log_text.is_empty(), "Clearing the journal also resets the Blender diagnostics shown in it")
+	panel.integrations.termux = original_backend
 	host._check(panel.journal.is_empty() and panel.Common.read_json(panel.project_directory.path_join("journal.json"), [1]).is_empty(), "Clearing the journal resets its in-memory and persisted records")
 	host._check(not FileAccess.file_exists(log_path) and not FileAccess.file_exists(mirror) and FileAccess.get_file_as_string(unrelated_log) == "keep", "Clearing removes only activity JSONL files from project and export while preserving unrelated files")
 	panel.config["preferences"]["journal_export_directory"] = old_export

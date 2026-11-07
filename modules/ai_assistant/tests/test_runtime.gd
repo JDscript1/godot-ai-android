@@ -232,6 +232,10 @@ func _blender_diagnostic_tests(node: Node) -> void:
 	probe.merge({"run_id": "probe-2", "status": "failed", "error": "Loader rejected by Android"}, true)
 	backend._report_embedded_probe()
 	check(backend.log_entries[-1].get("failed") and backend.log_text.contains("Loader rejected by Android"), "Android loader errors remain visible in the persistent journal")
+	backend.clear_log()
+	check(backend.log_entries.is_empty() and backend.log_text.is_empty() and backend.job_log.is_empty(), "Clearing Blender diagnostics removes both event and worker output")
+	reopened.configure(base, base.path_join("project"))
+	check(reopened.log_text.is_empty() and reopened.log_entries.is_empty(), "Cleared diagnostics stay empty after reopening the editor")
 
 func _initialize() -> void:
 	_run.call_deferred()

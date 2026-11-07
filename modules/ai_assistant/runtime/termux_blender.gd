@@ -71,6 +71,12 @@ func _save_log() -> void:
 	_render_log()
 	if not directory.is_empty(): Common.atomic_json(directory.path_join("diagnostics.json"), {"entries": log_entries, "job_log": _safe(job_log)})
 
+func clear_log() -> void:
+	log_entries.clear()
+	job_log = ""
+	_save_log()
+	changed.emit()
+
 func note(message: String, code: String = "blender", failed: bool = false) -> void:
 	message = _safe(message).left(6000)
 	if not log_entries.is_empty() and log_entries[-1].get("message") == message and log_entries[-1].get("code") == code: return
