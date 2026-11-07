@@ -38,9 +38,20 @@ noua probă UI phone landscape **58/0**. Aceeași probă pe sursa anterioară
 reproduce **58 verificări / 3 eșecuri**; proba intenției de execuție trece de la
 **9/5** pe sursa veche la **9/0**. Proba originală de eliminare a victoriei
 păstrează acum criteriul și răspunde `criteria_protected`. Nu s-au făcut
-vizualizări/generări cloud plătite pentru aceste teste. Buildul nativ C++ și
-cele 38 de aserțiuni vechi de andocare necesită următoarea rulare CI; trecerea
-fixture-ului upstream nu este prezentată drept confirmare a acelui build.
+vizualizări/generări cloud plătite pentru aceste teste.
+
+Prima rulare CI, [42352574769](https://github.com/JDscript1/godot-ai-android/actions/runs/42352574769),
+a compilat `5b6fba618a`: Android a trecut, runtime **984/0** și transportul
+agenților au trecut. Randarea upstream a trecut **1049/0** pe desktop, narrow,
+wide și phone landscape; editorul nativ a trecut **1080/0** pe aceleași patru
+configurații. Cele 38 de eșecuri vechi de andocare nu mai apar. În phone compact,
+17 eșecuri au expus o precondiție greșită a suitei: probele vizuale/tactile rulau
+cu lista istoricului deschisă, care ascunde intenționat conversația. Capturile
+`current-rendered/phone_compact/chat-response-grouped.png` și
+`chat-native-diagram.png` arată lista, nu mesajele. Pregătirea celor două
+scenarii deschide acum conversația prin `show_history(false)`; aserțiunile sunt
+păstrate. APK-ul primei rulări nu este livrat înaintea verificării corecției.
+
 
 **Delegare cerută de utilizator:** OpenCode nativ Termux `2.0.31`, instalat
 izolat din [distribuția Termux](https://github.com/Hope2333/opencode-termux), cu

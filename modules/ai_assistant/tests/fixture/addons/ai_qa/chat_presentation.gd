@@ -23,6 +23,9 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	panel = target
 	chat = panel.chat
 	chat.motion_enabled = false
+	# Compact history intentionally hides the conversation; start this scenario
+	# on the messages before measuring widgets or dispatching touch gestures.
+	chat.show_history(false)
 	await rectification_checks()
 	chat.clear_messages()
 	chat.append_message("user", "Construiește o poiană cu o potecă și copaci.", {"id": "presentation-user", "turn_id": "presentation"})

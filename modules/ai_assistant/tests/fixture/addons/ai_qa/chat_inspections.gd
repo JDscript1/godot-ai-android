@@ -17,6 +17,9 @@ func run(qa: EditorPlugin, target: Control) -> void:
 	panel = target
 	chat = panel.chat
 	chat.motion_enabled = false
+	# Earlier history tests may leave the compact layout on its full-width list.
+	# Exercise rendered messages and viewport input in the actual conversation.
+	chat.show_history(false)
 	chat.clear_messages()
 	var source = "extends Node\n" + "# source line\n".repeat(54)
 	var path = "res://ai_inspection_probe.gd"
