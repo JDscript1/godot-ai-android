@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -49,7 +51,11 @@ class AIZivaService : Service() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel("godot_ai_ziva", "Ziva", NotificationManager.IMPORTANCE_LOW))
-        startForeground(7343, notification("Pregătesc Ziva…"))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(7343, notification("Pregătesc Ziva…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(7343, notification("Pregătesc Ziva…"))
+        }
     }
     private fun notification(message: String): Notification {
         return Notification.Builder(this, "godot_ai_ziva").setSmallIcon(android.R.drawable.stat_notify_sync)

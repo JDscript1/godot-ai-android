@@ -41,7 +41,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -67,9 +67,15 @@
 
         <receiver android:name=".AITermuxBlenderResult" android:exported="false" />
         <service android:name=".AIZivaService" android:exported="false"
-            android:foregroundServiceType="dataSync" android:process=":ai_ziva" />
+            android:foregroundServiceType="specialUse" android:process=":ai_ziva">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs the on-device Godot Linux runtime and Ziva agent while the editor is open." />
+        </service>
         <service android:name=".AILinuxRuntimeService" android:exported="false"
-            android:foregroundServiceType="dataSync" android:process=":ai_runtime" />
+            android:foregroundServiceType="specialUse" android:process=":ai_runtime">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs the on-device Godot Linux runtime jobs while the editor is open." />
+        </service>
         <receiver android:name=".AIEmbeddedRuntimeResult" android:exported="false" />
         <service
             android:name=".AIEmbeddedRuntimeService"

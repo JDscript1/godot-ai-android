@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
@@ -132,7 +133,11 @@ class AILinuxRuntimeService : Service() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("godot_ai_linux", "Runtime Linux", NotificationManager.IMPORTANCE_LOW))
-        startForeground(7342, notification("Pregătesc runtime-ul Linux…"))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(7342, notification("Pregătesc runtime-ul Linux…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(7342, notification("Pregătesc runtime-ul Linux…"))
+        }
     }
     private fun notification(text: String): Notification {
         val cancel = Intent(this, AILinuxRuntimeService::class.java).putExtra("cancel", true).putExtra("job_id", activeId)
