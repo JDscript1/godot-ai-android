@@ -45,8 +45,14 @@ object AIZivaUpdates {
             return value.removePrefix("sha256:")
         }
         // Since v3.3.3 the release splits the addon from the CEF runtime archive.
+        // v3.3.6 switched the runtime asset from .zip to .tar.zst; accept either
+        // official form and let the installer select the matching extractor.
         val addon = asset("ziva-ai-agent-$version-godot-v4.2.0-linux-arm64.zip")
-        val runtime = asset("ziva-runtime-$version-linux-arm64.zip")
+        val runtimeZip = "ziva-runtime-$version-linux-arm64.zip"
+        val runtimeTarZst = "ziva-runtime-$version-linux-arm64.tar.zst"
+        val runtimes = available.filter { it.optString("name") == runtimeZip || it.optString("name") == runtimeTarZst }
+        check(runtimes.size == 1) { "Versiunea oficială nu are un pachet runtime Linux ARM64 compatibil." }
+        val runtime = runtimes.single()
         return AIZivaPackage.fromJson(JSONObject().put("version", version)
             .put("url", addon.getString("browser_download_url")).put("archive_size", addon.getLong("size"))
             .put("archive_hash", digest(addon))
@@ -65,6 +71,8 @@ object AIZivaUpdates {
         executor.execute {
             val state = JSONObject().put("checked_at", System.currentTimeMillis())
             try {
+                val previous = status(app)
+                previous.optJSONObject("release")?.let { state.put("release", it) }
                 val connection = URL("https://api.github.com/repos/ziva-sh/ziva-agent-plugin-godot/releases/latest").openConnection() as HttpURLConnection
                 val text = try {
                     connection.connectTimeout = 10000; connection.readTimeout = 10000; connection.instanceFollowRedirects = false

@@ -48,7 +48,7 @@ fun main() {
         return files
     }
 
-    // Since v3.3.3 the runtime archive is rooted at the addon directory.
+    // Since v3.3.6 the runtime archive is rooted at the addon directory.
     fun runtimeEntries(binary: ByteArray = payload): List<Pair<String, ByteArray>> = listOf(
         "zivacode/linux_arm64/zivacode" to binary,
         "bin/linux_arm64/libcef.so" to "cef".toByteArray(),
@@ -88,7 +88,7 @@ fun main() {
         check(distribution.binary.readText() == "fixture ELF"); checks++
 
         val cancelled = AIZivaPackage(File(scratch, "cancelled").apply { mkdirs() }, spec)
-        reject { cancelled.extract(good) { true } }
+        reject { cancelled.extract(good, cancelled = { true }) }
         check(!cancelled.installed()); checks++
 
         for ((name, files) in listOf(
@@ -135,9 +135,9 @@ fun main() {
         val splitRoot = File(scratch, "split").apply { mkdirs() }
         val splitAddon = zip("split-addon", addonEntries(binaryEntry = false))
         val splitRuntime = zip("split-runtime", runtimeEntries())
-        val splitSpec = release(splitAddon, payload, splitRuntime).copy(version = "v3.3.3",
-            url = "$base/v3.3.3/ziva-ai-agent-v3.3.3-godot-v4.2.0-linux-arm64.zip",
-            runtimeUrl = "$base/v3.3.3/ziva-runtime-v3.3.3-linux-arm64.zip")
+        val splitSpec = release(splitAddon, payload, splitRuntime).copy(version = "v3.3.6",
+            url = "$base/v3.3.6/ziva-ai-agent-v3.3.6-godot-v4.2.0-linux-arm64.zip",
+            runtimeUrl = "$base/v3.3.6/ziva-runtime-v3.3.6-linux-arm64.zip")
         val split = AIZivaPackage(splitRoot, splitSpec)
         reject { split.extract(splitAddon) } // the runtime archive is mandatory
         split.extract(splitAddon, splitRuntime)
@@ -154,11 +154,11 @@ fun main() {
         val missingRuntimeBinary = zip("missing-runtime-binary",
             runtimeEntries().filterNot { it.first == "zivacode/linux_arm64/zivacode" })
         reject { AIZivaPackage(splitRoot, release(splitAddon, payload, missingRuntimeBinary)
-            .copy(version = "v3.3.3", url = splitSpec.url, runtimeUrl = splitSpec.runtimeUrl))
+            .copy(version = "v3.3.6", url = splitSpec.url, runtimeUrl = splitSpec.runtimeUrl))
             .extract(splitAddon, missingRuntimeBinary) }
         val leaky = zip("leaky-runtime", runtimeEntries() + ("../evil.txt" to "evil".toByteArray()))
         reject { AIZivaPackage(File(scratch, "leaky").apply { mkdirs() }, release(splitAddon, payload, leaky)
-            .copy(version = "v3.3.3", url = splitSpec.url, runtimeUrl = splitSpec.runtimeUrl))
+            .copy(version = "v3.3.6", url = splitSpec.url, runtimeUrl = splitSpec.runtimeUrl))
             .extract(splitAddon, leaky) }
         val clash = zip("clash-addon", addonEntries(binaryEntry = false) + ("$addon/bin/linux_arm64/libcef.so" to "addon".toByteArray()))
         reject { AIZivaPackage(splitRoot, splitSpec.copy(archiveSize = clash.length(),
@@ -173,16 +173,16 @@ fun main() {
         Files.createSymbolicLink(link.toPath(), File(outsideSeed, "secret").toPath())
         reject { split.seedRuntime(unsafeSeed) }
         Files.delete(link.toPath())
-        check(!File(unsafeSeed, "ziva/runtime/v3.3.3").exists()); checks++
+        check(!File(unsafeSeed, "ziva/runtime/v3.3.6").exists()); checks++
 
         val userData = File(scratch, "user-data").apply { mkdirs() }
         val runtimeRoot = File(userData, "ziva/runtime")
-        val partial = File(runtimeRoot, "v3.3.3.download.1234.zip-abcde").apply { parentFile.mkdirs(); writeText("partial") }
-        val damaged = File(runtimeRoot, "v3.3.3.damaged.abc").apply { writeText("damaged") }
-        val orphanSeed = File(runtimeRoot, "v3.3.3.seed-123e4567-e89b-12d3-a456-426614174000").apply { mkdirs() }
-        val orphanOld = File(runtimeRoot, "v3.3.3.old-123e4567-e89b-12d3-a456-426614174000").apply { mkdirs() }
+        val partial = File(runtimeRoot, "v3.3.6.download.1234.zip-abcde").apply { parentFile.mkdirs(); writeText("partial") }
+        val damaged = File(runtimeRoot, "v3.3.6.damaged.abc").apply { writeText("damaged") }
+        val orphanSeed = File(runtimeRoot, "v3.3.6.seed-123e4567-e89b-12d3-a456-426614174000").apply { mkdirs() }
+        val orphanOld = File(runtimeRoot, "v3.3.6.old-123e4567-e89b-12d3-a456-426614174000").apply { mkdirs() }
         split.seedRuntime(userData)
-        val seeded = File(runtimeRoot, "v3.3.3")
+        val seeded = File(runtimeRoot, "v3.3.6")
         check(File(seeded, ".ready").isFile && File(seeded, ".ready").readText() == splitSpec.runtimeHash &&
             File(seeded, ".ready").length() == 64L); checks++
         check(File(seeded, "bin/linux_arm64/libcef.so").readText() == "cef" &&
@@ -220,7 +220,7 @@ fun main() {
         replacement.activate()
         val active = AIZivaPackage(versionsRoot)
         active.verify()
-        check(active.version == "v3.3.3" && active.binary.readText() == "fixture ELF"); checks++
+        check(active.version == "v3.3.6" && active.binary.readText() == "fixture ELF"); checks++
         check(first.binary.readText() == "fixture ELF" && history.readText() == "KEEP"); checks++
         active.binary.appendText("tampered")
         reject { active.verify() }

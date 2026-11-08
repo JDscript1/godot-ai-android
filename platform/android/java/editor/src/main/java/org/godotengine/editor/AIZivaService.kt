@@ -154,16 +154,41 @@ class AIZivaService : Service() {
             if (action == "ziva_install") {
                 val install = File(cacheDir, "ai-ziva")
                 update("installing", "Descarc pluginul oficial Ziva…")
+                val dependencies = AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) },
+                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }, extension = ziva.extension) {
+                    update("installing", it)
+                }
                 val zivaValid = try { ziva.verify(); true } catch (_: Exception) { false }
-                if (!zivaValid) ziva.install(install, ::cancelled) { update("installing", it) }
+                if (!zivaValid) {
+                    if (ziva.runtimeIsTarZst) dependencies.ensureArchiveTools()
+                    ziva.install(install, ::cancelled, { update("installing", it) }) { archive, staging ->
+                        val destination = File(staging, "addons/ziva_agent")
+                        check(destination.isDirectory) { "Structura pachetului Ziva este incompletă." }
+                        // Debian tar resolves the official .tar.zst without a JVM
+                        // zstd dependency. /tmp is the already-created addon
+                        // destination; the archive is bound at the guest root so
+                        // it is not hidden by that directory bind.
+                        val archiveTarget = File(runtime.root, "ziva-runtime.tar.zst")
+                        check(!Files.isSymbolicLink(archiveTarget.toPath())) { "Cale Ziva nesigură." }
+                        check(archiveTarget.isFile || archiveTarget.createNewFile()) { "Punctul de montare Ziva nu poate fi creat." }
+                        try {
+                            val result = runtime.launchWithBinds(
+                                listOf("/bin/sh", "-c", "/usr/bin/tar --zstd -xf /ziva-runtime.tar.zst -C /tmp"),
+                                null, 600,
+                                listOf(destination.absolutePath to "/tmp", archive.absolutePath to "/ziva-runtime.tar.zst"))
+                            check(result.optInt("exit_code", -1) == 0) {
+                                "Extragerea componentelor Ziva a eșuat: " + result.optString("output").takeLast(500)
+                            }
+                        } finally {
+                            archiveTarget.delete()
+                        }
+                    }
+                }
                 ziva.verify()
                 val godotValid = try { godot.verify(); true } catch (_: Exception) { false }
                 if (!godotValid) godot.install(install, ::cancelled) { update("installing", it) }
                 godot.verify()
-                AIZivaDependencies(runtime.root, { command, seconds -> runtime.launch(command, null, seconds) },
-                    { AILinuxRuntime.preparePackageNetwork(this, runtime) }, extension = ziva.extension) {
-                    update("installing", it)
-                }.ensure()
+                dependencies.ensure()
                 check(!cancelled()) { "Operație anulată." }
                 val version = runtime.launch(listOf(ziva.guestBinary, "--version"), null, 30)
                 check(version.getInt("exit_code") == 0 && version.getString("output").lineSequence().any { it.trim() == ziva.version }) {

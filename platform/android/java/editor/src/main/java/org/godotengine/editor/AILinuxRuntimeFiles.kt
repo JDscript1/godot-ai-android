@@ -291,8 +291,16 @@ class AILinuxRuntimeFiles(
         }.start()
     }
 
-    fun launch(command: List<String>, project: File?, seconds: Int): JSONObject {
-        val child = startProcess(command, project)
+    fun launch(command: List<String>, project: File?, seconds: Int): JSONObject =
+        runLaunch(command, project, seconds, emptyList())
+
+    /** Same bounded runner used by package extraction with explicit host/guest binds. */
+    fun launchWithBinds(command: List<String>, project: File?, seconds: Int,
+        binds: List<Pair<String, String>>): JSONObject = runLaunch(command, project, seconds, binds)
+
+    private fun runLaunch(command: List<String>, project: File?, seconds: Int,
+        binds: List<Pair<String, String>>): JSONObject {
+        val child = startProcess(command, project, emptyMap(), binds)
         val output = StringBuilder(); var truncated = false
         val reader = Thread({
             try { child.inputStream.bufferedReader().use { input ->

@@ -67,7 +67,13 @@ object AIZivaWindow {
             bounds = rectangle.copyOf()
             shown = true
             position()
-            if (reload) web?.reload()
+            if (reload) {
+                // A new native Ziva release can leave an older frontend/service
+                // worker in the WebView cache. Reload from the local server
+                // without touching account storage.
+                web?.clearCache(true)
+                web?.reload()
+            }
             if (!wasShown) web?.onResume()
         }
     }

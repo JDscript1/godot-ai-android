@@ -15,6 +15,7 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
         fun json() = JSONObject().put("version", version).put("url", url).put("archive_size", archiveSize)
             .put("archive_hash", archiveHash).put("member", member).put("binary_size", binarySize).put("binary_hash", binaryHash)
             .put("runtime_url", runtimeUrl).put("runtime_size", runtimeSize).put("runtime_hash", runtimeHash)
+        val runtimeIsTarZst get() = runtimeUrl.endsWith(".tar.zst")
     }
     companion object {
         private const val ADDON = "addons/ziva_agent"
@@ -24,12 +25,14 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
         private const val UNPACKED_LIMIT = 768L * 1024 * 1024
         private const val MAX_FILES = 4000
         // Since v3.3.3 the addon archive and the CEF runtime archive are published separately.
-        val RELEASE = Release("v3.3.3",
-            "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/v3.3.3/ziva-ai-agent-v3.3.3-godot-v4.2.0-linux-arm64.zip",
-            2944465, "1e06bcef313aa092393ea64e4a10202f3077ec5fba223dfd7d42525fec6027c4",
-            "$ADDON/zivacode/linux_arm64/zivacode", 136039416, "db476a4bfe636760fe7838c5bea1f9ec421a23dfb4daa16c73a8494a17da5cb6",
-            "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/v3.3.3/ziva-runtime-v3.3.3-linux-arm64.zip",
-            224410556, "f485f3b0f381fe4ec40b10788f0af62bea487c94ec6d830ec811c09f24f32b39")
+        // v3.3.6 publishes the runtime as .tar.zst. The binary metadata is
+        // intentionally left empty here and recorded after verified extraction.
+        val RELEASE = Release("v3.3.6",
+            "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/v3.3.6/ziva-ai-agent-v3.3.6-godot-v4.2.0-linux-arm64.zip",
+            3072316, "4d0ae701c8d93b7ee40beee92a5b6c5f04179affd75f304fc7f33c155c57d400",
+            "$ADDON/zivacode/linux_arm64/zivacode", 0, "",
+            "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/v3.3.6/ziva-runtime-v3.3.6-linux-arm64.tar.zst",
+            176377796, "0904b6b3d4254d7a0dcb993b34140cc25d0527ca99bcd3319c87dc397476facd")
         fun fromJson(json: JSONObject): Release {
             val version = json.getString("version")
             require(version.matches(Regex("v[0-9]+\\.[0-9]+\\.[0-9]+"))) { "Versiune Ziva invalidă." }
@@ -43,8 +46,9 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
             val runtimeHash = json.optString("runtime_hash", "")
             val hasRuntime = runtimeUrl.isNotEmpty() || runtimeSize != 0L || runtimeHash.isNotEmpty()
             if (hasRuntime) {
-                val expectedRuntime = "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/$version/ziva-runtime-$version-linux-arm64.zip"
-                require(runtimeUrl == expectedRuntime) { "Componentă Ziva neoficială sau arhitectură incompatibilă." }
+                val expectedRuntimeZip = "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/$version/ziva-runtime-$version-linux-arm64.zip"
+                val expectedRuntimeTarZst = "https://github.com/ziva-sh/ziva-agent-plugin-godot/releases/download/$version/ziva-runtime-$version-linux-arm64.tar.zst"
+                require(runtimeUrl == expectedRuntimeZip || runtimeUrl == expectedRuntimeTarZst) { "Componentă Ziva neoficială sau arhitectură incompatibilă." }
                 require(runtimeHash.matches(Regex("[a-f0-9]{64}")) && runtimeSize in 1..(512L * 1024 * 1024)) {
                     "Integritate Ziva absentă pentru componentă."
                 }
@@ -75,6 +79,7 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
         }
     }
     val version get() = spec.version
+    val runtimeIsTarZst get() = spec.runtimeUrl.endsWith(".tar.zst")
     val extension get() = "/opt/godot-tools/ziva/$version/$ADDON/$EXTENSION"
     fun activate() { verify(); AILinuxRuntimeFiles.writeJson(safe("opt/godot-tools/ziva/active.json"), spec.json()) }
     private val directory get() = safe("opt/godot-tools/ziva/${spec.version}")
@@ -216,13 +221,17 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
         check(count > 0) { "Componenta Ziva lipsește din pachet. Reinstalează Ziva." }
     }
 
-    fun install(cache: File, cancelled: () -> Boolean, progress: (String) -> Unit) {
+    fun install(cache: File, cancelled: () -> Boolean, progress: (String) -> Unit,
+        extractRuntimeTarZst: ((File, File) -> Unit)? = null) {
         check(cache.isDirectory || cache.mkdirs())
         val previous = directory.exists()
         val needed = spec.archiveSize + spec.runtimeSize + UNPACKED_LIMIT + (if (previous) UNPACKED_LIMIT else 0L) + 64L * 1024 * 1024
         check(root.usableSpace >= needed) { "Sunt necesari aproximativ ${needed / (1024 * 1024)} MB liberi pentru instalarea Ziva." }
         val archive = File(cache, "ziva-${UUID.randomUUID()}.zip")
-        val runtime = if (spec.runtimeSize > 0) File(cache, "ziva-runtime-${UUID.randomUUID()}.zip") else null
+        val runtime = if (spec.runtimeSize > 0) {
+            val suffix = if (spec.runtimeIsTarZst) ".tar.zst" else ".zip"
+            File(cache, "ziva-runtime-${UUID.randomUUID()}$suffix")
+        } else null
         try {
             progress("Descarc Ziva de la furnizor…")
             AIDownload.fetch(spec.url, spec.archiveSize, archive, cancelled, progress, "Ziva")
@@ -231,11 +240,12 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
                 AIDownload.fetch(spec.runtimeUrl, spec.runtimeSize, runtime, cancelled, progress, "Ziva runtime")
             }
             progress("Verific pachetul Ziva…")
-            extract(archive, runtime, cancelled)
+            extract(archive, runtime, cancelled, extractRuntimeTarZst)
         } finally { archive.delete(); runtime?.delete() }
     }
 
-    fun extract(archive: File, runtime: File? = null, cancelled: () -> Boolean = { false }) {
+    fun extract(archive: File, runtime: File? = null, cancelled: () -> Boolean = { false },
+        extractRuntimeTarZst: ((File, File) -> Unit)? = null) {
         check(archive.length() == spec.archiveSize && AILinuxRuntimeFiles.sha(archive) == spec.archiveHash) { "Verificarea SHA-256 Ziva a eșuat." }
         if (spec.runtimeSize > 0) {
             check(runtime != null && runtime.isFile && runtime.length() == spec.runtimeSize &&
@@ -285,7 +295,29 @@ class AIZivaPackage(private val root: File, private var spec: Release = activeRe
                 }
             }
             unpack(archive, false)
-            if (runtime != null) unpack(runtime, true)
+            if (runtime != null) {
+                if (spec.runtimeIsTarZst) {
+                    check(extractRuntimeTarZst != null) {
+                        "Extractorul tar.zst pentru componenta Ziva nu este disponibil."
+                    }
+                    extractRuntimeTarZst(runtime, staging)
+                    for (name in listOf(
+                        "zivacode/linux_arm64/zivacode",
+                        "bin/linux_arm64/ziva_cef_helper",
+                        "bin/linux_arm64/libcef.so",
+                        "bin-deps/linux_arm64/ffmpeg",
+                        "bin-deps/linux_arm64/rg",
+                        "bin-deps/linux_arm64/git/bin/git",
+                    )) {
+                        val output = File(staging, "$ADDON/$name")
+                        if (output.isFile) {
+                            check(output.setExecutable(true, false)) { "Permisiunile Ziva nu pot fi setate." }
+                        }
+                    }
+                } else {
+                    unpack(runtime, true)
+                }
+            }
             check(count > 0) { "Arhiva Ziva nu conține pluginul." }
             check(spec.member.startsWith(PREFIX)) { "Executabil Ziva invalid." }
             val executable = File(staging, spec.member)

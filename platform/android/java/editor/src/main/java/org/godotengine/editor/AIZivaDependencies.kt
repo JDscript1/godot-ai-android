@@ -33,6 +33,24 @@ class AIZivaDependencies(
         return missing.toList()
     }
 
+    /** v3.3.6+ ships the CEF runtime as tar.zst; extract it inside the verified Linux root. */
+    fun ensureArchiveTools() {
+        val check = execute(listOf("/usr/bin/zstd", "--version"), 30)
+        if (check.optInt("exit_code", -1) == 0) return
+        progress("Pregătesc zstd pentru actualizarea Ziva…")
+        prepareNetwork()
+        val update = execute(listOf("/usr/bin/apt-get", "-o", "APT::Update::Error-Mode=any", "update"), 300)
+        check(update.optInt("exit_code", -1) == 0) {
+            "Nu pot pregăti zstd pentru Ziva. Verifică rețeaua și reia actualizarea."
+        }
+        val install = execute(listOf("/usr/bin/apt-get", "install", "-y", "--no-install-recommends", "zstd"), 600)
+        check(install.optInt("exit_code", -1) == 0) { "Instalarea zstd pentru Ziva a eșuat. Reia actualizarea." }
+        execute(listOf("/usr/bin/apt-get", "clean"), 30)
+        check(execute(listOf("/usr/bin/zstd", "--version"), 30).optInt("exit_code", -1) == 0) {
+            "zstd nu este disponibil în runtime-ul Linux."
+        }
+    }
+
     fun ensure() {
         if (missing().isEmpty()) return
         progress("Pregătesc bibliotecile Linux necesare interfeței oficiale Ziva…")
