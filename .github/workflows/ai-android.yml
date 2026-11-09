@@ -169,8 +169,15 @@ jobs:
               lock = json.loads(Path('tools/embedded-runtime/rootfs.json').read_text())
               assert package['source_sha256'] == lock['sha256'], 'Unexpected Debian base'
               dex = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.dex'))
-              for component in ['AILinuxRuntime', 'AILinuxRuntimeService', 'AILinuxRuntimeFiles', 'AIZivaRuntime', 'AIZivaService', 'AIZivaWindow', 'AIZivaPackage', 'AIZivaGodot', 'AIZivaDependencies', 'AIZivaSession', 'AIZivaUpdates', 'AIZivaAgentLink']:
+              for component in ['AILinuxRuntime', 'AILinuxRuntimeService', 'AILinuxRuntimeFiles', 'AIZivaRuntime', 'AIZivaService', 'AIZivaWindow', 'AIZivaPackage', 'AIZivaGodot', 'AIZivaDependencies', 'AIZivaSession', 'AIZivaUpdates', 'AIZivaAgentLink', 'AIZivaTerrain']:
                   assert ('Lorg/godotengine/editor/' + component + ';').encode() in dex, component
+              for library in ['libterrain.linux.debug.arm64.so', 'libterrain.linux.release.arm64.so']:
+                  entry = 'assets/terrain3d/linux_arm64/' + library
+                  data = archive.read(entry)
+                  assert data[:4] == b'\x7fELF' and data[4] == 2, entry
+                  assert int.from_bytes(data[18:20], 'little') == 183, entry + ' must target AArch64'
+                  source = Path('platform/android/java/editor/src/main/assets/terrain3d/linux_arm64') / library
+                  assert data == source.read_bytes(), 'Packaged Terrain3D differs: ' + library
               assert archive.read('assets/ai/agent-link-client.gd') == Path('platform/android/java/editor/src/main/assets/ai/agent-link-client.gd').read_bytes()
               library = archive.read('lib/arm64-v8a/libgodot_android.so')
               assert b'AIAssistantEditorPlugin' in library, 'AI editor module missing'

@@ -19,6 +19,10 @@ object AIZivaTerrain {
         "linux.debug.arm64 = \"res://addons/terrain_3d/bin/libterrain.linux.debug.arm64.so\""
     private const val RELEASE_LINE =
         "linux.release.arm64 = \"res://addons/terrain_3d/bin/libterrain.linux.release.arm64.so\""
+    private val DEBUG_PATTERN =
+        Regex("""(?m)^[ \t]*#?[ \t]*linux\.debug\.arm64[ \t]*=.*$""")
+    private val RELEASE_PATTERN =
+        Regex("""(?m)^[ \t]*#?[ \t]*linux\.release\.arm64[ \t]*=.*$""")
     private val LIBRARIES = listOf(
         "libterrain.linux.debug.arm64.so",
         "libterrain.linux.release.arm64.so",
@@ -47,23 +51,22 @@ object AIZivaTerrain {
     }
 
     private fun ensureLinuxLines(source: String): String {
-        var text = source
-        if (!text.contains("linux.debug.arm64 =")) {
-            text = text.replace(
-                "#linux.debug.arm64 = \"res://addons/terrain_3d/bin/libterrain.linux.debug.arm64.so\"",
-                DEBUG_LINE,
-            )
+        var sawDebug = false
+        var sawRelease = false
+        var text = DEBUG_PATTERN.replace(source) {
+            sawDebug = true
+            DEBUG_LINE
         }
-        if (!text.contains("linux.release.arm64 =")) {
-            text = text.replace(
-                "#linux.release.arm64 = \"res://addons/terrain_3d/bin/libterrain.linux.release.arm64.so\"",
-                RELEASE_LINE,
-            )
+        text = RELEASE_PATTERN.replace(text) {
+            sawRelease = true
+            RELEASE_LINE
         }
-        if (!text.contains("linux.debug.arm64 =")) {
-            text = text.trimEnd() + "\n" + DEBUG_LINE + "\n" + RELEASE_LINE + "\n"
+        val missing = buildList {
+            if (!sawDebug) add(DEBUG_LINE)
+            if (!sawRelease) add(RELEASE_LINE)
         }
-        return text
+        if (missing.isEmpty()) return text
+        return text.trimEnd() + "\n" + missing.joinToString("\n") + "\n"
     }
 
     private fun copyContents(source: File, target: File) {
