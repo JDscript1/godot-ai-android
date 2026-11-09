@@ -400,3 +400,6 @@ $RECYCLE.BIN/
 # Personal AI editor verification artifacts
 .ai-qa/
 .ai-scons-cache/
+
+# Vendored Ziva-only Linux ARM64 Terrain3D binaries
+!platform/android/java/editor/src/main/assets/terrain3d/linux_arm64/*.so

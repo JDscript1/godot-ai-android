@@ -223,6 +223,12 @@ class AIZivaService : Service() {
                 sessionNonce = java.util.UUID.randomUUID().toString()
                 val identity = privateDirectory("sessions/$sessionNonce")
                 File(identity, "owner").writeText("GODOT_AI_ZIVA_OWNER=$sessionNonce\n")
+                val terrainOverlay = try {
+                    AIZivaTerrain.prepare(project, privateDirectory("sessions/$sessionNonce/terrain_3d"), assets)
+                } catch (error: Exception) {
+                    synchronized(lock) { state.put("terrain_overlay_error", error.message?.take(500) ?: "Eroare Terrain3D") }
+                    null
+                }
                 val globalAgents = File(runtime.root, "root/.agents")
                 check(!Files.isSymbolicLink(globalAgents.parentFile!!.toPath()) && !Files.isSymbolicLink(globalAgents.toPath()))
                 check(globalAgents.isDirectory || globalAgents.mkdirs()) { "Directorul contextului Ziva nu poate fi creat." }
@@ -243,6 +249,8 @@ class AIZivaService : Service() {
                 )
                 if (AIZivaProjectContext.canOverlay(identity))
                     binds += File(identity, "AGENTS.md").absolutePath to "/root/.agents/AGENTS.md"
+                if (terrainOverlay != null)
+                    binds += terrainOverlay.absolutePath to "/workspace/addons/terrain_3d"
                 // Discard endpoint hints only; account/session history stays intact.
                 val share = privateDirectory("projects/$projectId/local-share")
                 share.walkTopDown().maxDepth(10).filter { it.isFile && it.name.matches(Regex("sidecar-[0-9]+-.*\\.port")) }.forEach { it.delete() }
